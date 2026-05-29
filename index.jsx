@@ -628,7 +628,9 @@ function CatalogList({ items, installed, installedVersions, onPick }) {
           )
         }
         const m = item.manifest
-        const installedApp = installed.find(a => a.name === m.name)
+        // Match by manifest.id → app.slug — name can be edited by the user
+        // and would silently divorce update detection from the catalog entry.
+        const installedApp = installed.find(a => a.slug === m.id)
         const installedVer = installedVersions[item.id]
         const hasUpdate = installedApp && installedVer && semverCmp(installedVer, m.version) < 0
         const isInstalled = !!installedApp
@@ -672,8 +674,10 @@ function FromUrlTab({ onPreview }) {
     setError('')
     try {
       const manifest = await fetchManifest(trimmed)
-      if (!manifest.name || !manifest.entry) {
-        throw new Error('Manifest is missing required fields (name, entry).')
+      const missing = ['id', 'name', 'version', 'description', 'entry']
+        .filter(k => !manifest[k])
+      if (missing.length) {
+        throw new Error(`Manifest is missing required fields: ${missing.join(', ')}`)
       }
       // Derive raw_base from the manifest URL: strip the trailing
       // filename so storage_seeds + icon + entry resolve relative
@@ -713,7 +717,8 @@ function FromUrlTab({ onPreview }) {
 
 function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall }) {
   const m = item.manifest
-  const installedApp = installed.find(a => a.name === m.name)
+  // Match by manifest.id → app.slug (see comment in BrowseView).
+  const installedApp = installed.find(a => a.slug === m.id)
   const installedVer = installedVersions[item.id]
   const hasUpdate = installedApp && installedVer && semverCmp(installedVer, m.version) < 0
   const isInstalled = !!installedApp
@@ -914,9 +919,10 @@ export default function App({ appId, token }) {
       }
       // Drop the version record too. We key by catalog id (or
       // 'custom' for paste-a-URL), which matches what install wrote.
+      // Match by manifest.id ↔ app.slug (not name — see install path).
       const next = { ...installedVersions }
       for (const item of catalog) {
-        if (item.manifest && item.manifest.name === app.name) {
+        if (item.manifest && item.manifest.id === app.slug) {
           delete next[item.id]
         }
       }
