@@ -375,162 +375,47 @@ function semverCmp(a, b) {
   return 0
 }
 
-// Pull bytes from a raw URL. Used for icons + entry JSX + seed files.
-async function fetchRaw(url) {
-  const r = await fetch(url, { cache: 'no-cache' })
-  if (!r.ok) throw new Error(`Fetch failed: ${r.status} ${url}`)
-  return r
-}
-
-// Heart of the install flow. Takes a fully-resolved manifest +
-// raw_base and walks the spec'd install lifecycle. Returns the
-// new app's {id, slug, name}. Throws on any step that fails so
-// the UI can surface the message.
-async function installApp({ manifest, raw_base, token, isUpdate, existingId }) {
-  // Step 1: fetch entry JSX bytes.
-  const entryUrl = raw_base + (manifest.entry || 'index.jsx')
-  const entryRes = await fetchRaw(entryUrl)
-  const jsxSource = await entryRes.text()
-
-  let appId, slug
-  if (isUpdate && existingId) {
-    // Update path: PATCH the existing row's jsx_source. Server
-    // recompiles + the file watcher picks up the change. We keep
-    // permissions on what the manifest currently declares so a
-    // permissions bump in the new version actually lands.
-    const patchRes = await fetch(`/api/apps/${existingId}`, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: manifest.name,
-        description: manifest.description,
-        jsx_source: jsxSource,
-        cross_app_access: manifest.permissions?.cross_app_access || 'none',
-        share_with_apps: manifest.permissions?.share_with_apps || 'none',
-      }),
-    })
-    if (!patchRes.ok) {
-      const text = await patchRes.text()
-      throw new Error(`PATCH /api/apps/${existingId} failed (${patchRes.status}): ${text}`)
-    }
-    const out = await patchRes.json()
-    appId = out.id
-    slug = out.slug
-  } else {
-    // Fresh install. POST /api/apps/.
-    const postRes = await fetch('/api/apps/', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: manifest.name,
-        description: manifest.description,
-        jsx_source: jsxSource,
-        cross_app_access: manifest.permissions?.cross_app_access || 'none',
-        share_with_apps: manifest.permissions?.share_with_apps || 'none',
-      }),
-    })
-    if (!postRes.ok) {
-      const text = await postRes.text()
-      throw new Error(`POST /api/apps/ failed (${postRes.status}): ${text}`)
-    }
-    const out = await postRes.json()
-    appId = out.id
-    slug = out.slug
-  }
-
-  // Step 2: storage seeds. For updates, only PUT keys that don't
-  // already exist — we don't want to clobber user data on upgrade.
-  if (manifest.storage_seeds && typeof manifest.storage_seeds === 'object') {
-    for (const [key, value] of Object.entries(manifest.storage_seeds)) {
-      const storageUrl = `/api/storage/apps/${appId}/${key}`
-      if (isUpdate) {
-        const probe = await fetch(storageUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (probe.ok) continue  // already there, leave user data alone
-      }
-      try {
-        if (typeof value === 'string') {
-          // String value = path in repo. Fetch + PUT raw bytes.
-          const seedRes = await fetchRaw(raw_base + value)
-          const seedText = await seedRes.text()
-          await fetch(storageUrl, {
-            method: 'PUT',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'text/plain',
-            },
-            body: seedText,
-          })
-        } else {
-          // JSON literal — encode + PUT as JSON.
-          await fetch(storageUrl, {
-            method: 'PUT',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(value),
-          })
-        }
-      } catch (e) {
-        // A seed failure shouldn't abort the whole install — log
-        // and continue. The app will fall back to its in-code
-        // defaults on first run.
-        console.warn(`Seed ${key} failed:`, e)
-      }
-    }
-  }
-
-  // Step 3: icon. Skip on updates unless the manifest icon path
-  // changed (we don't track that — keep it simple: install only).
-  if (manifest.icon && !isUpdate) {
+// Heart of the install flow. One call to POST /api/apps/install — the
+// backend does fetch + validate + compile + source_dir + storage seeds
+// + icon + cron in a single transaction with filesystem rollback on
+// failure. See feature ticket 062 for the design rationale.
+//
+// On older Möbius builds without this endpoint, callers see a 404
+// here. There's no client-side fallback to the multi-step flow on
+// purpose — that path silently leaked partial installs on failure.
+// Older containers should be updated before the store works.
+async function installApp({ manifest_url, manifest, raw_base, token }) {
+  const body = {}
+  if (manifest_url) body.manifest_url = manifest_url
+  if (manifest) body.manifest = manifest
+  if (raw_base) body.raw_base = raw_base
+  const res = await fetch('/api/apps/install', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`
     try {
-      const iconRes = await fetchRaw(raw_base + manifest.icon)
-      const blob = await iconRes.blob()
-      const fd = new FormData()
-      fd.append('icon', blob, manifest.icon.split('/').pop() || 'icon.png')
-      await fetch(`/api/apps/${appId}/icon`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      })
+      const errBody = await res.json()
+      if (errBody && errBody.detail) detail = errBody.detail
     } catch (e) {
-      console.warn('Icon upload failed:', e)
+      detail = await res.text() || detail
     }
+    throw new Error(detail)
   }
-
-  // Step 4: schedule. We can't actually register cron from inside
-  // a mini-app — that needs shell access. We write a marker file
-  // so the agent (or a future shell-bridge endpoint) can pick it
-  // up and finish the registration.
-  if (manifest.schedule && !isUpdate) {
-    try {
-      await fetch(`/api/storage/apps/${appId}/.cron-pending.json`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          schedule: manifest.schedule,
-          slug,
-          requested_at: new Date().toISOString(),
-          note: 'App Store cannot register cron from inside the sandbox. Ask the agent to run /app/scripts/init-cron-scaffold.sh for this app.',
-        }),
-      })
-    } catch (e) {
-      console.warn('Cron marker write failed:', e)
-    }
+  const out = await res.json()
+  return {
+    id: out.id,
+    slug: out.slug,
+    name: out.name,
+    version: out.version,
+    mode: out.mode,
+    warnings: out.warnings || [],
   }
-
-  return { id: appId, slug, name: manifest.name }
 }
 
 function ConfirmModal({ manifest, raw_base, onConfirm, onCancel, busy, isUpdate }) {
@@ -876,25 +761,31 @@ export default function App({ appId, token }) {
 
   const confirmInstall = async () => {
     if (!pendingInstall) return
-    const { item, isUpdate, existingId } = pendingInstall
+    const { item } = pendingInstall
     setBusy(true)
     try {
+      // The backend decides install vs update based on manifest.id ↔
+      // App.slug match. We pass manifest + raw_base; the install endpoint
+      // re-fetches nothing else from us.
       const result = await installApp({
         manifest: item.manifest,
         raw_base: item.raw_base,
         token,
-        isUpdate,
-        existingId,
       })
       // Record the version we just installed so update detection
-      // works on the next browse render.
-      const nextVersions = { ...installedVersions, [item.id]: item.manifest.version }
+      // works on the next browse render. The backend returns the
+      // version it actually applied, which is authoritative.
+      const nextVersions = { ...installedVersions, [item.id]: result.version }
       setInstalledVersions(nextVersions)
       await saveInstalledVersions(appId, token, nextVersions)
       await refreshInstalled()
+      const verb = result.mode === 'update' ? 'updated' : 'installed'
+      const warnSuffix = result.warnings.length
+        ? ` (with notes: ${result.warnings.join('; ')})`
+        : ''
       setToast({
         kind: 'success',
-        message: `${result.name} ${isUpdate ? 'updated' : 'installed'}! Reload Möbius to see it in the drawer.`,
+        message: `${result.name} ${verb}${warnSuffix}! Reload Möbius to see it in the drawer.`,
       })
       setPendingInstall(null)
       setDetail(null)
