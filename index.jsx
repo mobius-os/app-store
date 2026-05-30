@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 
 // Curated catalog. Each entry points at a public mobius-os repo on
 // the main branch. The Browse view fetches each manifest URL at
@@ -858,6 +858,7 @@ export default function App({ appId, token }) {
   const [installed, setInstalled] = useState([])
   const [installedVersions, setInstalledVersions] = useState({})
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
+  const navDetailRef = useRef(null)  // pending detail item during nav-push ack
   const [pendingInstall, setPendingInstall] = useState(null)
   // pendingInstall: {item, isUpdate, existingId}
   const [pendingUninstall, setPendingUninstall] = useState(null)
@@ -949,7 +950,7 @@ export default function App({ appId, token }) {
         message: `${result.name} ${verb}${warnSuffix}! Reload Möbius to see it in the drawer.`,
       })
       setPendingInstall(null)
-      setDetail(null)
+      closeDetail()
     } catch (e) {
       setToast({ kind: 'error', message: e.message || String(e) })
       setPendingInstall(null)
@@ -993,7 +994,7 @@ export default function App({ appId, token }) {
       await refreshInstalled()
       setToast({ kind: 'success', message: `${app.name} uninstalled.` })
       setPendingUninstall(null)
-      setDetail(null)
+      closeDetail()
     } catch (e) {
       setToast({ kind: 'error', message: e.message || String(e) })
       setPendingUninstall(null)
@@ -1009,6 +1010,87 @@ export default function App({ appId, token }) {
     return () => clearTimeout(t)
   }, [toast])
 
+  // Integrate with the shell's back-stack so device back / swipe-back
+  // dismisses the detail view first instead of closing the whole app.
+  // Same protocol prod's klix-filter uses (moebius:nav-push / nav-pop
+  // / nav-back postMessages, validated by Shell.jsx). When the shell
+  // tells us the user navigated back, we clear `detail` ourselves; the
+  // shell has already popped its sentinel so we don't echo nav-pop.
+  useEffect(() => {
+    function onMessage(event) {
+      if (event.origin !== window.location.origin) return
+      if (event.data?.type === 'moebius:nav-back') {
+        setDetail(null)
+        navDetailRef.current = null
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
+  // openDetail: ask the shell to push a back-sentinel BEFORE rendering
+  // the detail view, so a swipe-back gesture snapshots the catalog as
+  // the under-page. The ack/rejected pair (with requestId) keeps
+  // concurrent pushes from cross-resolving.
+  const openDetail = useCallback(async (item) => {
+    if (!item || !item.manifest) return
+    if (detail) {
+      // Already in a detail view (defensive — UI shouldn't allow this).
+      // Swap without a second nav-push.
+      setDetail(item)
+      return
+    }
+    const requestId = `np-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    navDetailRef.current = item
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          window.removeEventListener('message', onAck)
+          reject(new Error('nav-push ack timeout'))
+        }, 5000)
+        function onAck(event) {
+          if (event.origin !== window.location.origin) return
+          if (event.data?.requestId !== requestId) return
+          if (event.data.type === 'moebius:nav-push-ack') {
+            clearTimeout(timer)
+            window.removeEventListener('message', onAck)
+            resolve()
+          } else if (event.data.type === 'moebius:nav-push-rejected') {
+            clearTimeout(timer)
+            window.removeEventListener('message', onAck)
+            reject(new Error('rejected'))
+          }
+        }
+        window.addEventListener('message', onAck)
+        window.parent.postMessage(
+          { type: 'moebius:nav-push', label: 'app-store-detail', requestId },
+          window.location.origin,
+        )
+      })
+      setDetail(item)
+    } catch {
+      // Older shell without ack support, or the host hung — fall back
+      // to rendering the detail anyway. The back gesture will close the
+      // whole app instead of the detail view, but the detail is still
+      // usable.
+      navDetailRef.current = null
+      setDetail(item)
+    }
+  }, [detail])
+
+  // closeDetail: tell the shell to pop its sentinel, then clear our
+  // own detail state. Idempotent — calling when detail is already
+  // null is a no-op.
+  const closeDetail = useCallback(() => {
+    if (!detail) return
+    window.parent.postMessage(
+      { type: 'moebius:nav-pop' },
+      window.location.origin,
+    )
+    setDetail(null)
+    navDetailRef.current = null
+  }, [detail])
+
   // Detail view replaces the main layout when set.
   if (detail) {
     return (
@@ -1017,7 +1099,7 @@ export default function App({ appId, token }) {
           item={detail}
           installed={installed}
           installedVersions={installedVersions}
-          onBack={() => setDetail(null)}
+          onBack={closeDetail}
           onInstall={handleInstall}
           onUninstall={handleUninstall}
           onOpenInstalled={handleOpenInstalled}
@@ -1075,12 +1157,12 @@ export default function App({ appId, token }) {
                 items={catalog}
                 installed={installed}
                 installedVersions={installedVersions}
-                onPick={(item) => item.manifest && setDetail(item)}
+                onPick={(item) => item.manifest && openDetail(item)}
                 onOpenInstalled={handleOpenInstalled}
               />
         )}
         {tab === 'url' && (
-          <FromUrlTab onPreview={(item) => setDetail(item)} />
+          <FromUrlTab onPreview={openDetail} />
         )}
       </div>
 
