@@ -122,7 +122,15 @@ const s = {
   cardVersion: {
     fontSize: '11px', color: 'var(--muted)',
     fontFamily: 'var(--mono, monospace)',
-    marginBottom: '8px',
+    marginBottom: '6px',
+  },
+  cardDesc: {
+    fontSize: '12px', color: 'var(--muted)', lineHeight: 1.35,
+    marginBottom: '10px',
+    display: '-webkit-box', WebkitLineClamp: 3,
+    WebkitBoxOrient: 'vertical', overflow: 'hidden',
+    textAlign: 'center',
+    minHeight: '48px',
   },
   cardBtn: (variant) => ({
     width: '100%',
@@ -662,6 +670,9 @@ function CatalogList({ items, installed, installedVersions, onPick, onOpenInstal
             <IconBox item={item} />
             <div style={s.cardName}>{m.name}</div>
             <div style={s.cardVersion}>v{m.version}</div>
+            {m.description ? (
+              <div style={s.cardDesc}>{m.description}</div>
+            ) : null}
             <button
               style={s.cardBtn(btnVariant)}
               onClick={handleBtnClick}
