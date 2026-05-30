@@ -11,6 +11,30 @@ const CATALOG = [
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-news/main/mobius.json',
     raw_base: 'https://raw.githubusercontent.com/mobius-os/app-news/main/',
   },
+  {
+    id: 'countries',
+    repo: 'mobius-os/app-countries',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-countries/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-countries/main/',
+  },
+  {
+    id: 'gym',
+    repo: 'mobius-os/app-gym',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-gym/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-gym/main/',
+  },
+  {
+    id: 'latex',
+    repo: 'mobius-os/app-latex',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-latex/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-latex/main/',
+  },
+  {
+    id: 'dreaming',
+    repo: 'mobius-os/app-dreaming',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-dreaming/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-dreaming/main/',
+  },
 ]
 
 // Hosts we recognize as common public manifest sources. The paste-a-URL
