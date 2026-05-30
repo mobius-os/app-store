@@ -548,6 +548,32 @@ function ConfirmModal({ manifest, raw_base, manifest_url, onConfirm, onCancel, b
   )
 }
 
+function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
+  // Browser confirm() doesn't render inside the AppCanvas iframe
+  // (sandbox lacks `allow-modals`), so we ship our own confirmation.
+  return (
+    <div style={s.modalBackdrop} onClick={busy ? null : onCancel}>
+      <div style={s.modal} onClick={e => e.stopPropagation()}>
+        <h3 style={s.modalTitle}>Uninstall {app.name}?</h3>
+        <p style={{ fontSize: '13px', lineHeight: 1.55, marginBottom: '16px', color: 'var(--muted)' }}>
+          This removes the app and its stored data. You can reinstall
+          it later from the store.
+        </p>
+        <div style={s.modalActions}>
+          <button style={{ ...s.dangerBtn, color: 'var(--text)' }}
+                  onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button style={{ ...s.bigBtn, background: 'var(--danger, #e5484d)' }}
+                  onClick={onConfirm} disabled={busy}>
+            {busy ? 'Uninstalling…' : 'Uninstall'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CatalogList({ items, installed, installedVersions, onPick }) {
   if (items.length === 0) {
     return <div style={s.empty}>No apps in the catalog yet.</div>
@@ -771,6 +797,11 @@ export default function App({ appId, token }) {
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
   const [pendingInstall, setPendingInstall] = useState(null)
   // pendingInstall: {item, isUpdate, existingId}
+  const [pendingUninstall, setPendingUninstall] = useState(null)
+  // pendingUninstall: the installed app row from /api/apps/.
+  // Browser confirm() is silently no-op'd inside the AppCanvas
+  // iframe (sandbox lacks `allow-modals`), so we stage the
+  // confirmation as in-app state and render our own modal.
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState(null)
   const [loadingCatalog, setLoadingCatalog] = useState(true)
@@ -852,8 +883,18 @@ export default function App({ appId, token }) {
     }
   }
 
-  const handleUninstall = async (app) => {
-    if (!confirm(`Uninstall ${app.name}? This removes the app and its data.`)) return
+  // Stage the uninstall — DetailView's Uninstall button calls this,
+  // and the modal's Confirm calls confirmUninstall to actually run
+  // the DELETE. Splitting these out is required because the iframe
+  // sandbox blocks window.confirm(); see pendingUninstall comment.
+  const handleUninstall = (app) => {
+    setPendingUninstall(app)
+  }
+
+  const confirmUninstall = async () => {
+    const app = pendingUninstall
+    if (!app) return
+    setBusy(true)
     try {
       const r = await fetch(`/api/apps/${app.id}`, {
         method: 'DELETE',
@@ -876,9 +917,13 @@ export default function App({ appId, token }) {
       await saveInstalledVersions(appId, token, next)
       await refreshInstalled()
       setToast({ kind: 'success', message: `${app.name} uninstalled.` })
+      setPendingUninstall(null)
       setDetail(null)
     } catch (e) {
       setToast({ kind: 'error', message: e.message || String(e) })
+      setPendingUninstall(null)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -910,6 +955,14 @@ export default function App({ appId, token }) {
             onCancel={() => !busy && setPendingInstall(null)}
             busy={busy}
             isUpdate={pendingInstall.isUpdate}
+          />
+        )}
+        {pendingUninstall && (
+          <UninstallConfirmModal
+            app={pendingUninstall}
+            busy={busy}
+            onConfirm={confirmUninstall}
+            onCancel={() => !busy && setPendingUninstall(null)}
           />
         )}
         {toast && (
@@ -963,6 +1016,15 @@ export default function App({ appId, token }) {
           onCancel={() => !busy && setPendingInstall(null)}
           busy={busy}
           isUpdate={pendingInstall.isUpdate}
+        />
+      )}
+
+      {pendingUninstall && (
+        <UninstallConfirmModal
+          app={pendingUninstall}
+          busy={busy}
+          onConfirm={confirmUninstall}
+          onCancel={() => !busy && setPendingUninstall(null)}
         />
       )}
 
