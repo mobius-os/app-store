@@ -82,16 +82,13 @@ function canonicalIdentityKey(url, manifestId) {
 }
 
 // Look up an installed App row that corresponds to the catalog entry.
-// Tries the canonical key first (post-71ea870 installs), then falls
-// back to the literal catalog URL (legacy rows pre-canonicalisation).
+// Every installed row carries the canonical identity key (the backend
+// canonicalises on every install + update path); matching by canonical
+// key is the single source of truth.
 function findInstalled(installed, item) {
   const manifestId = item.manifest?.id || item.id
   const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
-  return (
-    installed.find(a => a.manifest_url === canonical) ||
-    installed.find(a => a.manifest_url === item.manifest_url) ||
-    null
-  )
+  return installed.find(a => a.manifest_url === canonical) || null
 }
 
 const s = {
