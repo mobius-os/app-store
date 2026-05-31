@@ -330,24 +330,71 @@ const s = {
     marginBottom: '8px',
   },
   permissionRow: {
-    padding: '10px 12px', background: 'var(--surface)',
+    display: 'flex', gap: '12px',
+    padding: '12px', background: 'var(--surface)',
     border: '1px solid var(--border)', borderRadius: '8px',
-    marginBottom: '6px', fontSize: '13px', lineHeight: 1.5,
+    marginBottom: '8px', fontSize: '13px', lineHeight: 1.5,
   },
+  permRowMain: { flex: 1, minWidth: 0 },
   permLabel: {
     fontWeight: 600, color: 'var(--text)',
   },
   permDetail: { color: 'var(--muted)' },
+  // A muted helper line under the permission summary — explains, in
+  // plain language, what the manifest value actually grants. The
+  // detail prose comes from PERM_EXPLAIN; this row prefixes a short
+  // capability tag so "Read" / "Write" / "None" reads at a glance.
+  permTag: (level) => ({
+    flexShrink: 0,
+    padding: '2px 8px', borderRadius: '999px',
+    fontSize: '11px', fontWeight: 600,
+    fontFamily: 'var(--font)', letterSpacing: '0.02em',
+    textTransform: 'uppercase',
+    background: level === 'none'
+      ? 'color-mix(in srgb, var(--muted) 14%, transparent)'
+      : level === 'read'
+      ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+      : 'color-mix(in srgb, var(--accent) 22%, transparent)',
+    color: level === 'none' ? 'var(--muted)' : 'var(--accent)',
+    border: '1px solid',
+    borderColor: level === 'none' ? 'var(--border)' : 'var(--accent)',
+    alignSelf: 'flex-start',
+  }),
   scheduleRow: {
-    padding: '10px 12px', background: 'var(--surface)',
+    padding: '12px', background: 'var(--surface)',
     border: '1px solid var(--border)', borderRadius: '8px',
     fontSize: '13px', lineHeight: 1.5,
   },
-  esmWarn: {
-    padding: '10px 12px',
-    background: 'var(--accent-dim, rgba(139,108,247,0.15))',
-    border: '1px solid var(--accent)', borderRadius: '8px',
+  scheduleMain: {
+    fontWeight: 600, color: 'var(--text)',
+  },
+  scheduleNote: {
+    color: 'var(--muted)', marginTop: '4px', fontSize: '12px',
+  },
+  // External-libs disclosure — was an alarming purple-bordered panel.
+  // The info is useful; the framing isn't. Now reads as a quiet note
+  // anchored on a muted surface, with the dep list mono-formatted.
+  esmNote: {
+    padding: '12px', background: 'var(--surface)',
+    border: '1px solid var(--border)', borderRadius: '8px',
     fontSize: '13px', lineHeight: 1.5,
+    color: 'var(--muted)',
+  },
+  esmDepList: {
+    fontFamily: 'var(--mono, monospace)',
+    fontSize: '12px',
+    color: 'var(--text)',
+    marginTop: '6px',
+    wordBreak: 'break-all',
+  },
+  // Same shape as `esmNote` but used in the modal where the contrast
+  // around the action still needs a small visual flag — kept here so
+  // the modal copy can render in one style block.
+  esmModalNote: {
+    padding: '12px', background: 'var(--surface)',
+    border: '1px solid var(--border)', borderRadius: '8px',
+    fontSize: '13px', lineHeight: 1.5,
+    color: 'var(--muted)',
   },
   hostWarn: {
     display: 'flex', gap: '10px', alignItems: 'flex-start',
@@ -372,20 +419,36 @@ const s = {
   },
   detailFooter: {
     padding: '16px', borderTop: '1px solid var(--border)',
-    display: 'flex', gap: '8px', flexShrink: 0,
-    background: 'var(--bg)',
+    display: 'flex', flexDirection: 'column', gap: '8px',
+    flexShrink: 0, background: 'var(--bg)',
   },
   bigBtn: {
-    flex: 1, padding: '12px 16px', borderRadius: '10px',
+    width: '100%', padding: '12px 16px', borderRadius: '10px',
     border: 'none', background: 'var(--accent)', color: '#fff',
     fontSize: '15px', fontWeight: 600, cursor: 'pointer',
     fontFamily: 'var(--font)',
+    minHeight: '44px',
+    transition: 'background 150ms, transform 150ms',
   },
   dangerBtn: {
     padding: '12px 16px', borderRadius: '10px',
     border: '1px solid var(--border)', background: 'transparent',
     color: 'var(--danger)', fontSize: '14px', fontWeight: 600,
     cursor: 'pointer', fontFamily: 'var(--font)',
+    minHeight: '44px',
+  },
+  // Subordinate link-style button for "Uninstall" when the primary CTA
+  // is already "Open App". Avoids the visual equal-weight of two solid
+  // buttons stacked — Uninstall is rare and not the user's main path.
+  secondaryLink: {
+    alignSelf: 'center',
+    padding: '12px 16px', borderRadius: '8px',
+    border: 'none', background: 'transparent',
+    color: 'var(--muted)', fontSize: '13px', fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'var(--font)',
+    textDecoration: 'underline',
+    textUnderlineOffset: '2px',
+    minHeight: '44px',
   },
   // Modal
   modalBackdrop: {
@@ -402,9 +465,14 @@ const s = {
   modalTitle: {
     fontSize: '18px', fontWeight: 700, margin: '0 0 12px',
   },
+  // Side-by-side action buttons in modals. Children get `flex: 1`
+  // applied directly (via the helper below) since the canonical
+  // `bigBtn` and `dangerBtn` styles are also used full-width in the
+  // detail footer — flex:1 only belongs in the modal context.
   modalActions: {
     display: 'flex', gap: '8px', marginTop: '20px',
   },
+  modalBtn: { flex: 1, width: 'auto' },
   toast: {
     position: 'fixed', bottom: '16px', left: '16px', right: '16px',
     padding: '14px 16px', background: 'var(--surface)',
@@ -430,17 +498,44 @@ const s = {
   },
 }
 
-// Human-language explanations for the permission strings.
+// Human-language explanations for the permission strings. `tag` is the
+// 1-word badge that sits next to each row's title; `summary` is the
+// short user-facing prose; `hint` is the muted helper line that spells
+// out the practical consequence the user is actually granting.
 const PERM_EXPLAIN = {
   cross_app_access: {
-    none: 'Cannot touch other apps\' data.',
-    read: 'Can read other apps\' stored data.',
-    write: 'Can read and write other apps\' stored data.',
+    none: {
+      tag: 'None',
+      summary: 'Cannot read or write other apps\' data.',
+      hint: 'Keeps this app entirely sandboxed — it only sees its own files.',
+    },
+    read: {
+      tag: 'Read',
+      summary: 'Reads other apps\' stored data.',
+      hint: 'Can browse files written by your other mini-apps, but cannot change them.',
+    },
+    write: {
+      tag: 'Read + write',
+      summary: 'Reads and writes other apps\' stored data.',
+      hint: 'Can edit, add, or delete files belonging to your other mini-apps.',
+    },
   },
   share_with_apps: {
-    none: 'Other apps cannot access this app\'s data.',
-    read: 'Other apps can read (but not modify) this app\'s data.',
-    write: 'Other apps can read and write this app\'s data.',
+    none: {
+      tag: 'Private',
+      summary: 'Other apps cannot access this app\'s data.',
+      hint: 'Anything this app stores stays inside this app.',
+    },
+    read: {
+      tag: 'Readable',
+      summary: 'Other apps can read this app\'s data.',
+      hint: 'Other mini-apps you install can see this app\'s files but cannot modify them.',
+    },
+    write: {
+      tag: 'Read + write',
+      summary: 'Other apps can read and write this app\'s data.',
+      hint: 'Other mini-apps can change or delete files this app stores.',
+    },
   },
 }
 
@@ -612,6 +707,45 @@ async function installApp({ manifest_url, manifest, raw_base, token }) {
   }
 }
 
+// Best-effort repo path extracted from a manifest URL. Returns e.g.
+// "mobius-os/app-news" for raw.githubusercontent.com URLs, or '' if
+// the URL isn't recognisably a public-repo raw file. Used in the
+// confirm modal subtitle so the user sees both the app's name AND the
+// repo they're agreeing to install from, in one tight line.
+function repoFromManifestUrl(url) {
+  if (!url) return ''
+  try {
+    const u = new URL(url)
+    const parts = u.pathname.split('/').filter(Boolean)
+    if (u.hostname === 'raw.githubusercontent.com' && parts.length >= 2) {
+      return `${parts[0]}/${parts[1]}`
+    }
+    // gitlab/codeberg/sourcehut all use /owner/repo/raw/... — same shape
+    if (parts.length >= 2) return `${parts[0]}/${parts[1]}`
+  } catch {}
+  return ''
+}
+
+// One permission row, shared between the detail view and the install
+// modal. Builds a flex layout with the title + summary on the left and
+// a small capability tag on the right; the hint line under the summary
+// spells out what the user is actually granting in plain language.
+function PermissionRow({ label, level, info }) {
+  if (!info) return null
+  return (
+    <div style={s.permissionRow} title={info.hint}>
+      <div style={s.permRowMain}>
+        <div style={s.permLabel}>{label}</div>
+        <div style={s.permDetail}>{info.summary}</div>
+        <div style={{ ...s.permDetail, fontSize: '12px', marginTop: '4px' }}>
+          {info.hint}
+        </div>
+      </div>
+      <span style={s.permTag(level)}>{info.tag}</span>
+    </div>
+  )
+}
+
 function ConfirmModal({ manifest, raw_base, manifest_url, onConfirm, onCancel, busy, isUpdate }) {
   const ca = manifest.permissions?.cross_app_access || 'none'
   const sw = manifest.permissions?.share_with_apps || 'none'
@@ -625,42 +759,46 @@ function ConfirmModal({ manifest, raw_base, manifest_url, onConfirm, onCancel, b
   if (unfamiliarHost) {
     try { warnHost = new URL(manifest_url).hostname } catch { warnHost = manifest_url }
   }
+  const repoPath = repoFromManifestUrl(manifest_url)
   return (
     <div style={s.modalBackdrop} onClick={busy ? null : onCancel}>
       <div style={s.modal} onClick={e => e.stopPropagation()}>
         <h3 style={s.modalTitle}>
-          {isUpdate ? 'Update' : 'Install'} {manifest.name}?
+          {isUpdate ? 'Update' : 'Install'} {manifest.name}
+          {repoPath ? ` from ${repoPath}` : ''}?
         </h3>
         <div style={{ ...s.heroMeta, marginBottom: '12px' }}>
-          v{manifest.version} {manifest.author ? `· by ${manifest.author}` : ''}
+          v{manifest.version}{manifest.author ? ` · by ${manifest.author}` : ''}
         </div>
         <p style={{ fontSize: '13px', lineHeight: 1.55, marginBottom: '16px', color: 'var(--muted)' }}>
           {manifest.description}
         </p>
 
         <div style={s.sectionLabel}>What this app can do</div>
-        <div style={s.permissionRow}>
-          <div style={s.permLabel}>Other apps' data</div>
-          <div style={s.permDetail}>{PERM_EXPLAIN.cross_app_access[ca]}</div>
-        </div>
-        <div style={s.permissionRow}>
-          <div style={s.permLabel}>Sharing with other apps</div>
-          <div style={s.permDetail}>{PERM_EXPLAIN.share_with_apps[sw]}</div>
-        </div>
+        <PermissionRow
+          label="Other apps' data"
+          level={ca}
+          info={PERM_EXPLAIN.cross_app_access[ca]}
+        />
+        <PermissionRow
+          label="Sharing with other apps"
+          level={sw}
+          info={PERM_EXPLAIN.share_with_apps[sw]}
+        />
 
         {hasSchedule && (
           <>
             <div style={{ ...s.sectionLabel, marginTop: '16px' }}>Schedule</div>
             <div style={s.scheduleRow}>
-              {humanCron(manifest.schedule.default)}
+              <div style={s.scheduleMain}>{humanCron(manifest.schedule.default)}</div>
               {manifest.schedule.user_configurable && (
-                <div style={{ ...s.permDetail, marginTop: '4px' }}>
-                  You'll be able to change the time from the app's settings.
+                <div style={s.scheduleNote}>
+                  Time is configurable from the app's settings after install.
                 </div>
               )}
-              <div style={{ ...s.permDetail, marginTop: '6px', fontSize: '11px' }}>
-                Note: cron registration is a manual step today. The store
-                will record the request; ask the Möbius agent to register it.
+              <div style={s.scheduleNote}>
+                Cron registration is a manual step today — the store records
+                the request and the Möbius agent can register it for you.
               </div>
             </div>
           </>
@@ -669,11 +807,10 @@ function ConfirmModal({ manifest, raw_base, manifest_url, onConfirm, onCancel, b
         {esmDeps.length > 0 && (
           <>
             <div style={{ ...s.sectionLabel, marginTop: '16px' }}>External libraries</div>
-            <div style={s.esmWarn}>
-              This app loads code from esm.sh on first run:
-              <div style={{ fontFamily: 'var(--mono, monospace)', marginTop: '6px', fontSize: '12px' }}>
-                {esmDeps.join(', ')}
-              </div>
+            <div style={s.esmModalNote}>
+              Loads {esmDeps.length === 1 ? 'one library' : `${esmDeps.length} libraries`} from
+              {' '}esm.sh on first open. Fetched once and cached locally afterwards.
+              <div style={s.esmDepList}>{esmDeps.join(', ')}</div>
             </div>
           </>
         )}
@@ -692,11 +829,11 @@ function ConfirmModal({ manifest, raw_base, manifest_url, onConfirm, onCancel, b
         )}
 
         <div style={s.modalActions}>
-          <button style={{ ...s.dangerBtn, color: 'var(--text)' }}
+          <button style={{ ...s.dangerBtn, ...s.modalBtn, color: 'var(--text)' }}
                   onClick={onCancel} disabled={busy}>
             Cancel
           </button>
-          <button style={s.bigBtn} onClick={onConfirm} disabled={busy}>
+          <button style={{ ...s.bigBtn, ...s.modalBtn }} onClick={onConfirm} disabled={busy}>
             {busy ? (isUpdate ? 'Updating…' : 'Installing…') : (isUpdate ? 'Update' : 'Install')}
           </button>
         </div>
@@ -717,11 +854,11 @@ function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
           it later from the store.
         </p>
         <div style={s.modalActions}>
-          <button style={{ ...s.dangerBtn, color: 'var(--text)' }}
+          <button style={{ ...s.dangerBtn, ...s.modalBtn, color: 'var(--text)' }}
                   onClick={onCancel} disabled={busy}>
             Cancel
           </button>
-          <button style={{ ...s.bigBtn, background: 'var(--danger, #e5484d)' }}
+          <button style={{ ...s.bigBtn, ...s.modalBtn, background: 'var(--danger, #e5484d)' }}
                   onClick={onConfirm} disabled={busy}>
             {busy ? 'Uninstalling…' : 'Uninstall'}
           </button>
@@ -979,28 +1116,39 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
 
         <div style={s.detailSection}>
           <div style={s.sectionLabel}>What this app can do</div>
-          <div style={s.permissionRow}>
-            <div style={s.permLabel}>Other apps' data</div>
-            <div style={s.permDetail}>{PERM_EXPLAIN.cross_app_access[ca]}</div>
-          </div>
-          <div style={s.permissionRow}>
-            <div style={s.permLabel}>Sharing with other apps</div>
-            <div style={s.permDetail}>{PERM_EXPLAIN.share_with_apps[sw]}</div>
-          </div>
+          <PermissionRow
+            label="Other apps' data"
+            level={ca}
+            info={PERM_EXPLAIN.cross_app_access[ca]}
+          />
+          <PermissionRow
+            label="Sharing with other apps"
+            level={sw}
+            info={PERM_EXPLAIN.share_with_apps[sw]}
+          />
         </div>
 
         {m.schedule && (
           <div style={s.detailSection}>
             <div style={s.sectionLabel}>Schedule</div>
-            <div style={s.scheduleRow}>{humanCron(m.schedule.default)}</div>
+            <div style={s.scheduleRow}>
+              <div style={s.scheduleMain}>{humanCron(m.schedule.default)}</div>
+              {m.schedule.user_configurable && (
+                <div style={s.scheduleNote}>
+                  Time is configurable from the app's settings after install.
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {m.runtime?.esm_deps?.length > 0 && (
           <div style={s.detailSection}>
             <div style={s.sectionLabel}>External libraries</div>
-            <div style={s.esmWarn}>
-              Loads from esm.sh on first run: {m.runtime.esm_deps.join(', ')}
+            <div style={s.esmNote}>
+              Loads {m.runtime.esm_deps.length === 1 ? 'one library' : `${m.runtime.esm_deps.length} libraries`}
+              {' '}from esm.sh on first open. Fetched once and cached locally afterwards.
+              <div style={s.esmDepList}>{m.runtime.esm_deps.join(', ')}</div>
             </div>
           </div>
         )}
@@ -1025,19 +1173,14 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
 
       </div>
 
+      {/* Footer hierarchy by state:
+          - not installed: single "Install" primary
+          - installed + update available: "Update to vX" primary (green tint)
+            on top, "Uninstall" muted text link below
+          - installed (up-to-date): "Open App" primary on top, "Uninstall"
+            muted text link below — Open is the user's main path, Uninstall
+            shouldn't compete visually for the tap. */}
       <div style={s.detailFooter}>
-        {storeInstalled && !hasUpdate && (
-          <button style={s.dangerBtn} onClick={() => onUninstall(storeInstalled)}>
-            Uninstall
-          </button>
-        )}
-        {/* Three footer button states:
-            - installed (no update): "Open App" → moebius:open-app via onOpenInstalled
-            - installed + update available: "Update to vX" → onInstall(isUpdate)
-            - not installed: "Install" → onInstall(isUpdate=false)
-            The disabled "Already installed" pill is gone — it was a
-            dead-end and the whole point of this view is that the user
-            can act on the app. */}
         <button
           style={{
             ...s.bigBtn,
@@ -1049,10 +1192,15 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
             else onInstall(item, { isUpdate: false })
           }}
         >
-          {hasUpdate ? 'Update to v' + m.version
+          {hasUpdate ? `Update to v${m.version}`
             : storeInstalled ? 'Open App'
             : 'Install'}
         </button>
+        {storeInstalled && (
+          <button style={s.secondaryLink} onClick={() => onUninstall(storeInstalled)}>
+            Uninstall
+          </button>
+        )}
       </div>
     </>
   )
