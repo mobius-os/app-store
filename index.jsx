@@ -401,22 +401,28 @@ const s = {
   // plain language, what the manifest value actually grants. The
   // detail prose comes from PERM_EXPLAIN; this row prefixes a short
   // capability tag so "Read" / "Write" / "None" reads at a glance.
-  permTag: (level) => ({
-    flexShrink: 0,
-    padding: '2px 8px', borderRadius: '999px',
-    fontSize: '11px', fontWeight: 600,
-    fontFamily: 'var(--font)', letterSpacing: '0.02em',
-    textTransform: 'uppercase',
-    background: level === 'none'
-      ? 'color-mix(in srgb, var(--muted) 14%, transparent)'
-      : level === 'read'
-      ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
-      : 'color-mix(in srgb, var(--accent) 22%, transparent)',
-    color: level === 'none' ? 'var(--muted)' : 'var(--accent)',
-    border: '1px solid',
-    borderColor: level === 'none' ? 'var(--border)' : 'var(--accent)',
-    alignSelf: 'flex-start',
-  }),
+  permTag: (level) => {
+    // Treat 'no' the same as 'none' so the manage_apps row's "off"
+    // state renders with the muted styling rather than the accent
+    // colour used for granted permissions.
+    const muted = level === 'none' || level === 'no'
+    return {
+      flexShrink: 0,
+      padding: '2px 8px', borderRadius: '999px',
+      fontSize: '11px', fontWeight: 600,
+      fontFamily: 'var(--font)', letterSpacing: '0.02em',
+      textTransform: 'uppercase',
+      background: muted
+        ? 'color-mix(in srgb, var(--muted) 14%, transparent)'
+        : level === 'read'
+        ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+        : 'color-mix(in srgb, var(--accent) 22%, transparent)',
+      color: muted ? 'var(--muted)' : 'var(--accent)',
+      border: '1px solid',
+      borderColor: muted ? 'var(--border)' : 'var(--accent)',
+      alignSelf: 'flex-start',
+    }
+  },
   scheduleRow: {
     padding: '12px', background: 'var(--surface)',
     border: '1px solid var(--border)', borderRadius: '8px',
@@ -565,12 +571,21 @@ const PERM_EXPLAIN = {
       hint: 'Can browse files written by your other mini-apps, but cannot change them.',
     },
     write: {
-      tag: 'Read + write + manage',
-      summary: 'Reads + writes other apps\' data, and can install or uninstall apps on your behalf.',
-      // The install authority is currently overloaded onto cross_app_access='write'
-      // pending the dedicated `manage_apps` permission in PM ticket 073. The hint
-      // below makes the consent informed even before that separation lands.
-      hint: 'Can edit, add, or delete files in other mini-apps. Also lets the app drive Install and Uninstall — grant only to apps you trust to manage your install set (e.g. the App Store itself).',
+      tag: 'Read + write',
+      summary: 'Reads and writes other apps\' stored data.',
+      hint: 'Can edit, add, or delete files belonging to your other mini-apps.',
+    },
+  },
+  manage_apps: {
+    true: {
+      tag: 'Manages apps',
+      summary: 'Can install and uninstall apps on your behalf.',
+      hint: 'Lets the app call Install and Uninstall directly — grant only to apps you trust to manage your install set (e.g. the App Store itself).',
+    },
+    false: {
+      tag: 'No',
+      summary: 'Cannot install or uninstall apps.',
+      hint: 'This app cannot add or remove apps from your install set.',
     },
   },
   share_with_apps: {
@@ -1077,6 +1092,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
   const ca = m.permissions?.cross_app_access || 'none'
   const sw = m.permissions?.share_with_apps || 'none'
+  const ma = !!m.permissions?.manage_apps
   // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
   // already resolve to trusted hosts, so they pass silently. Invalid
   // URLs fall through to the warn path on purpose. This is now the
@@ -1117,6 +1133,13 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
             level={sw}
             info={PERM_EXPLAIN.share_with_apps[sw]}
           />
+          {('manage_apps' in (m.permissions || {})) && (
+            <PermissionRow
+              label="Install authority"
+              level={ma ? 'yes' : 'no'}
+              info={PERM_EXPLAIN.manage_apps[String(ma)]}
+            />
+          )}
         </div>
 
         {m.schedule && (
