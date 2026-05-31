@@ -81,11 +81,12 @@ const s = {
     border: '1px solid var(--border)',
   },
   tab: (active) => ({
-    flex: 1, padding: '8px 16px', borderRadius: '8px', border: 'none',
-    cursor: 'pointer', fontSize: '13px', fontWeight: 500,
+    flex: 1, padding: '10px 16px', borderRadius: '8px', border: 'none',
+    cursor: 'pointer', fontSize: '14px', fontWeight: 500,
     background: active ? 'var(--accent)' : 'transparent',
     color: active ? '#fff' : 'var(--muted)',
-    transition: 'all 0.15s', fontFamily: 'var(--font)',
+    transition: 'background 150ms, color 150ms', fontFamily: 'var(--font)',
+    minHeight: '44px',
   }),
   scroll: {
     flex: 1, overflow: 'auto', padding: '16px',
@@ -240,27 +241,13 @@ const s = {
     minHeight: '32px',
     transition: 'background 150ms',
   },
-  // kept for the detail view's primary/secondary buttons
-  cardBtn: (variant) => ({
-    width: '100%',
-    padding: '8px 12px', borderRadius: '8px',
-    border: variant === 'secondary' ? '1px solid var(--border)' : 'none',
-    background: variant === 'update' ? 'var(--green)'
-              : variant === 'secondary' ? 'transparent'
-              : variant === 'warn' ? 'var(--accent)'
-              : 'var(--accent)',
-    color: variant === 'secondary' ? 'var(--text)' : '#fff',
-    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-    fontFamily: 'var(--font)',
-    transition: 'background 0.15s',
-  }),
   // From URL tab
   urlForm: {
     background: 'var(--surface)', border: '1px solid var(--border)',
     borderRadius: '12px', padding: '16px',
   },
   urlLabel: {
-    fontSize: '13px', fontWeight: 600, marginBottom: '8px',
+    fontSize: '14px', fontWeight: 600, marginBottom: '8px',
     display: 'block',
   },
   urlHint: {
@@ -312,10 +299,11 @@ const s = {
     fontFamily: 'var(--mono, monospace)', fontSize: '11px',
   },
   errorBox: {
-    background: 'var(--accent-dim, rgba(255,80,80,0.1))',
+    background: 'color-mix(in srgb, var(--danger, #e5484d) 12%, transparent)',
     color: 'var(--danger)', padding: '12px',
-    borderRadius: '8px', fontSize: '13px',
+    borderRadius: '8px', fontSize: '14px',
     marginTop: '12px', lineHeight: 1.5,
+    border: '1px solid color-mix(in srgb, var(--danger, #e5484d) 40%, transparent)',
   },
   // Detail view
   detailHeader: {
@@ -325,15 +313,20 @@ const s = {
   },
   backBtn: {
     background: 'none', border: 'none', color: 'var(--accent)',
-    fontSize: '15px', cursor: 'pointer', padding: '6px 8px',
-    fontFamily: 'var(--font)',
+    fontSize: '14px', cursor: 'pointer', padding: '8px 12px',
+    fontFamily: 'var(--font)', fontWeight: 500,
+    minHeight: '44px',
+    display: 'inline-flex', alignItems: 'center', gap: '4px',
+    margin: '-8px -8px',  // compensate so the visible affordance still aligns
+    borderRadius: '8px',
+    transition: 'background 150ms',
   },
   hero: {
     display: 'flex', alignItems: 'center', gap: '16px',
-    marginBottom: '20px',
+    marginBottom: '24px',
   },
   heroIcon: {
-    width: '72px', height: '72px', borderRadius: '14px',
+    width: '72px', height: '72px', borderRadius: '16px',
     background: 'var(--surface2)', display: 'flex',
     alignItems: 'center', justifyContent: 'center',
     flexShrink: 0, overflow: 'hidden',
@@ -353,7 +346,7 @@ const s = {
     fontSize: '14px', lineHeight: 1.55, color: 'var(--text)',
     marginBottom: '24px',
   },
-  detailSection: { marginBottom: '20px' },
+  detailSection: { marginBottom: '24px' },
   sectionLabel: {
     fontSize: '11px', fontWeight: 600, color: 'var(--muted)',
     textTransform: 'uppercase', letterSpacing: '0.06em',
@@ -363,7 +356,7 @@ const s = {
     display: 'flex', gap: '12px',
     padding: '12px', background: 'var(--surface)',
     border: '1px solid var(--border)', borderRadius: '8px',
-    marginBottom: '8px', fontSize: '13px', lineHeight: 1.5,
+    marginBottom: '8px', fontSize: '14px', lineHeight: 1.5,
   },
   permRowMain: { flex: 1, minWidth: 0 },
   permLabel: {
@@ -393,7 +386,7 @@ const s = {
   scheduleRow: {
     padding: '12px', background: 'var(--surface)',
     border: '1px solid var(--border)', borderRadius: '8px',
-    fontSize: '13px', lineHeight: 1.5,
+    fontSize: '14px', lineHeight: 1.5,
   },
   scheduleMain: {
     fontWeight: 600, color: 'var(--text)',
@@ -407,7 +400,7 @@ const s = {
   esmNote: {
     padding: '12px', background: 'var(--surface)',
     border: '1px solid var(--border)', borderRadius: '8px',
-    fontSize: '13px', lineHeight: 1.5,
+    fontSize: '14px', lineHeight: 1.5,
     color: 'var(--muted)',
   },
   esmDepList: {
@@ -423,15 +416,15 @@ const s = {
   esmModalNote: {
     padding: '12px', background: 'var(--surface)',
     border: '1px solid var(--border)', borderRadius: '8px',
-    fontSize: '13px', lineHeight: 1.5,
+    fontSize: '14px', lineHeight: 1.5,
     color: 'var(--muted)',
   },
   hostWarn: {
-    display: 'flex', gap: '10px', alignItems: 'flex-start',
-    padding: '10px 12px', marginBottom: '12px',
+    display: 'flex', gap: '12px', alignItems: 'flex-start',
+    padding: '12px', marginBottom: '12px',
     background: 'var(--accent-dim, rgba(139,108,247,0.15))',
     border: '1px solid var(--accent)', borderRadius: '8px',
-    fontSize: '13px', lineHeight: 1.5,
+    fontSize: '14px', lineHeight: 1.5,
   },
   hostWarnIcon: {
     fontSize: '16px', lineHeight: 1.2, color: 'var(--accent)',
@@ -455,7 +448,7 @@ const s = {
   bigBtn: {
     width: '100%', padding: '12px 16px', borderRadius: '10px',
     border: 'none', background: 'var(--accent)', color: '#fff',
-    fontSize: '15px', fontWeight: 600, cursor: 'pointer',
+    fontSize: '14px', fontWeight: 600, cursor: 'pointer',
     fontFamily: 'var(--font)',
     minHeight: '44px',
     transition: 'background 150ms, transform 150ms',
@@ -487,36 +480,38 @@ const s = {
     zIndex: 100,
   },
   modal: {
-    background: 'var(--surface)', borderRadius: '14px 14px 0 0',
-    width: '100%', maxWidth: '480px', padding: '20px',
+    background: 'var(--surface)', borderRadius: '16px 16px 0 0',
+    width: '100%', maxWidth: '480px', padding: '24px',
     maxHeight: '85vh', overflowY: 'auto',
     borderTop: '1px solid var(--border)',
   },
   modalTitle: {
-    fontSize: '18px', fontWeight: 700, margin: '0 0 12px',
+    fontSize: '16px', fontWeight: 700, margin: '0 0 12px',
+    letterSpacing: '-0.01em',
   },
   // Side-by-side action buttons in modals. Children get `flex: 1`
   // applied directly (via the helper below) since the canonical
   // `bigBtn` and `dangerBtn` styles are also used full-width in the
   // detail footer — flex:1 only belongs in the modal context.
   modalActions: {
-    display: 'flex', gap: '8px', marginTop: '20px',
+    display: 'flex', gap: '8px', marginTop: '24px',
   },
   modalBtn: { flex: 1, width: 'auto' },
   toast: {
     position: 'fixed', bottom: '16px', left: '16px', right: '16px',
-    padding: '14px 16px', background: 'var(--surface)',
-    border: '1px solid var(--accent)', borderRadius: '10px',
-    fontSize: '13px', lineHeight: 1.5,
+    padding: '12px 16px', background: 'var(--surface)',
+    border: '1px solid var(--accent)', borderRadius: '12px',
+    fontSize: '14px', lineHeight: 1.5,
     boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
     display: 'flex', alignItems: 'center', gap: '12px',
     zIndex: 200,
   },
   toastBtn: {
-    padding: '6px 12px', borderRadius: '8px', border: 'none',
+    padding: '8px 16px', borderRadius: '8px', border: 'none',
     background: 'var(--accent)', color: '#fff',
     fontSize: '12px', fontWeight: 600, cursor: 'pointer',
     fontFamily: 'var(--font)', flexShrink: 0,
+    minHeight: '32px',
   },
   empty: {
     textAlign: 'center', padding: '40px 20px',
@@ -524,7 +519,7 @@ const s = {
   },
   spinner: {
     textAlign: 'center', padding: '40px 20px',
-    color: 'var(--muted)', fontSize: '13px',
+    color: 'var(--muted)', fontSize: '14px',
   },
 }
 
@@ -800,7 +795,7 @@ function ConfirmModal({ manifest, raw_base, manifest_url, onConfirm, onCancel, b
         <div style={{ ...s.heroMeta, marginBottom: '12px' }}>
           v{manifest.version}{manifest.author ? ` · by ${manifest.author}` : ''}
         </div>
-        <p style={{ fontSize: '13px', lineHeight: 1.55, marginBottom: '16px', color: 'var(--muted)' }}>
+        <p style={{ fontSize: '14px', lineHeight: 1.5, marginBottom: '16px', color: 'var(--muted)' }}>
           {manifest.description}
         </p>
 
@@ -879,7 +874,7 @@ function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
     <div style={s.modalBackdrop} onClick={busy ? null : onCancel}>
       <div style={s.modal} onClick={e => e.stopPropagation()}>
         <h3 style={s.modalTitle}>Uninstall {app.name}?</h3>
-        <p style={{ fontSize: '13px', lineHeight: 1.55, marginBottom: '16px', color: 'var(--muted)' }}>
+        <p style={{ fontSize: '14px', lineHeight: 1.5, marginBottom: '16px', color: 'var(--muted)' }}>
           This removes the app and its stored data. You can reinstall
           it later from the store.
         </p>
@@ -1239,7 +1234,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
         {storeInstalled && (
           <div style={s.detailSection}>
             <div style={s.sectionLabel}>Installed</div>
-            <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
+            <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
               Currently installed: v{installedVer || 'unknown'}.
             </div>
           </div>
