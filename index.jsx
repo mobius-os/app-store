@@ -71,7 +71,11 @@ function isTrustedHost(url) {
 //   4. append "#manifest-id=<manifest_id>"
 function canonicalIdentityKey(url, manifestId) {
   if (!url || !manifestId) return ''
-  let base = String(url).split('#', 1)[0]
+  // Strip BOTH fragment AND query string — match the backend's
+  // _canonical_identity_key in install.py. Without ?-strip, two
+  // paste-a-URL flows for the same app (with vs without a tracking
+  // param) would canonicalise to different keys.
+  let base = String(url).split('#', 1)[0].split('?', 1)[0]
   if (base.endsWith('/mobius.json')) base = base.slice(0, -'/mobius.json'.length)
   base = base.replace(/\/+$/, '')
   return `${base}#manifest-id=${manifestId}`
