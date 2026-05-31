@@ -1312,9 +1312,13 @@ export default function App({ appId, token }) {
       const warnSuffix = result.warnings.length
         ? ` (with notes: ${result.warnings.join('; ')})`
         : ''
+      // No "reload to see it in the drawer" hint — the backend emits an
+      // app_updated SSE event after install/update, and the shell listens
+      // for that and refreshes its drawer automatically. The toast just
+      // confirms what happened.
       setToast({
         kind: 'success',
-        message: `${result.name} ${verb}${warnSuffix}! Reload Möbius to see it in the drawer.`,
+        message: `${result.name} ${verb}${warnSuffix}.`,
       })
       closeDetail()
     } catch (e) {
