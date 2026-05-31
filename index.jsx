@@ -56,6 +56,40 @@ function isTrustedHost(url) {
   }
 }
 
+// Client-side mirror of the backend's _canonical_identity_key (see
+// backend/app/install.py around line 269). The backend rewrites every
+// installed App row's manifest_url to this shape, so the catalog grid
+// must compare against the SAME shape — comparing the catalog's raw
+// `.../main/mobius.json` to a stored `.../main#manifest-id=<id>`
+// silently misses every match and the grid renders "Not installed"
+// for apps that ARE installed.
+//
+// Rules (keep aligned with backend):
+//   1. strip the URL fragment ("#...")
+//   2. drop a trailing "/mobius.json" if present
+//   3. strip trailing "/"
+//   4. append "#manifest-id=<manifest_id>"
+function canonicalIdentityKey(url, manifestId) {
+  if (!url || !manifestId) return ''
+  let base = String(url).split('#', 1)[0]
+  if (base.endsWith('/mobius.json')) base = base.slice(0, -'/mobius.json'.length)
+  base = base.replace(/\/+$/, '')
+  return `${base}#manifest-id=${manifestId}`
+}
+
+// Look up an installed App row that corresponds to the catalog entry.
+// Tries the canonical key first (post-71ea870 installs), then falls
+// back to the literal catalog URL (legacy rows pre-canonicalisation).
+function findInstalled(installed, item) {
+  const manifestId = item.manifest?.id || item.id
+  const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
+  return (
+    installed.find(a => a.manifest_url === canonical) ||
+    installed.find(a => a.manifest_url === item.manifest_url) ||
+    null
+  )
+}
+
 const s = {
   root: {
     height: '100%', display: 'flex', flexDirection: 'column',
@@ -823,7 +857,7 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry }) {
   // identity lives on manifest_url. A user-built app and a store-
   // installed app with the same slug coexist; the store can find
   // its own apps regardless of slug bumps.
-  const storeInstalled = installed.find(a => a.manifest_url === item.manifest_url)
+  const storeInstalled = findInstalled(installed, item)
   const installedVer = installedVersions[item.id]
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
 
@@ -1038,7 +1072,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   // between user apps and store apps are resolved transparently by
   // allocate_unique_slug on the backend; the store reads its own
   // installed apps via manifest_url, never slug.
-  const storeInstalled = installed.find(a => a.manifest_url === item.manifest_url)
+  const storeInstalled = findInstalled(installed, item)
   const installedVer = installedVersions[item.id]
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
   const ca = m.permissions?.cross_app_access || 'none'
@@ -1354,7 +1388,13 @@ export default function App({ appId, token }) {
         kind: 'success',
         message: `${result.name} ${verb}${warnSuffix}.`,
       })
-      closeDetail()
+      // Stay on the detail view. Two reasons: (1) closing here would
+      // bounce the user back to the catalog grid mid-action, which felt
+      // like the app didn't acknowledge the tap. (2) after refreshInstalled
+      // resolves the detail re-renders with the installed state — the
+      // primary CTA flips from "Install" to "Open App", confirming the
+      // commit on the same surface the user committed it from. The user
+      // can use the back arrow / device-back to dismiss when ready.
     } catch (e) {
       setToast({ kind: 'error', message: e.message || String(e) })
     } finally {
