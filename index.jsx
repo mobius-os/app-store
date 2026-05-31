@@ -410,15 +410,6 @@ const s = {
     marginTop: '6px',
     wordBreak: 'break-all',
   },
-  // Same shape as `esmNote` but used in the modal where the contrast
-  // around the action still needs a small visual flag — kept here so
-  // the modal copy can render in one style block.
-  esmModalNote: {
-    padding: '12px', background: 'var(--surface)',
-    border: '1px solid var(--border)', borderRadius: '8px',
-    fontSize: '14px', lineHeight: 1.5,
-    color: 'var(--muted)',
-  },
   hostWarn: {
     display: 'flex', gap: '12px', alignItems: 'flex-start',
     padding: '12px', marginBottom: '12px',
@@ -735,29 +726,10 @@ async function installApp({ manifest_url, manifest, raw_base, token }) {
   }
 }
 
-// Best-effort repo path extracted from a manifest URL. Returns e.g.
-// "mobius-os/app-news" for raw.githubusercontent.com URLs, or '' if
-// the URL isn't recognisably a public-repo raw file. Used in the
-// confirm modal subtitle so the user sees both the app's name AND the
-// repo they're agreeing to install from, in one tight line.
-function repoFromManifestUrl(url) {
-  if (!url) return ''
-  try {
-    const u = new URL(url)
-    const parts = u.pathname.split('/').filter(Boolean)
-    if (u.hostname === 'raw.githubusercontent.com' && parts.length >= 2) {
-      return `${parts[0]}/${parts[1]}`
-    }
-    // gitlab/codeberg/sourcehut all use /owner/repo/raw/... — same shape
-    if (parts.length >= 2) return `${parts[0]}/${parts[1]}`
-  } catch {}
-  return ''
-}
-
-// One permission row, shared between the detail view and the install
-// modal. Builds a flex layout with the title + summary on the left and
-// a small capability tag on the right; the hint line under the summary
-// spells out what the user is actually granting in plain language.
+// One permission row used in the detail view. Builds a flex layout
+// with the title + summary on the left and a small capability tag on
+// the right; the hint line under the summary spells out what the user
+// is actually granting in plain language.
 function PermissionRow({ label, level, info }) {
   if (!info) return null
   return (
@@ -770,102 +742,6 @@ function PermissionRow({ label, level, info }) {
         </div>
       </div>
       <span style={s.permTag(level)}>{info.tag}</span>
-    </div>
-  )
-}
-
-function ConfirmModal({ manifest, raw_base, manifest_url, onConfirm, onCancel, busy, isUpdate }) {
-  const ca = manifest.permissions?.cross_app_access || 'none'
-  const sw = manifest.permissions?.share_with_apps || 'none'
-  const hasSchedule = !!manifest.schedule
-  const esmDeps = manifest.runtime?.esm_deps || []
-  // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
-  // already resolve to trusted hosts, so they pass silently. Invalid
-  // URLs fall through to the warn path on purpose.
-  const unfamiliarHost = manifest_url && !isTrustedHost(manifest_url)
-  let warnHost = ''
-  if (unfamiliarHost) {
-    try { warnHost = new URL(manifest_url).hostname } catch { warnHost = manifest_url }
-  }
-  const repoPath = repoFromManifestUrl(manifest_url)
-  return (
-    <div style={s.modalBackdrop} onClick={busy ? null : onCancel}>
-      <div style={s.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={s.modalTitle}>
-          {isUpdate ? 'Update' : 'Install'} {manifest.name}
-          {repoPath ? ` from ${repoPath}` : ''}?
-        </h3>
-        <div style={{ ...s.heroMeta, marginBottom: '12px' }}>
-          v{manifest.version}{manifest.author ? ` · by ${manifest.author}` : ''}
-        </div>
-        <p style={{ fontSize: '14px', lineHeight: 1.5, marginBottom: '16px', color: 'var(--muted)' }}>
-          {manifest.description}
-        </p>
-
-        <div style={s.sectionLabel}>What this app can do</div>
-        <PermissionRow
-          label="Other apps' data"
-          level={ca}
-          info={PERM_EXPLAIN.cross_app_access[ca]}
-        />
-        <PermissionRow
-          label="Sharing with other apps"
-          level={sw}
-          info={PERM_EXPLAIN.share_with_apps[sw]}
-        />
-
-        {hasSchedule && (
-          <>
-            <div style={{ ...s.sectionLabel, marginTop: '16px' }}>Schedule</div>
-            <div style={s.scheduleRow}>
-              <div style={s.scheduleMain}>{humanCron(manifest.schedule.default)}</div>
-              {manifest.schedule.user_configurable && (
-                <div style={s.scheduleNote}>
-                  Time is configurable from the app's settings after install.
-                </div>
-              )}
-              <div style={s.scheduleNote}>
-                Cron registration is a manual step today — the store records
-                the request and the Möbius agent can register it for you.
-              </div>
-            </div>
-          </>
-        )}
-
-        {esmDeps.length > 0 && (
-          <>
-            <div style={{ ...s.sectionLabel, marginTop: '16px' }}>External libraries</div>
-            <div style={s.esmModalNote}>
-              Loads {esmDeps.length === 1 ? 'one library' : `${esmDeps.length} libraries`} from
-              {' '}esm.sh on first open. Fetched once and cached locally afterwards.
-              <div style={s.esmDepList}>{esmDeps.join(', ')}</div>
-            </div>
-          </>
-        )}
-
-        {unfamiliarHost && (
-          <div style={{ ...s.hostWarn, marginTop: '16px', marginBottom: 0 }}>
-            <div style={s.hostWarnIcon} aria-hidden="true">⚠</div>
-            <div>
-              <div>Unfamiliar host: <span style={s.hostWarnHost}>{warnHost}</span></div>
-              <div style={s.hostWarnBody}>
-                You're installing from a host that isn't in the trusted list.
-                Continue only if you trust the author.
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div style={s.modalActions}>
-          <button style={{ ...s.dangerBtn, ...s.modalBtn, color: 'var(--text)' }}
-                  onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button style={{ ...s.bigBtn, ...s.modalBtn }} onClick={onConfirm} disabled={busy}>
-            {busy ? (isUpdate ? 'Updating…' : 'Installing…') : (isUpdate ? 'Update' : 'Install')}
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
@@ -1156,7 +1032,7 @@ function FromUrlTab({ onPreview }) {
   )
 }
 
-function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled }) {
+function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, busy }) {
   const m = item.manifest
   // Match by manifest_url — see CatalogList comment. Slug collisions
   // between user apps and store apps are resolved transparently by
@@ -1167,6 +1043,15 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
   const ca = m.permissions?.cross_app_access || 'none'
   const sw = m.permissions?.share_with_apps || 'none'
+  // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
+  // already resolve to trusted hosts, so they pass silently. Invalid
+  // URLs fall through to the warn path on purpose. This is now the
+  // last checkpoint before install — there is no second confirm modal.
+  const unfamiliarHost = item.manifest_url && !isTrustedHost(item.manifest_url)
+  let warnHost = ''
+  if (unfamiliarHost) {
+    try { warnHost = new URL(item.manifest_url).hostname } catch { warnHost = item.manifest_url }
+  }
 
   return (
     <>
@@ -1243,6 +1128,21 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
           </div>
         )}
 
+        {unfamiliarHost && (
+          <div style={s.detailSection}>
+            <div style={s.hostWarn}>
+              <div style={s.hostWarnIcon} aria-hidden="true">⚠</div>
+              <div>
+                <div>Unfamiliar host: <span style={s.hostWarnHost}>{warnHost}</span></div>
+                <div style={s.hostWarnBody}>
+                  You're installing from a host that isn't in the trusted
+                  list. Continue only if you trust the author.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Footer hierarchy by state:
@@ -1251,25 +1151,33 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
             on top, "Uninstall" muted text link below
           - installed (up-to-date): "Open App" primary on top, "Uninstall"
             muted text link below — Open is the user's main path, Uninstall
-            shouldn't compete visually for the tap. */}
+            shouldn't compete visually for the tap.
+          The Install/Update button commits directly — there is no second
+          confirm modal. DetailView is the confirmation surface; the user
+          already saw permissions, schedule, esm.sh deps and the host
+          warning above before reaching this button. */}
       <div style={s.detailFooter}>
         <button
           style={{
             ...s.bigBtn,
             background: hasUpdate ? 'var(--green)' : 'var(--accent)',
           }}
+          disabled={busy}
           onClick={() => {
+            if (busy) return
             if (hasUpdate) onInstall(item, { isUpdate: true, existingId: storeInstalled.id })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
             else onInstall(item, { isUpdate: false })
           }}
         >
-          {hasUpdate ? `Update to v${m.version}`
+          {busy
+            ? (hasUpdate ? 'Updating…' : 'Installing…')
+            : hasUpdate ? `Update to v${m.version}`
             : storeInstalled ? 'Open App'
             : 'Install'}
         </button>
         {storeInstalled && (
-          <button style={s.secondaryLink} onClick={() => onUninstall(storeInstalled)}>
+          <button style={s.secondaryLink} onClick={() => onUninstall(storeInstalled)} disabled={busy}>
             Uninstall
           </button>
         )}
@@ -1301,8 +1209,6 @@ export default function App({ appId, token }) {
   const [installedVersions, setInstalledVersions] = useState({})
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
   const navDetailRef = useRef(null)  // pending detail item during nav-push ack
-  const [pendingInstall, setPendingInstall] = useState(null)
-  // pendingInstall: {item, isUpdate, existingId}
   const [pendingUninstall, setPendingUninstall] = useState(null)
   // pendingUninstall: the installed app row from /api/apps/.
   // Browser confirm() is silently no-op'd inside the AppCanvas
@@ -1378,13 +1284,13 @@ export default function App({ appId, token }) {
     })
   }, [])
 
-  const handleInstall = async (item, opts = {}) => {
-    setPendingInstall({ item, ...opts })
-  }
-
-  const confirmInstall = async () => {
-    if (!pendingInstall) return
-    const { item } = pendingInstall
+  // Install / update runs inline from DetailView's primary button.
+  // There is no intermediate confirm modal — DetailView is the
+  // confirmation surface (permissions, schedule, esm.sh deps and the
+  // unfamiliar-host warning are all rendered there). `busy` flips so
+  // the button can disable + show "Installing…" while in flight.
+  const handleInstall = async (item, _opts = {}) => {
+    if (busy) return
     setBusy(true)
     try {
       // The backend decides install vs update based on manifest.id ↔
@@ -1410,11 +1316,9 @@ export default function App({ appId, token }) {
         kind: 'success',
         message: `${result.name} ${verb}${warnSuffix}! Reload Möbius to see it in the drawer.`,
       })
-      setPendingInstall(null)
       closeDetail()
     } catch (e) {
       setToast({ kind: 'error', message: e.message || String(e) })
-      setPendingInstall(null)
     } finally {
       setBusy(false)
     }
@@ -1565,18 +1469,8 @@ export default function App({ appId, token }) {
           onInstall={handleInstall}
           onUninstall={handleUninstall}
           onOpenInstalled={handleOpenInstalled}
+          busy={busy}
         />
-        {pendingInstall && (
-          <ConfirmModal
-            manifest={pendingInstall.item.manifest}
-            raw_base={pendingInstall.item.raw_base}
-            manifest_url={pendingInstall.item.manifest_url}
-            onConfirm={confirmInstall}
-            onCancel={() => !busy && setPendingInstall(null)}
-            busy={busy}
-            isUpdate={pendingInstall.isUpdate}
-          />
-        )}
         {pendingUninstall && (
           <UninstallConfirmModal
             app={pendingUninstall}
@@ -1628,18 +1522,6 @@ export default function App({ appId, token }) {
           <FromUrlTab onPreview={openDetail} />
         )}
       </div>
-
-      {pendingInstall && (
-        <ConfirmModal
-          manifest={pendingInstall.item.manifest}
-          raw_base={pendingInstall.item.raw_base}
-          manifest_url={pendingInstall.item.manifest_url}
-          onConfirm={confirmInstall}
-          onCancel={() => !busy && setPendingInstall(null)}
-          busy={busy}
-          isUpdate={pendingInstall.isUpdate}
-        />
-      )}
 
       {pendingUninstall && (
         <UninstallConfirmModal
