@@ -552,10 +552,6 @@ const s = {
     textAlign: 'center', padding: '40px 20px',
     color: 'var(--muted)', fontSize: '14px',
   },
-  spinner: {
-    textAlign: 'center', padding: '40px 20px',
-    color: 'var(--muted)', fontSize: '14px',
-  },
 }
 
 // Human-language explanations for the permission strings. `tag` is the
