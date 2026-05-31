@@ -540,9 +540,12 @@ const PERM_EXPLAIN = {
       hint: 'Can browse files written by your other mini-apps, but cannot change them.',
     },
     write: {
-      tag: 'Read + write',
-      summary: 'Reads and writes other apps\' stored data.',
-      hint: 'Can edit, add, or delete files belonging to your other mini-apps.',
+      tag: 'Read + write + manage',
+      summary: 'Reads + writes other apps\' data, and can install or uninstall apps on your behalf.',
+      // The install authority is currently overloaded onto cross_app_access='write'
+      // pending the dedicated `manage_apps` permission in PM ticket 073. The hint
+      // below makes the consent informed even before that separation lands.
+      hint: 'Can edit, add, or delete files in other mini-apps. Also lets the app drive Install and Uninstall — grant only to apps you trust to manage your install set (e.g. the App Store itself).',
     },
   },
   share_with_apps: {
