@@ -46,10 +46,12 @@ no PR required.
 
 ## Permissions
 
-The store requests `cross_app_access: "write"` so it can seed
-storage data into newly-installed apps' scopes during install.
-It does not request `share_with_apps` (other apps cannot read
-the store's storage).
+The store requests only `manage_apps: true` so it can install
+apps. It does **not** request `cross_app_access` — seeding storage
+into a newly-installed app's own scope is done server-side by the
+installer, so the store never needs cross-app write. It also does
+not request `share_with_apps` (other apps cannot read the store's
+storage).
 
 ## License
 
