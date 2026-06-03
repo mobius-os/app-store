@@ -19,9 +19,9 @@ const CATALOG = [
   },
   {
     id: 'gym',
-    repo: 'mobius-os/app-gym',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-gym/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-gym/main/',
+    repo: 'mobius-os/app-workout',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-workout/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-workout/main/',
   },
   {
     id: 'latex',
