@@ -1,7 +1,7 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Discover, install, and update Möbius apps from the mobius-os organization or any public manifest URL.",
   "author": "mobius-os",
   "license": "MIT",

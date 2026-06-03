@@ -223,7 +223,18 @@ const s = {
     paddingTop: '8px',
     borderTop: '1px solid var(--border)',
     marginTop: 'auto',
-    display: 'flex', justifyContent: 'center',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+  },
+  cardUpdateBtn: {
+    flexShrink: 0,
+    border: 'none',
+    borderRadius: '7px',
+    padding: '5px 12px',
+    background: 'var(--green, var(--accent))',
+    color: '#fff',
+    fontWeight: 600,
+    fontSize: '12px',
+    cursor: 'pointer',
   },
   // Grid-card status pill — readonly. The card itself takes the tap
   // to the detail view; the detail view owns the Install / Update /
@@ -816,7 +827,7 @@ function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
 
 // One catalog tile. Pulled out so the focus/hover styles can live in
 // local state without rerendering the whole grid on every pointer move.
-function CatalogCard({ item, installed, installedVersions, onPick, onRetry }) {
+function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate }) {
   const [hover, setHover] = useState(false)
   const [focus, setFocus] = useState(false)
   const m = item.manifest
@@ -932,12 +943,22 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry }) {
           <span style={s.cardStatusDot(statusVariant)} aria-hidden="true" />
           {statusLabel}
         </span>
+        {cardVariant === 'update' && onUpdate && (
+          <button
+            type="button"
+            style={s.cardUpdateBtn}
+            onClick={(e) => { e.stopPropagation(); onUpdate(item) }}
+            aria-label={`Update ${m.name} to v${m.version}`}
+          >
+            Update
+          </button>
+        )}
       </div>
     </div>
   )
 }
 
-function CatalogList({ items, installed, installedVersions, onPick, onRetry }) {
+function CatalogList({ items, installed, installedVersions, onPick, onRetry, onUpdate }) {
   if (items.length === 0) {
     return <div style={s.empty}>No apps in the catalog yet.</div>
   }
@@ -951,6 +972,7 @@ function CatalogList({ items, installed, installedVersions, onPick, onRetry }) {
           installedVersions={installedVersions}
           onPick={onPick}
           onRetry={onRetry}
+          onUpdate={onUpdate}
         />
       ))}
     </div>
@@ -1610,6 +1632,7 @@ export default function App({ appId, token }) {
                 installedVersions={installedVersions}
                 onPick={(item) => item.manifest && openDetail(item)}
                 onRetry={retryCatalogItem}
+                onUpdate={handleInstall}
               />
         )}
         {tab === 'url' && (
