@@ -41,6 +41,12 @@ const CATALOG = [
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-mind/main/mobius.json',
     raw_base: 'https://raw.githubusercontent.com/mobius-os/app-mind/main/',
   },
+  {
+    id: 'notes',
+    repo: 'mobius-os/app-notes',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/',
+  },
 ]
 
 // Hosts we recognize as common public manifest sources. The paste-a-URL
