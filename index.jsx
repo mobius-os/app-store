@@ -13,9 +13,9 @@ const CATALOG = [
   },
   {
     id: 'countries',
-    repo: 'mobius-os/app-countries',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-countries/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-countries/main/',
+    repo: 'mobius-os/app-atlas',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-atlas/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-atlas/main/',
   },
   {
     id: 'gym',
