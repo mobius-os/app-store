@@ -49,6 +49,18 @@ const CATALOG = [
   },
 ]
 
+// The store's OWN version — keep in lockstep with mobius.json on each release.
+// The store is a core app, so it isn't in installed-versions.json or the
+// catalog grid; it self-updates via the banner below: fetch its published
+// manifest and, when that version is newer than what's running, offer a
+// one-tap update (the same install transaction every other app uses) followed
+// by a reload so the freshly-patched code loads.
+const STORE_VERSION = '1.4.0'
+const STORE_SELF = {
+  manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
+  raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
+}
+
 // Hosts we recognize as common public manifest sources. The paste-a-URL
 // flow silently trusts these; anything else triggers a soft warning in
 // the install confirm modal. This is UX-only — the backend's SSRF
@@ -1565,6 +1577,72 @@ function GlobalKeyframes() {
   )
 }
 
+// Self-update banner. The store is a core app and not in its own catalog grid,
+// so it checks for its OWN updates here: fetch the published manifest once, and
+// when that version is newer than the running STORE_VERSION, offer a one-tap
+// update that runs the same install transaction every other app uses, then
+// prompt a reload so the freshly-patched code loads. Renders null when current.
+function SelfUpdateBanner({ token }) {
+  const [latest, setLatest] = useState(null)   // manifest of the published store
+  const [phase, setPhase] = useState('idle')   // idle | updating | done | error
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetchManifest(STORE_SELF.manifest_url)
+      .then(m => { if (!cancelled) setLatest(m) })
+      .catch(() => {})   // a failed self-check is silent — never block the grid
+    return () => { cancelled = true }
+  }, [])
+
+  const hasUpdate = latest && semverCmp(STORE_VERSION, latest.version) < 0
+  if (phase !== 'done' && !hasUpdate) return null
+
+  const bannerStyle = {
+    display: 'flex', alignItems: 'center', gap: '12px',
+    margin: '0 0 16px', padding: '12px 16px',
+    background: 'color-mix(in srgb, var(--accent) 12%, var(--surface))',
+    border: '1px solid var(--accent)', borderRadius: '12px',
+    fontSize: '14px', lineHeight: 1.4,
+  }
+  const btnStyle = {
+    flexShrink: 0, border: 'none', borderRadius: '8px', padding: '8px 16px',
+    background: 'var(--accent)', color: '#fff', fontWeight: 600,
+    fontSize: '13px', cursor: 'pointer', fontFamily: 'var(--font)',
+    minHeight: '36px',
+  }
+
+  const onUpdate = async () => {
+    setPhase('updating'); setMsg('')
+    try {
+      await installApp({ manifest: latest, raw_base: STORE_SELF.raw_base, token })
+      setPhase('done')
+    } catch (e) {
+      setPhase('error'); setMsg(e.message || String(e))
+    }
+  }
+
+  return (
+    <div style={bannerStyle}>
+      {phase === 'done' ? (
+        <>
+          <div style={{ flex: 1 }}>App Store updated to v{latest.version}. Reload to apply.</div>
+          <button style={btnStyle} onClick={() => window.location.reload()}>Reload</button>
+        </>
+      ) : (
+        <>
+          <div style={{ flex: 1 }}>
+            App Store v{latest.version} is available{phase === 'error' && msg ? ` — ${msg}` : ''}.
+          </div>
+          <button style={btnStyle} disabled={phase === 'updating'} onClick={onUpdate}>
+            {phase === 'updating' ? 'Updating…' : 'Update'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function App({ appId, token }) {
   const [tab, setTab] = useState('browse')
   const [catalog, setCatalog] = useState(() =>
@@ -2004,18 +2082,21 @@ export default function App({ appId, token }) {
 
       <div style={s.scroll}>
         {tab === 'browse' && (
-          loadingCatalog
-            ? <CatalogSkeleton count={CATALOG.length} />
-            : <CatalogList
-                items={catalog}
-                installed={installed}
-                installedVersions={installedVersions}
-                onPick={(item) => item.manifest && openDetail(item)}
-                onRetry={retryCatalogItem}
-                onUpdate={handleInstall}
-                busy={busy}
-                errors={cardErrors}
-              />
+          <>
+            <SelfUpdateBanner token={token} />
+            {loadingCatalog
+              ? <CatalogSkeleton count={CATALOG.length} />
+              : <CatalogList
+                  items={catalog}
+                  installed={installed}
+                  installedVersions={installedVersions}
+                  onPick={(item) => item.manifest && openDetail(item)}
+                  onRetry={retryCatalogItem}
+                  onUpdate={handleInstall}
+                  busy={busy}
+                  errors={cardErrors}
+                />}
+          </>
         )}
         {tab === 'url' && (
           <FromUrlTab onPreview={openDetail} />
