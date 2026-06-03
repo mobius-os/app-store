@@ -860,12 +860,27 @@ export function semverCmp(a, b) {
     if (va < vb) return -1
     if (va > vb) return 1
   }
-  // Equal numeric core: a release (no pre-release) outranks a pre-release.
+  // Equal numeric core: a release (no pre-release) outranks a pre-release; two
+  // pre-releases compare by dot-separated identifiers per SemVer §11 — numeric
+  // ones numerically (so rc.2 < rc.10, not the lexical reverse), numeric ranks
+  // below alphanumeric, and a smaller set of identifiers ranks lower when all
+  // the preceding ones are equal.
   const ra = pre(a), rb = pre(b)
   if (ra === rb) return 0
   if (!ra) return 1
   if (!rb) return -1
-  return ra < rb ? -1 : ra > rb ? 1 : 0
+  const ida = ra.split('.'), idb = rb.split('.')
+  for (let i = 0; i < Math.max(ida.length, idb.length); i++) {
+    if (i >= ida.length) return -1
+    if (i >= idb.length) return 1
+    const x = ida[i], y = idb[i]
+    if (x === y) continue
+    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y)
+    if (xn && yn) return parseInt(x, 10) < parseInt(y, 10) ? -1 : 1
+    if (xn !== yn) return xn ? -1 : 1
+    return x < y ? -1 : 1
+  }
+  return 0
 }
 
 // Heart of the install flow. One call to POST /api/apps/install — the

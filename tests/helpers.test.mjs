@@ -73,4 +73,11 @@ test('semverCmp handles releases and pre-releases', async () => {
   assert.equal(semverCmp('1.2.0-rc.1', '1.2.0'), -1)
   assert.equal(semverCmp('1.2.1', '1.2.0'), 1)
   assert.equal(semverCmp('1.2.0+build.2', '1.2.0'), 0)
+  // SemVer §11: numeric pre-release identifiers compare numerically, so
+  // rc.2 < rc.10 (a plain lexical compare gets this backwards).
+  assert.equal(semverCmp('1.2.0-rc.2', '1.2.0-rc.10'), -1)
+  assert.equal(semverCmp('1.2.0-rc.10', '1.2.0-rc.2'), 1)
+  // Numeric identifiers rank below alphanumeric; fewer identifiers rank lower.
+  assert.equal(semverCmp('1.0.0-alpha', '1.0.0-alpha.1'), -1)
+  assert.equal(semverCmp('1.0.0-1', '1.0.0-alpha'), -1)
 })
