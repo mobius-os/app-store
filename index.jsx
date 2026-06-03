@@ -236,6 +236,18 @@ const s = {
     fontSize: '12px',
     cursor: 'pointer',
   },
+  cardInlineError: {
+    width: '100%',
+    marginTop: '8px',
+    padding: '8px',
+    borderRadius: '8px',
+    background: 'color-mix(in srgb, var(--danger, #e5484d) 10%, transparent)',
+    color: 'var(--danger)',
+    fontSize: '12px',
+    lineHeight: 1.35,
+    border: '1px solid color-mix(in srgb, var(--danger, #e5484d) 30%, transparent)',
+    boxSizing: 'border-box',
+  },
   // Grid-card status pill — readonly. The card itself takes the tap
   // to the detail view; the detail view owns the Install / Update /
   // Open action button so the user sees permissions before committing.
@@ -562,6 +574,20 @@ const s = {
     fontFamily: 'var(--font)', flexShrink: 0,
     minHeight: '32px',
   },
+  updateNotice: {
+    marginTop: '12px',
+    padding: '12px',
+    background: 'var(--surface)',
+    border: '1px solid var(--accent)',
+    borderRadius: '10px',
+    fontSize: '14px',
+    lineHeight: 1.45,
+  },
+  updateNoticeActions: {
+    display: 'flex',
+    gap: '8px',
+    marginTop: '12px',
+  },
   empty: {
     textAlign: 'center', padding: '40px 20px',
     color: 'var(--muted)', fontSize: '14px',
@@ -775,8 +801,111 @@ async function installApp({ manifest_url, manifest, raw_base, token }) {
     name: out.name,
     version: out.version,
     mode: out.mode,
+    divergence: out.divergence,
+    conflict_paths: out.conflict_paths || [],
     warnings: out.warnings || [],
   }
+}
+
+async function readJsonOrThrow(res, fallback) {
+  if (res.ok) return await res.json()
+  let detail = fallback || `HTTP ${res.status}`
+  try {
+    const errBody = await res.json()
+    if (errBody && errBody.detail) detail = errBody.detail
+  } catch {
+    detail = await res.text() || detail
+  }
+  throw new Error(detail)
+}
+
+async function loadUpdatePreview(appId, token) {
+  const res = await fetch(`/api/apps/${appId}/update-preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return await readJsonOrThrow(res, 'Update preview failed')
+}
+
+async function createAppChat(title, token) {
+  const res = await fetch('/api/app-chats', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  })
+  return await readJsonOrThrow(res, 'Could not create review chat')
+}
+
+async function seedChatMessage(chatId, content, token) {
+  const res = await fetch(`/api/chats/${chatId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) {
+    await readJsonOrThrow(res, 'Could not seed chat message')
+  }
+}
+
+function openChat(chatId) {
+  window.parent.postMessage(
+    { type: 'moebius:open-chat', chatId },
+    window.location.origin,
+  )
+}
+
+function firstConflictFiles(preview) {
+  return preview.conflict_files || preview.conflicts || []
+}
+
+function compactExcerpt(text, limit = 150) {
+  const compact = String(text || '').replace(/\s+/g, ' ').trim()
+  return compact.length > limit ? `${compact.slice(0, limit)}...` : compact
+}
+
+function buildCleanMergeReviewMessage({ item, result, preview }) {
+  const name = result.name || item.manifest?.name || item.id
+  const version = preview.upstream_version || result.version || item.manifest?.version || 'latest'
+  const diff = preview.upstream_diff ? preview.upstream_diff.trim() : '(No upstream diff was returned.)'
+  return [
+    `Please review the clean update merge for ${name} to v${version}.`,
+    '',
+    'The App Store applied the update because the upstream changes merged cleanly with my local edits. Please double-check the result and call out anything that needs follow-up.',
+    '',
+    'Upstream diff:',
+    diff,
+  ].join('\n')
+}
+
+function buildConflictResolveMessage({ item, result, preview }) {
+  const name = result.name || item.manifest?.name || item.id
+  const slug = result.slug || item.manifest?.id || item.id
+  const version = preview.upstream_version || result.version || item.manifest?.version || 'latest'
+  const files = firstConflictFiles(preview)
+  const conflictList = files.length
+    ? files.map(file => `- ${file.path}`).join('\n')
+    : (result.conflict_paths || []).map(path => `- ${path}`).join('\n') || '- (No conflict paths were returned.)'
+  const excerpts = files.length
+    ? files.map(file => `- ${file.path}: ${compactExcerpt(file.merged_with_markers) || '(No marker excerpt returned.)'}`).join('\n')
+    : '- (No marker excerpts were returned.)'
+  return [
+    `Please resolve the blocked update for ${name} to v${version}.`,
+    '',
+    'The update was NOT applied because my local edits conflict with upstream.',
+    '',
+    'Conflict files:',
+    conflictList,
+    '',
+    'Marker excerpts:',
+    excerpts,
+    '',
+    `The full conflict markers are in /data/apps/${slug} and are also available from GET /api/apps/${result.id}/update-preview.`,
+  ].join('\n')
 }
 
 // One permission row used in the detail view. Builds a flex layout
@@ -800,7 +929,7 @@ function PermissionRow({ label, level, info }) {
 }
 
 function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
-  // Browser confirm() doesn't render inside the AppCanvas iframe
+  // Browser modal dialogs don't render inside the AppCanvas iframe
   // (sandbox lacks `allow-modals`), so we ship our own confirmation.
   return (
     <div style={s.modalBackdrop} onClick={busy ? null : onCancel}>
@@ -827,7 +956,7 @@ function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
 
 // One catalog tile. Pulled out so the focus/hover styles can live in
 // local state without rerendering the whole grid on every pointer move.
-function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate }) {
+function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, error }) {
   const [hover, setHover] = useState(false)
   const [focus, setFocus] = useState(false)
   const m = item.manifest
@@ -946,19 +1075,21 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
         {cardVariant === 'update' && onUpdate && (
           <button
             type="button"
-            style={s.cardUpdateBtn}
-            onClick={(e) => { e.stopPropagation(); onUpdate(item) }}
+            style={{ ...s.cardUpdateBtn, opacity: busy ? 0.65 : 1 }}
+            disabled={busy}
+            onClick={(e) => { e.stopPropagation(); if (!busy) onUpdate(item) }}
             aria-label={`Update ${m.name} to v${m.version}`}
           >
-            Update
+            {busy ? 'Updating...' : 'Update'}
           </button>
         )}
       </div>
+      {error && <div style={s.cardInlineError}>{error}</div>}
     </div>
   )
 }
 
-function CatalogList({ items, installed, installedVersions, onPick, onRetry, onUpdate }) {
+function CatalogList({ items, installed, installedVersions, onPick, onRetry, onUpdate, busy, errors }) {
   if (items.length === 0) {
     return <div style={s.empty}>No apps in the catalog yet.</div>
   }
@@ -973,6 +1104,8 @@ function CatalogList({ items, installed, installedVersions, onPick, onRetry, onU
           onPick={onPick}
           onRetry={onRetry}
           onUpdate={onUpdate}
+          busy={busy}
+          error={errors?.[item.id]}
         />
       ))}
     </div>
@@ -1096,7 +1229,7 @@ function FromUrlTab({ onPreview }) {
   )
 }
 
-function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, busy }) {
+function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice }) {
   const m = item.manifest
   // Match by manifest_url — see CatalogList comment. Slug collisions
   // between user apps and store apps are resolved transparently by
@@ -1197,6 +1330,33 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
             <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
               Currently installed: v{installedVer || 'unknown'}.
             </div>
+            {updateNotice && (
+              <div style={s.updateNotice}>
+                <div>{updateNotice.message}</div>
+                <div style={s.updateNoticeActions}>
+                  <button
+                    type="button"
+                    style={{ ...s.bigBtn, flex: 1 }}
+                    onClick={() => onReviewUpdate(updateNotice)}
+                    disabled={busy}
+                  >
+                    {busy
+                      ? 'Opening chat...'
+                      : updateNotice.kind === 'conflict'
+                      ? 'Resolve in chat'
+                      : 'Review in chat'}
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...s.dangerBtn, flex: 1, color: 'var(--muted)' }}
+                    onClick={onDismissNotice}
+                    disabled={busy}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1283,11 +1443,13 @@ export default function App({ appId, token }) {
   const navDetailRef = useRef(null)  // pending detail item during nav-push ack
   const [pendingUninstall, setPendingUninstall] = useState(null)
   // pendingUninstall: the installed app row from /api/apps/.
-  // Browser confirm() is silently no-op'd inside the AppCanvas
+  // Browser modal dialogs are silently no-op'd inside the AppCanvas
   // iframe (sandbox lacks `allow-modals`), so we stage the
   // confirmation as in-app state and render our own modal.
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState(null)
+  const [updateNotice, setUpdateNotice] = useState(null)
+  const [cardErrors, setCardErrors] = useState({})
   const [loadingCatalog, setLoadingCatalog] = useState(true)
   // Guard against overlapping refreshes when several visibility/focus
   // events fire in quick succession (e.g. drawer-close + tab-focus on
@@ -1398,6 +1560,12 @@ export default function App({ appId, token }) {
   const handleInstall = async (item, _opts = {}) => {
     if (busy) return
     setBusy(true)
+    setCardErrors(prev => {
+      const next = { ...prev }
+      delete next[item.id]
+      return next
+    })
+    setUpdateNotice(null)
     try {
       // The backend decides install vs update based on manifest.id ↔
       // App.slug match. We pass manifest + raw_base; the install endpoint
@@ -1407,6 +1575,26 @@ export default function App({ appId, token }) {
         raw_base: item.raw_base,
         token,
       })
+      const isConflict = result.mode === 'conflict'
+      const isSeamlessUpdate = result.mode === 'update' &&
+        (result.divergence === 'fast_forward' || result.divergence === 'none')
+      const isCleanMerge = result.mode === 'update' && result.divergence === 'clean_merge'
+
+      if (isConflict) {
+        const notice = {
+          kind: 'conflict',
+          itemId: item.id,
+          appId: result.id,
+          message: `A clean update to v${result.version || item.manifest?.version} isn't possible — your edits conflict.`,
+          result,
+          item,
+        }
+        setUpdateNotice(notice)
+        await refreshInstalled()
+        if (!detail) await openDetail(item)
+        return
+      }
+
       // Record the version we just installed so update detection
       // works on the next browse render. The backend returns the
       // version it actually applied, which is authoritative.
@@ -1414,6 +1602,29 @@ export default function App({ appId, token }) {
       setInstalledVersions(nextVersions)
       await saveInstalledVersions(appId, token, nextVersions)
       await refreshInstalled()
+
+      if (isSeamlessUpdate) {
+        setToast({
+          kind: 'success',
+          message: `Updated to v${result.version || item.manifest?.version}.`,
+        })
+        return
+      }
+
+      if (isCleanMerge) {
+        const notice = {
+          kind: 'clean_merge',
+          itemId: item.id,
+          appId: result.id,
+          message: `Updated to v${result.version || item.manifest?.version}. You'd edited this app; double-check the merge?`,
+          result,
+          item,
+        }
+        setUpdateNotice(notice)
+        if (!detail) await openDetail(item)
+        return
+      }
+
       const verb = result.mode === 'update' ? 'updated' : 'installed'
       const warnSuffix = result.warnings.length
         ? ` (with notes: ${result.warnings.join('; ')})`
@@ -1434,7 +1645,37 @@ export default function App({ appId, token }) {
       // commit on the same surface the user committed it from. The user
       // can use the back arrow / device-back to dismiss when ready.
     } catch (e) {
-      setToast({ kind: 'error', message: e.message || String(e) })
+      const message = e.message || String(e)
+      setCardErrors(prev => ({ ...prev, [item.id]: message }))
+      setToast({ kind: 'error', message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleReviewUpdate = async (notice) => {
+    if (busy || !notice) return
+    setBusy(true)
+    setCardErrors(prev => {
+      const next = { ...prev }
+      delete next[notice.itemId]
+      return next
+    })
+    try {
+      const preview = await loadUpdatePreview(notice.appId, token)
+      const title = notice.kind === 'conflict'
+        ? `Resolve ${notice.result.name || notice.item.manifest?.name || notice.item.id} update`
+        : `Review ${notice.result.name || notice.item.manifest?.name || notice.item.id} update`
+      const chat = await createAppChat(title, token)
+      const content = notice.kind === 'conflict'
+        ? buildConflictResolveMessage({ item: notice.item, result: notice.result, preview })
+        : buildCleanMergeReviewMessage({ item: notice.item, result: notice.result, preview })
+      await seedChatMessage(chat.id, content, token)
+      openChat(chat.id)
+    } catch (e) {
+      const message = e.message || String(e)
+      setCardErrors(prev => ({ ...prev, [notice.itemId]: message }))
+      setToast({ kind: 'error', message })
     } finally {
       setBusy(false)
     }
@@ -1443,7 +1684,7 @@ export default function App({ appId, token }) {
   // Stage the uninstall — DetailView's Uninstall button calls this,
   // and the modal's Confirm calls confirmUninstall to actually run
   // the DELETE. Splitting these out is required because the iframe
-  // sandbox blocks window.confirm(); see pendingUninstall comment.
+  // sandbox blocks browser modal dialogs; see pendingUninstall comment.
   const handleUninstall = (app) => {
     setPendingUninstall(app)
   }
@@ -1586,6 +1827,9 @@ export default function App({ appId, token }) {
           onUninstall={handleUninstall}
           onOpenInstalled={handleOpenInstalled}
           busy={busy}
+          updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
+          onReviewUpdate={handleReviewUpdate}
+          onDismissNotice={() => setUpdateNotice(null)}
         />
         {pendingUninstall && (
           <UninstallConfirmModal
@@ -1633,6 +1877,8 @@ export default function App({ appId, token }) {
                 onPick={(item) => item.manifest && openDetail(item)}
                 onRetry={retryCatalogItem}
                 onUpdate={handleInstall}
+                busy={busy}
+                errors={cardErrors}
               />
         )}
         {tab === 'url' && (
