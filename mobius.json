@@ -1,7 +1,7 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Discover, install, and update M\u00f6bius apps from the mobius-os organization or any public manifest URL.",
   "author": "mobius-os",
   "license": "MIT",

@@ -12,16 +12,16 @@ const CATALOG = [
     raw_base: 'https://raw.githubusercontent.com/mobius-os/app-news/main/',
   },
   {
-    id: 'countries',
+    id: 'atlas',
     repo: 'mobius-os/app-atlas',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-atlas/main/mobius.json',
     raw_base: 'https://raw.githubusercontent.com/mobius-os/app-atlas/main/',
   },
   {
     id: 'gym',
-    repo: 'mobius-os/app-workout',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-workout/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-workout/main/',
+    repo: 'mobius-os/app-gym',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-gym/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-gym/main/',
   },
   {
     id: 'latex',
@@ -60,7 +60,7 @@ const TRUSTED_HOSTS = new Set([
   'gitlab.com',
 ])
 
-function isTrustedHost(url) {
+export function isTrustedHost(url) {
   try {
     return TRUSTED_HOSTS.has(new URL(url).hostname)
   } catch {
@@ -68,8 +68,23 @@ function isTrustedHost(url) {
   }
 }
 
-// Client-side mirror of the backend's _canonical_identity_key (see
-// backend/app/install.py around line 269). The backend rewrites every
+export function validateManifestUrl(raw) {
+  const value = String(raw || '').trim()
+  if (!value) throw new Error('Enter a manifest URL.')
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('Enter a valid manifest URL.')
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error('Manifest URL must start with http:// or https://.')
+  }
+  return url.toString()
+}
+
+// Client-side mirror of the backend's _canonical_identity_key in
+// backend/app/install.py. The backend rewrites every
 // installed App row's manifest_url to this shape, so the catalog grid
 // must compare against the SAME shape — comparing the catalog's raw
 // `.../main/mobius.json` to a stored `.../main#manifest-id=<id>`
@@ -78,17 +93,17 @@ function isTrustedHost(url) {
 //
 // Rules (keep aligned with backend):
 //   1. strip the URL fragment ("#...")
-//   2. drop a trailing "/mobius.json" if present
+//   2. drop a trailing "/*.json" manifest filename if present
 //   3. strip trailing "/"
 //   4. append "#manifest-id=<manifest_id>"
-function canonicalIdentityKey(url, manifestId) {
+export function canonicalIdentityKey(url, manifestId) {
   if (!url || !manifestId) return ''
   // Strip BOTH fragment AND query string — match the backend's
   // _canonical_identity_key in install.py. Without ?-strip, two
   // paste-a-URL flows for the same app (with vs without a tracking
   // param) would canonicalise to different keys.
   let base = String(url).split('#', 1)[0].split('?', 1)[0]
-  if (base.endsWith('/mobius.json')) base = base.slice(0, -'/mobius.json'.length)
+  base = base.replace(/\/[^/]+\.json$/i, '')
   base = base.replace(/\/+$/, '')
   return `${base}#manifest-id=${manifestId}`
 }
@@ -101,6 +116,13 @@ function findInstalled(installed, item) {
   const manifestId = item.manifest?.id || item.id
   const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
   return installed.find(a => a.manifest_url === canonical) || null
+}
+
+function installedVersionFor(item, installedVersions, installedApp) {
+  return installedVersions[item.id] ||
+    installedApp?.version ||
+    installedApp?.manifest?.version ||
+    ''
 }
 
 const s = {
@@ -655,7 +677,7 @@ const PERM_EXPLAIN = {
 
 // Turn a cron expression into something readable. Falls back to
 // the raw expression for anything non-trivial.
-function humanCron(expr) {
+export function humanCron(expr) {
   if (!expr || typeof expr !== 'string') return ''
   const parts = expr.trim().split(/\s+/)
   if (parts.length !== 5) return expr
@@ -671,6 +693,13 @@ function humanCron(expr) {
     return `Runs every ${d} at ${hh}:${mm} UTC`
   }
   return `Cron: ${expr}`
+}
+
+export function scheduleSummary(schedule) {
+  if (!schedule) return ''
+  if (schedule.default) return humanCron(schedule.default)
+  if (schedule.job) return 'Runs on demand from inside the app'
+  return ''
 }
 
 function appIcon(item) {
@@ -708,18 +737,77 @@ function IconBox({ item, size = 'normal' }) {
 // Read the store's own record of which catalog id maps to which
 // installed slug + version. Used so we can detect "update available"
 // without baking version into description prose.
+function runtimeStorage() {
+  return (typeof window !== 'undefined' && window.mobius && window.mobius.storage) || null
+}
+
+export function normalizeInstalledVersions(data) {
+  if (data == null) return {}
+  let parsed = data
+  if (typeof data === 'string') {
+    try {
+      parsed = JSON.parse(data)
+    } catch {
+      return {}
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+  const clean = {}
+  for (const [id, version] of Object.entries(parsed)) {
+    if (!id || typeof version !== 'string') continue
+    clean[id] = version
+  }
+  return clean
+}
+
 async function loadInstalledVersions(appId, token) {
+  const storage = runtimeStorage()
+  if (storage?.get) {
+    try {
+      return normalizeInstalledVersions(await storage.get('installed-versions.json'))
+    } catch {
+      // Fall through to the raw storage API; older shells or transient
+      // IndexedDB failures should not break update detection.
+    }
+  }
+
   try {
-    const data = await window.mobius.storage.get('installed-versions.json')
-    if (data === null) return {}
-    return typeof data === 'string' ? JSON.parse(data) : (data || {})
+    const r = await fetch(`/api/storage/apps/${appId}/installed-versions.json`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (r.status === 404) return {}
+    if (!r.ok) return {}
+    return normalizeInstalledVersions(await r.json())
   } catch {
     return {}
   }
 }
 
 async function saveInstalledVersions(appId, token, map) {
-  await window.mobius.storage.set('installed-versions.json', map)
+  const clean = normalizeInstalledVersions(map)
+  const storage = runtimeStorage()
+  if (storage?.set) {
+    try {
+      await storage.set('installed-versions.json', clean)
+      return true
+    } catch {
+      // Continue to the raw API fallback below.
+    }
+  }
+
+  try {
+    const r = await fetch(`/api/storage/apps/${appId}/installed-versions.json`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(clean),
+    })
+    return r.ok
+  } catch {
+    return false
+  }
 }
 
 // Ask the shell to switch to the installed app via the
@@ -749,7 +837,8 @@ async function loadInstalledApps(token) {
 }
 
 async function fetchManifest(url) {
-  const r = await fetch(url, { cache: 'no-cache' })
+  const manifestUrl = validateManifestUrl(url)
+  const r = await fetch(manifestUrl, { cache: 'no-cache' })
   if (!r.ok) throw new Error(`Manifest fetch failed: ${r.status}`)
   return await r.json()
 }
@@ -758,7 +847,7 @@ async function fetchManifest(url) {
 // Compares the full numeric core (not just 3 segments, so a 4th segment isn't
 // dropped) and honors SemVer pre-release precedence: 1.2.0-rc.1 < 1.2.0, so a
 // pre-release never reads as "up to date" against its own release.
-function semverCmp(a, b) {
+export function semverCmp(a, b) {
   if (!a || !b) return 0
   const core = (v) => String(v).split('+')[0].split('-')[0]
   const pre = (v) => { const m = String(v).split('+')[0].split('-').slice(1).join('-'); return m || '' }
@@ -1023,7 +1112,9 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
   // installed app with the same slug coexist; the store can find
   // its own apps regardless of slug bumps.
   const storeInstalled = findInstalled(installed, item)
-  const installedVer = installedVersions[item.id]
+  const recordedVer = installedVersions[item.id]
+  const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
+  const needsVersionSync = storeInstalled && !recordedVer
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
 
   // Pill text + the accent dot prefix. Card-level variant (border /
@@ -1036,6 +1127,10 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     statusLabel = `Update available · v${m.version}`
     statusVariant = 'update'
     cardVariant = 'update'
+  } else if (needsVersionSync) {
+    statusLabel = 'Installed · version unknown'
+    statusVariant = 'installed'
+    cardVariant = 'installed'
   } else if (storeInstalled) {
     statusLabel = 'Installed'
     statusVariant = 'installed'
@@ -1175,11 +1270,12 @@ function FromUrlTab({ onPreview }) {
   if (host) hostKind = TRUSTED_HOSTS.has(host) ? 'trusted' : 'unfamiliar'
 
   const handlePreview = async () => {
-    const trimmed = url.trim()
-    if (!trimmed) return
+    const typed = url.trim()
+    if (!typed) return
     setBusy(true)
     setError('')
     try {
+      const trimmed = validateManifestUrl(typed)
       const manifest = await fetchManifest(trimmed)
       const missing = ['id', 'name', 'version', 'description', 'entry']
         .filter(k => !manifest[k])
@@ -1253,7 +1349,9 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   // allocate_unique_slug on the backend; the store reads its own
   // installed apps via manifest_url, never slug.
   const storeInstalled = findInstalled(installed, item)
-  const installedVer = installedVersions[item.id]
+  const recordedVer = installedVersions[item.id]
+  const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
+  const needsVersionSync = storeInstalled && !recordedVer
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
   const ca = m.permissions?.cross_app_access || 'none'
   const sw = m.permissions?.share_with_apps || 'none'
@@ -1267,6 +1365,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   if (unfamiliarHost) {
     try { warnHost = new URL(item.manifest_url).hostname } catch { warnHost = item.manifest_url }
   }
+  const scheduleText = scheduleSummary(m.schedule)
 
   return (
     <>
@@ -1307,11 +1406,11 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
           )}
         </div>
 
-        {m.schedule && (
+        {scheduleText && (
           <div style={s.detailSection}>
             <div style={s.sectionLabel}>Schedule</div>
             <div style={s.scheduleRow}>
-              <div style={s.scheduleMain}>{humanCron(m.schedule.default)}</div>
+              <div style={s.scheduleMain}>{scheduleText}</div>
               {m.schedule.user_configurable && (
                 <div style={s.scheduleNote}>
                   Time is configurable from the app's settings after install.
@@ -1345,7 +1444,8 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
           <div style={s.detailSection}>
             <div style={s.sectionLabel}>Installed</div>
             <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
-              Currently installed: v{installedVer || 'unknown'}.
+              Currently installed: {installedVer ? `v${installedVer}` : 'version unknown'}.
+              {needsVersionSync ? ' Run an update check to sync the store’s version record.' : ''}
             </div>
             {updateNotice && (
               <div style={s.updateNotice}>
@@ -1409,19 +1509,20 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
         <button
           style={{
             ...s.bigBtn,
-            background: hasUpdate ? 'var(--green)' : 'var(--accent)',
+            background: (hasUpdate || needsVersionSync) ? 'var(--green)' : 'var(--accent)',
           }}
           disabled={busy}
           onClick={() => {
             if (busy) return
-            if (hasUpdate) onInstall(item, { isUpdate: true, existingId: storeInstalled.id })
+            if (hasUpdate || needsVersionSync) onInstall(item, { isUpdate: true, existingId: storeInstalled.id })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
             else onInstall(item, { isUpdate: false })
           }}
         >
           {busy
-            ? (hasUpdate ? 'Updating…' : 'Installing…')
+            ? (hasUpdate ? 'Updating…' : needsVersionSync ? 'Checking…' : 'Installing…')
             : hasUpdate ? `Update to v${m.version}`
+            : needsVersionSync ? 'Check for updates'
             : storeInstalled ? 'Open App'
             : 'Install'}
         </button>

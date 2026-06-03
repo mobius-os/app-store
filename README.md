@@ -10,10 +10,11 @@ It pulls a curated catalog from the `mobius-os` organization and
 can also install any public manifest URL — paste the URL, preview
 the manifest, confirm permissions, install.
 
-The store is meta: it's an app whose `Install` button hits
-`POST /api/apps/` with another app's `jsx_source`, seeds storage
-from the target's `storage_seeds`, uploads its icon, and (where
-supported) records the requested cron schedule.
+The store is meta: it's an app whose `Install` button hits the
+atomic `POST /api/apps/install` endpoint with a manifest URL or
+manifest preview. The backend fetches the entry file, compiles it,
+seeds storage, uploads the icon, writes the editable source tree,
+and registers any cron schedule as one transaction.
 
 ## How it's installed
 
