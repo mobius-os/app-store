@@ -61,7 +61,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.5'
+const STORE_VERSION = '1.4.6'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -193,9 +193,16 @@ const s = {
     position: 'relative',
     display: 'flex', flexDirection: 'column',
     alignItems: 'center', textAlign: 'center',
-    padding: '16px 12px', background: 'var(--surface)',
+    padding: '16px 12px',
+    background: variant === 'update'
+      ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))'
+      : variant === 'installed'
+      ? 'color-mix(in srgb, var(--text) 5%, var(--surface))'
+      : 'var(--surface)',
     border: variant === 'update'
       ? '1px solid var(--accent)'
+      : variant === 'installed'
+      ? '1px solid color-mix(in srgb, var(--text) 22%, var(--border))'
       : variant === 'error'
       ? '1px dashed var(--border)'
       : '1px solid var(--border)',
@@ -261,17 +268,23 @@ const s = {
     textAlign: 'center',
     minHeight: '48px',
   },
-  // Top-border separator between the description and the status pill —
-  // gives the pill a visual ground line so it reads as a footer caption
-  // rather than another floating chip.
+  // Top-border separator between the description and the status/action area.
+  // Status and action stack vertically so "Updating..." never squeezes
+  // "Update available" into a cramped chip.
   cardStatusRow: {
     width: '100%',
     paddingTop: '8px',
     borderTop: '1px solid var(--border)',
     marginTop: 'auto',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    justifyContent: 'center',
+    gap: '8px',
   },
   cardUpdateBtn: {
+    width: '100%',
+    minHeight: '34px',
     flexShrink: 0,
     border: 'none',
     borderRadius: '7px',
@@ -303,10 +316,13 @@ const s = {
     fontFamily: 'var(--font)', letterSpacing: '0.01em',
     border: '1px solid',
     display: 'inline-flex', alignItems: 'center', gap: '6px',
+    justifyContent: 'center',
+    width: '100%',
+    boxSizing: 'border-box',
     background: variant === 'update'
       ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
       : variant === 'installed'
-      ? 'color-mix(in srgb, var(--text) 6%, transparent)'
+      ? 'color-mix(in srgb, var(--text) 9%, transparent)'
       : 'transparent',
     color: variant === 'update' ? 'var(--accent)'
          : variant === 'installed' ? 'var(--text)'
@@ -1095,7 +1111,7 @@ function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
 
 // One catalog tile. Pulled out so the focus/hover styles can live in
 // local state without rerendering the whole grid on every pointer move.
-function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, error }) {
+function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, blocked, error }) {
   const [hover, setHover] = useState(false)
   const [focus, setFocus] = useState(false)
   const m = item.manifest
@@ -1201,9 +1217,18 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     >
       <div style={s.iconSlot}>
         <IconBox item={item} />
-        {cardVariant === 'installed' && (
+        {(cardVariant === 'installed' || cardVariant === 'update') && (
           <div style={s.installedDot} aria-hidden="true">
-            <div style={s.installedDotInner}>✓</div>
+            <div
+              style={{
+                ...s.installedDotInner,
+                background: cardVariant === 'update'
+                  ? 'var(--accent)'
+                  : s.installedDotInner.background,
+              }}
+            >
+              ✓
+            </div>
           </div>
         )}
       </div>
@@ -1220,12 +1245,16 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
         {cardVariant === 'update' && onUpdate && (
           <button
             type="button"
-            style={{ ...s.cardUpdateBtn, opacity: busy ? 0.65 : 1 }}
-            disabled={busy}
-            onClick={(e) => { e.stopPropagation(); if (!busy) onUpdate(item) }}
+            style={{
+              ...s.cardUpdateBtn,
+              opacity: (busy || blocked) ? 0.65 : 1,
+              cursor: (busy || blocked) ? 'default' : 'pointer',
+            }}
+            disabled={busy || blocked}
+            onClick={(e) => { e.stopPropagation(); if (!busy && !blocked) onUpdate(item) }}
             aria-label={`Update ${m.name} to v${m.version}`}
           >
-            {busy ? 'Updating...' : 'Update'}
+            {busy ? 'Updating…' : 'Update'}
           </button>
         )}
       </div>
@@ -1234,7 +1263,7 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
   )
 }
 
-function CatalogList({ items, installed, installedVersions, onPick, onRetry, onUpdate, busy, errors }) {
+function CatalogList({ items, installed, installedVersions, onPick, onRetry, onUpdate, busy, busyItemId, errors }) {
   if (items.length === 0) {
     return <div style={s.empty}>No apps in the catalog yet.</div>
   }
@@ -1249,7 +1278,8 @@ function CatalogList({ items, installed, installedVersions, onPick, onRetry, onU
           onPick={onPick}
           onRetry={onRetry}
           onUpdate={onUpdate}
-          busy={busy}
+          busy={busyItemId === item.id}
+          blocked={busy && busyItemId !== item.id}
           error={errors?.[item.id]}
         />
       ))}
@@ -1590,7 +1620,7 @@ function GlobalKeyframes() {
 // prompt a reload so the freshly-patched code loads. Renders null when current.
 function SelfUpdateBanner({ token }) {
   const [latest, setLatest] = useState(null)   // manifest of the published store
-  const [phase, setPhase] = useState('idle')   // idle | updating | done | error
+  const [phase, setPhase] = useState('idle')   // idle | updating | done | conflict | error
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -1602,7 +1632,7 @@ function SelfUpdateBanner({ token }) {
   }, [])
 
   const hasUpdate = latest && semverCmp(STORE_VERSION, latest.version) < 0
-  if (phase !== 'done' && !hasUpdate) return null
+  if (phase !== 'done' && phase !== 'conflict' && !hasUpdate) return null
 
   const bannerStyle = {
     display: 'flex', alignItems: 'center', gap: '12px',
@@ -1621,7 +1651,15 @@ function SelfUpdateBanner({ token }) {
   const onUpdate = async () => {
     setPhase('updating'); setMsg('')
     try {
-      await installApp({ manifest: latest, raw_base: STORE_SELF.raw_base, token })
+      const result = await installApp({ manifest_url: STORE_SELF.manifest_url, token })
+      if (result.mode === 'conflict') {
+        const paths = result.conflict_paths?.length
+          ? ` Conflicts: ${result.conflict_paths.join(', ')}.`
+          : ''
+        setPhase('conflict')
+        setMsg(`Blocked by local App Store edits.${paths}`)
+        return
+      }
       setPhase('done')
     } catch (e) {
       setPhase('error'); setMsg(e.message || String(e))
@@ -1634,6 +1672,13 @@ function SelfUpdateBanner({ token }) {
         <>
           <div style={{ flex: 1 }}>App Store updated to v{latest.version}. Reload to apply.</div>
           <button style={btnStyle} onClick={() => window.location.reload()}>Reload</button>
+        </>
+      ) : phase === 'conflict' ? (
+        <>
+          <div style={{ flex: 1 }}>
+            App Store v{latest.version} is available, but the update is blocked. {msg}
+          </div>
+          <button style={btnStyle} onClick={onUpdate}>Retry</button>
         </>
       ) : (
         <>
@@ -1664,6 +1709,7 @@ export default function App({ appId, token }) {
   // iframe (sandbox lacks `allow-modals`), so we stage the
   // confirmation as in-app state and render our own modal.
   const [busy, setBusy] = useState(false)
+  const [busyItemId, setBusyItemId] = useState(null)
   const [toast, setToast] = useState(null)
   const [updateNotice, setUpdateNotice] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
@@ -1777,6 +1823,7 @@ export default function App({ appId, token }) {
   const handleInstall = async (item, _opts = {}) => {
     if (busy) return
     setBusy(true)
+    setBusyItemId(item?.id || null)
     setCardErrors(prev => {
       const next = { ...prev }
       delete next[item.id]
@@ -1868,6 +1915,7 @@ export default function App({ appId, token }) {
       setToast({ kind: 'error', message })
     } finally {
       setBusy(false)
+      setBusyItemId(null)
     }
   }
 
@@ -2104,6 +2152,7 @@ export default function App({ appId, token }) {
                   onRetry={retryCatalogItem}
                   onUpdate={handleInstall}
                   busy={busy}
+                  busyItemId={busyItemId}
                   errors={cardErrors}
                 />}
           </>
