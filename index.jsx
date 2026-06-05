@@ -25,9 +25,9 @@ const CATALOG = [
   },
   {
     id: 'cuberun',
-    repo: 'hamzamerzic/cuberun',
-    manifest_url: 'https://raw.githubusercontent.com/hamzamerzic/cuberun/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/hamzamerzic/cuberun/main/',
+    repo: 'mobius-os/app-cuberun',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-cuberun/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-cuberun/main/',
   },
   {
     id: 'latex',
@@ -61,7 +61,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.1'
+const STORE_VERSION = '1.4.2'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
