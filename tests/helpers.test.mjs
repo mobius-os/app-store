@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, readFile, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFile } from 'node:child_process'
@@ -103,4 +103,11 @@ test('semverCmp handles releases and pre-releases', async () => {
   // Numeric identifiers rank below alphanumeric; fewer identifiers rank lower.
   assert.equal(semverCmp('1.0.0-alpha', '1.0.0-alpha.1'), -1)
   assert.equal(semverCmp('1.0.0-1', '1.0.0-alpha'), -1)
+})
+
+test('STORE_VERSION stays in lockstep with mobius.json', async () => {
+  const manifest = JSON.parse(await readFile(join(root, '..', 'mobius.json'), 'utf8'))
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const match = source.match(/const STORE_VERSION = '([^']+)'/)
+  assert.equal(match?.[1], manifest.version)
 })

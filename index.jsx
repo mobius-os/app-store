@@ -61,7 +61,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.6'
+const STORE_VERSION = '1.4.7'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -268,9 +268,8 @@ const s = {
     textAlign: 'center',
     minHeight: '48px',
   },
-  // Top-border separator between the description and the status/action area.
-  // Status and action stack vertically so "Updating..." never squeezes
-  // "Update available" into a cramped chip.
+  // Top-border separator between the description and the one card action.
+  // Each card reads as exactly one state/action: Install, Installed, or Update.
   cardStatusRow: {
     width: '100%',
     paddingTop: '8px',
@@ -282,19 +281,27 @@ const s = {
     justifyContent: 'center',
     gap: '8px',
   },
-  cardUpdateBtn: {
+  cardActionBtn: (variant = 'default') => ({
     width: '100%',
     minHeight: '34px',
     flexShrink: 0,
-    border: 'none',
+    border: '1px solid',
     borderRadius: '7px',
     padding: '5px 12px',
-    background: 'var(--green, var(--accent))',
-    color: '#fff',
+    background: variant === 'update'
+      ? 'var(--green, var(--accent))'
+      : variant === 'installed'
+      ? 'color-mix(in srgb, var(--text) 9%, transparent)'
+      : 'var(--accent)',
+    color: variant === 'installed' ? 'var(--text)' : '#fff',
+    borderColor: variant === 'installed'
+      ? 'color-mix(in srgb, var(--text) 18%, var(--border))'
+      : 'transparent',
     fontWeight: 600,
     fontSize: '12px',
     cursor: 'pointer',
-  },
+    fontFamily: 'var(--font)',
+  }),
   cardInlineError: {
     width: '100%',
     marginTop: '8px',
@@ -307,38 +314,6 @@ const s = {
     border: '1px solid color-mix(in srgb, var(--danger, #e5484d) 30%, transparent)',
     boxSizing: 'border-box',
   },
-  // Grid-card status pill — readonly. The card itself takes the tap
-  // to the detail view; the detail view owns the Install / Update /
-  // Open action button so the user sees permissions before committing.
-  cardStatus: (variant) => ({
-    fontSize: '11px', fontWeight: 600,
-    padding: '4px 10px', borderRadius: '999px',
-    fontFamily: 'var(--font)', letterSpacing: '0.01em',
-    border: '1px solid',
-    display: 'inline-flex', alignItems: 'center', gap: '6px',
-    justifyContent: 'center',
-    width: '100%',
-    boxSizing: 'border-box',
-    background: variant === 'update'
-      ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
-      : variant === 'installed'
-      ? 'color-mix(in srgb, var(--text) 9%, transparent)'
-      : 'transparent',
-    color: variant === 'update' ? 'var(--accent)'
-         : variant === 'installed' ? 'var(--text)'
-         : 'var(--muted)',
-    borderColor: variant === 'update' ? 'var(--accent)'
-               : variant === 'installed' ? 'var(--border)'
-               : 'var(--border)',
-  }),
-  cardStatusDot: (variant) => ({
-    width: '6px', height: '6px', borderRadius: '999px',
-    background: variant === 'update' ? 'var(--accent)'
-              : variant === 'installed'
-              ? 'color-mix(in srgb, var(--text) 50%, transparent)'
-              : 'color-mix(in srgb, var(--muted) 60%, transparent)',
-    flexShrink: 0,
-  }),
   // Skeleton placeholder — same shape as a card so the grid doesn't
   // reflow when the real manifests arrive.
   skeletonCard: {
@@ -1165,25 +1140,39 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
   const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
   const needsVersionSync = storeInstalled && !recordedVer
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
-
-  // Pill text + the accent dot prefix. Card-level variant (border /
-  // installed-dot) is computed alongside so the visual signal lands
-  // before the user finishes parsing the pill text.
-  let statusLabel = 'Not installed'
-  let statusVariant = 'available'
+  // One footer action plus a card-level variant (border / installed-dot)
+  // so the state is obvious before the user opens details.
+  let statusLabel = 'Install'
   let cardVariant = 'default'
   if (storeInstalled && hasUpdate) {
-    statusLabel = `Update available · v${m.version}`
-    statusVariant = 'update'
+    statusLabel = 'Update'
     cardVariant = 'update'
   } else if (needsVersionSync) {
-    statusLabel = 'Installed · version unknown'
-    statusVariant = 'installed'
-    cardVariant = 'installed'
+    statusLabel = 'Update'
+    cardVariant = 'update'
   } else if (storeInstalled) {
     statusLabel = 'Installed'
-    statusVariant = 'installed'
     cardVariant = 'installed'
+  }
+  const isActionable = cardVariant !== 'installed'
+  const cardActionDisabled = busy || blocked || !isActionable
+  const actionLabel = busy
+    ? cardVariant === 'update' ? 'Updating…' : 'Installing…'
+    : statusLabel
+  const stopCardEvent = (event) => event.stopPropagation()
+  const onCardActionKeyDown = (event) => {
+    event.stopPropagation()
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    if (cardActionDisabled) return
+    if (cardVariant === 'update') onUpdate?.(item)
+    else onPick(item)
+  }
+  const onCardAction = (event) => {
+    event.stopPropagation()
+    if (cardActionDisabled) return
+    if (cardVariant === 'update') onUpdate?.(item)
+    else onPick(item)
   }
 
   // Subtle lift on hover/focus so the tap target reads as interactive.
@@ -1238,25 +1227,28 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
         <div style={s.cardDesc}>{m.description}</div>
       ) : null}
       <div style={s.cardStatusRow}>
-        <span style={s.cardStatus(statusVariant)}>
-          <span style={s.cardStatusDot(statusVariant)} aria-hidden="true" />
-          {statusLabel}
-        </span>
-        {cardVariant === 'update' && onUpdate && (
-          <button
-            type="button"
-            style={{
-              ...s.cardUpdateBtn,
-              opacity: (busy || blocked) ? 0.65 : 1,
-              cursor: (busy || blocked) ? 'default' : 'pointer',
-            }}
-            disabled={busy || blocked}
-            onClick={(e) => { e.stopPropagation(); if (!busy && !blocked) onUpdate(item) }}
-            aria-label={`Update ${m.name} to v${m.version}`}
-          >
-            {busy ? 'Updating…' : 'Update'}
-          </button>
-        )}
+        <button
+          type="button"
+          style={{
+            ...s.cardActionBtn(cardVariant),
+            opacity: cardActionDisabled ? 0.65 : 1,
+            cursor: cardActionDisabled ? 'default' : 'pointer',
+          }}
+          disabled={cardActionDisabled}
+          onPointerDown={stopCardEvent}
+          onMouseDown={stopCardEvent}
+          onKeyDown={onCardActionKeyDown}
+          onClick={onCardAction}
+          aria-label={
+            cardVariant === 'update'
+              ? `Update ${m.name} to v${m.version}`
+              : cardVariant === 'installed'
+              ? `${m.name} is installed`
+              : `Review and install ${m.name}`
+          }
+        >
+          {actionLabel}
+        </button>
       </div>
       {error && <div style={s.cardInlineError}>{error}</div>}
     </div>
@@ -1416,6 +1408,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
   const needsVersionSync = storeInstalled && !recordedVer
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
+  const blockedUpdate = updateNotice?.kind === 'conflict'
   const ca = m.permissions?.cross_app_access || 'none'
   const sw = m.permissions?.share_with_apps || 'none'
   const ma = !!m.permissions?.manage_apps
@@ -1572,11 +1565,17 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
         <button
           style={{
             ...s.bigBtn,
-            background: (hasUpdate || needsVersionSync) ? 'var(--green)' : 'var(--accent)',
+            background: blockedUpdate
+              ? 'var(--accent)'
+              : (hasUpdate || needsVersionSync) ? 'var(--green)' : 'var(--accent)',
           }}
           disabled={busy}
           onClick={() => {
             if (busy) return
+            if (blockedUpdate) {
+              onReviewUpdate(updateNotice)
+              return
+            }
             if (hasUpdate || needsVersionSync) onInstall(item, { isUpdate: true, existingId: storeInstalled.id })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
             else onInstall(item, { isUpdate: false })
@@ -1584,6 +1583,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
         >
           {busy
             ? (hasUpdate ? 'Updating…' : needsVersionSync ? 'Checking…' : 'Installing…')
+            : blockedUpdate ? 'Resolve update'
             : hasUpdate ? `Update to v${m.version}`
             : needsVersionSync ? 'Check for updates'
             : storeInstalled ? 'Open App'
@@ -1846,15 +1846,22 @@ export default function App({ appId, token }) {
       const isCleanMerge = result.mode === 'update' && result.divergence === 'clean_merge'
 
       if (isConflict) {
+        const name = result.name || item.manifest?.name || item.id
+        const paths = result.conflict_paths?.length
+          ? ` Conflicts: ${result.conflict_paths.join(', ')}.`
+          : ''
+        const message = `${name} update needs review before it can apply.${paths}`
         const notice = {
           kind: 'conflict',
           itemId: item.id,
           appId: result.id,
-          message: `A clean update to v${result.version || item.manifest?.version} isn't possible — your edits conflict.`,
+          message,
           result,
           item,
         }
         setUpdateNotice(notice)
+        setCardErrors(prev => ({ ...prev, [item.id]: message }))
+        setToast({ kind: 'error', message })
         await refreshInstalled()
         if (!detail) await openDetail(item)
         return
