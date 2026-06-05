@@ -61,7 +61,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.2'
+const STORE_VERSION = '1.4.3'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -1961,6 +1961,7 @@ export default function App({ appId, token }) {
   useEffect(() => {
     function onMessage(event) {
       if (event.origin !== window.location.origin) return
+      if (event.source !== window.parent) return
       if (event.data?.type === 'moebius:nav-back') {
         setDetail(null)
         navDetailRef.current = null
@@ -1976,6 +1977,7 @@ export default function App({ appId, token }) {
   // concurrent pushes from cross-resolving.
   const openDetail = useCallback(async (item) => {
     if (!item || !item.manifest) return
+    if (navDetailRef.current && !detail) return
     if (detail) {
       // Already in a detail view (defensive — UI shouldn't allow this).
       // Swap without a second nav-push.
@@ -1992,6 +1994,7 @@ export default function App({ appId, token }) {
         }, 5000)
         function onAck(event) {
           if (event.origin !== window.location.origin) return
+          if (event.source !== window.parent) return
           if (event.data?.requestId !== requestId) return
           if (event.data.type === 'moebius:nav-push-ack') {
             clearTimeout(timer)
