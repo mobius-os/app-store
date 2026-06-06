@@ -1138,7 +1138,10 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
   const storeInstalled = findInstalled(installed, item)
   const recordedVer = installedVersions[item.id]
   const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
-  const needsVersionSync = storeInstalled && !recordedVer
+  // A resolved installed version (now persisted as App.version) means there
+  // is nothing to sync; only offer the sync affordance when no version is
+  // known at all and the catalog hasn't reported a genuine update.
+  const needsVersionSync = storeInstalled && !installedVer && !recordedVer
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
   // One footer action plus a card-level variant (border / installed-dot)
   // so the state is obvious before the user opens details.
@@ -1406,7 +1409,10 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   const storeInstalled = findInstalled(installed, item)
   const recordedVer = installedVersions[item.id]
   const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
-  const needsVersionSync = storeInstalled && !recordedVer
+  // A resolved installed version (now persisted as App.version) means there
+  // is nothing to sync; only offer the sync affordance when no version is
+  // known at all and the catalog hasn't reported a genuine update.
+  const needsVersionSync = storeInstalled && !installedVer && !recordedVer
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
   const blockedUpdate = updateNotice?.kind === 'conflict'
   const ca = m.permissions?.cross_app_access || 'none'
