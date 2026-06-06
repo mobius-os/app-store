@@ -61,7 +61,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.7'
+const STORE_VERSION = '1.4.9'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -143,493 +143,527 @@ function installedVersionFor(item, installedVersions, installedApp) {
     ''
 }
 
-const s = {
-  root: {
-    height: '100%', display: 'flex', flexDirection: 'column',
-    background: 'var(--bg)', color: 'var(--text)',
-    fontFamily: 'var(--font)', overflow: 'hidden',
-  },
-  header: {
-    padding: '16px 16px 12px', flexShrink: 0,
-    borderBottom: '1px solid var(--border)',
-    background: 'var(--bg)',
-  },
-  titleRow: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: '12px',
-  },
-  title: {
-    fontSize: '22px', fontWeight: 700, margin: 0,
-    letterSpacing: '-0.01em',
-  },
-  tabs: {
-    display: 'flex', gap: '4px', background: 'var(--surface)',
-    borderRadius: '10px', padding: '3px',
-    border: '1px solid var(--border)',
-  },
-  tab: (active) => ({
-    flex: 1, padding: '10px 16px', borderRadius: '8px', border: 'none',
-    cursor: 'pointer', fontSize: '14px', fontWeight: 500,
-    background: active ? 'var(--accent)' : 'transparent',
-    color: active ? '#fff' : 'var(--muted)',
-    transition: 'background 150ms, color 150ms', fontFamily: 'var(--font)',
-    minHeight: '44px',
-  }),
-  scroll: {
-    flex: 1, overflow: 'auto', padding: '16px',
-  },
-  catalogGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-    gap: '16px',
-  },
-  // Card variants:
-  //  - 'default'  — not installed: standard border
-  //  - 'installed' — already installed: same border + a check dot in the icon corner
-  //  - 'update'    — installed-but-old: accent border so the card itself signals
-  //                  "you should look at this" before the user reads the pill
-  //  - 'error'     — manifest fetch failed: dashed muted border, no hover lift
-  card: (variant = 'default') => ({
-    position: 'relative',
-    display: 'flex', flexDirection: 'column',
-    alignItems: 'center', textAlign: 'center',
-    padding: '16px 12px',
-    background: variant === 'update'
-      ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))'
-      : variant === 'installed'
-      ? 'color-mix(in srgb, var(--text) 5%, var(--surface))'
-      : 'var(--surface)',
-    border: variant === 'update'
-      ? '1px solid var(--accent)'
-      : variant === 'installed'
-      ? '1px solid color-mix(in srgb, var(--text) 22%, var(--border))'
-      : variant === 'error'
-      ? '1px dashed var(--border)'
-      : '1px solid var(--border)',
-    borderRadius: '12px',
-    cursor: variant === 'error' ? 'default' : 'pointer',
-    transition: 'border-color 150ms, transform 150ms, box-shadow 150ms, background 150ms',
-    minHeight: '44px',
-    outline: 'none',
-  }),
-  iconWrap: {
-    width: '88px', height: '88px', borderRadius: '20px',
-    background: 'var(--surface2)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0, overflow: 'hidden',
-  },
-  // A relative anchor around the IconBox so the "installed" check dot
-  // can sit at the icon's bottom-right corner without leaking out of
-  // IconBox's `overflow: hidden`. Spacing-below lives on this slot.
-  iconSlot: {
-    position: 'relative',
-    marginBottom: '12px',
-    display: 'inline-block',
-  },
-  iconImg: { width: '100%', height: '100%', objectFit: 'cover' },
-  iconLetter: {
-    fontSize: '34px', fontWeight: 700, color: 'var(--accent)',
-  },
-  // A tiny check dot sits at the icon's bottom-right when the app is
-  // already installed. Quicker to read than the pill text, lets the
-  // grid double as an "at a glance" inventory.
-  installedDot: {
-    position: 'absolute',
-    bottom: '-2px', right: '-2px',
-    width: '22px', height: '22px', borderRadius: '999px',
-    background: 'var(--surface)',
-    border: '2px solid var(--surface)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.18)',
-  },
-  installedDotInner: {
-    width: '18px', height: '18px', borderRadius: '999px',
-    background: 'color-mix(in srgb, var(--accent) 80%, var(--surface))',
-    color: '#fff',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: '12px', fontWeight: 700, lineHeight: 1,
-  },
-  cardName: {
-    fontSize: '14px', fontWeight: 600, lineHeight: 1.25,
-    marginBottom: '4px',
-    display: '-webkit-box', WebkitLineClamp: 2,
-    WebkitBoxOrient: 'vertical', overflow: 'hidden',
-  },
-  cardVersion: {
-    fontSize: '11px', color: 'var(--muted)',
-    fontFamily: 'var(--mono, monospace)',
-    marginBottom: '8px',
-  },
-  cardDesc: {
-    fontSize: '12px', color: 'var(--muted)', lineHeight: 1.35,
-    marginBottom: '12px',
-    display: '-webkit-box', WebkitLineClamp: 3,
-    WebkitBoxOrient: 'vertical', overflow: 'hidden',
-    textAlign: 'center',
-    minHeight: '48px',
-  },
-  // Top-border separator between the description and the one card action.
-  // Each card reads as exactly one state/action: Install, Installed, or Update.
-  cardStatusRow: {
-    width: '100%',
-    paddingTop: '8px',
-    borderTop: '1px solid var(--border)',
-    marginTop: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    justifyContent: 'center',
-    gap: '8px',
-  },
-  cardActionBtn: (variant = 'default') => ({
-    width: '100%',
-    minHeight: '34px',
-    flexShrink: 0,
-    border: '1px solid',
-    borderRadius: '7px',
-    padding: '5px 12px',
-    background: variant === 'update'
-      ? 'var(--green, var(--accent))'
-      : variant === 'installed'
-      ? 'color-mix(in srgb, var(--text) 9%, transparent)'
-      : 'var(--accent)',
-    color: variant === 'installed' ? 'var(--text)' : '#fff',
-    borderColor: variant === 'installed'
-      ? 'color-mix(in srgb, var(--text) 18%, var(--border))'
-      : 'transparent',
-    fontWeight: 600,
-    fontSize: '12px',
-    cursor: 'pointer',
-    fontFamily: 'var(--font)',
-  }),
-  cardInlineError: {
-    width: '100%',
-    marginTop: '8px',
-    padding: '8px',
-    borderRadius: '8px',
-    background: 'color-mix(in srgb, var(--danger, #e5484d) 10%, transparent)',
-    color: 'var(--danger)',
-    fontSize: '12px',
-    lineHeight: 1.35,
-    border: '1px solid color-mix(in srgb, var(--danger, #e5484d) 30%, transparent)',
-    boxSizing: 'border-box',
-  },
-  // Skeleton placeholder — same shape as a card so the grid doesn't
-  // reflow when the real manifests arrive.
-  skeletonCard: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '16px 12px',
-    background: 'var(--surface)',
-    border: '1px solid var(--border)', borderRadius: '12px',
-    minHeight: '44px',
-    opacity: 0.7,
-  },
-  skeletonBlock: (w, h) => ({
-    width: w, height: h, borderRadius: '6px',
-    background: 'color-mix(in srgb, var(--text) 8%, transparent)',
-    animation: 'mobius-store-pulse 1.4s ease-in-out infinite',
-  }),
-  cardErrorBody: {
-    fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4,
-    marginTop: '4px', marginBottom: '12px',
-    textAlign: 'center',
-  },
-  cardRetryBtn: {
-    padding: '6px 12px', borderRadius: '8px',
-    border: '1px solid var(--border)', background: 'transparent',
-    color: 'var(--text)', fontSize: '12px', fontWeight: 600,
-    cursor: 'pointer', fontFamily: 'var(--font)',
-    minHeight: '32px',
-    transition: 'background 150ms',
-  },
-  // From URL tab
-  urlForm: {
-    background: 'var(--surface)', border: '1px solid var(--border)',
-    borderRadius: '12px', padding: '16px',
-  },
-  urlLabel: {
-    fontSize: '14px', fontWeight: 600, marginBottom: '8px',
-    display: 'block',
-  },
-  urlHint: {
-    fontSize: '12px', color: 'var(--muted)', marginBottom: '12px',
-    lineHeight: 1.5,
-  },
-  urlInput: {
-    width: '100%', padding: '12px',
-    background: 'var(--bg)', color: 'var(--text)',
-    border: '1px solid var(--border)', borderRadius: '8px',
-    fontSize: '13px', fontFamily: 'var(--mono, monospace)',
-    outline: 'none', boxSizing: 'border-box',
-    marginBottom: '12px',
-    minHeight: '44px',
-    transition: 'border-color 150ms, box-shadow 150ms',
-  },
-  primaryBtn: {
-    padding: '12px 20px', borderRadius: '10px', border: 'none',
-    background: 'var(--accent)', color: '#fff',
-    fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-    fontFamily: 'var(--font)',
-    minHeight: '44px',
-    transition: 'background 150ms',
-  },
-  // Live host indicator below the URL input — switches between
-  // "trusted source" (calm accent badge) and "unfamiliar host"
-  // (amber-toned, but not red — installing from a personal repo is
-  // legitimate; the framing should inform, not alarm).
-  hostBadge: (kind) => ({
-    display: 'inline-flex', alignItems: 'center', gap: '6px',
-    padding: '4px 10px', borderRadius: '999px',
-    fontSize: '12px', fontWeight: 500,
-    fontFamily: 'var(--font)',
-    background: kind === 'trusted'
-      ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
-      : 'color-mix(in srgb, var(--text) 6%, transparent)',
-    color: kind === 'trusted' ? 'var(--accent)' : 'var(--muted)',
-    border: '1px solid',
-    borderColor: kind === 'trusted' ? 'var(--accent)' : 'var(--border)',
-    marginBottom: '12px',
-  }),
-  hostBadgeDot: (kind) => ({
-    width: '6px', height: '6px', borderRadius: '999px',
-    background: kind === 'trusted' ? 'var(--accent)'
-              : 'color-mix(in srgb, var(--muted) 60%, transparent)',
-    flexShrink: 0,
-  }),
-  hostBadgeHost: {
-    fontFamily: 'var(--mono, monospace)', fontSize: '11px',
-  },
-  errorBox: {
-    background: 'color-mix(in srgb, var(--danger, #e5484d) 12%, transparent)',
-    color: 'var(--danger)', padding: '12px',
-    borderRadius: '8px', fontSize: '14px',
-    marginTop: '12px', lineHeight: 1.5,
-    border: '1px solid color-mix(in srgb, var(--danger, #e5484d) 40%, transparent)',
-  },
-  // Detail view
-  detailHeader: {
-    padding: '12px 16px', display: 'flex', alignItems: 'center',
-    gap: '8px', borderBottom: '1px solid var(--border)',
-    flexShrink: 0,
-  },
-  backBtn: {
-    background: 'none', border: 'none', color: 'var(--accent)',
-    fontSize: '14px', cursor: 'pointer', padding: '8px 12px',
-    fontFamily: 'var(--font)', fontWeight: 500,
-    minHeight: '44px',
-    display: 'inline-flex', alignItems: 'center', gap: '4px',
-    margin: '-8px -8px',  // compensate so the visible affordance still aligns
-    borderRadius: '8px',
-    transition: 'background 150ms',
-  },
-  hero: {
-    display: 'flex', alignItems: 'center', gap: '16px',
-    marginBottom: '24px',
-  },
-  heroIcon: {
-    width: '72px', height: '72px', borderRadius: '16px',
-    background: 'var(--surface2)', display: 'flex',
-    alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0, overflow: 'hidden',
-  },
-  heroIconLetter: {
-    fontSize: '32px', fontWeight: 700, color: 'var(--accent)',
-  },
-  heroName: {
-    fontSize: '22px', fontWeight: 700, margin: '0 0 4px',
-    letterSpacing: '-0.01em',
-  },
-  heroMeta: {
-    fontSize: '12px', color: 'var(--muted)',
-    fontFamily: 'var(--mono, monospace)',
-  },
-  detailDesc: {
-    fontSize: '14px', lineHeight: 1.55, color: 'var(--text)',
-    marginBottom: '24px',
-  },
-  detailSection: { marginBottom: '24px' },
-  sectionLabel: {
-    fontSize: '11px', fontWeight: 600, color: 'var(--muted)',
-    textTransform: 'uppercase', letterSpacing: '0.06em',
-    marginBottom: '8px',
-  },
-  permissionRow: {
-    display: 'flex', gap: '12px',
-    padding: '12px', background: 'var(--surface)',
-    border: '1px solid var(--border)', borderRadius: '8px',
-    marginBottom: '8px', fontSize: '14px', lineHeight: 1.5,
-  },
-  permRowMain: { flex: 1, minWidth: 0 },
-  permLabel: {
-    fontWeight: 600, color: 'var(--text)',
-  },
-  permDetail: { color: 'var(--muted)' },
-  // A muted helper line under the permission summary — explains, in
-  // plain language, what the manifest value actually grants. The
-  // detail prose comes from PERM_EXPLAIN; this row prefixes a short
-  // capability tag so "Read" / "Write" / "None" reads at a glance.
-  permTag: (level) => {
-    // Treat 'no' the same as 'none' so the manage_apps row's "off"
-    // state renders with the muted styling rather than the accent
-    // colour used for granted permissions.
-    const muted = level === 'none' || level === 'no'
-    return {
-      flexShrink: 0,
-      padding: '2px 8px', borderRadius: '999px',
-      fontSize: '11px', fontWeight: 600,
-      fontFamily: 'var(--font)', letterSpacing: '0.02em',
-      textTransform: 'uppercase',
-      background: muted
-        ? 'color-mix(in srgb, var(--muted) 14%, transparent)'
-        : level === 'read'
-        ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
-        : 'color-mix(in srgb, var(--accent) 22%, transparent)',
-      color: muted ? 'var(--muted)' : 'var(--accent)',
-      border: '1px solid',
-      borderColor: muted ? 'var(--border)' : 'var(--accent)',
-      alignSelf: 'flex-start',
-    }
-  },
-  scheduleRow: {
-    padding: '12px', background: 'var(--surface)',
-    border: '1px solid var(--border)', borderRadius: '8px',
-    fontSize: '14px', lineHeight: 1.5,
-  },
-  scheduleMain: {
-    fontWeight: 600, color: 'var(--text)',
-  },
-  scheduleNote: {
-    color: 'var(--muted)', marginTop: '4px', fontSize: '12px',
-  },
-  // External-libs disclosure — was an alarming purple-bordered panel.
-  // The info is useful; the framing isn't. Now reads as a quiet note
-  // anchored on a muted surface, with the dep list mono-formatted.
-  esmNote: {
-    padding: '12px', background: 'var(--surface)',
-    border: '1px solid var(--border)', borderRadius: '8px',
-    fontSize: '14px', lineHeight: 1.5,
-    color: 'var(--muted)',
-  },
-  esmDepList: {
-    fontFamily: 'var(--mono, monospace)',
-    fontSize: '12px',
-    color: 'var(--text)',
-    marginTop: '6px',
-    wordBreak: 'break-all',
-  },
-  hostWarn: {
-    display: 'flex', gap: '12px', alignItems: 'flex-start',
-    padding: '12px', marginBottom: '12px',
-    background: 'var(--accent-dim, rgba(139,108,247,0.15))',
-    border: '1px solid var(--accent)', borderRadius: '8px',
-    fontSize: '14px', lineHeight: 1.5,
-  },
-  hostWarnIcon: {
-    fontSize: '16px', lineHeight: 1.2, color: 'var(--accent)',
-    flexShrink: 0,
-  },
-  hostWarnHost: {
-    fontWeight: 600, color: 'var(--text)',
-    fontFamily: 'var(--mono, monospace)',
-  },
-  hostWarnBody: {
-    color: 'var(--muted)', marginTop: '2px',
-  },
-  link: {
-    color: 'var(--accent)', textDecoration: 'none',
-  },
-  detailFooter: {
-    padding: '16px', borderTop: '1px solid var(--border)',
-    display: 'flex', flexDirection: 'column', gap: '8px',
-    flexShrink: 0, background: 'var(--bg)',
-  },
-  bigBtn: {
-    width: '100%', padding: '12px 16px', borderRadius: '10px',
-    border: 'none', background: 'var(--accent)', color: '#fff',
-    fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-    fontFamily: 'var(--font)',
-    minHeight: '44px',
-    transition: 'background 150ms, transform 150ms',
-  },
-  dangerBtn: {
-    padding: '12px 16px', borderRadius: '10px',
-    border: '1px solid var(--border)', background: 'transparent',
-    color: 'var(--danger)', fontSize: '14px', fontWeight: 600,
-    cursor: 'pointer', fontFamily: 'var(--font)',
-    minHeight: '44px',
-  },
-  // Subordinate link-style button for "Uninstall" when the primary CTA
-  // is already "Open App". Avoids the visual equal-weight of two solid
-  // buttons stacked — Uninstall is rare and not the user's main path.
-  secondaryLink: {
-    alignSelf: 'center',
-    padding: '12px 16px', borderRadius: '8px',
-    border: 'none', background: 'transparent',
-    color: 'var(--muted)', fontSize: '13px', fontWeight: 500,
-    cursor: 'pointer', fontFamily: 'var(--font)',
-    textDecoration: 'underline',
-    textUnderlineOffset: '2px',
-    minHeight: '44px',
-  },
-  // Modal
-  modalBackdrop: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-    display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-    zIndex: 100,
-  },
-  modal: {
-    background: 'var(--surface)', borderRadius: '16px 16px 0 0',
-    width: '100%', maxWidth: '480px', padding: '24px',
-    maxHeight: '85vh', overflowY: 'auto',
-    borderTop: '1px solid var(--border)',
-  },
-  modalTitle: {
-    fontSize: '16px', fontWeight: 700, margin: '0 0 12px',
-    letterSpacing: '-0.01em',
-  },
-  // Side-by-side action buttons in modals. Children get `flex: 1`
-  // applied directly (via the helper below) since the canonical
-  // `bigBtn` and `dangerBtn` styles are also used full-width in the
-  // detail footer — flex:1 only belongs in the modal context.
-  modalActions: {
-    display: 'flex', gap: '8px', marginTop: '24px',
-  },
-  modalBtn: { flex: 1, width: 'auto' },
-  toast: {
-    position: 'fixed', bottom: '16px', left: '16px', right: '16px',
-    padding: '12px 16px', background: 'var(--surface)',
-    border: '1px solid var(--accent)', borderRadius: '12px',
-    fontSize: '14px', lineHeight: 1.5,
-    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-    display: 'flex', alignItems: 'center', gap: '12px',
-    zIndex: 200,
-  },
-  toastBtn: {
-    padding: '8px 16px', borderRadius: '8px', border: 'none',
-    background: 'var(--accent)', color: '#fff',
-    fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-    fontFamily: 'var(--font)', flexShrink: 0,
-    minHeight: '32px',
-  },
-  updateNotice: {
-    marginTop: '12px',
-    padding: '12px',
-    background: 'var(--surface)',
-    border: '1px solid var(--accent)',
-    borderRadius: '10px',
-    fontSize: '14px',
-    lineHeight: 1.45,
-  },
-  updateNoticeActions: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '12px',
-  },
-  empty: {
-    textAlign: 'center', padding: '40px 20px',
-    color: 'var(--muted)', fontSize: '14px',
-  },
+// One module-level stylesheet rendered once at the app root as
+// <style>{CSS}</style>. Style is via semantic `st-`-prefixed classNames;
+// inline style={} is reserved for render-time dynamic values (the footer
+// CTA's state-driven background, the skeleton block dimensions, the
+// installed-dot's update tint). App-driven variants ride is-* modifier
+// classes, never JS style helpers. Shared chrome (root, segmented tabs,
+// empty, sheet, buttons, toast) is fenced with mobius-ui markers so a
+// future extraction into @mobius/ui is mechanical.
+const CSS = `
+/* mobius-ui:Root v1 — keep in sync; library candidate. Diverge below the marker only. */
+.st-root {
+  position: relative;        /* anchor for scrims / sheets / toasts (absolute, not fixed) */
+  height: 100%; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); overflow: hidden;
 }
+.st-scroll { flex: 1; overflow: auto; padding: 16px; }
+/* /mobius-ui:Root */
+
+/* App-specific header — title + a segmented tab bar, not the canonical
+   brand-cluster header. Kept on the store's own values. */
+.st-header {
+  padding: 16px 16px 12px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.st-title-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.st-title { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+
+/* mobius-ui:Segmented v1 — keep in sync; library candidate. Diverge below the marker only. */
+.st-seg {
+  display: inline-flex; gap: 2px; padding: 3px;
+  background: var(--surface2, var(--surface)); border: 1px solid var(--border); border-radius: 10px;
+}
+.st-seg-btn {
+  min-height: 44px; padding: 6px 14px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--muted); font-family: var(--font);
+  font-size: 13px; font-weight: 650; cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.st-seg-btn:hover { color: var(--text); }
+.st-seg-btn.is-active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+.st-seg.is-accent .st-seg-btn.is-active { background: var(--accent); color: #fff; box-shadow: none; }
+/* /mobius-ui:Segmented */
+
+/* The store's full-width tab bar: segmented control stretched across the
+   header, each button sharing the row equally. */
+.st-tabs { display: flex; width: 100%; gap: 4px; border-radius: 10px; }
+.st-tabs .st-seg-btn { flex: 1; }
+
+/* App-specific catalog grid + tiles. The vertical-tile card diverges
+   structurally from the canonical horizontal list Card, so it keeps the
+   store's own values + class names. State rides is-* modifier classes. */
+.st-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+}
+.st-card {
+  position: relative;
+  display: flex; flex-direction: column;
+  align-items: center; text-align: center;
+  padding: 16px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 150ms, transform 150ms, box-shadow 150ms, background 150ms;
+  min-height: 44px;
+  outline: none;
+}
+.st-card.is-update {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-color: var(--accent);
+}
+.st-card.is-installed {
+  background: color-mix(in srgb, var(--text) 5%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--text) 22%, var(--border));
+}
+.st-card.is-error {
+  border: 1px dashed var(--border);
+  cursor: default;
+}
+/* Interaction lift — was JS hover/focus state, now real pseudo-classes.
+   Update cards already carry an accent border, so the lift only shadows
+   + bumps them; the focus ring matches the catalog accent language. */
+.st-card[role="button"]:hover,
+.st-card[role="button"]:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+}
+.st-card[role="button"]:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.st-icon-wrap {
+  width: 88px; height: 88px; border-radius: 20px;
+  background: var(--surface2);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; overflow: hidden;
+}
+/* A relative anchor around the IconBox so the "installed" check dot can
+   sit at the icon's bottom-right corner without leaking out of
+   .st-icon-wrap's overflow: hidden. Spacing-below lives on this slot. */
+.st-icon-slot { position: relative; margin-bottom: 12px; display: inline-block; }
+.st-icon-img { width: 100%; height: 100%; object-fit: cover; }
+.st-icon-letter { font-size: 34px; font-weight: 700; color: var(--accent); }
+/* A tiny check dot sits at the icon's bottom-right when the app is
+   already installed. Quicker to read than the pill text, lets the grid
+   double as an "at a glance" inventory. */
+.st-installed-dot {
+  position: absolute;
+  bottom: -2px; right: -2px;
+  width: 22px; height: 22px; border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.st-installed-dot-inner {
+  width: 18px; height: 18px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 80%, var(--surface));
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; line-height: 1;
+}
+.st-installed-dot-inner.is-update { background: var(--accent); }
+.st-card-name {
+  font-size: 14px; font-weight: 600; line-height: 1.25;
+  margin-bottom: 4px;
+  display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.st-card-version {
+  font-size: 11px; color: var(--muted);
+  font-family: var(--mono, monospace);
+  margin-bottom: 8px;
+}
+.st-card-desc {
+  font-size: 12px; color: var(--muted); line-height: 1.35;
+  margin-bottom: 12px;
+  display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden;
+  text-align: center;
+  min-height: 48px;
+}
+/* Top-border separator between the description and the one card action.
+   Each card reads as exactly one state/action: Install, Installed, or Update. */
+.st-card-status-row {
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+}
+.st-card-action {
+  width: 100%;
+  min-height: 34px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 5px 12px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.st-card-action.is-update { background: var(--green, var(--accent)); }
+.st-card-action.is-installed {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+}
+.st-card-action:disabled { opacity: 0.65; cursor: default; }
+.st-card-inline-error {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger, #e5484d) 10%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.35;
+  border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 30%, transparent);
+  box-sizing: border-box;
+}
+/* Skeleton placeholder — same shape as a card so the grid doesn't reflow
+   when the real manifests arrive. Per-block width/height stay inline. */
+.st-skeleton-card {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 16px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: 12px;
+  min-height: 44px;
+  opacity: 0.7;
+}
+.st-skeleton-block {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  animation: mobius-store-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mobius-store-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+.st-card-error-body {
+  font-size: 12px; color: var(--muted); line-height: 1.4;
+  margin-top: 4px; margin-bottom: 12px;
+  text-align: center;
+}
+.st-card-retry {
+  padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text); font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: var(--font);
+  min-height: 32px;
+  transition: background 150ms;
+}
+
+/* App-specific "From URL" tab. */
+.st-url-form {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px;
+}
+.st-url-label { font-size: 14px; font-weight: 600; margin-bottom: 8px; display: block; }
+.st-url-hint { font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
+.st-url-input {
+  width: 100%; padding: 12px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px; font-family: var(--mono, monospace);
+  outline: none; box-sizing: border-box;
+  margin-bottom: 12px;
+  min-height: 44px;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+/* Focus ring — was JS focused state, now a real :focus pseudo-class.
+   Same accent ring the catalog cards use. */
+.st-url-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.st-primary-btn {
+  padding: 12px 20px; border-radius: 10px; border: none;
+  background: var(--accent); color: #fff;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  font-family: var(--font);
+  min-height: 44px;
+  transition: background 150ms;
+}
+/* Live host indicator below the URL input — switches between "trusted
+   source" (calm accent badge) and "unfamiliar host" (muted, not red —
+   a personal repo is legitimate; inform, don't alarm). State = is-*. */
+.st-host-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 500;
+  font-family: var(--font);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.st-host-badge.is-trusted {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.st-host-badge-dot {
+  width: 6px; height: 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 60%, transparent);
+  flex-shrink: 0;
+}
+.st-host-badge.is-trusted .st-host-badge-dot { background: var(--accent); }
+.st-host-badge-host { font-family: var(--mono, monospace); font-size: 11px; }
+.st-error-box {
+  background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent);
+  color: var(--danger); padding: 12px;
+  border-radius: 8px; font-size: 14px;
+  margin-top: 12px; line-height: 1.5;
+  border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 40%, transparent);
+}
+
+/* App-specific detail view. */
+.st-detail-header {
+  padding: 12px 16px; display: flex; align-items: center;
+  gap: 8px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.st-back-btn {
+  background: none; border: none; color: var(--accent);
+  font-size: 14px; cursor: pointer; padding: 8px 12px;
+  font-family: var(--font); font-weight: 500;
+  min-height: 44px;
+  display: inline-flex; align-items: center; gap: 4px;
+  margin: -8px -8px;  /* compensate so the visible affordance still aligns */
+  border-radius: 8px;
+  transition: background 150ms;
+}
+.st-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.st-hero-text { flex: 1; min-width: 0; }
+.st-hero-icon {
+  width: 72px; height: 72px; border-radius: 16px;
+  background: var(--surface2); display: flex;
+  align-items: center; justify-content: center;
+  flex-shrink: 0; overflow: hidden;
+}
+.st-hero-icon-letter { font-size: 32px; font-weight: 700; color: var(--accent); }
+.st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+.st-hero-meta { font-size: 12px; color: var(--muted); font-family: var(--mono, monospace); }
+.st-detail-desc { font-size: 14px; line-height: 1.55; color: var(--text); margin-bottom: 24px; }
+.st-detail-section { margin-bottom: 24px; }
+.st-section-label {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.st-permission-row {
+  display: flex; gap: 12px;
+  padding: 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: 8px; font-size: 14px; line-height: 1.5;
+}
+.st-perm-row-main { flex: 1; min-width: 0; }
+.st-perm-label { font-weight: 600; color: var(--text); }
+.st-perm-detail { color: var(--muted); }
+.st-perm-hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+/* A short capability tag next to each permission row. State (read / write /
+   muted) rides is-* modifiers; 'no'/'none' both render muted. */
+.st-perm-tag {
+  flex-shrink: 0;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  font-family: var(--font); letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  align-self: flex-start;
+}
+.st-perm-tag.is-read { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.st-perm-tag.is-muted {
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--muted);
+  border-color: var(--border);
+}
+.st-schedule-row {
+  padding: 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 14px; line-height: 1.5;
+}
+.st-schedule-main { font-weight: 600; color: var(--text); }
+.st-schedule-note { color: var(--muted); margin-top: 4px; font-size: 12px; }
+/* External-libs disclosure — a quiet note on a muted surface, dep list
+   mono-formatted (not an alarming panel). */
+.st-esm-note {
+  padding: 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 14px; line-height: 1.5;
+  color: var(--muted);
+}
+.st-esm-dep-list {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  color: var(--text);
+  margin-top: 6px;
+  word-break: break-all;
+}
+.st-host-warn {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 12px; margin-bottom: 12px;
+  background: var(--accent-dim, rgba(139, 108, 247, 0.15));
+  border: 1px solid var(--accent); border-radius: 8px;
+  font-size: 14px; line-height: 1.5;
+}
+.st-host-warn-icon { font-size: 16px; line-height: 1.2; color: var(--accent); flex-shrink: 0; }
+.st-host-warn-host { font-weight: 600; color: var(--text); font-family: var(--mono, monospace); }
+.st-host-warn-body { color: var(--muted); margin-top: 2px; }
+.st-link { color: var(--accent); text-decoration: none; }
+.st-installed-note { font-size: 14px; color: var(--muted); }
+.st-detail-footer {
+  padding: 16px; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px;
+  flex-shrink: 0; background: var(--bg);
+}
+/* The detail-footer primary CTA + the modal's confirm button share this
+   full-width solid look. The footer CTA overrides background inline
+   because the colour is state-driven (accent / green / blocked). */
+.st-big-btn {
+  width: 100%; padding: 12px 16px; border-radius: 10px;
+  border: none; background: var(--accent); color: #fff;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  font-family: var(--font);
+  min-height: 44px;
+  transition: background 150ms, transform 150ms;
+}
+.st-big-btn:disabled { cursor: default; }
+.st-danger-btn {
+  padding: 12px 16px; border-radius: 10px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--danger); font-size: 14px; font-weight: 600;
+  cursor: pointer; font-family: var(--font);
+  min-height: 44px;
+}
+/* Subordinate link-style "Uninstall" when the primary CTA is "Open App". */
+.st-secondary-link {
+  align-self: center;
+  padding: 12px 16px; border-radius: 8px;
+  border: none; background: transparent;
+  color: var(--muted); font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: var(--font);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  min-height: 44px;
+}
+/* Update notice on the detail view (clean-merge / conflict). App-specific. */
+.st-update-notice {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.st-update-notice-actions { display: flex; gap: 8px; margin-top: 12px; }
+.st-update-notice-actions .st-big-btn,
+.st-update-notice-actions .st-danger-btn { flex: 1; }
+.st-update-notice-actions .st-danger-btn { color: var(--muted); }
+
+/* Self-update banner — the store checks for its own newer published
+   version and offers a one-tap update + reload. App-specific. */
+.st-banner {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 16px; padding: 12px 16px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid var(--accent); border-radius: 12px;
+  font-size: 14px; line-height: 1.4;
+}
+.st-banner-msg { flex: 1; }
+.st-banner-btn {
+  flex-shrink: 0; border: none; border-radius: 8px; padding: 8px 16px;
+  background: var(--accent); color: #fff; font-weight: 600;
+  font-size: 13px; cursor: pointer; font-family: var(--font);
+  min-height: 36px;
+}
+
+/* mobius-ui:Empty v1 — keep in sync; library candidate. Diverge below the marker only. */
+.st-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+  max-width: 440px; margin: 0 auto; padding: 48px 24px; color: var(--muted);
+}
+.st-empty-title { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.st-empty-text { margin: 0; font-size: 14px; line-height: 1.6; }
+/* /mobius-ui:Empty */
+
+/* mobius-ui:Sheet v1 — keep in sync; library candidate. Diverge below the marker only. */
+.st-scrim {
+  position: absolute; inset: 0; z-index: 100;   /* absolute → stays inside the app, never over shell chrome */
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 16px; background: rgba(0, 0, 0, 0.5);
+}
+.st-sheet {
+  width: 100%; max-width: 480px; max-height: 85vh; overflow-y: auto;
+  padding: 24px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.3);
+}
+.st-sheet-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.st-sheet-body { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.st-sheet-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; }
+.st-sheet-actions .st-btn { flex: 1; }
+/* /mobius-ui:Sheet */
+
+/* mobius-ui:Button v1 — keep in sync; library candidate. Diverge below the marker only. */
+.st-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; padding: 10px 16px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.1s ease;
+}
+.st-btn:active { transform: scale(0.97); }
+.st-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+.st-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.st-btn-primary:hover { filter: brightness(1.06); }
+.st-btn-secondary { background: var(--surface2, var(--surface)); }
+.st-btn-secondary:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.st-btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }
+.st-btn-ghost:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.st-btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.st-btn-icon { width: 44px; padding: 0; border-radius: 8px; font-size: 18px; }
+/* /mobius-ui:Button */
+
+/* mobius-ui:Toast v1 — keep in sync; library candidate. */
+.st-toast {
+  position: absolute; left: 16px; right: 16px; bottom: 16px; z-index: 200;   /* absolute → inside the app */
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  background: var(--surface); border: 1px solid var(--accent); border-radius: 12px;
+  font-size: 14px; line-height: 1.5; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.st-toast.is-success { border-color: var(--green); }
+.st-toast.is-error { border-color: var(--danger); }
+.st-toast-msg { flex: 1; }
+.st-toast-btn {
+  padding: 8px 16px; border-radius: 8px; border: none;
+  background: var(--accent); color: #fff;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  font-family: var(--font); flex-shrink: 0;
+  min-height: 32px;
+}
+/* /mobius-ui:Toast */
+`
 
 // Human-language explanations for the permission strings. `tag` is the
 // 1-word badge that sits next to each row's title; `summary` is the
@@ -724,21 +758,21 @@ function appIcon(item) {
 function IconBox({ item, size = 'normal' }) {
   const url = appIcon(item)
   const [errored, setErrored] = useState(false)
-  const wrapStyle = size === 'hero' ? s.heroIcon : s.iconWrap
-  const letterStyle = size === 'hero' ? s.heroIconLetter : s.iconLetter
+  const wrapClass = size === 'hero' ? 'st-hero-icon' : 'st-icon-wrap'
+  const letterClass = size === 'hero' ? 'st-hero-icon-letter' : 'st-icon-letter'
   const name = (item.manifest && item.manifest.name) || item.name || '?'
   const letter = name.charAt(0).toUpperCase()
   if (url && !errored) {
     return (
-      <div style={wrapStyle}>
-        <img src={url} alt="" style={s.iconImg} loading="lazy"
+      <div className={wrapClass}>
+        <img src={url} alt="" className="st-icon-img" loading="lazy"
              onError={() => setErrored(true)} />
       </div>
     )
   }
   return (
-    <div style={wrapStyle}>
-      <span style={letterStyle}>{letter}</span>
+    <div className={wrapClass}>
+      <span className={letterClass}>{letter}</span>
     </div>
   )
 }
@@ -1042,18 +1076,27 @@ function buildConflictResolveMessage({ item, result, preview }) {
 // with the title + summary on the left and a small capability tag on
 // the right; the hint line under the summary spells out what the user
 // is actually granting in plain language.
+// Map a permission level to the capability-tag modifier. 'no'/'none' both
+// render muted; 'read' gets the lighter accent; granted write/yes uses the
+// base (bolder accent) .st-perm-tag look.
+function permTagClass(level) {
+  if (level === 'none' || level === 'no') return 'st-perm-tag is-muted'
+  if (level === 'read') return 'st-perm-tag is-read'
+  return 'st-perm-tag'
+}
+
 function PermissionRow({ label, level, info }) {
   if (!info) return null
   return (
-    <div style={s.permissionRow} title={info.hint}>
-      <div style={s.permRowMain}>
-        <div style={s.permLabel}>{label}</div>
-        <div style={s.permDetail}>{info.summary}</div>
-        <div style={{ ...s.permDetail, fontSize: '12px', marginTop: '4px' }}>
+    <div className="st-permission-row" title={info.hint}>
+      <div className="st-perm-row-main">
+        <div className="st-perm-label">{label}</div>
+        <div className="st-perm-detail">{info.summary}</div>
+        <div className="st-perm-hint">
           {info.hint}
         </div>
       </div>
-      <span style={s.permTag(level)}>{info.tag}</span>
+      <span className={permTagClass(level)}>{info.tag}</span>
     </div>
   )
 }
@@ -1062,19 +1105,20 @@ function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
   // Browser modal dialogs don't render inside the AppCanvas iframe
   // (sandbox lacks `allow-modals`), so we ship our own confirmation.
   return (
-    <div style={s.modalBackdrop} onClick={busy ? null : onCancel}>
-      <div style={s.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={s.modalTitle}>Uninstall {app.name}?</h3>
-        <p style={{ fontSize: '14px', lineHeight: 1.5, marginBottom: '16px', color: 'var(--muted)' }}>
+    <div className="st-scrim" onClick={busy ? null : onCancel}
+         role="dialog" aria-modal="true" aria-label="Confirm uninstall">
+      <div className="st-sheet" onClick={e => e.stopPropagation()}>
+        <h3 className="st-sheet-title">Uninstall {app.name}?</h3>
+        <p className="st-sheet-body">
           This removes the app and its stored data. You can reinstall
           it later from the store.
         </p>
-        <div style={s.modalActions}>
-          <button style={{ ...s.dangerBtn, ...s.modalBtn, color: 'var(--text)' }}
+        <div className="st-sheet-actions">
+          <button className="st-btn st-btn-secondary"
                   onClick={onCancel} disabled={busy}>
             Cancel
           </button>
-          <button style={{ ...s.bigBtn, ...s.modalBtn, background: 'var(--danger, #e5484d)' }}
+          <button className="st-btn st-btn-danger"
                   onClick={onConfirm} disabled={busy}>
             {busy ? 'Uninstalling…' : 'Uninstall'}
           </button>
@@ -1084,11 +1128,19 @@ function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
   )
 }
 
-// One catalog tile. Pulled out so the focus/hover styles can live in
-// local state without rerendering the whole grid on every pointer move.
+// Map the card's app-state variant to its modifier class. 'default' is the
+// bare .st-card; the rest add the matching is-* modifier.
+function cardVariantClass(variant) {
+  if (variant === 'update') return 'st-card is-update'
+  if (variant === 'installed') return 'st-card is-installed'
+  if (variant === 'error') return 'st-card is-error'
+  return 'st-card'
+}
+
+// One catalog tile. The interactive lift (hover/focus) now lives in CSS
+// pseudo-classes on .st-card[role="button"] rather than JS state, so the
+// grid no longer rerenders a tile on every pointer move.
 function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, blocked, error }) {
-  const [hover, setHover] = useState(false)
-  const [focus, setFocus] = useState(false)
   const m = item.manifest
 
   if (!m) {
@@ -1098,17 +1150,17 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     //    this branch only runs after the load resolved with no manifest)
     if (item.error) {
       return (
-        <div style={s.card('error')}>
-          <div style={{ ...s.iconWrap, marginBottom: '12px' }}>
-            <span style={s.iconLetter}>{item.id.charAt(0).toUpperCase()}</span>
+        <div className={cardVariantClass('error')}>
+          <div className="st-icon-wrap" style={{ marginBottom: '12px' }}>
+            <span className="st-icon-letter">{item.id.charAt(0).toUpperCase()}</span>
           </div>
-          <div style={s.cardName}>{item.id}</div>
-          <div style={s.cardErrorBody}>
+          <div className="st-card-name">{item.id}</div>
+          <div className="st-card-error-body">
             This app's manifest didn't load.
           </div>
           {onRetry && (
             <button
-              style={s.cardRetryBtn}
+              className="st-card-retry"
               onClick={(e) => { e.stopPropagation(); onRetry(item) }}
             >
               Try again
@@ -1120,12 +1172,12 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     // Defensive — shouldn't render once skeletons land. Keep the slug
     // visible so a stuck card is still recognizable.
     return (
-      <div style={s.card('default')}>
-        <div style={s.iconWrap}>
-          <span style={s.iconLetter}>{item.id.charAt(0).toUpperCase()}</span>
+      <div className={cardVariantClass('default')}>
+        <div className="st-icon-wrap">
+          <span className="st-icon-letter">{item.id.charAt(0).toUpperCase()}</span>
         </div>
-        <div style={s.cardName}>{item.id}</div>
-        <div style={s.cardVersion}>loading…</div>
+        <div className="st-card-name">{item.id}</div>
+        <div className="st-card-version">loading…</div>
       </div>
     )
   }
@@ -1178,65 +1230,44 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     else onPick(item)
   }
 
-  // Subtle lift on hover/focus so the tap target reads as interactive.
-  // Update-available cards already carry an accent border, so we only
-  // shadow + bump them rather than swapping border colour.
-  const elevated = hover || focus
-  const cardStyle = {
-    ...s.card(cardVariant),
-    ...(elevated ? {
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 16px color-mix(in srgb, var(--accent) 14%, transparent)',
-      borderColor: cardVariant === 'update' ? 'var(--accent)' : 'var(--accent)',
-    } : null),
-    ...(focus ? {
-      boxShadow: '0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent)',
-    } : null),
-  }
+  // The subtle hover/focus lift (translate + accent shadow/border) now
+  // rides CSS pseudo-classes on .st-card[role="button"] — see the Card
+  // rules in CSS. The action button's variant + disabled styling ride
+  // is-* / :disabled, not inline objects.
+  const cardActionClass = cardVariant === 'update'
+    ? 'st-card-action is-update'
+    : cardVariant === 'installed'
+    ? 'st-card-action is-installed'
+    : 'st-card-action'
 
   return (
     <div
       role="button"
       tabIndex={0}
-      style={cardStyle}
+      className={cardVariantClass(cardVariant)}
       onClick={() => onPick(item)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(item) } }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onFocus={() => setFocus(true)}
-      onBlur={() => setFocus(false)}
       aria-label={`${m.name} — ${statusLabel}. Tap for details.`}
     >
-      <div style={s.iconSlot}>
+      <div className="st-icon-slot">
         <IconBox item={item} />
         {(cardVariant === 'installed' || cardVariant === 'update') && (
-          <div style={s.installedDot} aria-hidden="true">
-            <div
-              style={{
-                ...s.installedDotInner,
-                background: cardVariant === 'update'
-                  ? 'var(--accent)'
-                  : s.installedDotInner.background,
-              }}
-            >
+          <div className="st-installed-dot" aria-hidden="true">
+            <div className={`st-installed-dot-inner${cardVariant === 'update' ? ' is-update' : ''}`}>
               ✓
             </div>
           </div>
         )}
       </div>
-      <div style={s.cardName}>{m.name}</div>
-      <div style={s.cardVersion}>v{m.version}</div>
+      <div className="st-card-name">{m.name}</div>
+      <div className="st-card-version">v{m.version}</div>
       {m.description ? (
-        <div style={s.cardDesc}>{m.description}</div>
+        <div className="st-card-desc">{m.description}</div>
       ) : null}
-      <div style={s.cardStatusRow}>
+      <div className="st-card-status-row">
         <button
           type="button"
-          style={{
-            ...s.cardActionBtn(cardVariant),
-            opacity: cardActionDisabled ? 0.65 : 1,
-            cursor: cardActionDisabled ? 'default' : 'pointer',
-          }}
+          className={cardActionClass}
           disabled={cardActionDisabled}
           onPointerDown={stopCardEvent}
           onMouseDown={stopCardEvent}
@@ -1253,17 +1284,21 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
           {actionLabel}
         </button>
       </div>
-      {error && <div style={s.cardInlineError}>{error}</div>}
+      {error && <div className="st-card-inline-error">{error}</div>}
     </div>
   )
 }
 
 function CatalogList({ items, installed, installedVersions, onPick, onRetry, onUpdate, busy, busyItemId, errors }) {
   if (items.length === 0) {
-    return <div style={s.empty}>No apps in the catalog yet.</div>
+    return (
+      <div className="st-empty">
+        <p className="st-empty-text">No apps in the catalog yet.</p>
+      </div>
+    )
   }
   return (
-    <div style={s.catalogGrid}>
+    <div className="st-catalog-grid">
       {items.map(item => (
         <CatalogCard
           key={item.id}
@@ -1284,18 +1319,19 @@ function CatalogList({ items, installed, installedVersions, onPick, onRetry, onU
 
 // Skeleton grid shown while catalog manifests are being fetched. Same
 // card footprint as the real grid, so the layout doesn't shift when
-// manifests resolve. Pulse keyframe is registered globally at root.
+// manifests resolve. Per-block width/height stay inline (dynamic
+// dimensions); the pulse animation lives in CSS.
 function CatalogSkeleton({ count = 5 }) {
   return (
-    <div style={s.catalogGrid}>
+    <div className="st-catalog-grid">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} style={s.skeletonCard} aria-hidden="true">
-          <div style={{ ...s.skeletonBlock('88px', '88px'), borderRadius: '20px', marginBottom: '12px' }} />
-          <div style={{ ...s.skeletonBlock('72%', '12px'), marginBottom: '6px' }} />
-          <div style={{ ...s.skeletonBlock('40%', '10px'), marginBottom: '12px' }} />
-          <div style={{ ...s.skeletonBlock('90%', '8px'), marginBottom: '6px' }} />
-          <div style={{ ...s.skeletonBlock('80%', '8px'), marginBottom: '6px' }} />
-          <div style={{ ...s.skeletonBlock('60%', '8px') }} />
+        <div key={i} className="st-skeleton-card" aria-hidden="true">
+          <div className="st-skeleton-block" style={{ width: '88px', height: '88px', borderRadius: '20px', marginBottom: '12px' }} />
+          <div className="st-skeleton-block" style={{ width: '72%', height: '12px', marginBottom: '6px' }} />
+          <div className="st-skeleton-block" style={{ width: '40%', height: '10px', marginBottom: '12px' }} />
+          <div className="st-skeleton-block" style={{ width: '90%', height: '8px', marginBottom: '6px' }} />
+          <div className="st-skeleton-block" style={{ width: '80%', height: '8px', marginBottom: '6px' }} />
+          <div className="st-skeleton-block" style={{ width: '60%', height: '8px' }} />
         </div>
       ))}
     </div>
@@ -1316,7 +1352,6 @@ function FromUrlTab({ onPreview }) {
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [focused, setFocused] = useState(false)
 
   const host = hostnameOf(url)
   // Three live states for the badge: nothing typed yet (suppress),
@@ -1352,21 +1387,13 @@ function FromUrlTab({ onPreview }) {
     }
   }
 
-  // Focus ring without :focus pseudo (inline styles can't express it).
-  // Same accent ring the catalog cards use, so the visual language is
-  // consistent across tabs.
-  const inputStyle = {
-    ...s.urlInput,
-    ...(focused ? {
-      borderColor: 'var(--accent)',
-      boxShadow: '0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent)',
-    } : null),
-  }
+  // The focus ring (accent border + glow) now lives in CSS via
+  // .st-url-input:focus — same accent language the catalog cards use.
 
   return (
-    <div style={s.urlForm}>
-      <label style={s.urlLabel} htmlFor="app-store-manifest-url">Manifest URL</label>
-      <div style={s.urlHint}>
+    <div className="st-url-form">
+      <label className="st-url-label" htmlFor="app-store-manifest-url">Manifest URL</label>
+      <div className="st-url-hint">
         Paste a public link to a <code>mobius.json</code> file. The store
         will fetch the manifest, show you what it declares, and let you
         review before installing.
@@ -1376,26 +1403,24 @@ function FromUrlTab({ onPreview }) {
         type="url"
         value={url}
         onChange={e => setUrl(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
         placeholder="https://raw.githubusercontent.com/owner/app-foo/main/mobius.json"
-        style={inputStyle}
+        className="st-url-input"
         onKeyDown={e => e.key === 'Enter' && handlePreview()}
       />
       {hostKind && (
-        <div style={s.hostBadge(hostKind)}>
-          <span style={s.hostBadgeDot(hostKind)} aria-hidden="true" />
+        <div className={`st-host-badge${hostKind === 'trusted' ? ' is-trusted' : ''}`}>
+          <span className="st-host-badge-dot" aria-hidden="true" />
           {hostKind === 'trusted' ? (
-            <>Recognized source · <span style={s.hostBadgeHost}>{host}</span></>
+            <>Recognized source · <span className="st-host-badge-host">{host}</span></>
           ) : (
-            <>Unfamiliar host · <span style={s.hostBadgeHost}>{host}</span></>
+            <>Unfamiliar host · <span className="st-host-badge-host">{host}</span></>
           )}
         </div>
       )}
-      <button style={s.primaryBtn} onClick={handlePreview} disabled={busy || !url.trim()}>
+      <button className="st-primary-btn" onClick={handlePreview} disabled={busy || !url.trim()}>
         {busy ? 'Loading…' : 'Preview'}
       </button>
-      {error && <div style={s.errorBox}>{error}</div>}
+      {error && <div className="st-error-box">{error}</div>}
     </div>
   )
 }
@@ -1431,24 +1456,24 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
 
   return (
     <>
-      <div style={s.detailHeader}>
-        <button style={s.backBtn} onClick={onBack}>← Back</button>
+      <div className="st-detail-header">
+        <button className="st-back-btn" onClick={onBack}>← Back</button>
       </div>
-      <div style={s.scroll}>
-        <div style={s.hero}>
+      <div className="st-scroll">
+        <div className="st-hero">
           <IconBox item={item} size="hero" />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={s.heroName}>{m.name}</h2>
-            <div style={s.heroMeta}>
+          <div className="st-hero-text">
+            <h2 className="st-hero-name">{m.name}</h2>
+            <div className="st-hero-meta">
               v{m.version}{m.author ? ` · ${m.author}` : ''}{m.license ? ` · ${m.license}` : ''}
             </div>
           </div>
         </div>
 
-        <p style={s.detailDesc}>{m.description}</p>
+        <p className="st-detail-desc">{m.description}</p>
 
-        <div style={s.detailSection}>
-          <div style={s.sectionLabel}>What this app can do</div>
+        <div className="st-detail-section">
+          <div className="st-section-label">What this app can do</div>
           <PermissionRow
             label="Other apps' data"
             level={ca}
@@ -1469,12 +1494,12 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
         </div>
 
         {scheduleText && (
-          <div style={s.detailSection}>
-            <div style={s.sectionLabel}>Schedule</div>
-            <div style={s.scheduleRow}>
-              <div style={s.scheduleMain}>{scheduleText}</div>
+          <div className="st-detail-section">
+            <div className="st-section-label">Schedule</div>
+            <div className="st-schedule-row">
+              <div className="st-schedule-main">{scheduleText}</div>
               {m.schedule.user_configurable && (
-                <div style={s.scheduleNote}>
+                <div className="st-schedule-note">
                   Time is configurable from the app's settings after install.
                 </div>
               )}
@@ -1483,39 +1508,39 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
         )}
 
         {m.runtime?.esm_deps?.length > 0 && (
-          <div style={s.detailSection}>
-            <div style={s.sectionLabel}>External libraries</div>
-            <div style={s.esmNote}>
+          <div className="st-detail-section">
+            <div className="st-section-label">External libraries</div>
+            <div className="st-esm-note">
               Loads {m.runtime.esm_deps.length === 1 ? 'one library' : `${m.runtime.esm_deps.length} libraries`}
               {' '}from esm.sh on first open. Fetched once and cached locally afterwards.
-              <div style={s.esmDepList}>{m.runtime.esm_deps.join(', ')}</div>
+              <div className="st-esm-dep-list">{m.runtime.esm_deps.join(', ')}</div>
             </div>
           </div>
         )}
 
         {m.homepage && (
-          <div style={s.detailSection}>
-            <div style={s.sectionLabel}>Source</div>
-            <a href={m.homepage} target="_blank" rel="noopener noreferrer" style={s.link}>
+          <div className="st-detail-section">
+            <div className="st-section-label">Source</div>
+            <a href={m.homepage} target="_blank" rel="noopener noreferrer" className="st-link">
               {m.homepage}
             </a>
           </div>
         )}
 
         {storeInstalled && (
-          <div style={s.detailSection}>
-            <div style={s.sectionLabel}>Installed</div>
-            <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
+          <div className="st-detail-section">
+            <div className="st-section-label">Installed</div>
+            <div className="st-installed-note">
               Currently installed: {installedVer ? `v${installedVer}` : 'version unknown'}.
               {needsVersionSync ? ' Run an update check to sync the store’s version record.' : ''}
             </div>
             {updateNotice && (
-              <div style={s.updateNotice}>
+              <div className="st-update-notice">
                 <div>{updateNotice.message}</div>
-                <div style={s.updateNoticeActions}>
+                <div className="st-update-notice-actions">
                   <button
                     type="button"
-                    style={{ ...s.bigBtn, flex: 1 }}
+                    className="st-big-btn"
                     onClick={() => onReviewUpdate(updateNotice)}
                     disabled={busy}
                   >
@@ -1527,7 +1552,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
                   </button>
                   <button
                     type="button"
-                    style={{ ...s.dangerBtn, flex: 1, color: 'var(--muted)' }}
+                    className="st-danger-btn"
                     onClick={onDismissNotice}
                     disabled={busy}
                   >
@@ -1540,12 +1565,12 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
         )}
 
         {unfamiliarHost && (
-          <div style={s.detailSection}>
-            <div style={s.hostWarn}>
-              <div style={s.hostWarnIcon} aria-hidden="true">⚠</div>
+          <div className="st-detail-section">
+            <div className="st-host-warn">
+              <div className="st-host-warn-icon" aria-hidden="true">⚠</div>
               <div>
-                <div>Unfamiliar host: <span style={s.hostWarnHost}>{warnHost}</span></div>
-                <div style={s.hostWarnBody}>
+                <div>Unfamiliar host: <span className="st-host-warn-host">{warnHost}</span></div>
+                <div className="st-host-warn-body">
                   You're installing from a host that isn't in the trusted
                   list. Continue only if you trust the author.
                 </div>
@@ -1567,10 +1592,12 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
           confirm modal. DetailView is the confirmation surface; the user
           already saw permissions, schedule, esm.sh deps and the host
           warning above before reaching this button. */}
-      <div style={s.detailFooter}>
+      <div className="st-detail-footer">
         <button
+          className="st-big-btn"
           style={{
-            ...s.bigBtn,
+            // State-driven CTA tint: green for an available update / sync,
+            // accent otherwise — kept inline because it's computed per render.
             background: blockedUpdate
               ? 'var(--accent)'
               : (hasUpdate || needsVersionSync) ? 'var(--green)' : 'var(--accent)',
@@ -1596,26 +1623,12 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
             : 'Install'}
         </button>
         {storeInstalled && (
-          <button style={s.secondaryLink} onClick={() => onUninstall(storeInstalled)} disabled={busy}>
+          <button className="st-secondary-link" onClick={() => onUninstall(storeInstalled)} disabled={busy}>
             Uninstall
           </button>
         )}
       </div>
     </>
-  )
-}
-
-// One small `<style>` injected at the root so we can use keyframes
-// (inline `style` props don't support @keyframes). Kept tightly scoped
-// to this app's class names so it can't bleed into the shell.
-function GlobalKeyframes() {
-  return (
-    <style>{`
-      @keyframes mobius-store-pulse {
-        0%, 100% { opacity: 0.55; }
-        50% { opacity: 0.95; }
-      }
-    `}</style>
   )
 }
 
@@ -1640,20 +1653,6 @@ function SelfUpdateBanner({ token }) {
   const hasUpdate = latest && semverCmp(STORE_VERSION, latest.version) < 0
   if (phase !== 'done' && phase !== 'conflict' && !hasUpdate) return null
 
-  const bannerStyle = {
-    display: 'flex', alignItems: 'center', gap: '12px',
-    margin: '0 0 16px', padding: '12px 16px',
-    background: 'color-mix(in srgb, var(--accent) 12%, var(--surface))',
-    border: '1px solid var(--accent)', borderRadius: '12px',
-    fontSize: '14px', lineHeight: 1.4,
-  }
-  const btnStyle = {
-    flexShrink: 0, border: 'none', borderRadius: '8px', padding: '8px 16px',
-    background: 'var(--accent)', color: '#fff', fontWeight: 600,
-    fontSize: '13px', cursor: 'pointer', fontFamily: 'var(--font)',
-    minHeight: '36px',
-  }
-
   const onUpdate = async () => {
     setPhase('updating'); setMsg('')
     try {
@@ -1673,25 +1672,25 @@ function SelfUpdateBanner({ token }) {
   }
 
   return (
-    <div style={bannerStyle}>
+    <div className="st-banner">
       {phase === 'done' ? (
         <>
-          <div style={{ flex: 1 }}>App Store updated to v{latest.version}. Reload to apply.</div>
-          <button style={btnStyle} onClick={() => window.location.reload()}>Reload</button>
+          <div className="st-banner-msg">App Store updated to v{latest.version}. Reload to apply.</div>
+          <button className="st-banner-btn" onClick={() => window.location.reload()}>Reload</button>
         </>
       ) : phase === 'conflict' ? (
         <>
-          <div style={{ flex: 1 }}>
+          <div className="st-banner-msg">
             App Store v{latest.version} is available, but the update is blocked. {msg}
           </div>
-          <button style={btnStyle} onClick={onUpdate}>Retry</button>
+          <button className="st-banner-btn" onClick={onUpdate}>Retry</button>
         </>
       ) : (
         <>
-          <div style={{ flex: 1 }}>
+          <div className="st-banner-msg">
             App Store v{latest.version} is available{phase === 'error' && msg ? ` — ${msg}` : ''}.
           </div>
-          <button style={btnStyle} disabled={phase === 'updating'} onClick={onUpdate}>
+          <button className="st-banner-btn" disabled={phase === 'updating'} onClick={onUpdate}>
             {phase === 'updating' ? 'Updating…' : 'Update'}
           </button>
         </>
@@ -1869,7 +1868,9 @@ export default function App({ appId, token }) {
         setCardErrors(prev => ({ ...prev, [item.id]: message }))
         setToast({ kind: 'error', message })
         await refreshInstalled()
-        if (!detail) await openDetail(item)
+        // A conflict needs review, but don't yank the user to the detail
+        // view — the error toast + the persisted updateNotice (which drives
+        // the "Resolve in chat" affordance on the card) are enough in place.
         return
       }
 
@@ -1899,7 +1900,11 @@ export default function App({ appId, token }) {
           item,
         }
         setUpdateNotice(notice)
-        if (!detail) await openDetail(item)
+        // Stay on the grid and surface the outcome inline — the update
+        // already applied, so auto-opening the detail view was an unwanted
+        // yank. The notice persists, so the "Review in chat" affordance is
+        // still there if the user opens detail themselves.
+        setToast({ kind: 'success', message: notice.message })
         return
       }
 
@@ -2101,8 +2106,8 @@ export default function App({ appId, token }) {
   // Detail view replaces the main layout when set.
   if (detail) {
     return (
-      <div style={s.root}>
-        <GlobalKeyframes />
+      <div className="st-root">
+        <style>{CSS}</style>
         <DetailView
           item={detail}
           installed={installed}
@@ -2125,9 +2130,9 @@ export default function App({ appId, token }) {
           />
         )}
         {toast && (
-          <div style={s.toast}>
-            <div style={{ flex: 1 }}>{toast.message}</div>
-            <button style={s.toastBtn} onClick={() => setToast(null)}>OK</button>
+          <div className={`st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`}>
+            <div className="st-toast-msg">{toast.message}</div>
+            <button className="st-toast-btn" onClick={() => setToast(null)}>OK</button>
           </div>
         )}
       </div>
@@ -2135,23 +2140,27 @@ export default function App({ appId, token }) {
   }
 
   return (
-    <div style={s.root}>
-      <GlobalKeyframes />
-      <div style={s.header}>
-        <div style={s.titleRow}>
-          <h1 style={s.title}>App Store</h1>
+    <div className="st-root">
+      <style>{CSS}</style>
+      <div className="st-header">
+        <div className="st-title-row">
+          <h1 className="st-title">App Store</h1>
         </div>
-        <div style={s.tabs}>
-          <button style={s.tab(tab === 'browse')} onClick={() => setTab('browse')}>
+        <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode">
+          <button role="tab" aria-selected={tab === 'browse'}
+                  className={`st-seg-btn${tab === 'browse' ? ' is-active' : ''}`}
+                  onClick={() => setTab('browse')}>
             Browse
           </button>
-          <button style={s.tab(tab === 'url')} onClick={() => setTab('url')}>
+          <button role="tab" aria-selected={tab === 'url'}
+                  className={`st-seg-btn${tab === 'url' ? ' is-active' : ''}`}
+                  onClick={() => setTab('url')}>
             From URL
           </button>
         </div>
       </div>
 
-      <div style={s.scroll}>
+      <div className="st-scroll">
         {tab === 'browse' && (
           <>
             <SelfUpdateBanner token={token} />
@@ -2185,9 +2194,9 @@ export default function App({ appId, token }) {
       )}
 
       {toast && (
-        <div style={s.toast}>
-          <div style={{ flex: 1 }}>{toast.message}</div>
-          <button style={s.toastBtn} onClick={() => setToast(null)}>OK</button>
+        <div className={`st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`}>
+          <div className="st-toast-msg">{toast.message}</div>
+          <button className="st-toast-btn" onClick={() => setToast(null)}>OK</button>
         </div>
       )}
     </div>
