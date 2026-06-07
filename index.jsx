@@ -6,6 +6,18 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 // catalog always reflects the repo's current name/version/description.
 const CATALOG = [
   {
+    id: 'editor',
+    repo: 'mobius-os/app-editor',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-editor/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-editor/main/',
+  },
+  {
+    id: 'webstudio',
+    repo: 'mobius-os/app-webstudio',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-webstudio/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-webstudio/main/',
+  },
+  {
     id: 'news',
     repo: 'mobius-os/app-news',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-news/main/mobius.json',
