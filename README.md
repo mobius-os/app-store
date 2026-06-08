@@ -33,6 +33,10 @@ in `index.jsx`'s `CATALOG` constant. On Browse-view mount, the
 store fetches each entry's `mobius.json` from `raw.githubusercontent.com`
 and displays live name/description/version straight from the repo.
 
+### Naming convention
+
+Manifest `id` == repo name minus the `app-` prefix == lowercased display name; renames set `previous_id` so installs migrate in place rather than duplicating.
+
 ### Adding a new curated app
 
 1. Publish your app as `mobius-os/app-<id>` (public, MIT or
