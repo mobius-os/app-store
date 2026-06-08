@@ -6,18 +6,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 // catalog always reflects the repo's current name/version/description.
 const CATALOG = [
   {
-    id: 'editor',
-    repo: 'mobius-os/app-editor',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-editor/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-editor/main/',
-  },
-  {
-    id: 'webstudio',
-    repo: 'mobius-os/app-webstudio',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-webstudio/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-webstudio/main/',
-  },
-  {
     id: 'news',
     repo: 'mobius-os/app-news',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-news/main/mobius.json',
@@ -48,22 +36,22 @@ const CATALOG = [
     raw_base: 'https://raw.githubusercontent.com/mobius-os/app-latex/main/',
   },
   {
-    id: 'dreaming',
-    repo: 'mobius-os/app-dreaming',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-dreaming/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-dreaming/main/',
-  },
-  {
-    id: 'mind',
-    repo: 'mobius-os/app-mind',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-mind/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-mind/main/',
-  },
-  {
     id: 'notes',
     repo: 'mobius-os/app-notes',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
     raw_base: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/',
+  },
+  {
+    id: 'editor',
+    repo: 'mobius-os/app-editor',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-editor/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-editor/main/',
+  },
+  {
+    id: 'webstudio',
+    repo: 'mobius-os/app-webstudio',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-webstudio/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-webstudio/main/',
   },
 ]
 
@@ -73,7 +61,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.13'
+const STORE_VERSION = '1.4.14'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
