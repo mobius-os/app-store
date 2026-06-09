@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 
 // Curated catalog. Each entry points at a public mobius-os repo on
 // the main branch. The Browse view fetches each manifest URL at
@@ -52,6 +52,25 @@ const CATALOG = [
     repo: 'mobius-os/app-webstudio',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-webstudio/main/mobius.json',
     raw_base: 'https://raw.githubusercontent.com/mobius-os/app-webstudio/main/',
+  },
+  // Dreaming + Mind are platform CORE apps (installed by install-core-apps and
+  // re-synced on every deploy), not store-installable. `core: true` surfaces
+  // them as "Built in" — discoverable + openable, but with no install / update
+  // / uninstall path, so there is no row to fork into a dup and no store
+  // update to fight the deploy re-sync. findInstalled() resolves them by slug.
+  {
+    id: 'dreaming',
+    repo: 'mobius-os/app-dreaming',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-dreaming/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-dreaming/main/',
+    core: true,
+  },
+  {
+    id: 'mind',
+    repo: 'mobius-os/app-mind',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-mind/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-mind/main/',
+    core: true,
   },
 ]
 
@@ -133,7 +152,13 @@ export function canonicalIdentityKey(url, manifestId) {
 export function findInstalled(installed, item) {
   const manifestId = item.manifest?.id || item.id
   const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
-  return installed.find(a => a.manifest_url === canonical) || null
+  const byCanonical = installed.find(a => a.manifest_url === canonical)
+  if (byCanonical) return byCanonical
+  // Core apps (Dreaming, Mind) are installed by the platform, not the store, so
+  // a fresh instance's row may carry no manifest_url to canonicalise against.
+  // Fall back to the stable core slug so the store still recognises + opens them.
+  if (item.core) return installed.find(a => a.slug === item.id) || null
+  return null
 }
 
 function installedVersionFor(item, installedVersions, installedApp) {
@@ -1208,7 +1233,11 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
   // so the state is obvious before the user opens details.
   let statusLabel = 'Install'
   let cardVariant = 'default'
-  if (storeInstalled && hasUpdate) {
+  if (item.core) {
+    // Platform core app — always present, never store-installable.
+    statusLabel = 'Built in'
+    cardVariant = 'installed'
+  } else if (storeInstalled && hasUpdate) {
     statusLabel = 'Update'
     cardVariant = 'update'
   } else if (needsVersionSync) {
@@ -1451,8 +1480,12 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   // A resolved installed version (now persisted as App.version) means there
   // is nothing to sync; only offer the sync affordance when no version is
   // known at all and the catalog hasn't reported a genuine update.
-  const needsVersionSync = storeInstalled && !installedVer && !recordedVer
-  const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
+  // Core apps (Dreaming, Mind) are platform-managed: never offer install /
+  // update / uninstall, only Open. The deploy re-syncs them, so a store update
+  // would fight that — suppress the update + sync affordances here.
+  const isCore = !!item.core
+  const needsVersionSync = !isCore && storeInstalled && !installedVer && !recordedVer
+  const hasUpdate = !isCore && storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
   const blockedUpdate = updateNotice?.kind === 'conflict'
   const ca = m.permissions?.cross_app_access || 'none'
   const sw = m.permissions?.share_with_apps || 'none'
@@ -1625,7 +1658,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
             }
             if (hasUpdate || needsVersionSync) onInstall(item, { isUpdate: true, existingId: storeInstalled.id })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
-            else onInstall(item, { isUpdate: false })
+            else if (!isCore) onInstall(item, { isUpdate: false })
           }}
         >
           {busy
@@ -1636,7 +1669,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
             : storeInstalled ? 'Open App'
             : 'Install'}
         </button>
-        {storeInstalled && (
+        {storeInstalled && !isCore && (
           <button className="st-secondary-link" onClick={() => onUninstall(storeInstalled)} disabled={busy}>
             Uninstall
           </button>
@@ -1722,6 +1755,11 @@ export default function App({ appId, token }) {
   const [installedVersions, setInstalledVersions] = useState({})
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
   const navDetailRef = useRef(null)  // pending detail item during nav-push ack
+  // B1: preserve the catalog grid's scroll across opening a detail and coming
+  // back — the grid unmounts while a detail shows, so it would otherwise
+  // re-mount scrolled to the top.
+  const gridScrollRef = useRef(null)
+  const savedGridScrollRef = useRef(0)
   const [pendingUninstall, setPendingUninstall] = useState(null)
   // pendingUninstall: the installed app row from /api/apps/.
   // Browser modal dialogs are silently no-op'd inside the AppCanvas
@@ -2058,6 +2096,7 @@ export default function App({ appId, token }) {
   // concurrent pushes from cross-resolving.
   const openDetail = useCallback(async (item) => {
     if (!item || !item.manifest) return
+    savedGridScrollRef.current = gridScrollRef.current?.scrollTop || 0
     if (navDetailRef.current && !detail) return
     if (detail) {
       // Already in a detail view (defensive — UI shouldn't allow this).
@@ -2117,6 +2156,13 @@ export default function App({ appId, token }) {
     navDetailRef.current = null
   }, [detail])
 
+  // B1: returning from a detail re-mounts the grid; restore its saved scroll.
+  useLayoutEffect(() => {
+    if (!detail && gridScrollRef.current && savedGridScrollRef.current) {
+      gridScrollRef.current.scrollTop = savedGridScrollRef.current
+    }
+  }, [detail])
+
   // Detail view replaces the main layout when set.
   if (detail) {
     return (
@@ -2174,7 +2220,7 @@ export default function App({ appId, token }) {
         </div>
       </div>
 
-      <div className="st-scroll">
+      <div className="st-scroll" ref={gridScrollRef}>
         {tab === 'browse' && (
           <>
             <SelfUpdateBanner token={token} />
