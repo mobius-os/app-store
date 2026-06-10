@@ -80,7 +80,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.14'
+const STORE_VERSION = '1.4.16'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -183,8 +183,9 @@ const CSS = `
   height: 100%; display: flex; flex-direction: column;
   background: var(--bg); color: var(--text);
   font-family: var(--font); overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
 }
-.st-scroll { flex: 1; overflow: auto; padding: 16px; }
+.st-scroll { flex: 1; overflow: auto; padding: 16px; overscroll-behavior: contain; }
 /* /mobius-ui:Root */
 
 /* App-specific header — title + a segmented tab bar, not the canonical
@@ -209,8 +210,14 @@ const CSS = `
   min-height: 44px; padding: 6px 14px; border: 0; border-radius: 7px;
   background: transparent; color: var(--muted); font-family: var(--font);
   font-size: 13px; font-weight: 650; cursor: pointer; transition: background 0.15s, color 0.15s;
+  touch-action: manipulation; user-select: none;
 }
-.st-seg-btn:hover { color: var(--text); }
+@media (hover: hover) {
+  .st-seg-btn:hover { color: var(--text); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-seg-btn:active { opacity: 0.75; }
+}
 .st-seg-btn.is-active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
 .st-seg.is-accent .st-seg-btn.is-active { background: var(--accent); color: #fff; box-shadow: none; }
 /* /mobius-ui:Segmented */
@@ -240,6 +247,7 @@ const CSS = `
   transition: border-color 150ms, transform 150ms, box-shadow 150ms, background 150ms;
   min-height: 44px;
   outline: none;
+  touch-action: manipulation; user-select: none;
 }
 .st-card.is-update {
   background: color-mix(in srgb, var(--accent) 10%, var(--surface));
@@ -253,17 +261,21 @@ const CSS = `
   border: 1px dashed var(--border);
   cursor: default;
 }
-/* Interaction lift — was JS hover/focus state, now real pseudo-classes.
-   Update cards already carry an accent border, so the lift only shadows
-   + bumps them; the focus ring matches the catalog accent language. */
-.st-card[role="button"]:hover,
-.st-card[role="button"]:focus-visible {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 14%, transparent);
-  border-color: var(--accent);
+/* Interaction lift — gated on hover:hover so touch devices don't get stuck hover states. */
+@media (hover: hover) {
+  .st-card[role="button"]:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 14%, transparent);
+    border-color: var(--accent);
+  }
 }
 .st-card[role="button"]:focus-visible {
+  transform: translateY(-1px);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
+  border-color: var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-card[role="button"]:active { transform: scale(0.98); opacity: 0.9; }
 }
 .st-icon-wrap {
   width: 88px; height: 88px; border-radius: 20px;
@@ -304,14 +316,14 @@ const CSS = `
   -webkit-box-orient: vertical; overflow: hidden;
 }
 .st-card-version {
-  font-size: 11px; color: var(--muted);
+  font-size: 12px; color: var(--muted);
   font-family: var(--mono, monospace);
   margin-bottom: 8px;
   display: flex; align-items: center; gap: 6px;
 }
 .st-card-agent {
   font-family: var(--font, inherit); font-weight: 600;
-  font-size: 10px; letter-spacing: 0.02em;
+  font-size: 12px; letter-spacing: 0.02em;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
@@ -351,6 +363,7 @@ const CSS = `
   font-size: 12px;
   cursor: pointer;
   font-family: var(--font);
+  touch-action: manipulation; user-select: none;
 }
 .st-card-action.is-update { background: var(--green, var(--accent)); }
 .st-card-action.is-installed {
@@ -358,7 +371,10 @@ const CSS = `
   color: var(--text);
   border-color: color-mix(in srgb, var(--text) 18%, var(--border));
 }
-.st-card-action:disabled { opacity: 0.65; cursor: default; }
+.st-card-action:disabled { opacity: 0.65; cursor: default; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .st-card-action:not(:disabled):active { opacity: 0.8; transform: scale(0.97); }
+}
 .st-card-inline-error {
   width: 100%;
   margin-top: 8px;
@@ -402,6 +418,10 @@ const CSS = `
   cursor: pointer; font-family: var(--font);
   min-height: 32px;
   transition: background 150ms;
+  touch-action: manipulation; user-select: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-card-retry:active { opacity: 0.75; }
 }
 
 /* App-specific "From URL" tab. */
@@ -434,6 +454,14 @@ const CSS = `
   font-family: var(--font);
   min-height: 44px;
   transition: background 150ms;
+  touch-action: manipulation; user-select: none;
+}
+.st-primary-btn:disabled { pointer-events: none; opacity: 0.65; }
+@media (hover: hover) {
+  .st-primary-btn:not(:disabled):hover { filter: brightness(1.08); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-primary-btn:not(:disabled):active { opacity: 0.82; transform: scale(0.98); }
 }
 /* Live host indicator below the URL input — switches between "trusted
    source" (calm accent badge) and "unfamiliar host" (muted, not red —
@@ -459,7 +487,7 @@ const CSS = `
   flex-shrink: 0;
 }
 .st-host-badge.is-trusted .st-host-badge-dot { background: var(--accent); }
-.st-host-badge-host { font-family: var(--mono, monospace); font-size: 11px; }
+.st-host-badge-host { font-family: var(--mono, monospace); font-size: 12px; }
 .st-error-box {
   background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent);
   color: var(--danger); padding: 12px;
@@ -483,6 +511,13 @@ const CSS = `
   margin: -8px -8px;  /* compensate so the visible affordance still aligns */
   border-radius: 8px;
   transition: background 150ms;
+  touch-action: manipulation; user-select: none;
+}
+@media (hover: hover) {
+  .st-back-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-back-btn:active { opacity: 0.75; }
 }
 .st-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
 .st-hero-text { flex: 1; min-width: 0; }
@@ -493,14 +528,15 @@ const CSS = `
   flex-shrink: 0; overflow: hidden;
 }
 .st-hero-icon-letter { font-size: 32px; font-weight: 700; color: var(--accent); }
-.st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
-.st-hero-meta { font-size: 12px; color: var(--muted); font-family: var(--mono, monospace); }
+.st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; user-select: none; }
+.st-hero-meta { font-size: 12px; color: var(--muted); font-family: var(--mono, monospace); user-select: none; }
 .st-detail-desc { font-size: 14px; line-height: 1.55; color: var(--text); margin-bottom: 24px; }
 .st-detail-section { margin-bottom: 24px; }
 .st-section-label {
-  font-size: 11px; font-weight: 600; color: var(--muted);
+  font-size: 12px; font-weight: 600; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.06em;
   margin-bottom: 8px;
+  user-select: none;
 }
 .st-permission-row {
   display: flex; gap: 12px;
@@ -517,7 +553,7 @@ const CSS = `
 .st-perm-tag {
   flex-shrink: 0;
   padding: 2px 8px; border-radius: 999px;
-  font-size: 11px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
   font-family: var(--font); letter-spacing: 0.02em;
   text-transform: uppercase;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
@@ -564,7 +600,7 @@ const CSS = `
 .st-host-warn-host { font-weight: 600; color: var(--text); font-family: var(--mono, monospace); }
 .st-host-warn-body { color: var(--muted); margin-top: 2px; }
 .st-link { color: var(--accent); text-decoration: none; }
-.st-installed-note { font-size: 14px; color: var(--muted); }
+.st-installed-note { font-size: 14px; color: var(--muted); user-select: none; }
 .st-detail-footer {
   padding: 16px; border-top: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 8px;
@@ -580,15 +616,27 @@ const CSS = `
   font-family: var(--font);
   min-height: 44px;
   transition: background 150ms, transform 150ms;
+  touch-action: manipulation; user-select: none;
 }
-.st-big-btn:disabled { cursor: default; }
+.st-big-btn:disabled { cursor: default; pointer-events: none; opacity: 0.65; }
+@media (prefers-reduced-motion: no-preference) {
+  .st-big-btn:not(:disabled):active { opacity: 0.82; transform: scale(0.98); }
+}
 .st-danger-btn {
   padding: 12px 16px; border-radius: 10px;
   border: 1px solid var(--border); background: transparent;
   color: var(--danger); font-size: 14px; font-weight: 600;
   cursor: pointer; font-family: var(--font);
   min-height: 44px;
+  touch-action: manipulation; user-select: none;
 }
+@media (hover: hover) {
+  .st-danger-btn:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-danger-btn:not(:disabled):active { opacity: 0.8; }
+}
+.st-danger-btn:disabled { pointer-events: none; opacity: 0.65; }
 /* Subordinate link-style "Uninstall" when the primary CTA is "Open App". */
 .st-secondary-link {
   align-self: center;
@@ -599,7 +647,9 @@ const CSS = `
   text-decoration: underline;
   text-underline-offset: 2px;
   min-height: 44px;
+  touch-action: manipulation; user-select: none;
 }
+.st-secondary-link:disabled { pointer-events: none; opacity: 0.5; }
 /* Update notice on the detail view (clean-merge / conflict). App-specific. */
 .st-update-notice {
   margin-top: 12px;
@@ -630,6 +680,10 @@ const CSS = `
   background: var(--accent); color: #fff; font-weight: 600;
   font-size: 13px; cursor: pointer; font-family: var(--font);
   min-height: 36px;
+  touch-action: manipulation; user-select: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-banner-btn:not(:disabled):active { opacity: 0.8; transform: scale(0.97); }
 }
 
 /* mobius-ui:Empty v1 — keep in sync; library candidate. Diverge below the marker only. */
@@ -651,6 +705,7 @@ const CSS = `
   width: 100%; max-width: 480px; max-height: 85vh; overflow-y: auto;
   padding: 24px; background: var(--surface); border: 1px solid var(--border);
   border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.3);
+  overscroll-behavior: contain;
 }
 .st-sheet-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
 .st-sheet-body { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--muted); }
@@ -665,16 +720,21 @@ const CSS = `
   border: 1px solid var(--border); background: var(--surface); color: var(--text);
   font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
   transition: background 0.14s ease, border-color 0.14s ease, transform 0.1s ease;
+  touch-action: manipulation; user-select: none;
 }
-.st-btn:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: no-preference) {
+  .st-btn:not(:disabled):active { transform: scale(0.97); }
+}
 .st-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.st-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+.st-btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
 .st-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.st-btn-primary:hover { filter: brightness(1.06); }
+@media (hover: hover) {
+  .st-btn-primary:hover { filter: brightness(1.06); }
+  .st-btn-secondary:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+  .st-btn-ghost:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+}
 .st-btn-secondary { background: var(--surface2, var(--surface)); }
-.st-btn-secondary:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .st-btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }
-.st-btn-ghost:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .st-btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .st-btn-icon { width: 44px; padding: 0; border-radius: 8px; font-size: 18px; }
 /* /mobius-ui:Button */
@@ -695,6 +755,10 @@ const CSS = `
   font-size: 12px; font-weight: 600; cursor: pointer;
   font-family: var(--font); flex-shrink: 0;
   min-height: 32px;
+  touch-action: manipulation; user-select: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-toast-btn:active { opacity: 0.8; transform: scale(0.97); }
 }
 /* /mobius-ui:Toast */
 `
