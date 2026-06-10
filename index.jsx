@@ -80,7 +80,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.17'
+const STORE_VERSION = '1.4.19'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -278,8 +278,8 @@ const CSS = `
   .st-card[role="button"]:active { transform: scale(0.98); opacity: 0.9; }
 }
 .st-icon-wrap {
-  width: 88px; height: 88px; border-radius: 20px;
-  background: var(--surface2);
+  width: 96px; height: 96px; border-radius: 22px;
+  background: transparent;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; overflow: hidden;
 }
@@ -287,8 +287,13 @@ const CSS = `
    sit at the icon's bottom-right corner without leaking out of
    .st-icon-wrap's overflow: hidden. Spacing-below lives on this slot. */
 .st-icon-slot { position: relative; margin-bottom: 12px; display: inline-block; }
-.st-icon-img { width: 100%; height: 100%; object-fit: cover; }
-.st-icon-letter { font-size: 34px; font-weight: 700; color: var(--accent); }
+.st-icon-img { width: 100%; height: 100%; object-fit: contain; }
+/* Letter fallback tile keeps its surface tile so apps without icons
+   (or with load errors) still read as recognisable icon slots. The
+   tile is only present for the letter variant — real icons sit on a
+   transparent background so the icon's own art fills the slot. */
+.st-icon-wrap--letter { background: var(--surface2); }
+.st-icon-letter { font-size: 36px; font-weight: 700; color: var(--accent); }
 /* A tiny check dot sits at the icon's bottom-right when the app is
    already installed. Quicker to read than the pill text, lets the grid
    double as an "at a glance" inventory. */
@@ -522,11 +527,12 @@ const CSS = `
 .st-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
 .st-hero-text { flex: 1; min-width: 0; }
 .st-hero-icon {
-  width: 72px; height: 72px; border-radius: 16px;
-  background: var(--surface2); display: flex;
+  width: 80px; height: 80px; border-radius: 18px;
+  background: transparent; display: flex;
   align-items: center; justify-content: center;
   flex-shrink: 0; overflow: hidden;
 }
+.st-hero-icon.is-letter { background: var(--surface2); }
 .st-hero-icon-letter { font-size: 32px; font-weight: 700; color: var(--accent); }
 .st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; user-select: none; }
 .st-hero-meta { font-size: 12px; color: var(--muted); font-family: var(--mono, monospace); user-select: none; }
@@ -847,8 +853,13 @@ export function scheduleSummary(schedule) {
 // (public-git-host) URL or a same-origin one. External icons can't be used
 // as a direct <img src> under prod's img-src 'self' data: CSP — they have
 // to be fetched through the server proxy and turned into a blob: object URL.
+//
+// Priority:
+//  1. installed_icon_url — set by the caller when the item maps to an installed
+//     app row (points to GET /api/apps/{id}/icon, the raw transparent PNG).
+//  2. External catalog preview — raw_base + manifest.icon, fetched via proxy.
 function appIcon(item) {
-  // Installed apps surface the in-Möbius icon endpoint (same-origin).
+  // Installed apps use the raw icon route (same-origin, transparent PNG).
   if (item.installed_icon_url) return { url: item.installed_icon_url, external: false }
   // Catalog cards use raw_base + manifest.icon for the preview (external).
   if (item.manifest && item.manifest.icon && item.raw_base) {
@@ -863,7 +874,12 @@ function IconBox({ item, size = 'normal', token }) {
   // For external icons, the blob: object URL the proxy fetch produced.
   // Same-origin icons render directly from `url`.
   const [blobUrl, setBlobUrl] = useState(null)
-  const wrapClass = size === 'hero' ? 'st-hero-icon' : 'st-icon-wrap'
+  // Letter-fallback variant: needs the surface tile so the letter reads
+  // on an opaque background. Real icons sit on transparent.
+  const isLetter = !((external ? blobUrl : url) && !errored)
+  const wrapClass = size === 'hero'
+    ? `st-hero-icon${isLetter ? ' is-letter' : ''}`
+    : `st-icon-wrap${isLetter ? ' st-icon-wrap--letter' : ''}`
   const letterClass = size === 'hero' ? 'st-hero-icon-letter' : 'st-icon-letter'
   const name = (item.manifest && item.manifest.name) || item.name || '?'
   const letter = name.charAt(0).toUpperCase()
@@ -893,15 +909,18 @@ function IconBox({ item, size = 'normal', token }) {
 
   const src = external ? blobUrl : url
   if (src && !errored) {
+    // wrapClass must be re-evaluated now that we know we have an image.
+    const imgWrapClass = size === 'hero' ? 'st-hero-icon' : 'st-icon-wrap'
     return (
-      <div className={wrapClass}>
+      <div className={imgWrapClass}>
         <img src={src} alt="" className="st-icon-img" loading="lazy"
              onError={() => setErrored(true)} />
       </div>
     )
   }
+  const letterWrapClass = size === 'hero' ? 'st-hero-icon is-letter' : 'st-icon-wrap st-icon-wrap--letter'
   return (
-    <div className={wrapClass}>
+    <div className={letterWrapClass}>
       <span className={letterClass}>{letter}</span>
     </div>
   )
@@ -1296,7 +1315,7 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     if (item.error) {
       return (
         <div className={cardVariantClass('error')}>
-          <div className="st-icon-wrap" style={{ marginBottom: '12px' }}>
+          <div className="st-icon-wrap st-icon-wrap--letter" style={{ marginBottom: '12px' }}>
             <span className="st-icon-letter">{item.id.charAt(0).toUpperCase()}</span>
           </div>
           <div className="st-card-name">{item.id}</div>
@@ -1318,7 +1337,7 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     // visible so a stuck card is still recognizable.
     return (
       <div className={cardVariantClass('default')}>
-        <div className="st-icon-wrap">
+        <div className="st-icon-wrap st-icon-wrap--letter">
           <span className="st-icon-letter">{item.id.charAt(0).toUpperCase()}</span>
         </div>
         <div className="st-card-name">{item.id}</div>
@@ -1389,6 +1408,13 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     ? 'st-card-action is-installed'
     : 'st-card-action'
 
+  // When the app is installed, use the raw transparent icon endpoint instead
+  // of the external catalog URL — avoids the proxy round-trip and serves the
+  // original PNG without any background flattening.
+  const itemWithIcon = storeInstalled
+    ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon` }
+    : item
+
   return (
     <div
       role="button"
@@ -1399,7 +1425,7 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
       aria-label={`${m.name} — ${statusLabel}. Tap for details.`}
     >
       <div className="st-icon-slot">
-        <IconBox item={item} token={token} />
+        <IconBox item={itemWithIcon} token={token} />
         {(cardVariant === 'installed' || cardVariant === 'update') && (
           <div className="st-installed-dot" aria-hidden="true">
             <div className={`st-installed-dot-inner${cardVariant === 'update' ? ' is-update' : ''}`}>
@@ -1481,7 +1507,7 @@ function CatalogSkeleton({ count = 5 }) {
     <div className="st-catalog-grid">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="st-skeleton-card" aria-hidden="true">
-          <div className="st-skeleton-block" style={{ width: '88px', height: '88px', borderRadius: '20px', marginBottom: '12px' }} />
+          <div className="st-skeleton-block" style={{ width: '96px', height: '96px', borderRadius: '22px', marginBottom: '12px' }} />
           <div className="st-skeleton-block" style={{ width: '72%', height: '12px', marginBottom: '6px' }} />
           <div className="st-skeleton-block" style={{ width: '40%', height: '10px', marginBottom: '12px' }} />
           <div className="st-skeleton-block" style={{ width: '90%', height: '8px', marginBottom: '6px' }} />
@@ -1613,6 +1639,13 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   }
   const scheduleText = scheduleSummary(m.schedule)
 
+  // When the app is installed, serve the raw transparent icon from the
+  // same-origin API route rather than the external catalog source. Avoids the
+  // proxy round-trip and ensures the icon's original transparency is preserved.
+  const heroItemWithIcon = storeInstalled
+    ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon` }
+    : item
+
   return (
     <>
       <div className="st-detail-header">
@@ -1620,7 +1653,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
       </div>
       <div className="st-scroll">
         <div className="st-hero">
-          <IconBox item={item} size="hero" token={token} />
+          <IconBox item={heroItemWithIcon} size="hero" token={token} />
           <div className="st-hero-text">
             <h2 className="st-hero-name">{m.name}</h2>
             <div className="st-hero-meta">
