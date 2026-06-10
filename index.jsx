@@ -2063,20 +2063,17 @@ export default function App({ appId, token }) {
       }
 
       if (isCleanMerge) {
-        const notice = {
-          kind: 'clean_merge',
-          itemId: item.id,
-          appId: result.id,
-          message: `Updated to v${result.version || item.manifest?.version}. You'd edited this app; double-check the merge?`,
-          result,
-          item,
-        }
-        setUpdateNotice(notice)
-        // Stay on the grid and surface the outcome inline — the update
-        // already applied, so auto-opening the detail view was an unwanted
-        // yank. The notice persists, so the "Review in chat" affordance is
-        // still there if the user opens detail themselves.
-        setToast({ kind: 'success', message: notice.message })
+        // A clean merge means the update applied with no conflicts, so do not
+        // nag the owner to "double-check" it. The backend's divergence check
+        // over-reports "you edited this" for apps the owner never touched (a
+        // re-seeded or line-ending-normalized on-disk tree diffs as a local
+        // edit), which made this prompt fire on untouched apps like News. Only
+        // a real conflict (handled above) is worth surfacing; a clean result
+        // is just a quiet success.
+        setToast({
+          kind: 'success',
+          message: `Updated to v${result.version || item.manifest?.version}.`,
+        })
         return
       }
 
