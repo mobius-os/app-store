@@ -80,7 +80,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.19'
+const STORE_VERSION = '1.4.20'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -188,6 +188,28 @@ const CSS = `
 .st-scroll { flex: 1; overflow: auto; padding: 16px; overscroll-behavior: contain; }
 /* /mobius-ui:Root */
 
+/* mobius-ui:Focus v1 — keep in sync; library candidate. A single
+   keyboard-focus ring for every interactive control, so no element can
+   ship without a visible focus indicator. .st-btn and .st-card already
+   declare matching rings below; this is the floor, not a doubled ring. */
+:where(button, a, input, textarea, select, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* /mobius-ui:Focus */
+
+/* Honor reduced-motion: collapse every animation/transition to ~instant
+   so the skeleton pulse, card lift, and active-state scales don't move
+   for motion-sensitive users. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* App-specific header — title + a segmented tab bar, not the canonical
    brand-cluster header. Kept on the store's own values. */
 .st-header {
@@ -235,6 +257,11 @@ const CSS = `
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 16px;
 }
+/* The card is a non-interactive container (not role=button). The open
+   affordance is a real <button class="st-card-open"> whose ::after overlay
+   stretches across the whole card, so hover/focus on it lifts the card and
+   a click anywhere outside the action button opens details. The action
+   button rides z-index:1 above that overlay. */
 .st-card {
   position: relative;
   display: flex; flex-direction: column;
@@ -243,10 +270,8 @@ const CSS = `
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  cursor: pointer;
   transition: border-color 150ms, transform 150ms, box-shadow 150ms, background 150ms;
   min-height: 44px;
-  outline: none;
   touch-action: manipulation; user-select: none;
 }
 .st-card.is-update {
@@ -259,23 +284,41 @@ const CSS = `
 }
 .st-card.is-error {
   border: 1px dashed var(--border);
-  cursor: default;
+}
+/* The app name is the card's open affordance. Its ::after overlay covers
+   the whole card so the icon / name / version / desc all open details. */
+.st-card-open {
+  position: static;
+  border: 0; background: transparent; padding: 0; margin: 0 0 4px;
+  font-family: var(--font); color: var(--text);
+  font-size: 14px; font-weight: 600; line-height: 1.25;
+  cursor: pointer;
+  display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+  touch-action: manipulation; user-select: none;
+}
+.st-card-open::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+}
+.st-card-open:focus-visible { outline: none; }
+.st-card-open:focus-visible::after {
+  outline: 2px solid var(--accent); outline-offset: 2px;
 }
 /* Interaction lift — gated on hover:hover so touch devices don't get stuck hover states. */
 @media (hover: hover) {
-  .st-card[role="button"]:hover {
+  .st-card:has(.st-card-open:hover) {
     transform: translateY(-1px);
     box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 14%, transparent);
     border-color: var(--accent);
   }
 }
-.st-card[role="button"]:focus-visible {
+.st-card:has(.st-card-open:focus-visible) {
   transform: translateY(-1px);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
   border-color: var(--accent);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .st-card[role="button"]:active { transform: scale(0.98); opacity: 0.9; }
+  .st-card:has(.st-card-open:active) { transform: scale(0.98); opacity: 0.9; }
 }
 .st-icon-wrap {
   width: 96px; height: 96px; border-radius: 22px;
@@ -343,8 +386,12 @@ const CSS = `
   min-height: 48px;
 }
 /* Top-border separator between the description and the one card action.
-   Each card reads as exactly one state/action: Install, Installed, or Update. */
+   Each card reads as exactly one state/action: Install, Installed, or Update.
+   z-index:1 lifts the action above the .st-card-open ::after overlay so it
+   stays independently clickable. */
 .st-card-status-row {
+  position: relative;
+  z-index: 1;
   width: 100%;
   padding-top: 8px;
   border-top: 1px solid var(--border);
@@ -357,7 +404,7 @@ const CSS = `
 }
 .st-card-action {
   width: 100%;
-  min-height: 34px;
+  min-height: 44px;
   flex-shrink: 0;
   border: 1px solid transparent;
   border-radius: 7px;
@@ -421,7 +468,7 @@ const CSS = `
   border: 1px solid var(--border); background: transparent;
   color: var(--text); font-size: 12px; font-weight: 600;
   cursor: pointer; font-family: var(--font);
-  min-height: 32px;
+  min-height: 44px;
   transition: background 150ms;
   touch-action: manipulation; user-select: none;
 }
@@ -441,17 +488,21 @@ const CSS = `
   background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 8px;
   font-size: 13px; font-family: var(--mono, monospace);
-  outline: none; box-sizing: border-box;
+  box-sizing: border-box;
   margin-bottom: 12px;
   min-height: 44px;
   transition: border-color 150ms, box-shadow 150ms;
 }
 /* Focus ring — was JS focused state, now a real :focus pseudo-class.
-   Same accent ring the catalog cards use. */
+   Same accent ring the catalog cards use. The shared :focus-visible block
+   keeps a keyboard outline; this border+shadow is the always-on focus cue. */
 .st-url-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
+/* Suppress the UA outline only for pointer focus; keyboard focus keeps the
+   shared :focus-visible accent ring on top of the border+shadow cue. */
+.st-url-input:focus:not(:focus-visible) { outline: none; }
 .st-primary-btn {
   padding: 12px 20px; border-radius: 10px; border: none;
   background: var(--accent); color: #fff;
@@ -685,7 +736,7 @@ const CSS = `
   flex-shrink: 0; border: none; border-radius: 8px; padding: 8px 16px;
   background: var(--accent); color: #fff; font-weight: 600;
   font-size: 13px; cursor: pointer; font-family: var(--font);
-  min-height: 36px;
+  min-height: 44px;
   touch-action: manipulation; user-select: none;
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -760,13 +811,35 @@ const CSS = `
   background: var(--accent); color: #fff;
   font-size: 12px; font-weight: 600; cursor: pointer;
   font-family: var(--font); flex-shrink: 0;
-  min-height: 32px;
+  min-height: 44px;
   touch-action: manipulation; user-select: none;
 }
 @media (prefers-reduced-motion: no-preference) {
   .st-toast-btn:active { opacity: 0.8; transform: scale(0.97); }
 }
 /* /mobius-ui:Toast */
+
+/* Desktop/web: the phone layout is fluid + left-aligned, which leaves a
+   wide empty right gutter on a large window. Cap the content measure and
+   center it so the grid, forms, banner, errors, and detail view stay
+   comfortably sized and intentional on wide screens. The grid floor also
+   bumps so cards don't get over-dense. */
+@media (min-width: 720px) {
+  .st-scroll > .st-catalog-grid,
+  .st-scroll > .st-empty,
+  .st-scroll > .st-banner,
+  .st-scroll > .st-url-form,
+  .st-scroll > .st-hero,
+  .st-scroll > .st-detail-desc,
+  .st-scroll > .st-detail-section,
+  .st-scroll > .st-update-notice {
+    max-width: 840px;
+    margin-inline: auto;
+  }
+  .st-catalog-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
 `
 
 // Human-language explanations for the permission strings. `tag` is the
@@ -1301,8 +1374,12 @@ function cardVariantClass(variant) {
   return 'st-card'
 }
 
-// One catalog tile. The interactive lift (hover/focus) now lives in CSS
-// pseudo-classes on .st-card[role="button"] rather than JS state, so the
+// One catalog tile. The card is a non-interactive container; the open
+// affordance is a real <button class="st-card-open"> (the app name) whose
+// ::after overlay stretches over the card, and the action button is a
+// sibling — two cleanly-separated AT targets, no nested role=button. The
+// interactive lift (hover/focus) lives in CSS pseudo-classes via
+// .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
 function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, blocked, error, token }) {
   const m = item.manifest
@@ -1382,26 +1459,16 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
   const actionLabel = busy
     ? cardVariant === 'update' ? 'Updating…' : 'Installing…'
     : statusLabel
-  const stopCardEvent = (event) => event.stopPropagation()
-  const onCardActionKeyDown = (event) => {
-    event.stopPropagation()
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    if (cardActionDisabled) return
-    if (cardVariant === 'update') onUpdate?.(item)
-    else onPick(item)
-  }
-  const onCardAction = (event) => {
-    event.stopPropagation()
+  const onCardAction = () => {
     if (cardActionDisabled) return
     if (cardVariant === 'update') onUpdate?.(item)
     else onPick(item)
   }
 
-  // The subtle hover/focus lift (translate + accent shadow/border) now
-  // rides CSS pseudo-classes on .st-card[role="button"] — see the Card
-  // rules in CSS. The action button's variant + disabled styling ride
-  // is-* / :disabled, not inline objects.
+  // The subtle hover/focus lift (translate + accent shadow/border) rides
+  // CSS pseudo-classes via .st-card:has(.st-card-open:hover/:focus-visible)
+  // — see the Card rules in CSS. The action button's variant + disabled
+  // styling ride is-* / :disabled, not inline objects.
   const cardActionClass = cardVariant === 'update'
     ? 'st-card-action is-update'
     : cardVariant === 'installed'
@@ -1415,15 +1482,14 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
     ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon` }
     : item
 
+  // The card is a non-interactive container. Two cleanly-separated AT
+  // targets sit inside it: the app name is a real <button> whose ::after
+  // overlay stretches across the whole card to open details (so the icon /
+  // version / desc region is still tappable), and the action button rides a
+  // z-index layer above that overlay so it stays independently clickable.
+  // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className={cardVariantClass(cardVariant)}
-      onClick={() => onPick(item)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(item) } }}
-      aria-label={`${m.name} — ${statusLabel}. Tap for details.`}
-    >
+    <div className={cardVariantClass(cardVariant)}>
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
         {(cardVariant === 'installed' || cardVariant === 'update') && (
@@ -1434,7 +1500,14 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
           </div>
         )}
       </div>
-      <div className="st-card-name">{m.name}</div>
+      <button
+        type="button"
+        className="st-card-open"
+        onClick={() => onPick(item)}
+        aria-label={`${m.name} — open details`}
+      >
+        {m.name}
+      </button>
       <div className="st-card-version">
         v{m.version}
         {m.embeds_agent ? (
@@ -1449,9 +1522,6 @@ function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUp
           type="button"
           className={cardActionClass}
           disabled={cardActionDisabled}
-          onPointerDown={stopCardEvent}
-          onMouseDown={stopCardEvent}
-          onKeyDown={onCardActionKeyDown}
           onClick={onCardAction}
           aria-label={
             cardVariant === 'update'
@@ -2313,6 +2383,21 @@ export default function App({ appId, token }) {
     }
   }, [detail])
 
+  // Roving tab navigation: ArrowLeft/ArrowRight move selection between the
+  // two tabs with wrap, and move DOM focus to the newly-selected tab (the
+  // tablist's roving tabIndex keeps only the active tab in the Tab order).
+  const onTabsKeyDown = (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const order = ['browse', 'url']
+    const i = order.indexOf(tab)
+    const next = e.key === 'ArrowRight'
+      ? order[(i + 1) % order.length]
+      : order[(i - 1 + order.length) % order.length]
+    setTab(next)
+    document.getElementById(next === 'browse' ? 'st-tab-browse' : 'st-tab-url')?.focus()
+  }
+
   // Detail view replaces the main layout when set.
   if (detail) {
     return (
@@ -2341,7 +2426,9 @@ export default function App({ appId, token }) {
           />
         )}
         {toast && (
-          <div className={`st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`}>
+          <div className={`st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`}
+               role="status"
+               aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}>
             <div className="st-toast-msg">{toast.message}</div>
             <button className="st-toast-btn" onClick={() => setToast(null)}>OK</button>
           </div>
@@ -2357,13 +2444,20 @@ export default function App({ appId, token }) {
         <div className="st-title-row">
           <h1 className="st-title">App Store</h1>
         </div>
-        <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode">
-          <button role="tab" aria-selected={tab === 'browse'}
+        <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
+             onKeyDown={onTabsKeyDown}>
+          <button role="tab" id="st-tab-browse"
+                  aria-selected={tab === 'browse'}
+                  aria-controls="st-tabpanel"
+                  tabIndex={tab === 'browse' ? 0 : -1}
                   className={`st-seg-btn${tab === 'browse' ? ' is-active' : ''}`}
                   onClick={() => setTab('browse')}>
             Browse
           </button>
-          <button role="tab" aria-selected={tab === 'url'}
+          <button role="tab" id="st-tab-url"
+                  aria-selected={tab === 'url'}
+                  aria-controls="st-tabpanel"
+                  tabIndex={tab === 'url' ? 0 : -1}
                   className={`st-seg-btn${tab === 'url' ? ' is-active' : ''}`}
                   onClick={() => setTab('url')}>
             From URL
@@ -2371,7 +2465,9 @@ export default function App({ appId, token }) {
         </div>
       </div>
 
-      <div className="st-scroll" ref={gridScrollRef}>
+      <div className="st-scroll" ref={gridScrollRef}
+           id="st-tabpanel" role="tabpanel"
+           aria-labelledby={tab === 'browse' ? 'st-tab-browse' : 'st-tab-url'}>
         {tab === 'browse' && (
           <>
             <SelfUpdateBanner token={token} />
@@ -2406,7 +2502,9 @@ export default function App({ appId, token }) {
       )}
 
       {toast && (
-        <div className={`st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`}>
+        <div className={`st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`}
+             role="status"
+             aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}>
           <div className="st-toast-msg">{toast.message}</div>
           <button className="st-toast-btn" onClick={() => setToast(null)}>OK</button>
         </div>
