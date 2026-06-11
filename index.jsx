@@ -80,7 +80,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.21'
+const STORE_VERSION = '1.4.23'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -1948,8 +1948,9 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
 // when that version is newer than the running STORE_VERSION, offer a one-tap
 // update that runs the same install transaction every other app uses, then
 // prompt a reload so the freshly-patched code loads. Renders null when current.
-function SelfUpdateBanner({ token }) {
+function SelfUpdateBanner({ appId, token }) {
   const [latest, setLatest] = useState(null)   // manifest of the published store
+  const [installedVer, setInstalledVer] = useState(null) // DB version of THIS app row
   const [phase, setPhase] = useState('idle')   // idle | updating | done | conflict | error
   const [msg, setMsg] = useState('')
 
@@ -1958,10 +1959,22 @@ function SelfUpdateBanner({ token }) {
     fetchManifest(STORE_SELF.manifest_url, token)
       .then(m => { if (!cancelled) setLatest(m) })
       .catch(() => {})   // a failed self-check is silent — never block the grid
+    // The DB row's version is the ground truth for "what is installed".
+    // The baked STORE_VERSION constant is only what is RUNNING — comparing
+    // the constant against the manifest loops forever if a release ever
+    // bumps mobius.json without the constant (which happened: 1.4.22
+    // shipped carrying STORE_VERSION '1.4.21', so every update "succeeded"
+    // and the banner came right back). DB-vs-manifest cannot loop: a
+    // successful install makes them equal.
+    fetch(`/api/apps/${appId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(a => { if (!cancelled && a && a.version) setInstalledVer(a.version) })
+      .catch(() => {})
     return () => { cancelled = true }
-  }, [token])
+  }, [appId, token])
 
-  const hasUpdate = latest && semverCmp(STORE_VERSION, latest.version) < 0
+  const runningOrInstalled = installedVer || STORE_VERSION
+  const hasUpdate = latest && semverCmp(runningOrInstalled, latest.version) < 0
   if (phase !== 'done' && phase !== 'conflict' && !hasUpdate) return null
 
   const onUpdate = async () => {
@@ -2529,7 +2542,7 @@ export default function App({ appId, token }) {
            aria-labelledby={tab === 'browse' ? 'st-tab-browse' : 'st-tab-url'}>
         {tab === 'browse' && (
           <>
-            <SelfUpdateBanner token={token} />
+            <SelfUpdateBanner appId={appId} token={token} />
             {loadingCatalog
               ? <CatalogSkeleton count={CATALOG.length} />
               : <CatalogList
