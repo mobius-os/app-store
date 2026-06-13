@@ -86,7 +86,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.24'
+const STORE_VERSION = '1.4.25'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -224,10 +224,19 @@ const CSS = `
   background: var(--bg);
 }
 .st-title-row {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: 10px;
   margin-bottom: 12px;
 }
-.st-title { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+.st-brand-icon {
+  width: 26px; height: 26px; border-radius: 6px;
+  object-fit: cover; flex-shrink: 0; display: block;
+}
+.st-brand-fallback {
+  width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0;
+  align-items: center; justify-content: center;
+  background: var(--accent, currentColor); color: var(--bg, #0c0c0c);
+  font-weight: 700; line-height: 1;
+}
 
 /* mobius-ui:Segmented v1 — keep in sync; library candidate. Diverge below the marker only. */
 .st-seg {
@@ -2520,7 +2529,22 @@ export default function App({ appId, token }) {
       <style>{CSS}</style>
       <div className="st-header">
         <div className="st-title-row">
-          <h1 className="st-title">App Store</h1>
+          {/* Brand mark: the app's real glossy icon (downscaled + cached),
+              no name text. Falls back to an accent dot when this install
+              has no custom icon and the route 404s. */}
+          <img
+            src={`/api/apps/${appId}/icon?size=64`}
+            alt=""
+            width={26}
+            height={26}
+            className="st-brand-icon"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none'
+              const f = e.currentTarget.nextElementSibling
+              if (f) f.style.display = 'flex'
+            }}
+          />
+          <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
         </div>
         <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
              onKeyDown={onTabsKeyDown}>
