@@ -86,7 +86,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.25'
+const STORE_VERSION = '1.4.26'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -223,19 +223,20 @@ const CSS = `
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
+/* Single header row: the brand icon sits left, the Browse / From URL
+   segmented control fills the rest of the same row (no second row). */
 .st-title-row {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 12px;
+  display: flex; align-items: center; gap: 12px;
 }
 .st-brand-icon {
-  width: 26px; height: 26px; border-radius: 6px;
+  width: 40px; height: 40px; border-radius: 9px;
   object-fit: cover; flex-shrink: 0; display: block;
 }
 .st-brand-fallback {
-  width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0;
-  align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
   background: var(--accent, currentColor); color: var(--bg, #0c0c0c);
-  font-weight: 700; line-height: 1;
+  font-size: 22px; font-weight: 700; line-height: 1;
 }
 
 /* mobius-ui:Segmented v1 — keep in sync; library candidate. Diverge below the marker only. */
@@ -259,10 +260,11 @@ const CSS = `
 .st-seg.is-accent .st-seg-btn.is-active { background: var(--accent); color: #fff; box-shadow: none; }
 /* /mobius-ui:Segmented */
 
-/* The store's full-width tab bar: segmented control stretched across the
-   header, each button sharing the row equally. */
-.st-tabs { display: flex; width: 100%; gap: 4px; border-radius: 10px; }
-.st-tabs .st-seg-btn { flex: 1; }
+/* The store's tab bar: segmented control shares the header row with the
+   brand icon, taking the remaining width with each button splitting it
+   equally. min-width:0 lets it shrink without overflowing on narrow phones. */
+.st-tabs { display: flex; flex: 1; min-width: 0; gap: 4px; border-radius: 10px; }
+.st-tabs .st-seg-btn { flex: 1; min-width: 0; }
 
 /* App-specific catalog grid + tiles. The vertical-tile card diverges
    structurally from the canonical horizontal list Card, so it keeps the
@@ -2545,25 +2547,25 @@ export default function App({ appId, token }) {
             }}
           />
           <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
-        </div>
-        <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
-             onKeyDown={onTabsKeyDown}>
-          <button role="tab" id="st-tab-browse"
-                  aria-selected={tab === 'browse'}
-                  aria-controls="st-tabpanel"
-                  tabIndex={tab === 'browse' ? 0 : -1}
-                  className={`st-seg-btn${tab === 'browse' ? ' is-active' : ''}`}
-                  onClick={() => setTab('browse')}>
-            Browse
-          </button>
-          <button role="tab" id="st-tab-url"
-                  aria-selected={tab === 'url'}
-                  aria-controls="st-tabpanel"
-                  tabIndex={tab === 'url' ? 0 : -1}
-                  className={`st-seg-btn${tab === 'url' ? ' is-active' : ''}`}
-                  onClick={() => setTab('url')}>
-            From URL
-          </button>
+          <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
+               onKeyDown={onTabsKeyDown}>
+            <button role="tab" id="st-tab-browse"
+                    aria-selected={tab === 'browse'}
+                    aria-controls="st-tabpanel"
+                    tabIndex={tab === 'browse' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'browse' ? ' is-active' : ''}`}
+                    onClick={() => setTab('browse')}>
+              Browse
+            </button>
+            <button role="tab" id="st-tab-url"
+                    aria-selected={tab === 'url'}
+                    aria-controls="st-tabpanel"
+                    tabIndex={tab === 'url' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'url' ? ' is-active' : ''}`}
+                    onClick={() => setTab('url')}>
+              From URL
+            </button>
+          </div>
         </div>
       </div>
 
