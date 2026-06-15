@@ -86,7 +86,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.26'
+const STORE_VERSION = '1.4.27'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -2070,6 +2070,12 @@ export default function App({ appId, token }) {
   // mobile fire visibilitychange and focus a frame apart). A simple
   // boolean is enough — we only care that one refresh is in flight.
   const refreshingRef = useRef(false)
+  // Last time we re-hydrated catalog manifests from GitHub. Seeded to the
+  // mount-time hydrate so the first focus right after open doesn't refetch.
+  // A focus flap (visibilitychange + focus a frame apart) won't refetch
+  // either: the second event lands well inside the debounce window.
+  const lastManifestRefreshRef = useRef(0)
+  const manifestRehydratingRef = useRef(false)
 
   // Initial fetch: catalog manifests + installed apps + version map.
   // Every await is guarded so a single failing network call can't leave the
@@ -2101,6 +2107,7 @@ export default function App({ appId, token }) {
         )
         if (cancelled) return
         setCatalog(hydrated)
+        lastManifestRefreshRef.current = Date.now()
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
         if (!cancelled) setLoadingCatalog(false)
@@ -2111,13 +2118,69 @@ export default function App({ appId, token }) {
   }, [appId, token])
 
   const refreshInstalled = useCallback(async () => {
-    if (refreshingRef.current) return
+    if (refreshingRef.current) return null
     refreshingRef.current = true
     try {
       const apps = await loadInstalledApps(token)
       setInstalled(apps)
+      return apps
     } finally {
       refreshingRef.current = false
+    }
+  }, [token])
+
+  // Re-hydrate catalog manifests from GitHub so an "Update" surfaces when
+  // the owner pushes a newer version while this iframe is already mounted.
+  // hasUpdate compares the installed version against the catalog item's
+  // manifest version, and that manifest is otherwise only fetched at mount —
+  // so without this, a focus regain re-reads installed rows but never the
+  // upstream manifests, and the update stays invisible until a full reopen.
+  //
+  // Scoped to INSTALLED apps: only those can show an Update, so refetching
+  // the whole 11-entry catalog on every focus would be wasted work. We map
+  // the freshly-fetched installed rows back to catalog entries via the same
+  // findInstalled identity match the cards use.
+  //
+  // Debounced to ~50s via lastManifestRefreshRef: a focus flap (visibility-
+  // change + focus firing a frame apart) lands inside the window and is a
+  // no-op, and rapid tab toggling can't trigger a refetch storm. GitHub raw
+  // CDN's ~5min cache is the only inherent freshness lag, well under 50s.
+  const REHYDRATE_DEBOUNCE_MS = 50_000
+  const refreshCatalogManifests = useCallback(async (installedApps) => {
+    if (manifestRehydratingRef.current) return
+    if (Date.now() - lastManifestRefreshRef.current < REHYDRATE_DEBOUNCE_MS) return
+    const apps = installedApps || []
+    // Only catalog entries that are actually installed can show an Update.
+    const targets = CATALOG.filter(c => !c.core && findInstalled(apps, c))
+    if (targets.length === 0) {
+      // Nothing installed to check — still stamp the time so we don't probe
+      // findInstalled on every single focus event.
+      lastManifestRefreshRef.current = Date.now()
+      return
+    }
+    manifestRehydratingRef.current = true
+    try {
+      const refetched = await Promise.all(
+        targets.map(async (c) => {
+          try {
+            const manifest = await fetchManifest(c.manifest_url, token)
+            return { id: c.id, manifest }
+          } catch {
+            // Leave the existing manifest in place on a transient failure;
+            // a stale-but-present manifest is better than blanking the card.
+            return null
+          }
+        })
+      )
+      const byId = new Map(refetched.filter(Boolean).map(r => [r.id, r.manifest]))
+      if (byId.size > 0) {
+        setCatalog(prev => prev.map(c =>
+          byId.has(c.id) ? { ...c, manifest: byId.get(c.id), error: null } : c
+        ))
+      }
+      lastManifestRefreshRef.current = Date.now()
+    } finally {
+      manifestRehydratingRef.current = false
     }
   }, [token])
 
@@ -2128,11 +2191,18 @@ export default function App({ appId, token }) {
   // storage shim already uses to drain its outbox: visibilitychange +
   // focus + pageshow. Polling would be wasteful — these three cover
   // every realistic path back into a foregrounded App Store iframe
-  // (drawer dismiss, tab refocus, mobile bfcache restore).
+  // (drawer dismiss, tab refocus, mobile bfcache restore). On the same
+  // events we also re-hydrate catalog manifests (debounced) so a version
+  // the owner pushed while the iframe stayed mounted shows up as an Update.
   useEffect(() => {
     function maybeRefresh() {
       if (document.visibilityState !== 'visible') return
-      refreshInstalled()
+      refreshInstalled().then(apps => {
+        // refreshInstalled returns null if a refresh was already in flight;
+        // the in-flight one will land the rows, and the manifest re-hydrate
+        // is independently debounced, so skipping here is safe.
+        if (apps) refreshCatalogManifests(apps)
+      })
     }
     document.addEventListener('visibilitychange', maybeRefresh)
     window.addEventListener('focus', maybeRefresh)
@@ -2142,7 +2212,7 @@ export default function App({ appId, token }) {
       window.removeEventListener('focus', maybeRefresh)
       window.removeEventListener('pageshow', maybeRefresh)
     }
-  }, [refreshInstalled])
+  }, [refreshInstalled, refreshCatalogManifests])
 
   // Re-fetch a single catalog manifest. Wired into CatalogCard's
   // "Try again" affordance — replaces the previous behavior where a
