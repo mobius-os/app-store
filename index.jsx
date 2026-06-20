@@ -88,7 +88,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.31'
+const STORE_VERSION = '1.4.32'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -274,32 +274,6 @@ const CSS = `
    equally. min-width:0 lets it shrink without overflowing on narrow phones. */
 .st-tabs { display: flex; flex: 1; min-width: 0; gap: 4px; border-radius: 10px; }
 .st-tabs .st-seg-btn { flex: 1; min-width: 0; }
-
-/* The single header-level "Check for updates" control. Its own row below the
-   tabs, right-aligned, low-emphasis so it never competes with the segmented
-   control. min-height reserves space so the transient "Checking…/Up to date"
-   label swap can't shift the grid below it. */
-.st-check-row {
-  display: flex; justify-content: flex-end; align-items: center;
-  min-height: 28px; margin-top: 8px;
-}
-.st-check-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  min-height: 28px; padding: 4px 10px; border-radius: 8px;
-  border: 1px solid transparent; background: transparent;
-  color: var(--muted); font-family: var(--font);
-  font-size: 12px; font-weight: 600; cursor: pointer;
-  transition: color 0.14s ease, background 0.14s ease, border-color 0.14s ease;
-  touch-action: manipulation; user-select: none;
-}
-@media (hover: hover) {
-  .st-check-btn:not(:disabled):hover {
-    color: var(--text);
-    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
-  }
-}
-.st-check-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.st-check-btn:disabled { opacity: 0.7; cursor: default; }
 
 /* App-specific catalog grid + tiles. The vertical-tile card diverges
    structurally from the canonical horizontal list Card, so it keeps the
@@ -1447,17 +1421,76 @@ function PermissionRow({ label, level, info }) {
 function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
   // Browser modal dialogs don't render inside the AppCanvas iframe
   // (sandbox lacks `allow-modals`), so we ship our own confirmation.
+  // A custom dialog has to carry its own focus contract — the platform gives
+  // a real <dialog> these for free, but role="dialog" alone does not:
+  //   - move focus into the dialog on open (Cancel, the non-destructive default)
+  //   - keep Tab/Shift+Tab cycling WITHIN the dialog while it's open
+  //   - close on Escape
+  //   - return focus to whatever opened it when it closes
+  const sheetRef = useRef(null)
+  const cancelRef = useRef(null)
+  // Capture the opener exactly once, at mount, before focus moves into the
+  // dialog — this is the element focus returns to on close. A ref (not state)
+  // because it must survive every render without being a dependency.
+  const openerRef = useRef(null)
+
+  // Focus the Cancel button on open and restore the opener's focus on close.
+  // Cancel is the safe default for a destructive confirm, so keyboard/AT users
+  // land on "back out", not "delete".
+  useEffect(() => {
+    openerRef.current = document.activeElement
+    cancelRef.current?.focus()
+    return () => {
+      const opener = openerRef.current
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
+        opener.focus()
+      }
+    }
+  }, [])
+
+  // Escape closes; Tab is trapped to the dialog's focusable elements so focus
+  // can't wander to the inert grid behind the scrim. We compute the focusable
+  // set per-keydown rather than caching it: the action labels (Cancel /
+  // Uninstall ↔ Uninstalling…) and their disabled state change with `busy`, so
+  // a cached list would trap against stale nodes.
+  const onKeyDown = useCallback((e) => {
+    if (e.key === 'Escape') {
+      if (!busy) onCancel()
+      return
+    }
+    if (e.key !== 'Tab') return
+    const focusable = sheetRef.current?.querySelectorAll(
+      'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    if (!focusable || focusable.length === 0) {
+      // Everything is disabled (mid-uninstall) — keep focus pinned in-dialog.
+      e.preventDefault()
+      return
+    }
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const active = document.activeElement
+    if (e.shiftKey && active === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }, [busy, onCancel])
+
   return (
     <div className="st-scrim" onClick={busy ? null : onCancel}
-         role="dialog" aria-modal="true" aria-label="Confirm uninstall">
-      <div className="st-sheet" onClick={e => e.stopPropagation()}>
-        <h3 className="st-sheet-title">Uninstall {app.name}?</h3>
+         role="dialog" aria-modal="true" aria-labelledby="st-uninstall-title"
+         onKeyDown={onKeyDown}>
+      <div className="st-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}>
+        <h3 className="st-sheet-title" id="st-uninstall-title">Uninstall {app.name}?</h3>
         <p className="st-sheet-body">
           This removes the app and its stored data. You can reinstall
           it later from the store.
         </p>
         <div className="st-sheet-actions">
-          <button className="st-btn st-btn-secondary"
+          <button className="st-btn st-btn-secondary" ref={cancelRef}
                   onClick={onCancel} disabled={busy}>
             Cancel
           </button>
@@ -2088,6 +2121,18 @@ export default function App({ appId, token }) {
   const [catalog, setCatalog] = useState(() =>
     CATALOG.map(c => ({ ...c, manifest: null, error: null }))
   )
+  // Mirror of `catalog` so the focus/visibility refresh can read the HYDRATED
+  // entries (each carrying its real fetched manifest.id) without taking a
+  // `catalog` dependency — that dependency would churn the event listeners on
+  // every manifest update. The update-check identity must key on the published
+  // manifest id, NOT the raw CATALOG id: an entry whose CATALOG id differs from
+  // its manifest id (e.g. CATALOG `gym` / manifest `workout`) canonicalises to
+  // `#manifest-id=gym` off the raw id but the installed row is stored under
+  // `#manifest-id=workout`, so keying off the raw id never matches and that app
+  // is silently never update-checked. The hydrated manifest.id is the only
+  // value that matches the stored row for ANY id/slug-stem mismatch.
+  const catalogRef = useRef(catalog)
+  useEffect(() => { catalogRef.current = catalog }, [catalog])
   const [installed, setInstalled] = useState([])
   const [installedVersions, setInstalledVersions] = useState({})
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
@@ -2108,10 +2153,6 @@ export default function App({ appId, token }) {
   const [updateNotice, setUpdateNotice] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
   const [loadingCatalog, setLoadingCatalog] = useState(true)
-  // Header "Check for updates" control: 'idle' | 'checking' | 'done'. 'done'
-  // is a transient "Up to date" / "Updated" confirmation, cleared on a timer.
-  const [checkState, setCheckState] = useState('idle')
-  const checkDoneTimerRef = useRef(null)
   // Guard against overlapping refreshes when several visibility/focus
   // events fire in quick succession (e.g. drawer-close + tab-focus on
   // mobile fire visibilitychange and focus a frame apart). A simple
@@ -2170,6 +2211,12 @@ export default function App({ appId, token }) {
     return () => { cancelled = true }
   }, [appId, token])
 
+  // Returns the fresh installed rows, null if a refresh was already in flight,
+  // or null on a transport failure. A thrown fetch must NOT escape: this runs
+  // from a focus/visibility listener whose `.then()` has no rejection handler,
+  // so an unhandled rejection here would otherwise crash the refresh and could
+  // leave the grid reading "up to date" off a half-applied state. On failure we
+  // keep the prior `installed` state (a stale-but-present list beats blanking).
   const refreshInstalled = useCallback(async () => {
     if (refreshingRef.current) return null
     refreshingRef.current = true
@@ -2177,6 +2224,8 @@ export default function App({ appId, token }) {
       const apps = await loadInstalledApps(token)
       setInstalled(apps)
       return apps
+    } catch {
+      return null
     } finally {
       refreshingRef.current = false
     }
@@ -2199,15 +2248,21 @@ export default function App({ appId, token }) {
   // no-op, and rapid tab toggling can't trigger a refetch storm. GitHub raw
   // CDN's ~5min cache is the only inherent freshness lag, well under 50s.
   const REHYDRATE_DEBOUNCE_MS = 50_000
-  const refreshCatalogManifests = useCallback(async (installedApps, { force = false } = {}) => {
+  const refreshCatalogManifests = useCallback(async (installedApps) => {
     if (manifestRehydratingRef.current) return
-    // The debounce protects against focus/visibility flap storms; an explicit
-    // "Check for updates" tap bypasses it (force) so the user always gets a
-    // fresh fetch on demand.
-    if (!force && Date.now() - lastManifestRefreshRef.current < REHYDRATE_DEBOUNCE_MS) return
+    if (Date.now() - lastManifestRefreshRef.current < REHYDRATE_DEBOUNCE_MS) return
     const apps = installedApps || []
-    // Only catalog entries that are actually installed can show an Update.
-    const targets = CATALOG.filter(c => !c.core && findInstalled(apps, c))
+    // Targets come from the HYDRATED catalog (read via catalogRef so this
+    // callback keeps a stable [token] dep), NOT the raw CATALOG: findInstalled
+    // canonicalises on `item.manifest?.id || item.id`, and only the hydrated
+    // entry carries the real fetched manifest.id. Off the raw CATALOG, an entry
+    // whose id differs from its manifest id (e.g. `gym` → manifest `workout`)
+    // would canonicalise to a `#manifest-id` the installed row was never stored
+    // under, so it would never match and never be update-checked. Entries not
+    // yet hydrated (manifest null) fall back to their raw id; that only means
+    // they wait for the next refresh after mount hydration lands, never a silent
+    // permanent miss.
+    const targets = catalogRef.current.filter(c => !c.core && findInstalled(apps, c))
     if (targets.length === 0) {
       // Nothing installed to check — still stamp the time so we don't probe
       // findInstalled on every single focus event.
@@ -2249,35 +2304,6 @@ export default function App({ appId, token }) {
     }
   }, [token])
 
-  // Header "Check for updates" — an explicit, debounce-bypassing re-fetch of
-  // every installed app's upstream manifest. One control in the header (not a
-  // per-card affordance): the focus-driven re-hydrate already keeps the grid
-  // fresh; this is the manual escape hatch for "I just pushed v2, show me now".
-  const handleCheckUpdates = useCallback(async () => {
-    if (checkState === 'checking') return
-    if (checkDoneTimerRef.current) {
-      clearTimeout(checkDoneTimerRef.current)
-      checkDoneTimerRef.current = null
-    }
-    setCheckState('checking')
-    try {
-      const apps = (await refreshInstalled()) || installed
-      await refreshCatalogManifests(apps, { force: true })
-    } finally {
-      setCheckState('done')
-      checkDoneTimerRef.current = setTimeout(() => {
-        setCheckState('idle')
-        checkDoneTimerRef.current = null
-      }, 2400)
-    }
-  }, [checkState, installed, refreshInstalled, refreshCatalogManifests])
-
-  // Clear the pending "done -> idle" timer on unmount so the deferred
-  // setCheckState can't fire after the component is gone.
-  useEffect(() => () => {
-    if (checkDoneTimerRef.current) clearTimeout(checkDoneTimerRef.current)
-  }, [])
-
   // The drawer-delete path lives in the shell, not here — when the user
   // uninstalls from the drawer and navigates back, our `installed`
   // state still shows the deleted row as "Installed" until something
@@ -2292,10 +2318,16 @@ export default function App({ appId, token }) {
     function maybeRefresh() {
       if (document.visibilityState !== 'visible') return
       refreshInstalled().then(apps => {
-        // refreshInstalled returns null if a refresh was already in flight;
-        // the in-flight one will land the rows, and the manifest re-hydrate
-        // is independently debounced, so skipping here is safe.
-        if (apps) refreshCatalogManifests(apps)
+        // refreshInstalled returns null if a refresh was already in flight OR
+        // on a transport failure; the in-flight one will land the rows, and the
+        // manifest re-hydrate is independently debounced, so skipping is safe.
+        if (apps) return refreshCatalogManifests(apps)
+      }).catch(() => {
+        // Belt-and-braces: refreshInstalled already swallows its own transport
+        // errors and refreshCatalogManifests catches per-manifest failures, but
+        // this runs from a listener with no outer handler — never let a stray
+        // rejection escape as an unhandled promise. The prior state is kept; a
+        // later focus/visibility event retries.
       })
     }
     document.addEventListener('visibilitychange', maybeRefresh)
@@ -2731,23 +2763,6 @@ export default function App({ appId, token }) {
             </button>
           </div>
         </div>
-        {tab === 'browse' && (
-          <div className="st-check-row">
-            <button
-              type="button"
-              className="st-check-btn"
-              onClick={handleCheckUpdates}
-              disabled={checkState === 'checking'}
-              aria-live="polite"
-            >
-              {checkState === 'checking'
-                ? 'Checking…'
-                : checkState === 'done'
-                ? 'Up to date'
-                : 'Check for updates'}
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="st-scroll" ref={gridScrollRef}
