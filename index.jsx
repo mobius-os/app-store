@@ -88,7 +88,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.32'
+const STORE_VERSION = '1.4.33'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -950,7 +950,7 @@ export function humanCron(expr) {
   if (dom === '*' && mon === '*' && dow === '*' && !min.includes('*') && !hr.includes('*')) {
     return `Runs daily at ${hh}:${mm} UTC`
   }
-  if (dom === '*' && mon === '*' && dow !== '*' && !min.includes('*') && !hr.includes('*')) {
+  if (dom === '*' && mon === '*' && /^\d+$/.test(dow) && !min.includes('*') && !hr.includes('*')) {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const d = days[parseInt(dow, 10)] || dow
     return `Runs every ${d} at ${hh}:${mm} UTC`
