@@ -1,8 +1,8 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.7.0",
-  "description": "Discover, install, and update Möbius apps.",
+  "version": "1.7.1",
+  "description": "Discover, install, and update M\u00f6bius apps.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-store",
