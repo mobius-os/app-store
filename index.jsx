@@ -10,19 +10,19 @@ const CATALOG = [
   // `core: true` surfaces them as "Built in" — discoverable + openable, but
   // with no install / update / uninstall path, so there is no row to fork
   // into a dup and no store update to fight the deploy re-sync.
-  // findInstalled() resolves them by slug (still 'mind' / 'dreaming').
+  // findInstalled() resolves them by slug (still 'memory' / 'reflection').
   {
-    id: 'mind',
-    repo: 'mobius-os/app-mind',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-mind/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-mind/main/',
+    id: 'memory',
+    repo: 'mobius-os/app-memory',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/',
     core: true,
   },
   {
-    id: 'dreaming',
-    repo: 'mobius-os/app-dreaming',
-    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-dreaming/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-dreaming/main/',
+    id: 'reflection',
+    repo: 'mobius-os/app-reflection',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-reflection/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-reflection/main/',
     core: true,
   },
   // --- Store-installable apps below ---
@@ -88,7 +88,7 @@ const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-const STORE_VERSION = '1.4.33'
+const STORE_VERSION = '1.5.0'
 const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -162,7 +162,7 @@ export function findInstalled(installed, item) {
   const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
   const byCanonical = installed.find(a => a.manifest_url === canonical)
   if (byCanonical) return byCanonical
-  // Core apps (Dreaming, Mind) are installed by the platform, not the store, so
+  // Core apps (Reflection, Memory) are installed by the platform, not the store, so
   // a fresh instance's row may carry no manifest_url to canonicalise against.
   // Fall back to the stable core slug so the store still recognises + opens them.
   if (item.core) return installed.find(a => a.slug === item.id) || null
@@ -348,7 +348,7 @@ const CSS = `
 }
 /* Icons float on the card with no tile or border — clean transparent
    presentation. Almost every catalog repo ships a transparent glossy-3D PNG
-   (mind, dreaming, news, atlas, notes, latex, …); the lone holdout still
+   (memory, reflection, news, atlas, notes, latex, …); the lone holdout still
    shipping an opaque baked-in square is cuberun (pending an imagegen regen).
    The slot only keeps overflow:hidden + the radius so that one opaque square
    gets its corners clipped to match. The letter fallback (no icon / load
@@ -1832,7 +1832,7 @@ function DetailView({ item, installed, installedVersions, onBack, onInstall, onU
   // installed apps via manifest_url, never slug.
   const storeInstalled = findInstalled(installed, item)
   const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
-  // Core apps (Dreaming, Mind) are platform-managed: never offer install /
+  // Core apps (Reflection, Memory) are platform-managed: never offer install /
   // update / uninstall, only Open. The deploy re-syncs them, so a store
   // update would fight that — suppress the update affordance here.
   const isCore = !!item.core
