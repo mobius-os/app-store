@@ -31,6 +31,12 @@ const CATALOG = [
   },
   // --- Store-installable apps below ---
   {
+    id: 'habits',
+    repo: 'mobius-os/app-habits',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-habits/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-habits/main/',
+  },
+  {
     id: 'notes',
     repo: 'mobius-os/app-notes',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
