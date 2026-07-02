@@ -1,7 +1,7 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Discover, install, and update M\u00f6bius apps.",
   "author": "mobius-os",
   "license": "MIT",
@@ -25,5 +25,21 @@
       "react-dom"
     ],
     "esm_deps": []
-  }
+  },
+  "source_files": [
+    "constants.js",
+    "theme.js",
+    "domain.js",
+    "storage.js",
+    "api.js",
+    "ui/IconBox.jsx",
+    "ui/PermissionRow.jsx",
+    "ui/UninstallConfirmModal.jsx",
+    "ui/CatalogCard.jsx",
+    "ui/CatalogList.jsx",
+    "ui/CatalogSkeleton.jsx",
+    "ui/FromUrlTab.jsx",
+    "ui/DetailView.jsx",
+    "ui/SelfUpdateBanner.jsx"
+  ]
 }

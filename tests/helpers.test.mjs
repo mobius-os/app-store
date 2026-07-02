@@ -107,7 +107,6 @@ test('semverCmp handles releases and pre-releases', async () => {
 
 test('STORE_VERSION stays in lockstep with mobius.json', async () => {
   const manifest = JSON.parse(await readFile(join(root, '..', 'mobius.json'), 'utf8'))
-  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
-  const match = source.match(/const STORE_VERSION = '([^']+)'/)
-  assert.equal(match?.[1], manifest.version)
+  const { STORE_VERSION } = await bundle()
+  assert.equal(STORE_VERSION, manifest.version)
 })
