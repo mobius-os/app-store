@@ -1,6 +1,6 @@
 import { CatalogCard } from './CatalogCard.jsx'
 
-export function CatalogList({ items, installed, installedVersions, onPick, onRetry, onUpdate, busy, busyItemId, errors, token }) {
+export function CatalogList({ items, installed, installedVersions, onPick, onRetry, onUpdate, busy, busyItemId, errors, updateNotice, onReviewUpdate, onDismissNotice, token }) {
   if (items.length === 0) {
     return (
       <div className="st-empty">
@@ -23,6 +23,9 @@ export function CatalogList({ items, installed, installedVersions, onPick, onRet
       busy={busyItemId === item.id}
       blocked={busy && busyItemId !== item.id}
       error={errors?.[item.id]}
+      updateNotice={updateNotice?.itemId === item.id ? updateNotice : null}
+      onReviewUpdate={onReviewUpdate}
+      onDismissNotice={onDismissNotice}
       token={token}
     />
   )

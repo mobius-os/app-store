@@ -130,10 +130,10 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
                     onClick={() => onReviewUpdate(updateNotice)}
                     disabled={busy}
                   >
-                    {busy
+                    {updateNotice.kind === 'conflict'
+                      ? 'Reconcile & update'
+                      : busy
                       ? 'Opening chat...'
-                      : updateNotice.kind === 'conflict'
-                      ? 'Ask the agent to fix it'
                       : 'Review in chat'}
                   </button>
                   <button
@@ -174,7 +174,7 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
           - installed, up to date:    [ Open App ]           (primary)
           - installed, update ready:  [ Update to vX ]       (primary)
                                       [ Uninstall ]          (secondary)
-          - update blocked (conflict):[ Resolve update ]     (primary)
+          - update blocked (conflict):[ Reconcile & update ] (primary)
           The Install/Update button commits directly — there is no second
           confirm modal. DetailView is the confirmation surface; the user
           already saw permissions, schedule, esm.sh deps and the host
@@ -197,9 +197,8 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
             else if (!isCore) onInstall(item, { isUpdate: false })
           }}
         >
-          {busy
-            ? (hasUpdate ? 'Updating…' : 'Installing…')
-            : blockedUpdate ? 'Ask the agent to fix it'
+          {blockedUpdate ? 'Reconcile & update'
+            : busy ? (hasUpdate ? 'Updating…' : 'Installing…')
             : hasUpdate ? `Update to v${m.version}`
             : storeInstalled ? 'Open App'
             : 'Install'}

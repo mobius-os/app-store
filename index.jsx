@@ -337,12 +337,11 @@ export default function App({ appId, token }) {
       const isCleanMerge = result.mode === 'update' && result.divergence === 'clean_merge'
 
       if (isConflict) {
-        const name = result.name || item.manifest?.name || item.id
         // Friendly, non-alarming framing: the owner edited the app, and those
         // edits overlap the new release so they can't be combined
         // automatically. Offer the agent's help rather than surfacing raw
         // conflict files (the resolver chat carries the file-level detail).
-        const message = `You've made edits to ${name} that can't be automatically combined with this update. Would you like the agent to reconcile them for you?`
+        const message = 'This copy has local changes, so updating needs a quick reconcile.'
         const notice = {
           kind: 'conflict',
           itemId: item.id,
@@ -352,12 +351,10 @@ export default function App({ appId, token }) {
           item,
         }
         setUpdateNotice(notice)
-        setCardErrors(prev => ({ ...prev, [item.id]: message }))
-        setToast({ kind: 'error', message })
         await refreshInstalled()
         // A conflict needs review, but don't yank the user to the detail
-        // view — the error toast + the persisted updateNotice (which drives
-        // the "Resolve in chat" affordance on the card) are enough in place.
+        // view — the persisted updateNotice drives the reconcile affordance
+        // in place on whichever surface the owner is using.
         return
       }
 
@@ -450,12 +447,18 @@ export default function App({ appId, token }) {
       openChat(chat.id)
     } catch (e) {
       const message = e.message || String(e)
+      // Drop the calm conflict notice so the card's precedence (notice
+      // over inline error) can't hide this real failure — the item
+      // falls back to its Update affordance with the red error shown.
+      setUpdateNotice(prev => (prev?.itemId === notice.itemId ? null : prev))
       setCardErrors(prev => ({ ...prev, [notice.itemId]: message }))
       setToast({ kind: 'error', message })
     } finally {
       setBusy(false)
     }
   }
+
+  const handleDismissNotice = () => setUpdateNotice(null)
 
   // Stage the uninstall — DetailView's Uninstall button calls this,
   // and the modal's Confirm calls confirmUninstall to actually run
@@ -635,7 +638,7 @@ export default function App({ appId, token }) {
           busy={busy}
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
-          onDismissNotice={() => setUpdateNotice(null)}
+          onDismissNotice={handleDismissNotice}
           token={token}
         />
         {pendingUninstall && (
@@ -719,6 +722,9 @@ export default function App({ appId, token }) {
                   busy={busy}
                   busyItemId={busyItemId}
                   errors={cardErrors}
+                  updateNotice={updateNotice}
+                  onReviewUpdate={handleReviewUpdate}
+                  onDismissNotice={handleDismissNotice}
                   token={token}
                 />}
           </>

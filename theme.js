@@ -296,6 +296,29 @@ export const CSS = `
   border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 30%, transparent);
   box-sizing: border-box;
 }
+.st-card-notice {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  box-sizing: border-box;
+}
+.st-card-notice-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.st-card-notice-actions .st-big-btn,
+.st-card-notice-actions .st-btn { width: 100%; }
 /* Skeleton placeholder — same shape as a card so the grid doesn't reflow
    when the real manifests arrive. Per-block width/height stay inline. */
 .st-skeleton-card {

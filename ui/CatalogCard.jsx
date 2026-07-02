@@ -15,7 +15,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, blocked, error, token }) {
+export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token }) {
   const m = item.manifest
 
   if (!m) {
@@ -90,6 +90,8 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
   }
   const isActionable = cardVariant !== 'installed'
   const cardActionDisabled = busy || blocked || !isActionable
+  const showUpdateNotice = updateNotice?.kind === 'conflict'
+  const noticeDisabled = busy || blocked
   const actionLabel = busy
     ? cardVariant === 'update' ? 'Updating…' : 'Installing…'
     : statusLabel
@@ -168,7 +170,31 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
           {actionLabel}
         </button>
       </div>
-      {error && <div className="st-card-inline-error">{error}</div>}
+      {showUpdateNotice ? (
+        <div className="st-card-notice">
+          <div>{updateNotice.message}</div>
+          <div className="st-card-notice-actions">
+            <button
+              type="button"
+              className="st-big-btn"
+              onClick={() => onReviewUpdate(updateNotice)}
+              disabled={noticeDisabled}
+            >
+              Reconcile & update
+            </button>
+            <button
+              type="button"
+              className="st-btn st-btn-secondary"
+              onClick={onDismissNotice}
+              disabled={noticeDisabled}
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      ) : error ? (
+        <div className="st-card-inline-error">{error}</div>
+      ) : null}
     </div>
   )
 }
