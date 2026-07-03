@@ -13,7 +13,7 @@
 // Only App lives here: it owns top-level catalog/install/navigation state and
 // mounts the browse grid, From URL tab, detail view, modal, banner, and toast.
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
-import { CATALOG } from './constants.js'
+import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
 import {
   buildCleanMergeReviewMessage,
@@ -23,6 +23,7 @@ import {
 } from './domain.js'
 import {
   createAppChat,
+  fetchCatalog,
   fetchManifest,
   installApp,
   loadInstalledApps,
@@ -123,9 +124,21 @@ export default function App({ appId, token }) {
         if (cancelled) return
         setInstalled(apps)
         setInstalledVersions(versions)
+        // Resolve the catalog SOURCE: the web registry (catalog.json fetched via
+        // the proxy) when it parses to a usable list, else the baked CATALOG
+        // fallback. This is what makes a newly-published app appear in the store
+        // without a store-app redeploy — updating catalog.json on main is enough.
+        let entries = CATALOG
+        try {
+          const remote = await fetchCatalog(CATALOG_URL, token)
+          if (Array.isArray(remote) && remote.length) entries = remote
+        } catch {
+          // Registry unreachable / malformed — the baked CATALOG carries the store.
+        }
+        if (cancelled) return
         // Hydrate each catalog entry.
         const hydrated = await Promise.all(
-          CATALOG.map(async (c) => {
+          entries.map(async (c) => {
             try {
               const manifest = await fetchManifest(c.manifest_url, token)
               return { ...c, manifest, error: null }

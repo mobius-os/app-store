@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "updated": "2026-07-03",
+  "note": "Web registry of Mobius App Store catalog entries. The store fetches this at mount (via the server proxy) so a new app appears in every instance's store the moment this file lands on main — no store-app redeploy. constants.js CATALOG is the baked fallback used only if this fetch fails; keep the two in sync. Each entry: { id, repo, manifest_url, raw_base, core? }. core:true = a platform app (updatable, never install/uninstall).",
+  "apps": [
+    {
+      "id": "memory",
+      "repo": "mobius-os/app-memory",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-memory/main/",
+      "core": true
+    },
+    {
+      "id": "reflection",
+      "repo": "mobius-os/app-reflection",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-reflection/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-reflection/main/",
+      "core": true
+    },
+    {
+      "id": "habits",
+      "repo": "mobius-os/app-habits",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-habits/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-habits/main/"
+    },
+    {
+      "id": "notes",
+      "repo": "mobius-os/app-notes",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-notes/main/"
+    },
+    {
+      "id": "news",
+      "repo": "mobius-os/app-news",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-news/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-news/main/"
+    },
+    {
+      "id": "editor",
+      "repo": "mobius-os/app-editor",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-editor/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-editor/main/"
+    },
+    {
+      "id": "webstudio",
+      "repo": "mobius-os/app-webstudio",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-webstudio/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-webstudio/main/"
+    },
+    {
+      "id": "gym",
+      "repo": "mobius-os/app-workout",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-workout/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-workout/main/"
+    },
+    {
+      "id": "atlas",
+      "repo": "mobius-os/app-atlas",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-atlas/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-atlas/main/"
+    },
+    {
+      "id": "tandem",
+      "repo": "mobius-os/app-tandem",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-tandem/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-tandem/main/"
+    },
+    {
+      "id": "latex",
+      "repo": "mobius-os/app-latex",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-latex/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-latex/main/"
+    },
+    {
+      "id": "cuberun",
+      "repo": "mobius-os/app-cuberun",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-cuberun/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-cuberun/main/"
+    },
+    {
+      "id": "tasks",
+      "repo": "mobius-os/app-tasks",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-tasks/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-tasks/main/"
+    },
+    {
+      "id": "skills",
+      "repo": "mobius-os/app-skills",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-skills/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-skills/main/"
+    }
+  ]
+}

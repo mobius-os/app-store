@@ -88,7 +88,30 @@ export const CATALOG = [
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-cuberun/main/mobius.json',
     raw_base: 'https://raw.githubusercontent.com/mobius-os/app-cuberun/main/',
   },
+  {
+    id: 'tasks',
+    repo: 'mobius-os/app-tasks',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-tasks/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-tasks/main/',
+  },
+  {
+    id: 'skills',
+    repo: 'mobius-os/app-skills',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-skills/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-skills/main/',
+  },
 ]
+
+// Web registry: the store fetches this at mount (via the server proxy) and uses
+// it as the catalog source when it parses to a non-empty list, so a NEW app
+// appears in every instance's store the moment catalog.json lands on main — no
+// store-app redeploy, no per-instance store update. The CATALOG above is the
+// baked FALLBACK, used only if this fetch fails or returns nothing usable; keep
+// the two in sync when you add an app. Entries are validated (id + https
+// manifest_url/raw_base) before use — the install confirm's trusted-host check
+// and the backend SSRF defenses remain the real security boundary.
+export const CATALOG_URL =
+  'https://raw.githubusercontent.com/mobius-os/app-store/main/catalog.json'
 
 // The store's OWN version — keep in lockstep with mobius.json on each release.
 // The store is a core app, so it isn't in installed-versions.json or the
@@ -96,7 +119,7 @@ export const CATALOG = [
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-export const STORE_VERSION = '1.7.3'
+export const STORE_VERSION = '1.8.0'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',

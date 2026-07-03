@@ -43,6 +43,35 @@ export async function fetchManifest(url, token) {
   return await r.json()
 }
 
+// Fetch the web registry (catalog.json) via the proxy and return a validated
+// list of catalog entries, or throw. Accepts either a bare array or a
+// `{ apps: [...] }` envelope. Each entry must carry a string id and https
+// manifest_url + raw_base; malformed entries are dropped rather than trusted.
+// The caller falls back to the baked CATALOG when this throws or yields nothing.
+export async function fetchCatalog(url, token) {
+  const r = await fetch(proxyUrl(url), {
+    cache: 'no-cache',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!r.ok) throw new Error(`Catalog fetch failed: ${r.status}`)
+  const body = await r.json()
+  const raw = Array.isArray(body) ? body : Array.isArray(body?.apps) ? body.apps : null
+  if (!raw) throw new Error('Catalog is not a list')
+  const httpsStr = (v) => typeof v === 'string' && /^https:\/\//.test(v)
+  const entries = raw
+    .filter((e) => e && typeof e === 'object'
+      && typeof e.id === 'string' && e.id
+      && httpsStr(e.manifest_url) && httpsStr(e.raw_base))
+    .map((e) => ({
+      id: e.id,
+      repo: typeof e.repo === 'string' ? e.repo : undefined,
+      manifest_url: e.manifest_url,
+      raw_base: e.raw_base,
+      ...(e.core === true ? { core: true } : {}),
+    }))
+  return entries
+}
+
 // Compare two semver strings. Returns -1 / 0 / 1. Bad input → 0.
 // Compares the full numeric core (not just 3 segments, so a 4th segment isn't
 // dropped) and honors SemVer pre-release precedence: 1.2.0-rc.1 < 1.2.0, so a
