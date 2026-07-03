@@ -124,14 +124,25 @@ export default function App({ appId, token }) {
         if (cancelled) return
         setInstalled(apps)
         setInstalledVersions(versions)
-        // Resolve the catalog SOURCE: the web registry (catalog.json fetched via
-        // the proxy) when it parses to a usable list, else the baked CATALOG
-        // fallback. This is what makes a newly-published app appear in the store
-        // without a store-app redeploy — updating catalog.json on main is enough.
+        // Resolve the catalog SOURCE by MERGING the web registry (catalog.json,
+        // fetched via the proxy) OVER the baked CATALOG — never replacing it.
+        // Baked is the floor: an app in the baked list can never vanish because
+        // the registry is stale/partial (which would drop it from Browse + its
+        // update/rehydrate flows). The registry overrides a known app's URL
+        // fields and can ADD new apps; `core` (platform) status always comes
+        // from baked (fetchCatalog strips any remote `core`), so the registry
+        // can't make a platform app installable or drop its protection. This is
+        // what lets a newly-published app appear without a store-app redeploy —
+        // appending it to catalog.json on main is enough. On fetch failure /
+        // empty result, the baked CATALOG carries the store untouched.
         let entries = CATALOG
         try {
           const remote = await fetchCatalog(CATALOG_URL, token)
-          if (Array.isArray(remote) && remote.length) entries = remote
+          if (Array.isArray(remote) && remote.length) {
+            const merged = new Map(CATALOG.map((c) => [c.id, c]))
+            for (const r of remote) merged.set(r.id, { ...(merged.get(r.id) || {}), ...r })
+            entries = [...merged.values()]
+          }
         } catch {
           // Registry unreachable / malformed — the baked CATALOG carries the store.
         }

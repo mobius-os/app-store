@@ -58,17 +58,32 @@ export async function fetchCatalog(url, token) {
   const raw = Array.isArray(body) ? body : Array.isArray(body?.apps) ? body.apps : null
   if (!raw) throw new Error('Catalog is not a list')
   const httpsStr = (v) => typeof v === 'string' && /^https:\/\//.test(v)
-  const entries = raw
-    .filter((e) => e && typeof e === 'object'
-      && typeof e.id === 'string' && e.id
-      && httpsStr(e.manifest_url) && httpsStr(e.raw_base))
-    .map((e) => ({
+  const sameHost = (a, b) => { try { return new URL(a).host === new URL(b).host } catch { return false } }
+  const seen = new Set()
+  const entries = []
+  for (const e of raw) {
+    if (!e || typeof e !== 'object') continue
+    if (typeof e.id !== 'string' || !e.id) continue
+    if (!httpsStr(e.manifest_url) || !httpsStr(e.raw_base)) continue
+    // raw_base MUST share the manifest's host. The manifest is what the user
+    // reviews and trusts on install, so the source + icon files it pulls must
+    // come from the SAME origin — otherwise a registry could show a benign,
+    // trusted-host manifest while sourcing code from an attacker origin.
+    if (!sameHost(e.manifest_url, e.raw_base)) continue
+    // First id wins; drop later duplicates so card / update / version state
+    // can't collide on a repeated React key.
+    if (seen.has(e.id)) continue
+    seen.add(e.id)
+    // `core` (platform) status is deliberately NOT carried from the registry —
+    // it's baked policy, re-applied at the merge site. A registry can never make
+    // a platform app installable, nor drop a platform app's protection.
+    entries.push({
       id: e.id,
       repo: typeof e.repo === 'string' ? e.repo : undefined,
       manifest_url: e.manifest_url,
       raw_base: e.raw_base,
-      ...(e.core === true ? { core: true } : {}),
-    }))
+    })
+  }
   return entries
 }
 
