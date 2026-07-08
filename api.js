@@ -154,14 +154,14 @@ export async function createConflictResolverChat(appId, token) {
   return await readJsonOrThrow(res, 'Could not open resolver chat')
 }
 
-export async function createAppChat(title, token) {
+export async function createAppChat(title, token, { ownerVisible = false } = {}) {
   const res = await fetch('/api/app-chats', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, owner_visible: ownerVisible }),
   })
   return await readJsonOrThrow(res, 'Could not create review chat')
 }

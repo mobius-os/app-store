@@ -466,7 +466,7 @@ export default function App({ appId, token }) {
       }
       const preview = await loadUpdatePreview(notice.appId, token)
       const title = `Review ${notice.result.name || notice.item.manifest?.name || notice.item.id} update`
-      const chat = await createAppChat(title, token)
+      const chat = await createAppChat(title, token, { ownerVisible: true })
       const content = buildCleanMergeReviewMessage({
         item: notice.item, result: notice.result, preview,
       })
