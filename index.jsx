@@ -17,12 +17,12 @@ import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
 import {
   buildCleanMergeReviewMessage,
-  buildConflictResolveMessage,
   canonicalIdentityKey,
   findInstalled,
 } from './domain.js'
 import {
   createAppChat,
+  createConflictResolverChat,
   fetchCatalog,
   fetchManifest,
   installApp,
@@ -459,14 +459,17 @@ export default function App({ appId, token }) {
       return next
     })
     try {
+      if (notice.kind === 'conflict') {
+        const resolver = await createConflictResolverChat(notice.appId, token)
+        openChat(resolver.chat_id)
+        return
+      }
       const preview = await loadUpdatePreview(notice.appId, token)
-      const title = notice.kind === 'conflict'
-        ? `Resolve ${notice.result.name || notice.item.manifest?.name || notice.item.id} update`
-        : `Review ${notice.result.name || notice.item.manifest?.name || notice.item.id} update`
+      const title = `Review ${notice.result.name || notice.item.manifest?.name || notice.item.id} update`
       const chat = await createAppChat(title, token)
-      const content = notice.kind === 'conflict'
-        ? buildConflictResolveMessage({ item: notice.item, result: notice.result, preview })
-        : buildCleanMergeReviewMessage({ item: notice.item, result: notice.result, preview })
+      const content = buildCleanMergeReviewMessage({
+        item: notice.item, result: notice.result, preview,
+      })
       await seedChatMessage(chat.id, content, token)
       openChat(chat.id)
     } catch (e) {

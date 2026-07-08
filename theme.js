@@ -599,10 +599,10 @@ export const CSS = `
   font-size: 14px;
   line-height: 1.45;
 }
-.st-update-notice-actions { display: flex; gap: 8px; margin-top: 12px; }
-.st-update-notice-actions .st-big-btn,
-.st-update-notice-actions .st-danger-btn { flex: 1; }
-.st-update-notice-actions .st-danger-btn { color: var(--muted); }
+.st-update-notice-actions {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;
+}
+.st-update-notice-actions .st-btn { flex: 1 1 160px; min-width: 0; }
 
 /* Self-update banner — the store checks for its own newer published
    version and offers a one-tap update + reload. App-specific. */

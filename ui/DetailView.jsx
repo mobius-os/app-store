@@ -126,7 +126,7 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
                 <div className="st-update-notice-actions">
                   <button
                     type="button"
-                    className="st-big-btn"
+                    className="st-btn st-btn-primary"
                     onClick={() => onReviewUpdate(updateNotice)}
                     disabled={busy}
                   >

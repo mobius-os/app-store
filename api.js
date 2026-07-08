@@ -146,6 +146,14 @@ export async function loadUpdatePreview(appId, token) {
   return await readJsonOrThrow(res, 'Update preview failed')
 }
 
+export async function createConflictResolverChat(appId, token) {
+  const res = await fetch(`/api/apps/${appId}/conflict-resolver-chat`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return await readJsonOrThrow(res, 'Could not open resolver chat')
+}
+
 export async function createAppChat(title, token) {
   const res = await fetch('/api/app-chats', {
     method: 'POST',
