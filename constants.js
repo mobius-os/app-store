@@ -129,6 +129,15 @@ export const CATALOG = [
       capabilities: ['track streaks', 'schedule reminders', 'view habit calendar'],
     },
   {
+      id: 'beat-machine',
+      repo: 'mobius-os/app-beat-machine',
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/',
+      categories: [],
+      keywords: ['beats', 'drums', 'sampler', 'music', 'audio', 'recording', 'effects'],
+      capabilities: ['play drum pads', 'record samples', 'mix echo and reverb'],
+    },
+  {
       id: 'atlas',
       repo: 'mobius-os/app-atlas',
       manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-atlas/main/mobius.json',
@@ -190,7 +199,7 @@ export const CATALOG_URL =
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-export const STORE_VERSION = '1.9.3'
+export const STORE_VERSION = '1.9.4'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',

@@ -849,6 +849,64 @@
       ]
     },
     {
+      "id": "beat-machine",
+      "repo": "mobius-os/app-beat-machine",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/",
+      "manifest": {
+        "id": "beat-machine",
+        "name": "Beat Machine",
+        "version": "1.0.0",
+        "description": "A native Möbius sampler pad for synthesized drums, custom recordings, and simple effects.",
+        "author": "mobius-os",
+        "license": "MIT",
+        "homepage": "https://github.com/mobius-os/app-beat-machine",
+        "entry": "index.jsx",
+        "icon": "icon.png",
+        "offline_capable": true,
+        "offline": {
+          "reads": true,
+          "writes": "queued",
+          "execution": "none",
+          "reads_detail": "Beat Machine stores pad state through window.mobius.storage. Recorded pads, volumes, and effects are read-through cached and writes queue while offline; the app code is cached by the offline_capable flag."
+        },
+        "permissions": {
+          "cross_app_access": "none",
+          "share_with_apps": "none"
+        },
+        "runtime": {
+          "imports": [
+            "react",
+            "react-dom"
+          ],
+          "esm_deps": []
+        },
+        "source_files": [
+          "audio.js",
+          "storage.js",
+          "theme.js",
+          "ui/DetailPanel.jsx",
+          "ui/Header.jsx",
+          "ui/PadButton.jsx"
+        ]
+      },
+      "categories": [],
+      "keywords": [
+        "beats",
+        "drums",
+        "sampler",
+        "music",
+        "audio",
+        "recording",
+        "effects"
+      ],
+      "capabilities": [
+        "play drum pads",
+        "record samples",
+        "mix echo and reverb"
+      ]
+    },
+    {
       "id": "atlas",
       "repo": "mobius-os/app-atlas",
       "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-atlas/main/mobius.json",
