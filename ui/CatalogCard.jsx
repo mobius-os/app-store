@@ -97,8 +97,7 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
     : statusLabel
   const onCardAction = () => {
     if (cardActionDisabled) return
-    if (cardVariant === 'update') onUpdate?.(item)
-    else onPick(item)
+    onUpdate?.(item, { isUpdate: cardVariant === 'update' })
   }
 
   // The subtle hover/focus lift (translate + accent shadow/border) rides
@@ -164,7 +163,7 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
               ? `Update ${m.name} to v${m.version}`
               : cardVariant === 'installed'
               ? `${m.name} is installed`
-              : `Review and install ${m.name}`
+              : `Install ${m.name}`
           }
         >
           {actionLabel}

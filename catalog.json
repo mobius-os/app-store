@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-07-06",
+  "updated": "2026-07-09",
   "note": "Web registry of Mobius App Store catalog entries. The store fetches this at mount (via the server proxy) so a new app appears in every instance's store the moment this file lands on main \u2014 no store-app redeploy. constants.js CATALOG is the baked fallback used only if this fetch fails; keep the two in sync. Each entry: { id, repo, manifest_url, raw_base, core? }. core:true = a platform app (updatable, never install/uninstall).",
   "apps": [
     {
