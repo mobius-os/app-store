@@ -792,7 +792,7 @@
       "manifest": {
         "id": "tasks",
         "name": "Tasks",
-        "version": "1.0.6",
+        "version": "1.0.7",
         "description": "See your agent's scheduled check-ins at a glance — status, due times, and what needs attention. Reschedule or cancel through the agent.",
         "author": "mobius-os",
         "license": "MIT",
@@ -870,7 +870,7 @@
       "manifest": {
         "id": "contribute",
         "name": "Contribute",
-        "version": "0.2.2",
+        "version": "0.2.3",
         "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
         "author": "mobius-os",
         "license": "MIT",
