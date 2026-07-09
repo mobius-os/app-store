@@ -76,7 +76,7 @@ test('fetchManifest retries transient manifest failures', async () => {
   globalThis.fetch = async (_url, _opts) => {
     calls += 1
     if (calls === 1) {
-      return new Response('rate limited', { status: 429 })
+      return new Response('temporarily unavailable', { status: 503 })
     }
     return new Response(JSON.stringify({ id: 'notes', version: '1.0.0' }), {
       status: 200,
@@ -91,6 +91,76 @@ test('fetchManifest retries transient manifest failures', async () => {
     })
     assert.equal(calls, 2)
     assert.deepEqual(manifest, { id: 'notes', version: '1.0.0' })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('fetchManifest does not rapidly retry upstream rate limits', async () => {
+  const oldFetch = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async (_url, _opts) => {
+    calls += 1
+    return new Response('rate limited', {
+      status: 429,
+      headers: { 'retry-after': '60' },
+    })
+  }
+  try {
+    const { fetchManifest } = await bundle()
+    await assert.rejects(
+      () => fetchManifest('https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json', 'tok', {
+        retries: 2,
+        retryDelayMs: 0,
+      }),
+      /GitHub rate-limited.*60 seconds/,
+    )
+    assert.equal(calls, 1)
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('fetchCatalog preserves valid embedded manifests only', async () => {
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async (_url, _opts) => new Response(JSON.stringify({
+    apps: [
+      {
+        id: 'notes',
+        repo: 'mobius-os/app-notes',
+        manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
+        raw_base: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/',
+        manifest: {
+          id: 'notes',
+          name: 'Notes',
+          version: '1.2.3',
+          description: 'Capture notes.',
+          entry: 'index.jsx',
+        },
+      },
+      {
+        id: 'bad-snapshot',
+        manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-bad/main/mobius.json',
+        raw_base: 'https://raw.githubusercontent.com/mobius-os/app-bad/main/',
+        manifest: { id: 'bad-snapshot', name: 'Bad' },
+      },
+    ],
+  }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+  try {
+    const { fetchCatalog } = await bundle()
+    const entries = await fetchCatalog('https://example.test/catalog.json', 'tok')
+    assert.equal(entries.length, 2)
+    assert.deepEqual(entries[0].manifest, {
+      id: 'notes',
+      name: 'Notes',
+      version: '1.2.3',
+      description: 'Capture notes.',
+      entry: 'index.jsx',
+    })
+    assert.equal(entries[1].manifest, null)
   } finally {
     globalThis.fetch = oldFetch
   }

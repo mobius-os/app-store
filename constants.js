@@ -1,7 +1,7 @@
 // Curated catalog. Each entry points at a public mobius-os repo on
-// the main branch. The Browse view fetches each manifest URL at
-// mount time and merges the parsed JSON into the card data, so the
-// catalog always reflects the repo's current name/version/description.
+// the main branch. The web registry can carry embedded manifest snapshots for
+// fast first paint; Browse only fetches manifest_url for entries whose registry
+// snapshot is missing or invalid.
 export const CATALOG = [
   // Memory + Reflection are platform CORE apps (installed by
   // install-core-apps), not store-INSTALLABLE — but they ARE store-UPDATABLE.
@@ -114,8 +114,9 @@ export const CATALOG = [
 // store-app redeploy, no per-instance store update. The CATALOG above is the
 // baked FALLBACK, used only if this fetch fails or returns nothing usable; keep
 // the two in sync when you add an app. Entries are validated (id + https
-// manifest_url/raw_base) before use — the install confirm's trusted-host check
-// and the backend SSRF defenses remain the real security boundary.
+// manifest_url/raw_base; optional manifest snapshots must carry the required
+// manifest strings) before use — the install confirm's trusted-host check and
+// the backend SSRF defenses remain the real security boundary.
 export const CATALOG_URL =
   'https://raw.githubusercontent.com/mobius-os/app-store/main/catalog.json'
 
@@ -125,7 +126,7 @@ export const CATALOG_URL =
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-export const STORE_VERSION = '1.8.4'
+export const STORE_VERSION = '1.8.5'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',

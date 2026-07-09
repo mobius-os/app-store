@@ -12,13 +12,33 @@ export const CSS = `
 /* mobius-ui:Root v1 — keep in sync; library candidate. Diverge below the marker only. */
 .st-root {
   position: relative;        /* anchor for scrims / sheets / toasts (absolute, not fixed) */
-  height: 100%; display: flex; flex-direction: column;
+  height: 100%; width: 100%; max-width: 100%; display: flex; flex-direction: column;
   background: var(--bg); color: var(--text);
   font-family: var(--font); overflow: hidden;
+  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
-.st-scroll { flex: 1; overflow: auto; padding: 16px; overscroll-behavior: contain; }
+.st-scroll {
+  flex: 1; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 16px; overscroll-behavior: contain;
+  word-break: break-word; overflow-wrap: anywhere;
+}
 /* /mobius-ui:Root */
+
+/* mobius-ui:Scrollskin v2 — keep in sync; hidden by default, content stays scrollable. */
+.st-scroll,
+.st-sheet {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.st-scroll::-webkit-scrollbar,
+.st-sheet::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+/* /mobius-ui:Scrollskin */
 
 /* mobius-ui:Focus v1 — keep in sync; library candidate. A single
    keyboard-focus ring for every interactive control, so no element can
@@ -55,11 +75,11 @@ export const CSS = `
   display: flex; align-items: center; gap: 12px;
 }
 .st-brand-icon {
-  width: 34px; height: 34px; border-radius: 9px;
+  width: 34px; height: 34px; border-radius: 8px;
   object-fit: cover; flex-shrink: 0; display: block;
 }
 .st-brand-fallback {
-  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   background: var(--accent, currentColor); color: var(--bg, #0c0c0c);
   font-size: 22px; font-weight: 700; line-height: 1;
@@ -83,7 +103,7 @@ export const CSS = `
   .st-seg-btn:active { opacity: 0.75; }
 }
 .st-seg-btn.is-active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
-.st-seg.is-accent .st-seg-btn.is-active { background: var(--accent); color: #fff; box-shadow: none; }
+.st-seg.is-accent .st-seg-btn.is-active { background: var(--accent); color: var(--accent-fg); box-shadow: none; }
 /* /mobius-ui:Segmented */
 
 /* The store's tab bar: segmented control shares the header row with the
@@ -151,7 +171,7 @@ export const CSS = `
 @media (hover: hover) {
   .st-card:has(.st-card-open:hover) {
     transform: translateY(-1px);
-    box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 14%, transparent);
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--accent) 14%, transparent);
     border-color: var(--accent);
   }
 }
@@ -204,7 +224,7 @@ export const CSS = `
 .st-installed-dot-inner {
   width: 18px; height: 18px; border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 80%, var(--surface));
-  color: #fff;
+  color: var(--accent-fg);
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 700; line-height: 1;
 }
@@ -223,7 +243,7 @@ export const CSS = `
 }
 .st-card-agent {
   font-family: var(--font, inherit); font-weight: 600;
-  font-size: 12px; letter-spacing: 0.02em;
+  font-size: 12px; letter-spacing: 0;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
@@ -262,7 +282,7 @@ export const CSS = `
   border-radius: 7px;
   padding: 5px 12px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   font-weight: 600;
   font-size: 12px;
   cursor: pointer;
@@ -385,7 +405,7 @@ export const CSS = `
 .st-url-input:focus:not(:focus-visible) { outline: none; }
 .st-primary-btn {
   padding: 12px 20px; border-radius: 10px; border: none;
-  background: var(--accent); color: #fff;
+  background: var(--accent); color: var(--accent-fg);
   font-size: 14px; font-weight: 600; cursor: pointer;
   font-family: var(--font);
   min-height: 44px;
@@ -468,19 +488,19 @@ export const CSS = `
 }
 .st-hero-icon.is-letter { background: var(--surface2); border: 1px solid var(--border); }
 .st-hero-icon-letter { font-size: 32px; font-weight: 700; color: var(--accent); }
-.st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; user-select: none; }
+.st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: 0; user-select: none; }
 .st-hero-meta { font-size: 12px; color: var(--muted); font-family: var(--mono, monospace); user-select: none; }
 .st-detail-desc { font-size: 14px; line-height: 1.55; color: var(--text); margin-bottom: 24px; }
 .st-detail-section { margin-bottom: 24px; }
 .st-section {
   font-size: 13px; font-weight: 700; color: var(--text);
-  letter-spacing: -0.01em; margin: 22px 0 14px;
+  letter-spacing: 0; margin: 22px 0 14px;
   user-select: none;
 }
 .st-scroll > .st-section:first-child { margin-top: 0; }
 .st-section-label {
   font-size: 12px; font-weight: 600; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.06em;
+  letter-spacing: 0;
   margin-bottom: 8px;
   user-select: none;
 }
@@ -500,8 +520,7 @@ export const CSS = `
   flex-shrink: 0;
   padding: 2px 8px; border-radius: 999px;
   font-size: 12px; font-weight: 600;
-  font-family: var(--font); letter-spacing: 0.02em;
-  text-transform: uppercase;
+  font-family: var(--font); letter-spacing: 0;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--accent);
   border: 1px solid var(--accent);
@@ -563,7 +582,7 @@ export const CSS = `
    use the canonical st-btn now; this stays for the in-flow update notice.) */
 .st-big-btn {
   width: 100%; padding: 12px 16px; border-radius: 10px;
-  border: none; background: var(--accent); color: #fff;
+  border: none; background: var(--accent); color: var(--accent-fg);
   font-size: 14px; font-weight: 600; cursor: pointer;
   font-family: var(--font);
   min-height: 44px;
@@ -616,7 +635,7 @@ export const CSS = `
 .st-banner-msg { flex: 1; }
 .st-banner-btn {
   flex-shrink: 0; border: none; border-radius: 8px; padding: 8px 16px;
-  background: var(--accent); color: #fff; font-weight: 600;
+  background: var(--accent); color: var(--accent-fg); font-weight: 600;
   font-size: 13px; cursor: pointer; font-family: var(--font);
   min-height: 44px;
   touch-action: manipulation; user-select: none;
@@ -630,7 +649,7 @@ export const CSS = `
   display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
   max-width: 440px; margin: 0 auto; padding: 48px 24px; color: var(--muted);
 }
-.st-empty-title { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.st-empty-title { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: 0; }
 .st-empty-text { margin: 0; font-size: 14px; line-height: 1.6; }
 /* /mobius-ui:Empty */
 
@@ -643,10 +662,10 @@ export const CSS = `
 .st-sheet {
   width: 100%; max-width: 480px; max-height: 85vh; overflow-y: auto;
   padding: 24px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.3);
+  border-radius: 16px 16px 0 0; box-shadow: 0 -4px 8px rgba(0, 0, 0, 0.28);
   overscroll-behavior: contain;
 }
-.st-sheet-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.st-sheet-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; letter-spacing: 0; }
 .st-sheet-body { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--muted); }
 .st-sheet-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; }
 .st-sheet-actions .st-btn { flex: 1; }
@@ -666,7 +685,7 @@ export const CSS = `
 }
 .st-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .st-btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
-.st-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.st-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 @media (hover: hover) {
   .st-btn-primary:hover { filter: brightness(1.06); }
   .st-btn-secondary:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
@@ -674,7 +693,7 @@ export const CSS = `
 }
 .st-btn-secondary { background: var(--surface2, var(--surface)); }
 .st-btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }
-.st-btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.st-btn-danger { background: var(--danger); border-color: var(--danger); color: var(--accent-fg); }
 .st-btn-icon { width: 44px; padding: 0; border-radius: 8px; font-size: 18px; }
 /* /mobius-ui:Button */
 
@@ -683,14 +702,14 @@ export const CSS = `
   position: absolute; left: 16px; right: 16px; bottom: 16px; z-index: 200;   /* absolute → inside the app */
   display: flex; align-items: center; gap: 12px; padding: 12px 16px;
   background: var(--surface); border: 1px solid var(--accent); border-radius: 12px;
-  font-size: 14px; line-height: 1.5; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 14px; line-height: 1.5; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.32);
 }
 .st-toast.is-success { border-color: var(--green); }
 .st-toast.is-error { border-color: var(--danger); }
 .st-toast-msg { flex: 1; }
 .st-toast-btn {
   padding: 8px 16px; border-radius: 8px; border: none;
-  background: var(--accent); color: #fff;
+  background: var(--accent); color: var(--accent-fg);
   font-size: 12px; font-weight: 600; cursor: pointer;
   font-family: var(--font); flex-shrink: 0;
   min-height: 44px;

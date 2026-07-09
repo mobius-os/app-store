@@ -34,15 +34,23 @@ export function proxyUrl(extUrl) {
 }
 
 function retryableFetchStatus(status) {
-  return status === 408 || status === 429 || (status >= 500 && status < 600)
+  return status === 408 || (status >= 500 && status < 600)
 }
 
-function retryDelay(res, attempt, fallbackMs) {
+function retryDelay(_res, attempt, fallbackMs) {
+  return fallbackMs * (attempt + 1)
+}
+
+function rateLimitMessage(url, res) {
+  let host = 'upstream'
+  try { host = new URL(url).hostname } catch {}
+  const service = host.includes('github') ? 'GitHub' : host
   const retryAfter = Number(res.headers?.get?.('retry-after'))
   if (Number.isFinite(retryAfter) && retryAfter > 0) {
-    return Math.min(retryAfter * 1000, 5000)
+    const seconds = Math.ceil(retryAfter)
+    return `${service} rate-limited this request. Try again in ${seconds} second${seconds === 1 ? '' : 's'}.`
   }
-  return fallbackMs * (attempt + 1)
+  return `${service} rate-limited this request. Please wait a minute and try again.`
 }
 
 function sleep(ms) {
@@ -62,6 +70,11 @@ export async function fetchManifest(url, token, opts = {}) {
     })
     if (r.ok) return await r.json()
 
+    if (r.status === 429) {
+      lastError = new Error(rateLimitMessage(manifestUrl, r))
+      break
+    }
+
     lastError = new Error(`Manifest fetch failed: ${r.status}`)
     if (!retryableFetchStatus(r.status) || attempt === retries) break
     await sleep(retryDelay(r, attempt, delayMs))
@@ -74,6 +87,8 @@ export async function fetchManifest(url, token, opts = {}) {
 // list of catalog entries, or throw. Accepts either a bare array or a
 // `{ apps: [...] }` envelope. Each entry must carry a string id and https
 // manifest_url + raw_base; malformed entries are dropped rather than trusted.
+// A valid embedded `manifest` is preserved as a fast first-paint snapshot. Older
+// registries without it still work: callers fall back to fetching manifest_url.
 // The caller falls back to the baked CATALOG when this throws or yields nothing.
 export async function fetchCatalog(url, token) {
   const r = await fetch(proxyUrl(url), {
@@ -86,6 +101,13 @@ export async function fetchCatalog(url, token) {
   if (!raw) throw new Error('Catalog is not a list')
   const httpsStr = (v) => typeof v === 'string' && /^https:\/\//.test(v)
   const sameHost = (a, b) => { try { return new URL(a).host === new URL(b).host } catch { return false } }
+  const normalizeManifest = (manifest) => {
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null
+    for (const key of ['id', 'name', 'version', 'description', 'entry']) {
+      if (typeof manifest[key] !== 'string' || !manifest[key]) return null
+    }
+    return { ...manifest }
+  }
   const seen = new Set()
   const entries = []
   for (const e of raw) {
@@ -109,6 +131,7 @@ export async function fetchCatalog(url, token) {
       repo: typeof e.repo === 'string' ? e.repo : undefined,
       manifest_url: e.manifest_url,
       raw_base: e.raw_base,
+      manifest: normalizeManifest(e.manifest),
     })
   }
   return entries

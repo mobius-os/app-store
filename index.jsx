@@ -51,7 +51,7 @@ export {
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'
 export { normalizeInstalledVersions } from './storage.js'
-export { fetchManifest, proxyUrl } from './api.js'
+export { fetchCatalog, fetchManifest, proxyUrl } from './api.js'
 
 const MANIFEST_FETCH_CONCURRENCY = 3
 
@@ -75,7 +75,7 @@ async function mapWithConcurrency(items, limit, mapper) {
 export default function App({ appId, token }) {
   const [tab, setTab] = useState('browse')
   const [catalog, setCatalog] = useState(() =>
-    CATALOG.map(c => ({ ...c, manifest: null, error: null }))
+    CATALOG.map(c => ({ ...c, manifest: c.manifest || null, error: null }))
   )
   // Mirror of `catalog` so the focus/visibility refresh can read the HYDRATED
   // entries (each carrying its real fetched manifest.id) without taking a
@@ -167,11 +167,16 @@ export default function App({ appId, token }) {
           // Registry unreachable / malformed — the baked CATALOG carries the store.
         }
         if (cancelled) return
-        // Hydrate each catalog entry.
+        // Hydrate only entries that do not already carry a validated manifest
+        // snapshot from catalog.json. The registry is the hot path; per-app
+        // manifest fetches are the backwards-compatible fallback for older or
+        // partial registries. This keeps first paint to one GitHub request
+        // instead of a fanout across the whole catalog.
         const hydrated = await mapWithConcurrency(
           entries,
           MANIFEST_FETCH_CONCURRENCY,
           async (c) => {
+            if (c.manifest) return { ...c, error: null }
             try {
               const manifest = await fetchManifest(c.manifest_url, token)
               return { ...c, manifest, error: null }
