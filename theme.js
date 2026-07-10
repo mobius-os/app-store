@@ -741,15 +741,32 @@ export const CSS = `
 }
 .st-setup-main { font-weight: 650; color: var(--text); }
 .st-setup-note { color: var(--muted); margin-top: 4px; }
+.st-setup-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
 .st-setup-meta {
   display: inline-flex;
-  margin-top: 10px;
   padding: 3px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 13%, transparent);
   color: var(--accent);
   font-size: 12px;
   font-weight: 650;
+}
+.st-setup-action {
+  min-width: 0;
+  white-space: nowrap;
+  padding-inline: 12px;
+}
+@media (max-width: 520px) {
+  .st-setup-bottom {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 /* External-libs disclosure — a quiet note on a muted surface, dep list
    mono-formatted (not an alarming panel). */

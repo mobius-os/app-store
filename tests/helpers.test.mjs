@@ -246,9 +246,10 @@ test('fetchCatalog retries transient failures and preserves app metadata', async
     assert.deepEqual(entries[0].setup, {
       required: true,
       scope: 'app',
+      section: '',
       label: 'Notes setup',
       description: 'Configure notes.',
-      action: 'Open app settings',
+      action: 'Open app',
       fields: ['theme'],
     })
     assert.deepEqual(entries[0].manifest, {

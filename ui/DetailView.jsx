@@ -11,7 +11,16 @@ function detailBusyLabel(actionKind) {
   return 'Installing...'
 }
 
-export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, onRetryInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
+function setupMetaText(setup, storeInstalled) {
+  if (setup.scope === 'system') {
+    return 'Configure platform providers and background agents in Settings'
+  }
+  return storeInstalled
+    ? 'Configure inside the installed app'
+    : 'Install first; setup appears on first open'
+}
+
+export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
   const m = item.manifest
   const lifecycle = appLifecycleFor(item, {
     installed,
@@ -45,6 +54,7 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
   }
   const scheduleText = scheduleSummary(m.schedule)
   const setup = item.setup?.required ? item.setup : null
+  const canOpenSetup = !!setup && (setup.scope === 'system' || storeInstalled)
 
   // When the app is installed, serve the raw transparent icon from the
   // same-origin API route rather than the external catalog source. Avoids the
@@ -130,10 +140,18 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
               {setup.description && (
                 <div className="st-setup-note">{setup.description}</div>
               )}
-              <div className="st-setup-meta">
-                {storeInstalled
-                  ? (setup.scope === 'system' ? 'Open the app to finish setup' : 'Configure inside the app')
-                  : (setup.scope === 'system' ? 'Install first, then finish setup' : 'Setup follows install')}
+              <div className="st-setup-bottom">
+                <div className="st-setup-meta">{setupMetaText(setup, storeInstalled)}</div>
+                {canOpenSetup && (
+                  <button
+                    type="button"
+                    className="st-btn st-btn-secondary st-setup-action"
+                    onClick={() => onSetup?.(item, storeInstalled)}
+                    disabled={busy}
+                  >
+                    {setup.action || (setup.scope === 'system' ? 'Open Settings' : 'Open app')}
+                  </button>
+                )}
               </div>
             </div>
           </div>

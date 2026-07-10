@@ -36,6 +36,7 @@ import {
   loadUpdatePreview,
   openChat,
   openInstalledApp,
+  openSystemSettings,
   seedChatMessage,
 } from './api.js'
 import { loadInstalledVersions, saveInstalledVersions } from './storage.js'
@@ -421,6 +422,22 @@ export default function App({ appId, token }) {
       })
     })
   }, [])
+
+  const handleSetup = useCallback((item, installedApp) => {
+    const setup = item?.setup || {}
+    if (setup.scope === 'system') {
+      openSystemSettings(setup.section || 'background-agents', () => {
+        setToast({
+          kind: 'error',
+          message: 'Open Settings from the drawer.',
+        })
+      })
+      return
+    }
+    if (installedApp?.id) {
+      handleOpenInstalled(installedApp.id)
+    }
+  }, [handleOpenInstalled])
 
   // Install / update runs inline from DetailView's primary button.
   // There is no intermediate confirm modal — DetailView is the
@@ -822,6 +839,7 @@ export default function App({ appId, token }) {
           onInstall={handleInstall}
           onUninstall={handleUninstall}
           onOpenInstalled={handleOpenInstalled}
+          onSetup={handleSetup}
           onRetryInstalled={handleRetryInstalled}
           busy={busy}
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}

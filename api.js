@@ -11,6 +11,17 @@ export function openInstalledApp(id, onUnembedded) {
   )
 }
 
+export function openSystemSettings(section = 'ai-providers', onUnembedded) {
+  if (window.parent === window) {
+    if (onUnembedded) onUnembedded()
+    return
+  }
+  window.parent.postMessage(
+    { type: 'moebius:open-settings', section },
+    window.location.origin,
+  )
+}
+
 // GET /api/apps/ returns the full app list. Catalog matching happens by
 // canonical manifest identity in domain.js; this helper keeps the existing
 // state intact on transient failures by throwing instead of returning [].
@@ -184,13 +195,18 @@ export async function fetchCatalog(url, token, opts = {}) {
   const normalizeSetup = (setup) => {
     if (!setup || typeof setup !== 'object' || Array.isArray(setup)) return null
     const scope = ['system', 'app', 'none'].includes(setup.scope) ? setup.scope : 'app'
+    const rawSection = cleanString(setup.section, 32)
+    const section = ['ai-providers', 'background-agents', 'image-generation', 'models'].includes(rawSection)
+      ? rawSection
+      : (scope === 'system' ? 'background-agents' : '')
     const fields = cleanList(setup.fields, 6)
     return {
       required: setup.required === true,
       scope,
+      section,
       label: cleanString(setup.label, 48) || (scope === 'system' ? 'System setup' : 'Setup'),
       description: cleanString(setup.description, 220) || '',
-      action: cleanString(setup.action, 48) || (scope === 'system' ? 'Open Settings' : 'Open app settings'),
+      action: cleanString(setup.action, 48) || (scope === 'system' ? 'Open Settings' : 'Open app'),
       fields,
     }
   }

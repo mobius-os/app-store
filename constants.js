@@ -87,6 +87,7 @@ export const CATALOG = [
       setup: {
         required: true,
         scope: 'system',
+        section: 'background-agents',
         label: 'Background agent',
         description: 'Connect at least one AI provider and set a primary/fallback background model in Möbius Settings. Reflection can override it inside the app.',
         fields: ['provider', 'model', 'fallback'],
@@ -199,7 +200,7 @@ export const CATALOG_URL =
 // manifest and, when that version is newer than what's running, offer a
 // one-tap update (the same install transaction every other app uses) followed
 // by a reload so the freshly-patched code loads.
-export const STORE_VERSION = '1.10.1'
+export const STORE_VERSION = '1.10.2'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
