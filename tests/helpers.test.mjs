@@ -296,6 +296,41 @@ test('fetchCatalog retries transient failures and preserves app metadata', async
   }
 })
 
+test('installApp prefers live manifest_url over embedded manifest snapshots', async () => {
+  const oldFetch = globalThis.fetch
+  const bodies = []
+  globalThis.fetch = async (url, opts) => {
+    assert.equal(url, '/api/apps/install')
+    bodies.push(JSON.parse(opts.body))
+    return new Response(JSON.stringify({
+      id: 12,
+      slug: 'notes',
+      name: 'Notes',
+      version: '1.2.4',
+      mode: 'update',
+      divergence: 'fast_forward',
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+  try {
+    const { installApp } = await bundle()
+    const result = await installApp({
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
+      manifest: { id: 'notes', name: 'Notes', version: '1.0.0', entry: 'index.jsx' },
+      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/',
+      token: 'tok',
+    })
+    assert.equal(result.version, '1.2.4')
+    assert.deepEqual(bodies, [{
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
+    }])
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
 test('filterCatalog matches categories, descriptions, and setup metadata', async () => {
   const { collectCategories, filterCatalog } = await bundle()
   const items = [

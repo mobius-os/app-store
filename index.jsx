@@ -70,7 +70,7 @@ export {
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'
 export { normalizeInstalledVersions } from './storage.js'
-export { fetchCatalog, fetchManifest, loadInstalledApps, proxyUrl } from './api.js'
+export { fetchCatalog, fetchManifest, installApp, loadInstalledApps, proxyUrl } from './api.js'
 
 const MANIFEST_FETCH_CONCURRENCY = 3
 
@@ -513,11 +513,11 @@ export default function App({ appId, token }) {
     })
     setUpdateNotice(null)
     try {
-      // The backend decides install vs update from the canonical manifest
-      // identity, not the installed slug (slugs can be suffixed on collision).
-      // We pass manifest + raw_base; the install endpoint re-fetches nothing
-      // else from us.
+      // GitHub-backed apps install/update from manifest_url so the backend
+      // fetches the latest release at click time. The in-memory manifest is
+      // only the preview/fallback path for entries without a durable URL.
       const result = await installApp({
+        manifest_url: item.manifest_url,
         manifest: item.manifest,
         raw_base: item.raw_base,
         token,
