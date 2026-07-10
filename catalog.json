@@ -898,12 +898,12 @@
     {
       "id": "beat-machine",
       "repo": "mobius-os/app-beat-machine",
-      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-beat-machine/e5ccc2a69800f79f5e689b8250bd7be0dca4dcdb/mobius.json",
-      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-beat-machine/e5ccc2a69800f79f5e689b8250bd7be0dca4dcdb/",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/",
       "manifest": {
         "id": "beat-machine",
         "name": "Beat Machine",
-        "version": "1.0.4",
+        "version": "1.0.5",
         "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
         "author": "mobius-os",
         "license": "MIT",
