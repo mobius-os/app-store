@@ -23,6 +23,7 @@ import {
   findInstalled,
   installedVersionFor,
   semverCmp,
+  sortCatalogForDisplay,
 } from './domain.js'
 import {
   createAppChat,
@@ -54,6 +55,7 @@ export {
   isTrustedHost,
   scheduleSummary,
   semverCmp,
+  sortCatalogForDisplay,
   validateManifestUrl,
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'
@@ -61,6 +63,36 @@ export { normalizeInstalledVersions } from './storage.js'
 export { fetchCatalog, fetchManifest, loadInstalledApps, proxyUrl } from './api.js'
 
 const MANIFEST_FETCH_CONCURRENCY = 3
+
+function Toast({ toast, onDismiss }) {
+  if (!toast) return null
+  const className = `st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`
+  return (
+    <div
+      className={className}
+      role="status"
+      aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}
+    >
+      <div className="st-toast-msg">{toast.message}</div>
+      <div className="st-toast-actions">
+        {toast.action && (
+          <button
+            className="st-toast-btn st-toast-btn-primary"
+            onClick={() => {
+              onDismiss()
+              toast.action.onClick?.()
+            }}
+          >
+            {toast.action.label}
+          </button>
+        )}
+        <button className="st-toast-btn st-toast-btn-secondary" onClick={onDismiss}>
+          OK
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function hasPendingCatalogUpdate(item, installed, installedVersions) {
   const m = item?.manifest
@@ -449,12 +481,21 @@ export default function App({ appId, token }) {
       setInstalledVersions(nextVersions)
       await saveInstalledVersions(appId, token, nextVersions)
       await refreshInstalled()
+      const openAction = result.id
+        ? {
+            label: 'Open App',
+            onClick: () => handleOpenInstalled(result.id),
+          }
+        : null
+      const appName = result.name || item.manifest?.name || item.id
+      const versionText = result.version || item.manifest?.version
 
       if (isSeamlessUpdate) {
         window.mobius?.signal?.('app_updated', { slug: result.id || item.id })
         setToast({
           kind: 'success',
-          message: `Updated to v${result.version || item.manifest?.version}.`,
+          message: `${appName} updated to v${versionText}.`,
+          action: openAction,
         })
         return
       }
@@ -470,7 +511,8 @@ export default function App({ appId, token }) {
         window.mobius?.signal?.('app_updated', { slug: result.id || item.id })
         setToast({
           kind: 'success',
-          message: `Updated to v${result.version || item.manifest?.version}.`,
+          message: `${appName} updated to v${versionText}.`,
+          action: openAction,
         })
         return
       }
@@ -490,7 +532,8 @@ export default function App({ appId, token }) {
       // confirms what happened.
       setToast({
         kind: 'success',
-        message: `${result.name} ${verb}${warnSuffix}.`,
+        message: `${appName} ${verb}${warnSuffix}.`,
+        action: openAction,
       })
       // Stay on the detail view. Two reasons: (1) closing here would
       // bounce the user back to the catalog grid mid-action, which felt
@@ -709,14 +752,15 @@ export default function App({ appId, token }) {
     document.getElementById(next === 'browse' ? 'st-tab-browse' : 'st-tab-url')?.focus()
   }
 
-  const catalogCategories = useMemo(() => collectCategories(catalog), [catalog])
+  const displayCatalog = useMemo(() => sortCatalogForDisplay(catalog), [catalog])
+  const catalogCategories = useMemo(() => collectCategories(displayCatalog), [displayCatalog])
 
   const visibleCatalog = useMemo(() => {
     const catalogCategory = category === 'updates-pending' ? 'all' : category
-    const matches = filterCatalog(catalog, { query, category: catalogCategory })
+    const matches = filterCatalog(displayCatalog, { query, category: catalogCategory })
     if (category !== 'updates-pending') return matches
     return matches.filter((item) => hasPendingCatalogUpdate(item, installed, installedVersions))
-  }, [catalog, query, category, installed, installedVersions])
+  }, [displayCatalog, query, category, installed, installedVersions])
 
   // Detail view replaces the main layout when set.
   if (detail) {
@@ -746,14 +790,7 @@ export default function App({ appId, token }) {
             onCancel={() => !busy && setPendingUninstall(null)}
           />
         )}
-        {toast && (
-          <div className={`st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`}
-               role="status"
-               aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}>
-            <div className="st-toast-msg">{toast.message}</div>
-            <button className="st-toast-btn" onClick={() => setToast(null)}>OK</button>
-          </div>
-        )}
+        <Toast toast={toast} onDismiss={() => setToast(null)} />
       </div>
     )
   }
@@ -859,14 +896,7 @@ export default function App({ appId, token }) {
         />
       )}
 
-      {toast && (
-        <div className={`st-toast${toast.kind === 'success' ? ' is-success' : toast.kind === 'error' ? ' is-error' : ''}`}
-             role="status"
-             aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}>
-          <div className="st-toast-msg">{toast.message}</div>
-          <button className="st-toast-btn" onClick={() => setToast(null)}>OK</button>
-        </div>
-      )}
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   )
 }

@@ -287,6 +287,20 @@ test('filterCatalog matches categories, descriptions, and setup metadata', async
   assert.deepEqual(filterCatalog(items, { query: 'earth', category: 'reference' }).map(i => i.id), ['atlas'])
 })
 
+test('sortCatalogForDisplay promotes system apps without scrambling groups', async () => {
+  const { collectCategories, sortCatalogForDisplay } = await bundle()
+  const items = [
+    { id: 'notes', categories: ['writing'] },
+    { id: 'skills', categories: ['system', 'agents'] },
+    { id: 'memory', core: true, categories: ['system', 'agents'] },
+    { id: 'tasks', categories: ['productivity'] },
+    { id: 'contribute', categories: ['development', 'system'] },
+  ]
+  const sorted = sortCatalogForDisplay(items)
+  assert.deepEqual(sorted.map(i => i.id), ['memory', 'skills', 'contribute', 'notes', 'tasks'])
+  assert.deepEqual(collectCategories(sorted).slice(0, 3), ['system', 'agents', 'development'])
+})
+
 test('scheduleSummary handles cron and on-demand jobs', async () => {
   const { scheduleSummary } = await bundle()
 

@@ -549,6 +549,7 @@ export const CSS = `
   min-height: 44px;
   transition: background 150ms;
   touch-action: manipulation; user-select: none;
+  width: 100%;
 }
 .st-primary-btn:disabled { pointer-events: none; opacity: 0.65; }
 @media (hover: hover) {
@@ -861,20 +862,44 @@ export const CSS = `
   display: flex; align-items: center; gap: 12px; padding: 12px 16px;
   background: var(--surface); border: 1px solid var(--accent); border-radius: 12px;
   font-size: 14px; line-height: 1.5; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.32);
+  box-sizing: border-box;
 }
 .st-toast.is-success { border-color: var(--green); }
 .st-toast.is-error { border-color: var(--danger); }
 .st-toast-msg { flex: 1; }
+.st-toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .st-toast-btn {
   padding: 8px 16px; border-radius: 8px; border: none;
-  background: var(--accent); color: var(--accent-fg);
   font-size: 12px; font-weight: 600; cursor: pointer;
   font-family: var(--font); flex-shrink: 0;
   min-height: 44px;
   touch-action: manipulation; user-select: none;
 }
+.st-toast-btn-primary { background: var(--accent); color: var(--accent-fg); }
+.st-toast-btn-secondary {
+  background: var(--surface2, var(--surface));
+  color: var(--text);
+  border: 1px solid var(--border);
+}
 @media (prefers-reduced-motion: no-preference) {
   .st-toast-btn:active { opacity: 0.8; transform: scale(0.97); }
+}
+@media (max-width: 520px) {
+  .st-toast {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .st-toast-actions {
+    justify-content: flex-end;
+  }
+  .st-toast-btn {
+    flex: 1 1 0;
+  }
 }
 /* /mobius-ui:Toast */
 
@@ -915,6 +940,54 @@ export const CSS = `
   }
   .st-catalog-grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+  .st-primary-btn {
+    width: auto;
+    min-width: 128px;
+  }
+  .st-detail-footer {
+    width: 100%;
+    max-width: 840px;
+    margin-inline: auto;
+    box-sizing: border-box;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .st-detail-cta {
+    width: auto;
+    min-width: 148px;
+  }
+  .st-update-notice-actions {
+    justify-content: flex-start;
+  }
+  .st-update-notice-actions .st-btn {
+    flex: 0 0 auto;
+    min-width: 136px;
+  }
+  .st-card-notice-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+  .st-card-notice-actions .st-big-btn,
+  .st-card-notice-actions .st-btn {
+    width: auto;
+    min-width: 112px;
+  }
+  .st-sheet {
+    border-radius: 16px;
+  }
+  .st-sheet-actions .st-btn {
+    flex: 0 0 auto;
+    min-width: 112px;
+  }
+  .st-toast {
+    left: 50%;
+    right: auto;
+    width: max-content;
+    min-width: min(420px, calc(100% - 32px));
+    max-width: min(720px, calc(100% - 32px));
+    transform: translateX(-50%);
   }
 }
 `

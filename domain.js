@@ -109,6 +109,23 @@ export function itemCategories(item) {
     : []
 }
 
+export function isSystemCatalogItem(item) {
+  if (item?.core) return true
+  return itemCategories(item).some((category) => category.toLowerCase() === 'system')
+}
+
+export function sortCatalogForDisplay(items) {
+  return [...(items || [])].sort((a, b) => {
+    const aSystem = isSystemCatalogItem(a)
+    const bSystem = isSystemCatalogItem(b)
+    if (aSystem !== bSystem) return aSystem ? -1 : 1
+    const aCore = !!a?.core
+    const bCore = !!b?.core
+    if (aCore !== bCore) return aCore ? -1 : 1
+    return 0
+  })
+}
+
 export function categoryLabel(category) {
   const value = String(category || '').trim()
   if (!value) return ''
