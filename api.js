@@ -11,14 +11,38 @@ export function openInstalledApp(id, onUnembedded) {
   )
 }
 
-// GET /api/apps/ returns the full app list. We use slug + name to
-// find which catalog entries are already installed.
-export async function loadInstalledApps(token) {
-  const r = await fetch('/api/apps/', {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!r.ok) return []
-  return await r.json()
+// GET /api/apps/ returns the full app list. Catalog matching happens by
+// canonical manifest identity in domain.js; this helper keeps the existing
+// state intact on transient failures by throwing instead of returning [].
+export async function loadInstalledApps(token, opts = {}) {
+  const retries = opts.retries ?? 2
+  const delayMs = opts.retryDelayMs ?? 250
+  let lastError = null
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let r
+    try {
+      r = await fetch('/api/apps/', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    } catch (err) {
+      lastError = err
+      if (attempt < retries && retryableFetchError(err)) {
+        await sleep(retryDelay(null, attempt, delayMs))
+        continue
+      }
+      throw new Error(transientFetchMessage('Installed apps'))
+    }
+
+    if (r.ok) return await r.json()
+    if (attempt < retries && retryableFetchStatus(r.status)) {
+      await sleep(retryDelay(r, attempt, delayMs))
+      continue
+    }
+    throw new Error(`Installed apps could not be loaded (${r.status}).`)
+  }
+
+  throw new Error(lastError?.message || 'Installed apps could not be loaded.')
 }
 
 // External resources (catalog manifests + icons) live on public git hosts

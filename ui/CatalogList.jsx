@@ -14,6 +14,7 @@ export function CatalogList({
   onReviewUpdate,
   onDismissNotice,
   token,
+  installedUnavailable = false,
   emptyTitle = 'No apps',
   emptyText = 'No apps in the catalog yet.',
 }) {
@@ -41,6 +42,7 @@ export function CatalogList({
       onReviewUpdate={onReviewUpdate}
       onDismissNotice={onDismissNotice}
       token={token}
+      installedUnavailable={installedUnavailable}
     />
   )
   return (

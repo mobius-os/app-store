@@ -15,7 +15,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token }) {
+export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -89,12 +89,15 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
     cardVariant = 'installed'
   }
   const isActionable = cardVariant !== 'installed'
-  const cardActionDisabled = busy || blocked || !isActionable
+  const needsFreshInstalledState = cardVariant === 'default' || cardVariant === 'update'
+  const cardActionDisabled = busy || blocked || (installedUnavailable && needsFreshInstalledState) || !isActionable
   const showUpdateNotice = updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
-  const actionLabel = busy
-    ? cardVariant === 'update' ? 'Updating…' : 'Installing…'
-    : statusLabel
+  const actionLabel = installedUnavailable && needsFreshInstalledState
+    ? 'Unavailable'
+    : busy
+      ? cardVariant === 'update' ? 'Updating…' : 'Installing…'
+      : statusLabel
   const onCardAction = () => {
     if (cardActionDisabled) return
     onUpdate?.(item, { isUpdate: cardVariant === 'update' })

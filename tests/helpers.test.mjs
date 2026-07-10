@@ -145,6 +145,48 @@ test('fetchManifest does not rapidly retry upstream rate limits', async () => {
   }
 })
 
+test('loadInstalledApps retries transient app-list failures', async () => {
+  const oldFetch = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async (_url, _opts) => {
+    calls += 1
+    if (calls === 1) {
+      return new Response('temporarily unavailable', { status: 503 })
+    }
+    return new Response(JSON.stringify([{ id: 1, slug: 'notes' }]), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+  try {
+    const { loadInstalledApps } = await bundle()
+    const apps = await loadInstalledApps('tok', { retries: 1, retryDelayMs: 0 })
+    assert.equal(calls, 2)
+    assert.deepEqual(apps, [{ id: 1, slug: 'notes' }])
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('loadInstalledApps throws on non-retryable app-list failures', async () => {
+  const oldFetch = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async (_url, _opts) => {
+    calls += 1
+    return new Response('unauthorized', { status: 401 })
+  }
+  try {
+    const { loadInstalledApps } = await bundle()
+    await assert.rejects(
+      () => loadInstalledApps('tok', { retries: 2, retryDelayMs: 0 }),
+      /Installed apps could not be loaded \(401\)/,
+    )
+    assert.equal(calls, 1)
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
 test('fetchCatalog retries transient failures and preserves app metadata', async () => {
   const oldFetch = globalThis.fetch
   let calls = 0

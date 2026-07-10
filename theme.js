@@ -197,6 +197,20 @@ export const CSS = `
 @media (hover: hover) {
   .st-chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
 }
+.st-notice {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2, var(--surface));
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.st-notice.is-warning {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--text);
+}
 
 @media (max-width: 720px) {
   .st-category-strip {

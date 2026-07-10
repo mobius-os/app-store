@@ -1,17 +1,23 @@
-const FILTERS = [
-  { id: 'system', label: 'System' },
+import { categoryLabel } from '../domain.js'
+
+const PINNED_FILTERS = [
   { id: 'updates-pending', label: 'Updates pending' },
 ]
 
 export function CatalogFilters({
   query,
   category,
+  categories = [],
   totalCount,
   resultCount,
   onQueryChange,
   onCategoryChange,
 }) {
   const selected = category || 'all'
+  const filters = [
+    ...categories.map((id) => ({ id, label: categoryLabel(id) })),
+    ...PINNED_FILTERS,
+  ]
   return (
     <div className="st-discovery">
       <div className="st-search-row">
@@ -33,7 +39,7 @@ export function CatalogFilters({
         </div>
       </div>
       <div className="st-category-strip" aria-label="Catalog filters">
-        {FILTERS.map((filter) => (
+        {filters.map((filter) => (
           <button
             key={filter.id}
             type="button"

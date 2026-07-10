@@ -3,7 +3,7 @@ import { findInstalled, installedVersionFor, isTrustedHost, scheduleSummary, sem
 import { IconBox } from './IconBox.jsx'
 import { PermissionRow } from './PermissionRow.jsx'
 
-export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token }) {
+export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
   const m = item.manifest
   // Match by manifest_url — see CatalogList comment. Slug collisions
   // between user apps and store apps are resolved transparently by
@@ -20,6 +20,10 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
   const isCore = !!item.core
   const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
   const blockedUpdate = updateNotice?.kind === 'conflict'
+  const coreWithoutStoreRecord = isCore && !storeInstalled && !hasUpdate
+  const needsFreshInstalledState = hasUpdate || blockedUpdate || (!storeInstalled && !isCore) || (installedUnavailable && coreWithoutStoreRecord)
+  const actionBlockedByInstalledState = installedUnavailable && needsFreshInstalledState
+  const primaryActionDisabled = busy || actionBlockedByInstalledState || coreWithoutStoreRecord
   const ca = m.permissions?.cross_app_access || 'none'
   const sw = m.permissions?.share_with_apps || 'none'
   const ma = !!m.permissions?.manage_apps
@@ -59,6 +63,12 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
         </div>
 
         <p className="st-detail-desc">{m.description}</p>
+
+        {installedUnavailable && (
+          <div className="st-notice is-warning" role="status">
+            Installed apps could not be refreshed. Install and update actions are paused until this reconnects.
+          </div>
+        )}
 
         <div className="st-detail-section">
           <div className="st-section-label">What this app can do</div>
@@ -203,9 +213,9 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
       <div className="st-detail-footer">
         <button
           className="st-btn st-btn-primary st-detail-cta"
-          disabled={busy}
+          disabled={primaryActionDisabled}
           onClick={() => {
-            if (busy) return
+            if (primaryActionDisabled) return
             if (blockedUpdate) {
               onReviewUpdate(updateNotice)
               return
@@ -215,10 +225,12 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
             else if (!isCore) onInstall(item, { isUpdate: false })
           }}
         >
-          {blockedUpdate ? 'Reconcile & update'
+          {actionBlockedByInstalledState ? 'Unavailable'
+            : blockedUpdate ? 'Reconcile & update'
             : busy ? (hasUpdate ? 'Updating…' : 'Installing…')
             : hasUpdate ? `Update to v${m.version}`
             : storeInstalled ? 'Open App'
+            : coreWithoutStoreRecord ? 'Built in'
             : 'Install'}
         </button>
         {storeInstalled && !isCore && (

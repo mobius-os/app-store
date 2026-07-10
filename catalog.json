@@ -43,7 +43,8 @@
         }
       },
       "categories": [
-        "system"
+        "system",
+        "agents"
       ],
       "keywords": [
         "skills",
@@ -95,7 +96,9 @@
           "execution": "none"
         }
       },
-      "categories": [],
+      "categories": [
+        "productivity"
+      ],
       "keywords": [
         "tasks",
         "todo",
@@ -166,7 +169,10 @@
           "ui/Feed.jsx"
         ]
       },
-      "categories": [],
+      "categories": [
+        "development",
+        "system"
+      ],
       "keywords": [
         "contribute",
         "github",
@@ -247,7 +253,10 @@
           "job": "job.sh"
         }
       },
-      "categories": [],
+      "categories": [
+        "writing",
+        "productivity"
+      ],
       "keywords": [
         "notes",
         "markdown",
@@ -326,7 +335,10 @@
           "esm_deps": []
         }
       },
-      "categories": [],
+      "categories": [
+        "information",
+        "agents"
+      ],
       "keywords": [
         "news",
         "daily digest",
@@ -409,7 +421,8 @@
         ]
       },
       "categories": [
-        "system"
+        "system",
+        "agents"
       ],
       "keywords": [
         "memory graph",
@@ -499,7 +512,8 @@
         ]
       },
       "categories": [
-        "system"
+        "system",
+        "agents"
       ],
       "keywords": [
         "reflection",
@@ -584,7 +598,10 @@
           "esm_deps": []
         }
       },
-      "categories": [],
+      "categories": [
+        "development",
+        "writing"
+      ],
       "keywords": [
         "editor",
         "code",
@@ -692,7 +709,10 @@
           "seeds/files/app.js"
         ]
       },
-      "categories": [],
+      "categories": [
+        "development",
+        "creative"
+      ],
       "keywords": [
         "webstudio",
         "website",
@@ -768,7 +788,10 @@
         "storage_seeds": {},
         "embeds_agent": true
       },
-      "categories": [],
+      "categories": [
+        "health",
+        "productivity"
+      ],
       "keywords": [
         "workout",
         "gym",
@@ -834,7 +857,10 @@
         },
         "embeds_agent": false
       },
-      "categories": [],
+      "categories": [
+        "productivity",
+        "health"
+      ],
       "keywords": [
         "habits",
         "streaks",
@@ -890,7 +916,9 @@
           "ui/PadButton.jsx"
         ]
       },
-      "categories": [],
+      "categories": [
+        "creative"
+      ],
       "keywords": [
         "beats",
         "drums",
@@ -960,7 +988,9 @@
           "ui/SyncPill.jsx"
         ]
       },
-      "categories": [],
+      "categories": [
+        "reference"
+      ],
       "keywords": [
         "atlas",
         "map",
@@ -1057,7 +1087,10 @@
         },
         "embeds_agent": true
       },
-      "categories": [],
+      "categories": [
+        "writing",
+        "development"
+      ],
       "keywords": [
         "latex",
         "pdf",
@@ -1128,7 +1161,11 @@
           "esm_deps": []
         }
       },
-      "categories": [],
+      "categories": [
+        "learning",
+        "writing",
+        "agents"
+      ],
       "keywords": [
         "language",
         "reader",
@@ -1222,7 +1259,9 @@
           "esm_deps": []
         }
       },
-      "categories": [],
+      "categories": [
+        "games"
+      ],
       "keywords": [
         "game",
         "runner",

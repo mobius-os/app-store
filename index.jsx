@@ -18,6 +18,7 @@ import { CSS } from './theme.js'
 import {
   buildCleanMergeReviewMessage,
   canonicalIdentityKey,
+  collectCategories,
   filterCatalog,
   findInstalled,
   installedVersionFor,
@@ -57,7 +58,7 @@ export {
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'
 export { normalizeInstalledVersions } from './storage.js'
-export { fetchCatalog, fetchManifest, proxyUrl } from './api.js'
+export { fetchCatalog, fetchManifest, loadInstalledApps, proxyUrl } from './api.js'
 
 const MANIFEST_FETCH_CONCURRENCY = 3
 
@@ -125,6 +126,7 @@ export default function App({ appId, token }) {
   const [updateNotice, setUpdateNotice] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
   const [loadingCatalog, setLoadingCatalog] = useState(true)
+  const [installedLoadError, setInstalledLoadError] = useState('')
   // Guard against overlapping refreshes when several visibility/focus
   // events fire in quick succession (e.g. drawer-close + tab-focus on
   // mobile fire visibilitychange and focus a frame apart). A simple
@@ -153,12 +155,23 @@ export default function App({ appId, token }) {
     let cancelled = false
     async function load() {
       try {
-        const [apps, versions] = await Promise.all([
-          loadInstalledApps(token).catch(() => []),
+        const [installedResult, versions] = await Promise.all([
+          loadInstalledApps(token)
+            .then((apps) => ({ apps, error: '' }))
+            .catch((err) => ({
+              apps: null,
+              error: err?.message || 'Installed apps could not be loaded.',
+            })),
           loadInstalledVersions(appId, token),
         ])
         if (cancelled) return
-        setInstalled(apps)
+        const apps = installedResult.apps || []
+        if (installedResult.apps) {
+          setInstalled(apps)
+          setInstalledLoadError('')
+        } else {
+          setInstalledLoadError(installedResult.error)
+        }
         setInstalledVersions(versions)
         // Resolve the catalog SOURCE by MERGING the web registry (catalog.json,
         // fetched via the proxy) OVER the baked CATALOG — never replacing it.
@@ -225,8 +238,10 @@ export default function App({ appId, token }) {
     try {
       const apps = await loadInstalledApps(token)
       setInstalled(apps)
+      setInstalledLoadError('')
       return apps
-    } catch {
+    } catch (err) {
+      setInstalledLoadError(err?.message || 'Installed apps could not be loaded.')
       return null
     } finally {
       refreshingRef.current = false
@@ -694,8 +709,10 @@ export default function App({ appId, token }) {
     document.getElementById(next === 'browse' ? 'st-tab-browse' : 'st-tab-url')?.focus()
   }
 
+  const catalogCategories = useMemo(() => collectCategories(catalog), [catalog])
+
   const visibleCatalog = useMemo(() => {
-    const catalogCategory = category === 'system' ? 'system' : 'all'
+    const catalogCategory = category === 'updates-pending' ? 'all' : category
     const matches = filterCatalog(catalog, { query, category: catalogCategory })
     if (category !== 'updates-pending') return matches
     return matches.filter((item) => hasPendingCatalogUpdate(item, installed, installedVersions))
@@ -719,6 +736,7 @@ export default function App({ appId, token }) {
           onReviewUpdate={handleReviewUpdate}
           onDismissNotice={handleDismissNotice}
           token={token}
+          installedUnavailable={!!installedLoadError}
         />
         {pendingUninstall && (
           <UninstallConfirmModal
@@ -795,11 +813,17 @@ export default function App({ appId, token }) {
                   <CatalogFilters
                     query={query}
                     category={category}
+                    categories={catalogCategories}
                     totalCount={catalog.length}
                     resultCount={visibleCatalog.length}
                     onQueryChange={setQuery}
                     onCategoryChange={setCategory}
                   />
+                  {installedLoadError && (
+                    <div className="st-notice is-warning" role="status">
+                      {installedLoadError} Install and update actions are paused until this refreshes.
+                    </div>
+                  )}
                   <CatalogList
                     items={visibleCatalog}
                     installed={installed}
@@ -808,6 +832,7 @@ export default function App({ appId, token }) {
                     onRetry={retryCatalogItem}
                     onUpdate={handleInstall}
                     busy={busy}
+                    installedUnavailable={!!installedLoadError}
                     busyItemId={busyItemId}
                     errors={cardErrors}
                     updateNotice={updateNotice}
