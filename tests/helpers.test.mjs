@@ -421,6 +421,17 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
     installed,
     systemSetupReady: true,
   }).setupNeedsAttention, false)
+
+  // Git-native update-check (keyed by the installed row's numeric id) is
+  // authoritative over the semver compare when it answered.
+  const upToDate = { ...item, manifest: { ...item.manifest, version: '1.1.0' } }
+  // false => no update even though the installed 1.1.0 < catalog 1.2.0.
+  assert.equal(appLifecycleFor(item, { installed, updateChecks: { 3: false } }).actionKind, 'open')
+  // true => update even though the versions match (content changed, no bump).
+  assert.equal(appLifecycleFor(upToDate, { installed, updateChecks: { 3: true } }).actionKind, 'update')
+  // null / absent => fall back to the semver compare (exactly today's behavior).
+  assert.equal(appLifecycleFor(item, { installed, updateChecks: { 3: null } }).actionKind, 'update')
+  assert.equal(appLifecycleFor(upToDate, { installed, updateChecks: {} }).actionKind, 'open')
 })
 
 test('scheduleSummary handles cron and on-demand jobs', async () => {

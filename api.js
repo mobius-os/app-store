@@ -92,6 +92,32 @@ export async function loadInstalledApps(token, opts = {}) {
   throw new Error(lastError?.message || 'Installed apps could not be loaded.')
 }
 
+// GET /api/apps/{id}/update-check — the backend's git-native "does the app
+// repo's actual content differ from the recorded upstream?" probe. It is
+// authoritative over the client-side semver compare precisely because it
+// catches a release that shipped new content without bumping mobius.json's
+// version. Returns the raw update_available tri-state as bool | null:
+//   true  — upstream content changed → an update exists regardless of versions
+//   false — git says nothing changed upstream → no update even if strings differ
+//   null  — UNKNOWN: an older backend 404s this route, the app has no repo, or
+//           the fetch failed. The caller falls back to the semver comparison,
+//           i.e. exactly today's behavior. A 404 is treated as null on purpose.
+// NEVER throws and NEVER retries: it runs from focus/visibility listeners whose
+// callers have no rejection handler, so a read-only availability probe must
+// degrade to null rather than let a rejection escape and strand the grid.
+export async function fetchUpdateCheck(appId, token) {
+  try {
+    const r = await fetch(`/api/apps/${appId}/update-check`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!r.ok) return null
+    const body = await r.json()
+    return typeof body?.update_available === 'boolean' ? body.update_available : null
+  } catch {
+    return null
+  }
+}
+
 export async function loadProviderStatus(token, opts = {}) {
   const retries = opts.retries ?? 1
   const delayMs = opts.retryDelayMs ?? 250
@@ -195,6 +221,9 @@ export async function fetchManifest(url, token, opts = {}) {
 // list of catalog entries, or throw. Accepts either a bare array or a
 // `{ apps: [...] }` envelope. Each entry must carry a string id and https
 // manifest_url + raw_base; malformed entries are dropped rather than trusted.
+// Top-level `name`/`description` (sanitized) pass through as pre-hydration
+// display hints — the discovery-index catalog shape carries them so a card can
+// show a real name before its manifest_url resolves, instead of the bare id.
 // A valid embedded `manifest` is preserved as a fast first-paint snapshot. Older
 // registries without it still work: callers fall back to fetching manifest_url.
 // The caller falls back to the baked CATALOG when this throws or yields nothing.
@@ -288,6 +317,8 @@ export async function fetchCatalog(url, token, opts = {}) {
     seen.add(e.id)
     entries.push({
       id: e.id,
+      name: cleanString(e.name),
+      description: cleanString(e.description),
       repo: typeof e.repo === 'string' ? e.repo : undefined,
       manifest_url: e.manifest_url,
       raw_base: e.raw_base,

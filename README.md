@@ -49,6 +49,25 @@ If you don't want PR-curation, that's fine too — anyone can install
 your app from a `mobius.json` URL using the **From URL** tab,
 no PR required.
 
+### Publishing an app update
+
+Shipping a new version of an app that's already in the catalog is
+just a repo push — you never touch this repo:
+
+1. Push your changes to the app repo (`mobius-os/app-<id>`).
+2. Bump the `version` in that repo's own `mobius.json`. That version
+   is human-facing: it's what the store shows on the card and in the
+   `Update to vX` button.
+
+`catalog.json` is a pure discovery index — id, name, description,
+repo/manifest URLs, categories/keywords. It carries no per-release
+manifest snapshot, so a release never changes it. The store reads
+each app's live `mobius.json` for the version and detail, and update
+detection is git-native (it compares the repo's actual content
+against what's installed), so an update can surface even when the
+version string didn't move. Add or edit a `catalog.json` entry only
+when you're publishing a brand-new app.
+
 ## Permissions
 
 The store requests only `manage_apps: true` so it can install

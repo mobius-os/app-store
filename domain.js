@@ -73,6 +73,7 @@ export function installedVersionFor(item, installedVersions, installedApp) {
 export function appLifecycleFor(item, {
   installed = [],
   installedVersions = {},
+  updateChecks = {},
   updateNotice = null,
   installedUnavailable = false,
   setupCompletions = {},
@@ -91,12 +92,27 @@ export function appLifecycleFor(item, {
         : (installedApp && !setupCompletions[String(installedApp.id)])
     )
   )
-  const hasUpdate = !!(
+  // Git-native update signal from GET /api/apps/{id}/update-check, keyed by the
+  // installed row's numeric id. It is AUTHORITATIVE over the version compare
+  // whenever it answered: true => an update exists regardless of the version
+  // strings (a release can ship new content without bumping mobius.json, which
+  // the semver compare below would miss); false => upstream is unchanged, so no
+  // update even if the strings differ. undefined/null => UNKNOWN (older backend
+  // that 404s the route, no repo, or the probe failed) — fall back to the semver
+  // compare, i.e. exactly today's behavior. Once the probe answered, the version
+  // string is display-only: it no longer decides whether the badge shows.
+  const gitUpdate = installedApp ? updateChecks[installedApp.id] : undefined
+  const semverUpdate = !!(
     installedApp &&
     installedVersion &&
     m?.version &&
     semverCmp(installedVersion, m.version) < 0
   )
+  const hasUpdate = gitUpdate === true
+    ? true
+    : gitUpdate === false
+    ? false
+    : semverUpdate
   const conflict = updateNotice?.kind === 'conflict' && updateNotice?.itemId === item?.id
   const needsFreshInstalledState =
     hasUpdate ||

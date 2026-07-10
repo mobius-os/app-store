@@ -31,6 +31,7 @@ import {
   createConflictResolverChat,
   fetchCatalog,
   fetchManifest,
+  fetchUpdateCheck,
   hasConnectedProvider,
   installApp,
   loadInstalledApps,
@@ -72,7 +73,11 @@ export { STORE_VERSION } from './constants.js'
 export { normalizeInstalledVersions } from './storage.js'
 export { fetchCatalog, fetchManifest, installApp, loadInstalledApps, proxyUrl } from './api.js'
 
-const MANIFEST_FETCH_CONCURRENCY = 3
+// Snapshot-less catalogs (catalog.json is now a pure discovery index) hydrate
+// every entry's manifest from its repo on open — ~16 fetches — so a 3-wide pool
+// left first paint needlessly slow. 6 keeps concurrency modest against the raw
+// CDN while roughly halving the hydrate wall time.
+const MANIFEST_FETCH_CONCURRENCY = 6
 
 function Toast({ toast, onDismiss }) {
   if (!toast) return null
@@ -121,6 +126,37 @@ async function mapWithConcurrency(items, limit, mapper) {
   return out
 }
 
+// Probe GET /api/apps/{id}/update-check for the given installed rows and return
+// a { [numericAppId]: update_available } map (true | false | null). Same
+// bounded pool as the manifest refetch. fetchUpdateCheck never throws — it
+// degrades to null — so this resolves cleanly even when the endpoint 404s on an
+// older backend; callers merge the answered ids and leave the rest on the
+// semver path. Scoped by the caller to installed catalog apps: only those show
+// a badge, so only their ids are worth checking.
+async function fetchUpdateChecksFor(rows, token) {
+  if (!rows.length) return {}
+  const results = await mapWithConcurrency(rows, MANIFEST_FETCH_CONCURRENCY, async (app) => ({
+    id: app.id,
+    available: await fetchUpdateCheck(app.id, token),
+  }))
+  const out = {}
+  for (const r of results) out[r.id] = r.available
+  return out
+}
+
+// Merge fresh update-check answers into the prior map, but return the SAME
+// reference when nothing changed so React bails out of the re-render — an
+// up-to-date store must not re-render its grid on every focus regain (mirrors
+// the manifest-refetch skip). Only newly-answered or flipped ids force a new
+// object.
+function mergeUpdateChecks(prev, incoming) {
+  let changed = false
+  for (const k in incoming) {
+    if (prev[k] !== incoming[k]) { changed = true; break }
+  }
+  return changed ? { ...prev, ...incoming } : prev
+}
+
 export default function App({ appId, token }) {
   const [tab, setTab] = useState('browse')
   const [query, setQuery] = useState('')
@@ -142,6 +178,12 @@ export default function App({ appId, token }) {
   useEffect(() => { catalogRef.current = catalog }, [catalog])
   const [installed, setInstalled] = useState([])
   const [installedVersions, setInstalledVersions] = useState({})
+  // Git-native update-availability per installed app, keyed by numeric app id:
+  // true/false as answered by GET /api/apps/{id}/update-check; a missing key
+  // (or a null value) means unknown, so appLifecycleFor falls back to the semver
+  // compare. Refreshed on the same cadence as the installed-manifest refetch
+  // (mount + debounced focus/visibility), never in an unbounded loop.
+  const [updateChecks, setUpdateChecks] = useState({})
   const [setupCompletions, setSetupCompletions] = useState(() => readSetupCompletions())
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
@@ -281,6 +323,19 @@ export default function App({ appId, token }) {
         }
         setCatalog(nextCatalog)
         lastManifestRefreshRef.current = Date.now()
+        // Git-native update-checks for the installed catalog apps. Fire-and-
+        // forget on purpose: a slow or absent (404) endpoint must never gate the
+        // skeleton clear in `finally`, so we do NOT await it here. fetchUpdate
+        // ChecksFor never rejects (fetchUpdateCheck degrades to null), so no
+        // unhandled rejection escapes; until these land the semver compare drives
+        // the badge, and when they land they refine it in place.
+        const checkRows = installedTargets
+          .map((c) => findInstalled(apps, c))
+          .filter(Boolean)
+        fetchUpdateChecksFor(checkRows, token).then((map) => {
+          if (cancelled) return
+          setUpdateChecks((prev) => mergeUpdateChecks(prev, map))
+        })
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
         if (!cancelled) setLoadingCatalog(false)
@@ -381,6 +436,15 @@ export default function App({ appId, token }) {
           )
         })
       }
+      // Git-native update-checks on the SAME debounced cadence. Independent of
+      // the version diff above: git can report changed upstream content even
+      // when the manifest version string didn't move, so we run this whenever we
+      // got past the debounce, not only when a version changed. fetchUpdate
+      // ChecksFor never rejects, so an awaited call here can't strand the
+      // refresh; the outer maybeRefresh already swallows any stray rejection.
+      const checkRows = targets.map(c => findInstalled(apps, c)).filter(Boolean)
+      const checks = await fetchUpdateChecksFor(checkRows, token)
+      setUpdateChecks(prev => mergeUpdateChecks(prev, checks))
       lastManifestRefreshRef.current = Date.now()
     } finally {
       manifestRehydratingRef.current = false
@@ -838,6 +902,7 @@ export default function App({ appId, token }) {
       byId.set(item.id, appLifecycleFor(item, {
         installed,
         installedVersions,
+        updateChecks,
         updateNotice: updateNotice?.itemId === item.id ? updateNotice : null,
         installedUnavailable: !!installedLoadError,
         setupCompletions,
@@ -845,7 +910,7 @@ export default function App({ appId, token }) {
       }))
     }
     return byId
-  }, [displayCatalog, installed, installedVersions, updateNotice, installedLoadError, setupCompletions, systemSetupReady])
+  }, [displayCatalog, installed, installedVersions, updateChecks, updateNotice, installedLoadError, setupCompletions, systemSetupReady])
 
   const filterCounts = useMemo(() => {
     let updates = 0
@@ -900,6 +965,7 @@ export default function App({ appId, token }) {
           onSetup={handleSetup}
           onRetryInstalled={handleRetryInstalled}
           busy={busy}
+          updateChecks={updateChecks}
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
           onDismissNotice={handleDismissNotice}
@@ -999,6 +1065,7 @@ export default function App({ appId, token }) {
                     items={visibleCatalog}
                     installed={installed}
                     installedVersions={installedVersions}
+                    updateChecks={updateChecks}
                     onPick={(item) => item.manifest && openDetail(item)}
                     onRetry={retryCatalogItem}
                     onUpdate={handleInstall}

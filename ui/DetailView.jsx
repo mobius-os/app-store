@@ -20,11 +20,12 @@ function setupMetaText(setup, storeInstalled) {
     : 'Install first; setup appears on first open'
 }
 
-export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, installed, installedVersions, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = item.manifest
   const lifecycle = appLifecycleFor(item, {
     installed,
     installedVersions,
+    updateChecks,
     updateNotice,
     installedUnavailable,
     setupCompletions,

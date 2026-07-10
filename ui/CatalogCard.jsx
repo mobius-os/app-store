@@ -25,7 +25,7 @@ function busyLabelFor(actionKind) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function CatalogCard({ item, installed, installedVersions, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -39,7 +39,7 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
           <div className="st-icon-wrap st-icon-wrap--letter" style={{ marginBottom: '12px' }}>
             <span className="st-icon-letter">{item.id.charAt(0).toUpperCase()}</span>
           </div>
-          <div className="st-card-name">{item.id}</div>
+          <div className="st-card-name">{item.name || item.id}</div>
           <div className="st-card-error-body">
             This app's manifest didn't load.
           </div>
@@ -61,7 +61,7 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
         <div className="st-icon-wrap st-icon-wrap--letter">
           <span className="st-icon-letter">{item.id.charAt(0).toUpperCase()}</span>
         </div>
-        <div className="st-card-name">{item.id}</div>
+        <div className="st-card-name">{item.name || item.id}</div>
         <div className="st-card-version">loading…</div>
       </div>
     )
@@ -70,6 +70,7 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
   const lifecycle = appLifecycleFor(item, {
     installed,
     installedVersions,
+    updateChecks,
     updateNotice,
     installedUnavailable,
     setupCompletions,
