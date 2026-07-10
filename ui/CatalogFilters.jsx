@@ -15,6 +15,7 @@ export function CatalogFilters({
 }) {
   const selected = category || 'all'
   const filters = [
+    { id: 'all', label: 'All' },
     ...categories.map((id) => ({ id, label: categoryLabel(id) })),
     ...PINNED_FILTERS,
   ]
@@ -34,6 +35,16 @@ export function CatalogFilters({
           autoComplete="off"
           spellCheck={false}
         />
+        {query && (
+          <button
+            type="button"
+            className="st-search-clear"
+            aria-label="Clear search"
+            onClick={() => onQueryChange('')}
+          >
+            ×
+          </button>
+        )}
         <div className="st-result-count" aria-live="polite">
           {resultCount}/{totalCount}
         </div>
@@ -45,7 +56,7 @@ export function CatalogFilters({
             type="button"
             className={`st-chip${selected === filter.id ? ' is-active' : ''}`}
             aria-pressed={selected === filter.id}
-            onClick={() => onCategoryChange(selected === filter.id ? 'all' : filter.id)}
+            onClick={() => onCategoryChange(filter.id === 'all' || selected === filter.id ? 'all' : filter.id)}
           >
             {filter.label}
           </button>

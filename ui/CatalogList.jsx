@@ -7,6 +7,7 @@ export function CatalogList({
   onPick,
   onRetry,
   onUpdate,
+  onOpenInstalled,
   busy,
   busyItemId,
   errors,
@@ -35,6 +36,7 @@ export function CatalogList({
       onPick={onPick}
       onRetry={onRetry}
       onUpdate={onUpdate}
+      onOpenInstalled={onOpenInstalled}
       busy={busyItemId === item.id}
       blocked={busy && busyItemId !== item.id}
       error={errors?.[item.id]}

@@ -157,6 +157,27 @@ export const CSS = `
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
+.st-search-clear {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2, var(--surface));
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  font-family: var(--font);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+@media (hover: hover) {
+  .st-search-clear:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-search-clear:active { opacity: 0.75; transform: scale(0.97); }
+}
 .st-result-count {
   flex-shrink: 0;
   min-width: 48px;

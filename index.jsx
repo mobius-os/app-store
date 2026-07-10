@@ -868,6 +868,7 @@ export default function App({ appId, token }) {
                     onPick={(item) => item.manifest && openDetail(item)}
                     onRetry={retryCatalogItem}
                     onUpdate={handleInstall}
+                    onOpenInstalled={handleOpenInstalled}
                     busy={busy}
                     installedUnavailable={!!installedLoadError}
                     busyItemId={busyItemId}

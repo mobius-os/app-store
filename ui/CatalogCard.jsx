@@ -15,7 +15,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
+export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, onOpenInstalled, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -79,16 +79,18 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
     cardVariant = 'update'
   } else if (item.core) {
     // Platform core app, up to date — always present, never uninstallable.
-    statusLabel = 'Built in'
+    statusLabel = storeInstalled ? 'Open' : 'Built in'
     cardVariant = 'installed'
   } else if (storeInstalled && hasUpdate) {
     statusLabel = 'Update'
     cardVariant = 'update'
   } else if (storeInstalled) {
-    statusLabel = 'Installed'
+    statusLabel = 'Open'
     cardVariant = 'installed'
   }
-  const isActionable = cardVariant !== 'installed'
+  const opensInstalledApp = !!storeInstalled && cardVariant === 'installed'
+  const canOpenInstalledApp = opensInstalledApp && typeof onOpenInstalled === 'function'
+  const isActionable = cardVariant !== 'installed' || canOpenInstalledApp
   const needsFreshInstalledState = cardVariant === 'default' || cardVariant === 'update'
   const cardActionDisabled = busy || blocked || (installedUnavailable && needsFreshInstalledState) || !isActionable
   const showUpdateNotice = updateNotice?.kind === 'conflict'
@@ -100,6 +102,10 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
       : statusLabel
   const onCardAction = () => {
     if (cardActionDisabled) return
+    if (canOpenInstalledApp) {
+      onOpenInstalled?.(storeInstalled.id)
+      return
+    }
     onUpdate?.(item, { isUpdate: cardVariant === 'update' })
   }
 
@@ -181,7 +187,7 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
             cardVariant === 'update'
               ? `Update ${m.name} to v${m.version}`
               : cardVariant === 'installed'
-              ? `${m.name} is installed`
+              ? `Open ${m.name}`
               : `Install ${m.name}`
           }
         >
