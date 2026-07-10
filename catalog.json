@@ -903,7 +903,7 @@
       "manifest": {
         "id": "beat-machine",
         "name": "Beat Machine",
-        "version": "1.0.5",
+        "version": "1.0.6",
         "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
         "author": "mobius-os",
         "license": "MIT",
