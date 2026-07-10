@@ -442,9 +442,10 @@ async function assertCatalogSnapshotMatchesLocal(id, repoDir) {
   assert.equal(entry.manifest.schedule?.job, localManifest.schedule?.job)
 }
 
-test('Memory and Reflection catalog snapshots match their app manifests', async () => {
+test('catalog snapshots match key app manifests', async () => {
   await assertCatalogSnapshotMatchesLocal('memory', 'app-memory')
   await assertCatalogSnapshotMatchesLocal('reflection', 'app-reflection')
+  await assertCatalogSnapshotMatchesLocal('contribute', 'app-contribute')
 })
 
 test('Beat Machine catalog snapshot matches the sequencer manifest', async () => {

@@ -206,7 +206,7 @@ export const CATALOG_URL =
 // newer than what's running, offer a one-tap update (the same install
 // transaction every other app uses) followed by a reload so the freshly-patched
 // code loads.
-export const STORE_VERSION = '1.10.5'
+export const STORE_VERSION = '1.10.6'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',

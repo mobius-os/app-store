@@ -235,11 +235,11 @@ export default function App({ appId, token }) {
           // Registry unreachable / malformed — the baked CATALOG carries the store.
         }
         if (cancelled) return
-        // Hydrate only entries that do not already carry a validated manifest
+        // Hydrate entries that do not already carry a validated manifest
         // snapshot from catalog.json. The registry is the hot path; per-app
         // manifest fetches are the backwards-compatible fallback for older or
-        // partial registries. This keeps first paint to one GitHub request
-        // instead of a fanout across the whole catalog.
+        // partial registries. Installed apps get a live re-check below so stale
+        // snapshots cannot hide an update after a release lands.
         const hydrated = await mapWithConcurrency(
           entries,
           MANIFEST_FETCH_CONCURRENCY,
@@ -254,7 +254,32 @@ export default function App({ appId, token }) {
           },
         )
         if (cancelled) return
-        setCatalog(hydrated)
+        let nextCatalog = hydrated
+        const installedTargets = apps.length
+          ? hydrated.filter((c) => findInstalled(apps, c))
+          : []
+        if (installedTargets.length > 0) {
+          const refetched = await mapWithConcurrency(
+            installedTargets,
+            MANIFEST_FETCH_CONCURRENCY,
+            async (c) => {
+              try {
+                const manifest = await fetchManifest(c.manifest_url, token)
+                return { id: c.id, manifest }
+              } catch {
+                return null
+              }
+            },
+          )
+          if (cancelled) return
+          const byId = new Map(refetched.filter(Boolean).map(r => [r.id, r.manifest]))
+          if (byId.size > 0) {
+            nextCatalog = hydrated.map(c =>
+              byId.has(c.id) ? { ...c, manifest: byId.get(c.id), error: null } : c
+            )
+          }
+        }
+        setCatalog(nextCatalog)
         lastManifestRefreshRef.current = Date.now()
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
