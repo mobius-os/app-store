@@ -61,7 +61,7 @@ test('findInstalled matches canonical manifest identity, not slug', async () => 
   assert.equal(findInstalled(installed, item), installed[0])
 })
 
-test('findInstalled recognizes legacy platform rows only for migrated catalog apps', async () => {
+test('findInstalled ignores legacy platform rows without canonical identity', async () => {
   const { findInstalled } = await bundle()
   const memory = {
     id: 9,
@@ -84,7 +84,7 @@ test('findInstalled recognizes legacy platform rows only for migrated catalog ap
     id: 'memory',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json',
     manifest: { id: 'memory' },
-  }), memory)
+  }), null)
   assert.equal(findInstalled([custom], {
     id: 'notes',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
@@ -429,16 +429,30 @@ test('STORE_VERSION stays in lockstep with mobius.json', async () => {
   assert.equal(STORE_VERSION, manifest.version)
 })
 
-test('Beat Machine catalog snapshot matches the sequencer manifest', async () => {
+async function assertCatalogSnapshotMatchesLocal(id, repoDir) {
   const catalog = JSON.parse(await readFile(join(root, '..', 'catalog.json'), 'utf8'))
   const localManifest = JSON.parse(
-    await readFile(join(root, '..', '..', 'app-beat-machine', 'mobius.json'), 'utf8'),
+    await readFile(join(root, '..', '..', repoDir, 'mobius.json'), 'utf8'),
   )
+  const entry = catalog.apps.find((item) => item.id === id)
+
+  assert.ok(entry, `catalog contains ${id}`)
+  assert.deepEqual(entry.manifest.source_files, localManifest.source_files)
+  assert.equal(entry.manifest.version, localManifest.version)
+  assert.equal(entry.manifest.schedule?.job, localManifest.schedule?.job)
+}
+
+test('Memory and Reflection catalog snapshots match their app manifests', async () => {
+  await assertCatalogSnapshotMatchesLocal('memory', 'app-memory')
+  await assertCatalogSnapshotMatchesLocal('reflection', 'app-reflection')
+})
+
+test('Beat Machine catalog snapshot matches the sequencer manifest', async () => {
+  await assertCatalogSnapshotMatchesLocal('beat-machine', 'app-beat-machine')
+  const catalog = JSON.parse(await readFile(join(root, '..', 'catalog.json'), 'utf8'))
   const entry = catalog.apps.find((item) => item.id === 'beat-machine')
 
   assert.ok(entry, 'catalog contains Beat Machine')
-  assert.deepEqual(entry.manifest.source_files, localManifest.source_files)
-  assert.equal(entry.manifest.version, localManifest.version)
   assert.match(entry.manifest.description, /32-step sequencer/i)
   assert.ok(entry.keywords.includes('sequencer'))
   assert.ok(entry.capabilities.some((capability) => /32-step/.test(capability)))

@@ -102,7 +102,7 @@
       "manifest": {
         "id": "reflection",
         "name": "Reflection",
-        "version": "2.6.0",
+        "version": "2.7.0",
         "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
         "author": "mobius-os",
         "license": "MIT",
@@ -152,6 +152,7 @@
         },
         "embeds_agent": true,
         "source_files": [
+          "reflection_runner.py",
           "constants.js",
           "theme.js",
           "domain.js",

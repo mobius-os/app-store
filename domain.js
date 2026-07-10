@@ -1,7 +1,5 @@
 import { TRUSTED_HOSTS } from './constants.js'
 
-const LEGACY_PLATFORM_APP_IDS = new Set(['memory', 'reflection', 'beat-machine'])
-
 export function isTrustedHost(url) {
   try {
     return TRUSTED_HOSTS.has(new URL(url).hostname)
@@ -50,29 +48,14 @@ export function canonicalIdentityKey(url, manifestId) {
   return `${base}#manifest-id=${manifestId}`
 }
 
-function isLegacyPlatformInstallMatch(app, item, manifestId) {
-  // Transitional migration only: old images registered these catalog apps from
-  // /data/platform/core-apps/<id> with no canonical manifest_url. Treat those
-  // rows as installed so the store offers Update/Open and the backend can move
-  // them forward into /data/apps. Do not fall back to slug matching for ordinary
-  // apps; that would reintroduce the duplicate/rename bugs canonical identity
-  // fixed.
-  if (!LEGACY_PLATFORM_APP_IDS.has(manifestId)) return false
-  if (app?.manifest_url) return false
-  if (app?.slug !== manifestId) return false
-  return String(app?.source_dir || '').endsWith(`/platform/core-apps/${manifestId}`)
-}
-
 // Look up an installed App row that corresponds to the catalog entry.
-// Canonical manifest identity is the normal source of truth. A narrow legacy
-// platform-source fallback exists only to migrate old baked Memory/Reflection/
-// Beat Machine rows forward.
+// Canonical manifest identity is the only source of truth; old platform-owned
+// rows are repaired by the backend install path when the user installs the
+// catalog entry.
 export function findInstalled(installed, item) {
   const manifestId = item.manifest?.id || item.id
   const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
-  return installed.find(a => a.manifest_url === canonical) ||
-    installed.find(a => isLegacyPlatformInstallMatch(a, item, manifestId)) ||
-    null
+  return installed.find(a => a.manifest_url === canonical) || null
 }
 
 export function installedVersionFor(item, installedVersions, installedApp) {
