@@ -4,8 +4,42 @@
 // snapshot is missing or invalid.
 export const CATALOG = [
   // First screen priority: agent-facing utilities, then broad everyday apps,
-  // then specialist and playful apps. Core apps keep `core: true` so they
-  // remain update-only wherever they appear in this order.
+  // then specialist and playful apps. Memory and Reflection are ordinary
+  // installable apps, kept first because they explain the platform's agent loop.
+  {
+      id: 'memory',
+      repo: 'mobius-os/app-memory',
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/',
+      categories: ['system', 'agents'],
+      keywords: ['memory graph', 'memory maintenance', 'scheduled consolidation', 'notes', 'knowledge base', 'agent context'],
+      capabilities: ['browse memory graph', 'scheduled memory consolidation', 'inspect knowledge links'],
+      setup: {
+        required: true,
+        scope: 'system',
+        section: 'background-agents',
+        label: 'Background agent',
+        description: 'Connect at least one AI provider and set a primary/fallback background model in Möbius Settings so Memory can run its scheduled consolidation.',
+        fields: ['provider', 'model', 'fallback'],
+      },
+    },
+  {
+      id: 'reflection',
+      repo: 'mobius-os/app-reflection',
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-reflection/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-reflection/main/',
+      categories: ['system', 'agents'],
+      keywords: ['reflection', 'morning brief', 'overnight', 'system improvement', 'background agent'],
+      capabilities: ['scheduled background run', 'writes morning briefs', 'proposes system improvements'],
+      setup: {
+        required: true,
+        scope: 'system',
+        section: 'background-agents',
+        label: 'Background agent',
+        description: 'Connect at least one AI provider and set a primary/fallback background model in Möbius Settings. Reflection can override it inside the app.',
+        fields: ['provider', 'model', 'fallback'],
+      },
+    },
   {
       id: 'skills',
       repo: 'mobius-os/app-skills',
@@ -63,34 +97,6 @@ export const CATALOG = [
         label: 'Digest setup',
         description: 'Choose the topics, schedule, and primary/fallback model in the app before relying on scheduled reports.',
         fields: ['topics', 'schedule', 'provider', 'model', 'fallback'],
-      },
-    },
-  {
-      id: 'memory',
-      repo: 'mobius-os/app-memory',
-      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json',
-      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/',
-      core: true,
-      categories: ['system', 'agents'],
-      keywords: ['memory graph', 'mind', 'notes', 'knowledge base', 'agent context'],
-      capabilities: ['browse memory graph', 'read agent notes', 'inspect knowledge links'],
-    },
-  {
-      id: 'reflection',
-      repo: 'mobius-os/app-reflection',
-      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-reflection/main/mobius.json',
-      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-reflection/main/',
-      core: true,
-      categories: ['system', 'agents'],
-      keywords: ['reflection', 'morning brief', 'overnight', 'memory consolidation', 'background agent'],
-      capabilities: ['scheduled background run', 'writes morning briefs', 'maintains memory'],
-      setup: {
-        required: true,
-        scope: 'system',
-        section: 'background-agents',
-        label: 'Background agent',
-        description: 'Connect at least one AI provider and set a primary/fallback background model in Möbius Settings. Reflection can override it inside the app.',
-        fields: ['provider', 'model', 'fallback'],
       },
     },
   {
@@ -195,12 +201,12 @@ export const CATALOG_URL =
   'https://raw.githubusercontent.com/mobius-os/app-store/main/catalog.json'
 
 // The store's OWN version — keep in lockstep with mobius.json on each release.
-// The store is a core app, so it isn't in installed-versions.json or the
-// catalog grid; it self-updates via the banner below: fetch its published
-// manifest and, when that version is newer than what's running, offer a
-// one-tap update (the same install transaction every other app uses) followed
-// by a reload so the freshly-patched code loads.
-export const STORE_VERSION = '1.10.2'
+// The store is bootstrapped separately from the catalog grid; it self-updates
+// via the banner below: fetch its published manifest and, when that version is
+// newer than what's running, offer a one-tap update (the same install
+// transaction every other app uses) followed by a reload so the freshly-patched
+// code loads.
+export const STORE_VERSION = '1.10.4'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',

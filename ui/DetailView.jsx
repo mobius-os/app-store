@@ -20,17 +20,18 @@ function setupMetaText(setup, storeInstalled) {
     : 'Install first; setup appears on first open'
 }
 
-export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
+export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = item.manifest
   const lifecycle = appLifecycleFor(item, {
     installed,
     installedVersions,
     updateNotice,
     installedUnavailable,
+    setupCompletions,
+    systemSetupReady,
   })
   const storeInstalled = lifecycle.installedApp
   const installedVer = lifecycle.installedVersion
-  const isCore = lifecycle.isCore
   const hasUpdate = lifecycle.hasUpdate
   const blockedUpdate = lifecycle.key === 'conflict'
   const canRetryInstalled = typeof onRetryInstalled === 'function'
@@ -54,7 +55,12 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
   }
   const scheduleText = scheduleSummary(m.schedule)
   const setup = item.setup?.required ? item.setup : null
-  const canOpenSetup = !!setup && (setup.scope === 'system' || storeInstalled)
+  const showSetup = !!setup && (
+    setup.scope === 'system'
+      ? lifecycle.setupNeedsAttention
+      : (!storeInstalled || lifecycle.setupNeedsAttention)
+  )
+  const canOpenSetup = showSetup && (setup.scope === 'system' || storeInstalled)
 
   // When the app is installed, serve the raw transparent icon from the
   // same-origin API route rather than the external catalog source. Avoids the
@@ -130,7 +136,7 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
           </div>
         )}
 
-        {setup && (
+        {showSetup && (
           <div className="st-detail-section">
             <div className="st-section-label">Setup</div>
             <div className="st-setup-card">
@@ -262,7 +268,7 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
             }
             if (hasUpdate) onInstall(item, { isUpdate: true, existingId: storeInstalled.id })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
-            else if (!isCore) onInstall(item, { isUpdate: false })
+            else onInstall(item, { isUpdate: false })
           }}
         >
           {busy ? detailBusyLabel(lifecycle.actionKind)
@@ -272,7 +278,7 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
             : storeInstalled ? 'Open App'
             : lifecycle.actionLabel}
         </button>
-        {storeInstalled && !isCore && (
+        {storeInstalled && (
           <button
             className="st-btn st-btn-secondary st-detail-cta"
             onClick={() => onUninstall(storeInstalled)}

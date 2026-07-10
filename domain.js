@@ -1,5 +1,7 @@
 import { TRUSTED_HOSTS } from './constants.js'
 
+const LEGACY_PLATFORM_APP_IDS = new Set(['memory', 'reflection', 'beat-machine'])
+
 export function isTrustedHost(url) {
   try {
     return TRUSTED_HOSTS.has(new URL(url).hostname)
@@ -48,20 +50,29 @@ export function canonicalIdentityKey(url, manifestId) {
   return `${base}#manifest-id=${manifestId}`
 }
 
+function isLegacyPlatformInstallMatch(app, item, manifestId) {
+  // Transitional migration only: old images registered these catalog apps from
+  // /data/platform/core-apps/<id> with no canonical manifest_url. Treat those
+  // rows as installed so the store offers Update/Open and the backend can move
+  // them forward into /data/apps. Do not fall back to slug matching for ordinary
+  // apps; that would reintroduce the duplicate/rename bugs canonical identity
+  // fixed.
+  if (!LEGACY_PLATFORM_APP_IDS.has(manifestId)) return false
+  if (app?.manifest_url) return false
+  if (app?.slug !== manifestId) return false
+  return String(app?.source_dir || '').endsWith(`/platform/core-apps/${manifestId}`)
+}
+
 // Look up an installed App row that corresponds to the catalog entry.
-// Every installed row carries the canonical identity key (the backend
-// canonicalises on every install + update path); matching by canonical
-// key is the single source of truth.
+// Canonical manifest identity is the normal source of truth. A narrow legacy
+// platform-source fallback exists only to migrate old baked Memory/Reflection/
+// Beat Machine rows forward.
 export function findInstalled(installed, item) {
   const manifestId = item.manifest?.id || item.id
   const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
-  const byCanonical = installed.find(a => a.manifest_url === canonical)
-  if (byCanonical) return byCanonical
-  // Core apps (Reflection, Memory) are installed by the platform, not the store, so
-  // a fresh instance's row may carry no manifest_url to canonicalise against.
-  // Fall back to the stable core slug so the store still recognises + opens them.
-  if (item.core) return installed.find(a => a.slug === item.id) || null
-  return null
+  return installed.find(a => a.manifest_url === canonical) ||
+    installed.find(a => isLegacyPlatformInstallMatch(a, item, manifestId)) ||
+    null
 }
 
 export function installedVersionFor(item, installedVersions, installedApp) {
@@ -81,12 +92,22 @@ export function appLifecycleFor(item, {
   installedVersions = {},
   updateNotice = null,
   installedUnavailable = false,
+  setupCompletions = {},
+  systemSetupReady = false,
 } = {}) {
   const m = item?.manifest || null
   const installedApp = item ? findInstalled(installed, item) : null
   const installedVersion = installedVersionFor(item, installedVersions, installedApp)
-  const isCore = !!item?.core
   const setupRequired = item?.setup?.required === true
+  const setupScope = item?.setup?.scope || 'app'
+  const setupNeedsAttention = !!(
+    setupRequired &&
+    (
+      setupScope === 'system'
+        ? !systemSetupReady
+        : (installedApp && !setupCompletions[String(installedApp.id)])
+    )
+  )
   const hasUpdate = !!(
     installedApp &&
     installedVersion &&
@@ -94,12 +115,10 @@ export function appLifecycleFor(item, {
     semverCmp(installedVersion, m.version) < 0
   )
   const conflict = updateNotice?.kind === 'conflict' && updateNotice?.itemId === item?.id
-  const coreWithoutStoreRecord = isCore && !installedApp && !hasUpdate
   const needsFreshInstalledState =
     hasUpdate ||
     conflict ||
-    (!installedApp && !isCore) ||
-    coreWithoutStoreRecord
+    !installedApp
 
   if (installedUnavailable && needsFreshInstalledState) {
     return {
@@ -111,9 +130,8 @@ export function appLifecycleFor(item, {
       installedApp,
       installedVersion,
       hasUpdate,
-      isCore,
       setupRequired,
-      coreWithoutStoreRecord,
+      setupNeedsAttention,
     }
   }
 
@@ -127,9 +145,8 @@ export function appLifecycleFor(item, {
       installedApp,
       installedVersion,
       hasUpdate,
-      isCore,
       setupRequired,
-      coreWithoutStoreRecord,
+      setupNeedsAttention,
     }
   }
 
@@ -143,9 +160,8 @@ export function appLifecycleFor(item, {
       installedApp,
       installedVersion,
       hasUpdate,
-      isCore,
       setupRequired,
-      coreWithoutStoreRecord,
+      setupNeedsAttention,
     }
   }
 
@@ -159,25 +175,8 @@ export function appLifecycleFor(item, {
       installedApp,
       installedVersion,
       hasUpdate,
-      isCore,
       setupRequired,
-      coreWithoutStoreRecord,
-    }
-  }
-
-  if (isCore) {
-    return {
-      key: 'built-in',
-      statusLabel: 'Built in',
-      actionLabel: 'Built in',
-      actionKind: 'none',
-      cardVariant: 'installed',
-      installedApp,
-      installedVersion,
-      hasUpdate,
-      isCore,
-      setupRequired,
-      coreWithoutStoreRecord,
+      setupNeedsAttention,
     }
   }
 
@@ -190,9 +189,8 @@ export function appLifecycleFor(item, {
     installedApp,
     installedVersion,
     hasUpdate,
-    isCore,
     setupRequired,
-    coreWithoutStoreRecord,
+    setupNeedsAttention,
   }
 }
 
@@ -230,7 +228,6 @@ export function itemCategories(item) {
 }
 
 export function isSystemCatalogItem(item) {
-  if (item?.core) return true
   return itemCategories(item).some((category) => category.toLowerCase() === 'system')
 }
 
@@ -239,9 +236,6 @@ export function sortCatalogForDisplay(items) {
     const aSystem = isSystemCatalogItem(a)
     const bSystem = isSystemCatalogItem(b)
     if (aSystem !== bSystem) return aSystem ? -1 : 1
-    const aCore = !!a?.core
-    const bCore = !!b?.core
-    if (aCore !== bCore) return aCore ? -1 : 1
     return 0
   })
 }

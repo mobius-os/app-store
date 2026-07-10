@@ -1,14 +1,50 @@
 import { validateManifestUrl } from './domain.js'
 
-export function openInstalledApp(id, onUnembedded) {
+export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
+export const SYSTEM_SETUP_READY_KEY = 'mobius:system-setup-ready:v1'
+
+export function openInstalledApp(id, optsOrOnUnembedded, maybeOnUnembedded) {
+  const opts = optsOrOnUnembedded && typeof optsOrOnUnembedded === 'object'
+    ? optsOrOnUnembedded
+    : {}
+  const onUnembedded = typeof optsOrOnUnembedded === 'function'
+    ? optsOrOnUnembedded
+    : maybeOnUnembedded
   if (window.parent === window) {
     if (onUnembedded) onUnembedded()
     return
   }
+  const msg = { type: 'moebius:open-app', appId: id }
+  if (typeof opts.intent === 'string' && opts.intent) msg.intent = opts.intent
   window.parent.postMessage(
-    { type: 'moebius:open-app', appId: id },
+    msg,
     window.location.origin,
   )
+}
+
+export function readSetupCompletions() {
+  if (typeof window === 'undefined' || !window.localStorage) return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SETUP_COMPLETIONS_KEY) || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+export function hasConnectedProvider(status) {
+  if (!status || typeof status !== 'object') return false
+  return Object.values(status).some((value) => value && value.authenticated)
+}
+
+export function readSystemSetupReady() {
+  if (typeof window === 'undefined' || !window.localStorage) return false
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SYSTEM_SETUP_READY_KEY) || 'null')
+    return !!(parsed && typeof parsed === 'object' && parsed.completedAt)
+  } catch {
+    return false
+  }
 }
 
 export function openSystemSettings(section = 'ai-providers', onUnembedded) {
@@ -54,6 +90,24 @@ export async function loadInstalledApps(token, opts = {}) {
   }
 
   throw new Error(lastError?.message || 'Installed apps could not be loaded.')
+}
+
+export async function loadProviderStatus(token, opts = {}) {
+  const retries = opts.retries ?? 1
+  const delayMs = opts.retryDelayMs ?? 250
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch('/api/auth/providers/status', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (r.ok) return await r.json()
+      if (!retryableFetchStatus(r.status) || attempt === retries) return null
+    } catch (err) {
+      if (!retryableFetchError(err) || attempt === retries) return null
+    }
+    await sleep(retryDelay(null, attempt, delayMs))
+  }
+  return null
 }
 
 // External resources (catalog manifests + icons) live on public git hosts
@@ -232,9 +286,6 @@ export async function fetchCatalog(url, token, opts = {}) {
     // can't collide on a repeated React key.
     if (seen.has(e.id)) continue
     seen.add(e.id)
-    // `core` (platform) status is deliberately NOT carried from the registry —
-    // it's baked policy, re-applied at the merge site. A registry can never make
-    // a platform app installable, nor drop a platform app's protection.
     entries.push({
       id: e.id,
       repo: typeof e.repo === 'string' ? e.repo : undefined,

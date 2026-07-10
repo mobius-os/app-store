@@ -2,7 +2,6 @@ const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'installed', label: 'Installed' },
   { id: 'update', label: 'Update' },
-  { id: 'system', label: 'System' },
   { id: 'setup', label: 'Setup' },
 ]
 

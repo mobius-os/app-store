@@ -17,6 +17,8 @@ export function CatalogList({
   onDismissNotice,
   token,
   installedUnavailable = false,
+  setupCompletions = {},
+  systemSetupReady = false,
   emptyTitle = 'No apps',
   emptyText = 'No apps in the catalog yet.',
 }) {
@@ -47,6 +49,8 @@ export function CatalogList({
       onDismissNotice={onDismissNotice}
       token={token}
       installedUnavailable={installedUnavailable}
+      setupCompletions={setupCompletions}
+      systemSetupReady={systemSetupReady}
     />
   )
   return (

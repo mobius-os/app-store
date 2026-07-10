@@ -25,7 +25,7 @@ function busyLabelFor(actionKind) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
+export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -72,6 +72,8 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
     installedVersions,
     updateNotice,
     installedUnavailable,
+    setupCompletions,
+    systemSetupReady,
   })
   const storeInstalled = lifecycle.installedApp
   const cardVariant = lifecycle.cardVariant

@@ -61,6 +61,37 @@ test('findInstalled matches canonical manifest identity, not slug', async () => 
   assert.equal(findInstalled(installed, item), installed[0])
 })
 
+test('findInstalled recognizes legacy platform rows only for migrated catalog apps', async () => {
+  const { findInstalled } = await bundle()
+  const memory = {
+    id: 9,
+    slug: 'memory',
+    name: 'Memory',
+    manifest_url: null,
+    source_dir: '/data/platform/core-apps/memory',
+    version: '1.6.3',
+  }
+  const custom = {
+    id: 10,
+    slug: 'notes',
+    name: 'Notes',
+    manifest_url: null,
+    source_dir: '/data/platform/core-apps/notes',
+    version: '0.1.0',
+  }
+
+  assert.equal(findInstalled([memory], {
+    id: 'memory',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json',
+    manifest: { id: 'memory' },
+  }), memory)
+  assert.equal(findInstalled([custom], {
+    id: 'notes',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
+    manifest: { id: 'notes' },
+  }), null)
+})
+
 test('validateManifestUrl only accepts http(s) manifest URLs', async () => {
   const { validateManifestUrl } = await bundle()
 
@@ -293,12 +324,12 @@ test('sortCatalogForDisplay promotes system apps without scrambling groups', asy
   const items = [
     { id: 'notes', categories: ['writing'] },
     { id: 'skills', categories: ['system', 'agents'] },
-    { id: 'memory', core: true, categories: ['system', 'agents'] },
+    { id: 'memory', categories: ['system', 'agents'] },
     { id: 'tasks', categories: ['productivity'] },
     { id: 'contribute', categories: ['development', 'system'] },
   ]
   const sorted = sortCatalogForDisplay(items)
-  assert.deepEqual(sorted.map(i => i.id), ['memory', 'skills', 'contribute', 'notes', 'tasks'])
+  assert.deepEqual(sorted.map(i => i.id), ['skills', 'memory', 'contribute', 'notes', 'tasks'])
   assert.deepEqual(collectCategories(sorted).slice(0, 3), ['system', 'agents', 'development'])
 })
 
@@ -336,6 +367,25 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
     ...item,
     manifest: { ...item.manifest, version: '1.1.0' },
   }, { installed }).setupRequired, true)
+  assert.equal(appLifecycleFor({
+    ...item,
+    manifest: { ...item.manifest, version: '1.1.0' },
+  }, { installed }).setupNeedsAttention, true)
+  assert.equal(appLifecycleFor({
+    ...item,
+    manifest: { ...item.manifest, version: '1.1.0' },
+  }, {
+    installed,
+    setupCompletions: { 3: { completedAt: '2026-07-10T00:00:00.000Z' } },
+  }).setupNeedsAttention, false)
+  assert.equal(appLifecycleFor({
+    ...item,
+    setup: { required: true, scope: 'system' },
+    manifest: { ...item.manifest, version: '1.1.0' },
+  }, {
+    installed,
+    systemSetupReady: true,
+  }).setupNeedsAttention, false)
 })
 
 test('scheduleSummary handles cron and on-demand jobs', async () => {

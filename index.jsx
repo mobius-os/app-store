@@ -31,13 +31,19 @@ import {
   createConflictResolverChat,
   fetchCatalog,
   fetchManifest,
+  hasConnectedProvider,
   installApp,
   loadInstalledApps,
+  loadProviderStatus,
   loadUpdatePreview,
   openChat,
   openInstalledApp,
   openSystemSettings,
+  readSetupCompletions,
+  readSystemSetupReady,
   seedChatMessage,
+  SETUP_COMPLETIONS_KEY,
+  SYSTEM_SETUP_READY_KEY,
 } from './api.js'
 import { loadInstalledVersions, saveInstalledVersions } from './storage.js'
 import { CatalogList } from './ui/CatalogList.jsx'
@@ -136,6 +142,9 @@ export default function App({ appId, token }) {
   useEffect(() => { catalogRef.current = catalog }, [catalog])
   const [installed, setInstalled] = useState([])
   const [installedVersions, setInstalledVersions] = useState({})
+  const [setupCompletions, setSetupCompletions] = useState(() => readSetupCompletions())
+  const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
+  const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
   const navDetailRef = useRef(null)  // pending detail item during nav-push ack
   // B1: preserve the catalog grid's scroll across opening a detail and coming
@@ -183,7 +192,7 @@ export default function App({ appId, token }) {
     let cancelled = false
     async function load() {
       try {
-        const [installedResult, versions] = await Promise.all([
+        const [installedResult, versions, nextProviderStatus] = await Promise.all([
           loadInstalledApps(token)
             .then((apps) => ({ apps, error: '' }))
             .catch((err) => ({
@@ -191,6 +200,7 @@ export default function App({ appId, token }) {
               error: err?.message || 'Installed apps could not be loaded.',
             })),
           loadInstalledVersions(appId, token),
+          loadProviderStatus(token),
         ])
         if (cancelled) return
         const apps = installedResult.apps || []
@@ -201,16 +211,17 @@ export default function App({ appId, token }) {
           setInstalledLoadError(installedResult.error)
         }
         setInstalledVersions(versions)
+        setSetupCompletions(readSetupCompletions())
+        setSystemSetupComplete(readSystemSetupReady())
+        if (nextProviderStatus) setProviderStatus(nextProviderStatus)
         // Resolve the catalog SOURCE by MERGING the web registry (catalog.json,
         // fetched via the proxy) OVER the baked CATALOG — never replacing it.
         // Baked is the floor: an app in the baked list can never vanish because
         // the registry is stale/partial (which would drop it from Browse + its
         // update/rehydrate flows). The registry overrides a known app's URL
-        // fields and can ADD new apps; `core` (platform) status always comes
-        // from baked (fetchCatalog strips any remote `core`), so the registry
-        // can't make a platform app installable or drop its protection. This is
-        // what lets a newly-published app appear without a store-app redeploy —
-        // appending it to catalog.json on main is enough. On fetch failure /
+        // fields and can ADD new apps. This is what lets a newly-published app
+        // appear without a store-app redeploy — appending it to catalog.json on
+        // main is enough. On fetch failure /
         // empty result, the baked CATALOG carries the store untouched.
         let entries = CATALOG
         try {
@@ -307,7 +318,7 @@ export default function App({ appId, token }) {
     // yet hydrated (manifest null) fall back to their raw id; that only means
     // they wait for the next refresh after mount hydration lands, never a silent
     // permanent miss.
-    const targets = catalogRef.current.filter(c => !c.core && findInstalled(apps, c))
+    const targets = catalogRef.current.filter(c => findInstalled(apps, c))
     if (targets.length === 0) {
       // Nothing installed to check — still stamp the time so we don't probe
       // findInstalled on every single focus event.
@@ -356,6 +367,22 @@ export default function App({ appId, token }) {
     if (apps) await refreshCatalogManifests(apps)
   }, [refreshInstalled, refreshCatalogManifests])
 
+  const refreshSetupState = useCallback(async () => {
+    setSetupCompletions(readSetupCompletions())
+    setSystemSetupComplete(readSystemSetupReady())
+    const nextProviderStatus = await loadProviderStatus(token)
+    if (nextProviderStatus) setProviderStatus(nextProviderStatus)
+  }, [token])
+
+  useEffect(() => {
+    function onStorage(e) {
+      if (e.key === SETUP_COMPLETIONS_KEY) setSetupCompletions(readSetupCompletions())
+      if (e.key === SYSTEM_SETUP_READY_KEY) setSystemSetupComplete(readSystemSetupReady())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   // The drawer-delete path lives in the shell, not here — when the user
   // uninstalls from the drawer and navigates back, our `installed`
   // state still shows the deleted row as "Installed" until something
@@ -369,6 +396,7 @@ export default function App({ appId, token }) {
   useEffect(() => {
     function maybeRefresh() {
       if (document.visibilityState !== 'visible') return
+      refreshSetupState().catch(() => {})
       refreshInstalled().then(apps => {
         // refreshInstalled returns null if a refresh was already in flight OR
         // on a transport failure; the in-flight one will land the rows, and the
@@ -390,7 +418,7 @@ export default function App({ appId, token }) {
       window.removeEventListener('focus', maybeRefresh)
       window.removeEventListener('pageshow', maybeRefresh)
     }
-  }, [refreshInstalled, refreshCatalogManifests])
+  }, [refreshInstalled, refreshCatalogManifests, refreshSetupState])
 
   // Re-fetch a single catalog manifest. Wired into CatalogCard's
   // "Try again" affordance — replaces the previous behavior where a
@@ -435,9 +463,14 @@ export default function App({ appId, token }) {
       return
     }
     if (installedApp?.id) {
-      handleOpenInstalled(installedApp.id)
+      openInstalledApp(installedApp.id, { intent: 'setup' }, () => {
+        setToast({
+          kind: 'error',
+          message: 'Open this app from the drawer.',
+        })
+      })
     }
-  }, [handleOpenInstalled])
+  }, [])
 
   // Install / update runs inline from DetailView's primary button.
   // There is no intermediate confirm modal — DetailView is the
@@ -770,6 +803,10 @@ export default function App({ appId, token }) {
   }
 
   const displayCatalog = useMemo(() => sortCatalogForDisplay(catalog), [catalog])
+  const systemSetupReady = useMemo(
+    () => systemSetupComplete || hasConnectedProvider(providerStatus),
+    [systemSetupComplete, providerStatus],
+  )
   const lifecycleById = useMemo(() => {
     const byId = new Map()
     for (const item of displayCatalog) {
@@ -778,34 +815,33 @@ export default function App({ appId, token }) {
         installedVersions,
         updateNotice: updateNotice?.itemId === item.id ? updateNotice : null,
         installedUnavailable: !!installedLoadError,
+        setupCompletions,
+        systemSetupReady,
       }))
     }
     return byId
-  }, [displayCatalog, installed, installedVersions, updateNotice, installedLoadError])
+  }, [displayCatalog, installed, installedVersions, updateNotice, installedLoadError, setupCompletions, systemSetupReady])
 
   const filterCounts = useMemo(() => {
     let updates = 0
     let setup = 0
     let installedCount = 0
-    let system = 0
     for (const item of displayCatalog) {
       const lifecycle = lifecycleById.get(item.id)
       if (!lifecycle) continue
       if (lifecycle.key === 'update' || lifecycle.key === 'conflict') updates += 1
       if (lifecycle.installedApp) installedCount += 1
-      if (lifecycle.setupRequired) setup += 1
-      if (isSystemCatalogItem(item)) system += 1
+      if (lifecycle.setupNeedsAttention) setup += 1
     }
     return {
       update: updates,
       installed: installedCount,
-      system,
       setup,
     }
   }, [displayCatalog, lifecycleById])
 
   const visibleCatalog = useMemo(() => {
-    const specialFilters = new Set(['update', 'setup', 'system', 'installed'])
+    const specialFilters = new Set(['update', 'setup', 'installed'])
     const catalogCategory = specialFilters.has(category) ? 'all' : category
     const matches = filterCatalog(displayCatalog, { query, category: catalogCategory })
     if (category === 'update') {
@@ -815,10 +851,7 @@ export default function App({ appId, token }) {
       })
     }
     if (category === 'setup') {
-      return matches.filter((item) => lifecycleById.get(item.id)?.setupRequired)
-    }
-    if (category === 'system') {
-      return matches.filter((item) => isSystemCatalogItem(item))
+      return matches.filter((item) => lifecycleById.get(item.id)?.setupNeedsAttention)
     }
     if (category === 'installed') {
       return matches.filter((item) => !!lifecycleById.get(item.id)?.installedApp)
@@ -847,6 +880,8 @@ export default function App({ appId, token }) {
           onDismissNotice={handleDismissNotice}
           token={token}
           installedUnavailable={!!installedLoadError}
+          setupCompletions={setupCompletions}
+          systemSetupReady={systemSetupReady}
         />
         {pendingUninstall && (
           <UninstallConfirmModal
@@ -954,6 +989,8 @@ export default function App({ appId, token }) {
                     token={token}
                     emptyTitle="No matches"
                     emptyText="Try a different search or filter."
+                    setupCompletions={setupCompletions}
+                    systemSetupReady={systemSetupReady}
                   />
                 </>}
           </>

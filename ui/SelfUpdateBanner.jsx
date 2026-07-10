@@ -3,11 +3,12 @@ import { STORE_SELF, STORE_VERSION } from '../constants.js'
 import { semverCmp } from '../domain.js'
 import { fetchManifest, installApp } from '../api.js'
 
-// Self-update banner. The store is a core app and not in its own catalog grid,
-// so it checks for its OWN updates here: fetch the published manifest once, and
-// when that version is newer than the running STORE_VERSION, offer a one-tap
-// update that runs the same install transaction every other app uses, then
-// prompt a reload so the freshly-patched code loads. Renders null when current.
+// Self-update banner. The store is bootstrapped separately from its catalog
+// grid, so it checks for its OWN updates here: fetch the published manifest
+// once, and when that version is newer than the running STORE_VERSION, offer a
+// one-tap update that runs the same install transaction every other app uses,
+// then prompt a reload so the freshly-patched code loads. Renders null when
+// current.
 export function SelfUpdateBanner({ appId, token }) {
   const [latest, setLatest] = useState(null)   // manifest of the published store
   const [installedVer, setInstalledVer] = useState(null) // DB version of THIS app row
