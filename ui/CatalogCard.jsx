@@ -1,9 +1,8 @@
-import { appLifecycleFor, categoryLabel, itemCategories } from '../domain.js'
+import { appLifecycleFor } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 
 function cardVariantClass(variant) {
   if (variant === 'update') return 'st-card is-update'
-  if (variant === 'setup') return 'st-card is-setup'
   if (variant === 'conflict') return 'st-card is-conflict'
   if (variant === 'unavailable') return 'st-card is-unavailable'
   if (variant === 'installed') return 'st-card is-installed'
@@ -15,7 +14,7 @@ function busyLabelFor(actionKind) {
   if (actionKind === 'update') return 'Updating...'
   if (actionKind === 'resolve') return 'Opening...'
   if (actionKind === 'retry') return 'Retrying...'
-  if (actionKind === 'open' || actionKind === 'setup') return 'Opening...'
+  if (actionKind === 'open') return 'Opening...'
   return 'Installing...'
 }
 
@@ -82,7 +81,6 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
   const isActionable =
     lifecycle.actionKind !== 'none' &&
     (lifecycle.actionKind !== 'open' || canOpenInstalledApp) &&
-    (lifecycle.actionKind !== 'setup' || canOpenInstalledApp) &&
     (lifecycle.actionKind !== 'retry' || canRetryInstalled) &&
     canResolveUpdate
   const cardActionDisabled = busy || blocked || !isActionable
@@ -91,7 +89,7 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
   const actionLabel = busy ? busyLabelFor(lifecycle.actionKind) : lifecycle.actionLabel
   const onCardAction = () => {
     if (cardActionDisabled) return
-    if (lifecycle.actionKind === 'open' || lifecycle.actionKind === 'setup') {
+    if (lifecycle.actionKind === 'open') {
       onOpenInstalled?.(storeInstalled.id)
       return
     }
@@ -112,8 +110,6 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
   // styling ride is-* / :disabled, not inline objects.
   const cardActionClass = cardVariant === 'update'
     ? 'st-card-action is-update'
-    : cardVariant === 'setup'
-    ? 'st-card-action is-setup'
     : cardVariant === 'conflict'
     ? 'st-card-action is-conflict'
     : cardVariant === 'unavailable'
@@ -128,9 +124,6 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
   const itemWithIcon = storeInstalled
     ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon` }
     : item
-  const badges = itemCategories(item).filter((badge) => badge.toLowerCase() === 'system').slice(0, 1)
-  const needsSetup = item.setup?.required === true
-
   // The card is a non-interactive container. Two cleanly-separated AT
   // targets sit inside it: the app name is a real <button> whose ::after
   // overlay stretches across the whole card to open details (so the icon /
@@ -166,20 +159,6 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
       <div className={`st-card-state-line is-${lifecycle.key}`}>
         {lifecycle.statusLabel}
       </div>
-      {(badges.length > 0 || needsSetup) && (
-        <div className="st-card-badges">
-          {badges.map((badge) => (
-            <span key={badge} className="st-card-badge">
-              {categoryLabel(badge)}
-            </span>
-          ))}
-          {needsSetup && (
-            <span className="st-card-badge is-setup">
-              Setup
-            </span>
-          )}
-        </div>
-      )}
       {m.description ? (
         <div className="st-card-desc" title={m.description}>{m.description}</div>
       ) : null}

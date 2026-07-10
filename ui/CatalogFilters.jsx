@@ -1,15 +1,14 @@
-import { categoryLabel } from '../domain.js'
-
-const PINNED_FILTERS = [
-  { id: 'updates-pending', label: 'Updates' },
-  { id: 'needs-setup', label: 'Needs setup' },
+const FILTERS = [
+  { id: 'all', label: 'All' },
   { id: 'installed', label: 'Installed' },
+  { id: 'update', label: 'Update' },
+  { id: 'system', label: 'System' },
+  { id: 'setup', label: 'Setup' },
 ]
 
 export function CatalogFilters({
   query,
   category,
-  categories = [],
   filterCounts = {},
   totalCount,
   resultCount,
@@ -17,11 +16,6 @@ export function CatalogFilters({
   onCategoryChange,
 }) {
   const selected = category || 'all'
-  const filters = [
-    { id: 'all', label: 'All' },
-    ...PINNED_FILTERS,
-    ...categories.map((id) => ({ id, label: categoryLabel(id) })),
-  ]
   return (
     <div className="st-discovery">
       <div className="st-search-row">
@@ -53,7 +47,7 @@ export function CatalogFilters({
         </div>
       </div>
       <div className="st-category-strip" aria-label="Catalog filters">
-        {filters.map((filter) => {
+        {FILTERS.map((filter) => {
           const count = filterCounts[filter.id]
           return (
             <button

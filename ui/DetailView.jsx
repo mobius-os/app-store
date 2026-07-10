@@ -7,7 +7,7 @@ function detailBusyLabel(actionKind) {
   if (actionKind === 'update') return 'Updating...'
   if (actionKind === 'retry') return 'Retrying...'
   if (actionKind === 'resolve') return 'Opening chat...'
-  if (actionKind === 'open' || actionKind === 'setup') return 'Opening...'
+  if (actionKind === 'open') return 'Opening...'
   return 'Installing...'
 }
 
@@ -28,7 +28,7 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
   const primaryActionDisabled =
     busy ||
     lifecycle.actionKind === 'none' ||
-    ((lifecycle.actionKind === 'open' || lifecycle.actionKind === 'setup') && !storeInstalled) ||
+    (lifecycle.actionKind === 'open' && !storeInstalled) ||
     (lifecycle.actionKind === 'retry' && !canRetryInstalled) ||
     (lifecycle.actionKind === 'resolve' && !updateNotice)
   const ca = m.permissions?.cross_app_access || 'none'
@@ -251,7 +251,6 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
             : blockedUpdate ? 'Resolve update'
             : lifecycle.actionKind === 'retry' ? 'Retry'
             : hasUpdate ? `Update to v${m.version}`
-            : lifecycle.actionKind === 'setup' ? 'Set up'
             : storeInstalled ? 'Open App'
             : lifecycle.actionLabel}
         </button>

@@ -300,10 +300,6 @@ export const CSS = `
   background: color-mix(in srgb, var(--accent) 10%, var(--surface));
   border-color: var(--accent);
 }
-.st-card.is-setup {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
-}
 .st-card.is-conflict {
   background: color-mix(in srgb, var(--danger, #e5484d) 8%, var(--surface));
   border-color: color-mix(in srgb, var(--danger, #e5484d) 70%, var(--border));
@@ -424,8 +420,7 @@ export const CSS = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.st-card-state-line.is-update,
-.st-card-state-line.is-setup { color: var(--accent); }
+.st-card-state-line.is-update { color: var(--accent); }
 .st-card-state-line.is-conflict { color: var(--danger, #e5484d); }
 .st-card-state-line.is-unavailable { color: var(--muted); }
 .st-card-agent {
@@ -435,33 +430,6 @@ export const CSS = `
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
   border-radius: 999px; padding: 1px 7px;
-}
-.st-card-badges {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 5px;
-  min-height: 22px;
-  margin: 0 0 8px;
-}
-.st-card-badge {
-  max-width: 100%;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--text) 14%, var(--border));
-  background: color-mix(in srgb, var(--text) 5%, transparent);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.st-card-badge.is-setup {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
 }
 .st-card-desc {
   font-size: 12px; color: var(--muted); line-height: 1.35;
@@ -509,7 +477,6 @@ export const CSS = `
    an off-brand second button colour. Installed = a muted, lower-emphasis
    fill so the primary actions stay the eye-catchers in the grid. */
 .st-card-action.is-update { background: var(--accent); }
-.st-card-action.is-setup { background: var(--accent); }
 .st-card-action.is-conflict {
   background: var(--danger, #e5484d);
   color: var(--accent-fg);

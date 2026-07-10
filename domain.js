@@ -149,22 +149,6 @@ export function appLifecycleFor(item, {
     }
   }
 
-  if (installedApp && setupRequired) {
-    return {
-      key: 'setup',
-      statusLabel: 'Needs setup',
-      actionLabel: 'Set up',
-      actionKind: 'setup',
-      cardVariant: 'setup',
-      installedApp,
-      installedVersion,
-      hasUpdate,
-      isCore,
-      setupRequired,
-      coreWithoutStoreRecord,
-    }
-  }
-
   if (installedApp) {
     return {
       key: 'installed',

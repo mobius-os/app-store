@@ -330,7 +330,11 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
   assert.equal(appLifecycleFor({
     ...item,
     manifest: { ...item.manifest, version: '1.1.0' },
-  }, { installed }).actionKind, 'setup')
+  }, { installed }).actionKind, 'open')
+  assert.equal(appLifecycleFor({
+    ...item,
+    manifest: { ...item.manifest, version: '1.1.0' },
+  }, { installed }).setupRequired, true)
 })
 
 test('scheduleSummary handles cron and on-demand jobs', async () => {

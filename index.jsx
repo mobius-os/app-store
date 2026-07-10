@@ -22,6 +22,7 @@ import {
   collectCategories,
   filterCatalog,
   findInstalled,
+  isSystemCatalogItem,
   semverCmp,
   sortCatalogForDisplay,
 } from './domain.js'
@@ -52,6 +53,7 @@ export {
   collectCategories,
   filterCatalog,
   findInstalled,
+  isSystemCatalogItem,
   humanCron,
   isTrustedHost,
   scheduleSummary,
@@ -751,7 +753,6 @@ export default function App({ appId, token }) {
   }
 
   const displayCatalog = useMemo(() => sortCatalogForDisplay(catalog), [catalog])
-  const catalogCategories = useMemo(() => collectCategories(displayCatalog), [displayCatalog])
   const lifecycleById = useMemo(() => {
     const byId = new Map()
     for (const item of displayCatalog) {
@@ -769,32 +770,38 @@ export default function App({ appId, token }) {
     let updates = 0
     let setup = 0
     let installedCount = 0
+    let system = 0
     for (const item of displayCatalog) {
       const lifecycle = lifecycleById.get(item.id)
       if (!lifecycle) continue
       if (lifecycle.key === 'update' || lifecycle.key === 'conflict') updates += 1
-      if (lifecycle.key === 'setup') setup += 1
       if (lifecycle.installedApp) installedCount += 1
+      if (lifecycle.setupRequired) setup += 1
+      if (isSystemCatalogItem(item)) system += 1
     }
     return {
-      'updates-pending': updates,
-      'needs-setup': setup,
+      update: updates,
       installed: installedCount,
+      system,
+      setup,
     }
   }, [displayCatalog, lifecycleById])
 
   const visibleCatalog = useMemo(() => {
-    const specialFilters = new Set(['updates-pending', 'needs-setup', 'installed'])
+    const specialFilters = new Set(['update', 'setup', 'system', 'installed'])
     const catalogCategory = specialFilters.has(category) ? 'all' : category
     const matches = filterCatalog(displayCatalog, { query, category: catalogCategory })
-    if (category === 'updates-pending') {
+    if (category === 'update') {
       return matches.filter((item) => {
         const lifecycle = lifecycleById.get(item.id)
         return lifecycle?.key === 'update' || lifecycle?.key === 'conflict'
       })
     }
-    if (category === 'needs-setup') {
-      return matches.filter((item) => lifecycleById.get(item.id)?.key === 'setup')
+    if (category === 'setup') {
+      return matches.filter((item) => lifecycleById.get(item.id)?.setupRequired)
+    }
+    if (category === 'system') {
+      return matches.filter((item) => isSystemCatalogItem(item))
     }
     if (category === 'installed') {
       return matches.filter((item) => !!lifecycleById.get(item.id)?.installedApp)
@@ -891,7 +898,6 @@ export default function App({ appId, token }) {
                   <CatalogFilters
                     query={query}
                     category={category}
-                    categories={catalogCategories}
                     filterCounts={filterCounts}
                     totalCount={catalog.length}
                     resultCount={visibleCatalog.length}
