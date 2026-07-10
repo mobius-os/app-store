@@ -209,11 +209,28 @@ export const CSS = `
   touch-action: manipulation;
   user-select: none;
   transition: background 150ms, border-color 150ms, color 150ms;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .st-chip.is-active {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, var(--surface));
   color: var(--text);
+}
+.st-chip-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1;
+  font-family: var(--mono, monospace);
 }
 @media (hover: hover) {
   .st-chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
@@ -231,6 +248,16 @@ export const CSS = `
 .st-notice.is-warning {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   color: var(--text);
+}
+.st-notice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.st-notice-row > span { min-width: 0; }
+.st-notice-action {
+  flex: 0 0 auto;
 }
 
 @media (max-width: 720px) {
@@ -272,6 +299,18 @@ export const CSS = `
 .st-card.is-update {
   background: color-mix(in srgb, var(--accent) 10%, var(--surface));
   border-color: var(--accent);
+}
+.st-card.is-setup {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+}
+.st-card.is-conflict {
+  background: color-mix(in srgb, var(--danger, #e5484d) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger, #e5484d) 70%, var(--border));
+}
+.st-card.is-unavailable {
+  background: color-mix(in srgb, var(--text) 4%, var(--surface));
+  border-color: color-mix(in srgb, var(--text) 22%, var(--border));
 }
 .st-card.is-installed {
   background: color-mix(in srgb, var(--text) 5%, var(--surface));
@@ -370,9 +409,25 @@ export const CSS = `
 .st-card-version {
   font-size: 12px; color: var(--muted);
   font-family: var(--mono, monospace);
-  margin-bottom: 7px;
+  margin-bottom: 5px;
   display: flex; align-items: center; gap: 6px;
 }
+.st-card-state-line {
+  max-width: 100%;
+  min-height: 17px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-card-state-line.is-update,
+.st-card-state-line.is-setup { color: var(--accent); }
+.st-card-state-line.is-conflict { color: var(--danger, #e5484d); }
+.st-card-state-line.is-unavailable { color: var(--muted); }
 .st-card-agent {
   font-family: var(--font, inherit); font-weight: 600;
   font-size: 12px; letter-spacing: 0;
@@ -454,6 +509,16 @@ export const CSS = `
    an off-brand second button colour. Installed = a muted, lower-emphasis
    fill so the primary actions stay the eye-catchers in the grid. */
 .st-card-action.is-update { background: var(--accent); }
+.st-card-action.is-setup { background: var(--accent); }
+.st-card-action.is-conflict {
+  background: var(--danger, #e5484d);
+  color: var(--accent-fg);
+}
+.st-card-action.is-unavailable {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+}
 .st-card-action.is-installed {
   background: color-mix(in srgb, var(--text) 9%, transparent);
   color: var(--text);
@@ -911,6 +976,13 @@ export const CSS = `
   .st-toast-btn:active { opacity: 0.8; transform: scale(0.97); }
 }
 @media (max-width: 520px) {
+  .st-notice-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .st-notice-action {
+    width: 100%;
+  }
   .st-toast {
     flex-direction: column;
     align-items: stretch;

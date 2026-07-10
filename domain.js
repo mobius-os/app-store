@@ -76,6 +76,142 @@ export function installedVersionFor(item, installedVersions, installedApp) {
     ''
 }
 
+export function appLifecycleFor(item, {
+  installed = [],
+  installedVersions = {},
+  updateNotice = null,
+  installedUnavailable = false,
+} = {}) {
+  const m = item?.manifest || null
+  const installedApp = item ? findInstalled(installed, item) : null
+  const installedVersion = installedVersionFor(item, installedVersions, installedApp)
+  const isCore = !!item?.core
+  const setupRequired = item?.setup?.required === true
+  const hasUpdate = !!(
+    installedApp &&
+    installedVersion &&
+    m?.version &&
+    semverCmp(installedVersion, m.version) < 0
+  )
+  const conflict = updateNotice?.kind === 'conflict' && updateNotice?.itemId === item?.id
+  const coreWithoutStoreRecord = isCore && !installedApp && !hasUpdate
+  const needsFreshInstalledState =
+    hasUpdate ||
+    conflict ||
+    (!installedApp && !isCore) ||
+    coreWithoutStoreRecord
+
+  if (installedUnavailable && needsFreshInstalledState) {
+    return {
+      key: 'unavailable',
+      statusLabel: 'Reconnect needed',
+      actionLabel: 'Retry',
+      actionKind: 'retry',
+      cardVariant: 'unavailable',
+      installedApp,
+      installedVersion,
+      hasUpdate,
+      isCore,
+      setupRequired,
+      coreWithoutStoreRecord,
+    }
+  }
+
+  if (conflict) {
+    return {
+      key: 'conflict',
+      statusLabel: 'Conflict',
+      actionLabel: 'Resolve',
+      actionKind: 'resolve',
+      cardVariant: 'conflict',
+      installedApp,
+      installedVersion,
+      hasUpdate,
+      isCore,
+      setupRequired,
+      coreWithoutStoreRecord,
+    }
+  }
+
+  if (hasUpdate) {
+    return {
+      key: 'update',
+      statusLabel: 'Update available',
+      actionLabel: 'Update',
+      actionKind: 'update',
+      cardVariant: 'update',
+      installedApp,
+      installedVersion,
+      hasUpdate,
+      isCore,
+      setupRequired,
+      coreWithoutStoreRecord,
+    }
+  }
+
+  if (installedApp && setupRequired) {
+    return {
+      key: 'setup',
+      statusLabel: 'Needs setup',
+      actionLabel: 'Set up',
+      actionKind: 'setup',
+      cardVariant: 'setup',
+      installedApp,
+      installedVersion,
+      hasUpdate,
+      isCore,
+      setupRequired,
+      coreWithoutStoreRecord,
+    }
+  }
+
+  if (installedApp) {
+    return {
+      key: 'installed',
+      statusLabel: installedVersion ? `Installed v${installedVersion}` : 'Installed',
+      actionLabel: 'Open',
+      actionKind: 'open',
+      cardVariant: 'installed',
+      installedApp,
+      installedVersion,
+      hasUpdate,
+      isCore,
+      setupRequired,
+      coreWithoutStoreRecord,
+    }
+  }
+
+  if (isCore) {
+    return {
+      key: 'built-in',
+      statusLabel: 'Built in',
+      actionLabel: 'Built in',
+      actionKind: 'none',
+      cardVariant: 'installed',
+      installedApp,
+      installedVersion,
+      hasUpdate,
+      isCore,
+      setupRequired,
+      coreWithoutStoreRecord,
+    }
+  }
+
+  return {
+    key: 'install',
+    statusLabel: setupRequired ? 'Setup after install' : 'Not installed',
+    actionLabel: 'Install',
+    actionKind: 'install',
+    cardVariant: 'default',
+    installedApp,
+    installedVersion,
+    hasUpdate,
+    isCore,
+    setupRequired,
+    coreWithoutStoreRecord,
+  }
+}
+
 // Turn a cron expression into something readable. Falls back to
 // the raw expression for anything non-trivial.
 export function humanCron(expr) {

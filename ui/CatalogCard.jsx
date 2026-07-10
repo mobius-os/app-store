@@ -1,11 +1,22 @@
-import { categoryLabel, findInstalled, installedVersionFor, itemCategories, semverCmp } from '../domain.js'
+import { appLifecycleFor, categoryLabel, itemCategories } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 
 function cardVariantClass(variant) {
   if (variant === 'update') return 'st-card is-update'
+  if (variant === 'setup') return 'st-card is-setup'
+  if (variant === 'conflict') return 'st-card is-conflict'
+  if (variant === 'unavailable') return 'st-card is-unavailable'
   if (variant === 'installed') return 'st-card is-installed'
   if (variant === 'error') return 'st-card is-error'
   return 'st-card'
+}
+
+function busyLabelFor(actionKind) {
+  if (actionKind === 'update') return 'Updating...'
+  if (actionKind === 'resolve') return 'Opening...'
+  if (actionKind === 'retry') return 'Retrying...'
+  if (actionKind === 'open' || actionKind === 'setup') return 'Opening...'
+  return 'Installing...'
 }
 
 // One catalog tile. The card is a non-interactive container; the open
@@ -15,7 +26,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, onOpenInstalled, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
+export function CatalogCard({ item, installed, installedVersions, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -57,56 +68,42 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
     )
   }
 
-  // Match by manifest_url — the URL the app was installed from.
-  // Slug is now pure routing (allocate_unique_slug on collision);
-  // identity lives on manifest_url. A user-built app and a store-
-  // installed app with the same slug coexist; the store can find
-  // its own apps regardless of slug bumps.
-  const storeInstalled = findInstalled(installed, item)
-  const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
-  const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
-  // One footer action plus a card-level variant (border / installed-dot)
-  // so the state is obvious before the user opens details.
-  let statusLabel = 'Install'
-  let cardVariant = 'default'
-  if (item.core && hasUpdate) {
-    // Platform core app with a newer published version — updatable in place.
-    // It stays NON-uninstallable (see DetailView); the update keys on the
-    // app's manifest identity, so the backend updates the existing row (no
-    // dup), and install-core-apps skips store-managed apps so the deploy
-    // re-sync won't fight it.
-    statusLabel = 'Update'
-    cardVariant = 'update'
-  } else if (item.core) {
-    // Platform core app, up to date — always present, never uninstallable.
-    statusLabel = storeInstalled ? 'Open' : 'Built in'
-    cardVariant = 'installed'
-  } else if (storeInstalled && hasUpdate) {
-    statusLabel = 'Update'
-    cardVariant = 'update'
-  } else if (storeInstalled) {
-    statusLabel = 'Open'
-    cardVariant = 'installed'
-  }
-  const opensInstalledApp = !!storeInstalled && cardVariant === 'installed'
-  const canOpenInstalledApp = opensInstalledApp && typeof onOpenInstalled === 'function'
-  const isActionable = cardVariant !== 'installed' || canOpenInstalledApp
-  const needsFreshInstalledState = cardVariant === 'default' || cardVariant === 'update'
-  const cardActionDisabled = busy || blocked || (installedUnavailable && needsFreshInstalledState) || !isActionable
+  const lifecycle = appLifecycleFor(item, {
+    installed,
+    installedVersions,
+    updateNotice,
+    installedUnavailable,
+  })
+  const storeInstalled = lifecycle.installedApp
+  const cardVariant = lifecycle.cardVariant
+  const canOpenInstalledApp = !!storeInstalled && typeof onOpenInstalled === 'function'
+  const canRetryInstalled = typeof onRetryInstalled === 'function'
+  const canResolveUpdate = lifecycle.actionKind !== 'resolve' || !!updateNotice
+  const isActionable =
+    lifecycle.actionKind !== 'none' &&
+    (lifecycle.actionKind !== 'open' || canOpenInstalledApp) &&
+    (lifecycle.actionKind !== 'setup' || canOpenInstalledApp) &&
+    (lifecycle.actionKind !== 'retry' || canRetryInstalled) &&
+    canResolveUpdate
+  const cardActionDisabled = busy || blocked || !isActionable
   const showUpdateNotice = updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
-  const actionLabel = installedUnavailable && needsFreshInstalledState
-    ? 'Unavailable'
-    : busy
-      ? cardVariant === 'update' ? 'Updating…' : 'Installing…'
-      : statusLabel
+  const actionLabel = busy ? busyLabelFor(lifecycle.actionKind) : lifecycle.actionLabel
   const onCardAction = () => {
     if (cardActionDisabled) return
-    if (canOpenInstalledApp) {
+    if (lifecycle.actionKind === 'open' || lifecycle.actionKind === 'setup') {
       onOpenInstalled?.(storeInstalled.id)
       return
     }
-    onUpdate?.(item, { isUpdate: cardVariant === 'update' })
+    if (lifecycle.actionKind === 'resolve') {
+      onReviewUpdate?.(updateNotice)
+      return
+    }
+    if (lifecycle.actionKind === 'retry') {
+      onRetryInstalled?.()
+      return
+    }
+    onUpdate?.(item, { isUpdate: lifecycle.actionKind === 'update' })
   }
 
   // The subtle hover/focus lift (translate + accent shadow/border) rides
@@ -115,6 +112,12 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
   // styling ride is-* / :disabled, not inline objects.
   const cardActionClass = cardVariant === 'update'
     ? 'st-card-action is-update'
+    : cardVariant === 'setup'
+    ? 'st-card-action is-setup'
+    : cardVariant === 'conflict'
+    ? 'st-card-action is-conflict'
+    : cardVariant === 'unavailable'
+    ? 'st-card-action is-unavailable'
     : cardVariant === 'installed'
     ? 'st-card-action is-installed'
     : 'st-card-action'
@@ -160,6 +163,9 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
           <span className="st-card-agent" title="This app has a built-in agent">agent</span>
         ) : null}
       </div>
+      <div className={`st-card-state-line is-${lifecycle.key}`}>
+        {lifecycle.statusLabel}
+      </div>
       {(badges.length > 0 || needsSetup) && (
         <div className="st-card-badges">
           {badges.map((badge) => (
@@ -183,13 +189,7 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
           className={cardActionClass}
           disabled={cardActionDisabled}
           onClick={onCardAction}
-          aria-label={
-            cardVariant === 'update'
-              ? `Update ${m.name} to v${m.version}`
-              : cardVariant === 'installed'
-              ? `Open ${m.name}`
-              : `Install ${m.name}`
-          }
+          aria-label={`${lifecycle.actionLabel} ${m.name}`}
         >
           {actionLabel}
         </button>
@@ -198,14 +198,6 @@ export function CatalogCard({ item, installed, installedVersions, onPick, onRetr
         <div className="st-card-notice">
           <div>{updateNotice.message}</div>
           <div className="st-card-notice-actions">
-            <button
-              type="button"
-              className="st-big-btn"
-              onClick={() => onReviewUpdate(updateNotice)}
-              disabled={noticeDisabled}
-            >
-              Reconcile & update
-            </button>
             <button
               type="button"
               className="st-btn st-btn-secondary"

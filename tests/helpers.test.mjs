@@ -301,6 +301,38 @@ test('sortCatalogForDisplay promotes system apps without scrambling groups', asy
   assert.deepEqual(collectCategories(sorted).slice(0, 3), ['system', 'agents', 'development'])
 })
 
+test('appLifecycleFor chooses one primary action per catalog state', async () => {
+  const { appLifecycleFor } = await bundle()
+  const item = {
+    id: 'news',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-news/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-news/main/',
+    setup: { required: true, scope: 'app' },
+    manifest: { id: 'news', name: 'News', version: '1.2.0' },
+  }
+  const installed = [{
+    id: 3,
+    slug: 'news',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-news/main#manifest-id=news',
+    version: '1.1.0',
+  }]
+
+  assert.equal(appLifecycleFor(item).actionKind, 'install')
+  assert.equal(appLifecycleFor(item, { installed }).actionKind, 'update')
+  assert.equal(appLifecycleFor(item, {
+    installed,
+    updateNotice: { kind: 'conflict', itemId: 'news' },
+  }).actionKind, 'resolve')
+  assert.equal(appLifecycleFor(item, {
+    installed,
+    installedUnavailable: true,
+  }).actionKind, 'retry')
+  assert.equal(appLifecycleFor({
+    ...item,
+    manifest: { ...item.manifest, version: '1.1.0' },
+  }, { installed }).actionKind, 'setup')
+})
+
 test('scheduleSummary handles cron and on-demand jobs', async () => {
   const { scheduleSummary } = await bundle()
 

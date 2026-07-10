@@ -1,29 +1,36 @@
 import { PERM_EXPLAIN } from '../constants.js'
-import { findInstalled, installedVersionFor, isTrustedHost, scheduleSummary, semverCmp } from '../domain.js'
+import { appLifecycleFor, isTrustedHost, scheduleSummary } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 import { PermissionRow } from './PermissionRow.jsx'
 
-export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
+function detailBusyLabel(actionKind) {
+  if (actionKind === 'update') return 'Updating...'
+  if (actionKind === 'retry') return 'Retrying...'
+  if (actionKind === 'resolve') return 'Opening chat...'
+  if (actionKind === 'open' || actionKind === 'setup') return 'Opening...'
+  return 'Installing...'
+}
+
+export function DetailView({ item, installed, installedVersions, onBack, onInstall, onUninstall, onOpenInstalled, onRetryInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false }) {
   const m = item.manifest
-  // Match by manifest_url — see CatalogList comment. Slug collisions
-  // between user apps and store apps are resolved transparently by
-  // allocate_unique_slug on the backend; the store reads its own
-  // installed apps via manifest_url, never slug.
-  const storeInstalled = findInstalled(installed, item)
-  const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
-  // Core apps (Reflection, Memory) are platform-managed: never offer a fresh
-  // install or an uninstall (the Uninstall button below stays gated on
-  // !isCore, so a platform app can't be removed). They ARE updatable in place
-  // when the published version is newer — install-core-apps skips store-managed
-  // apps so a store update doesn't fight the deploy re-sync, and the backend
-  // updates the existing row by manifest identity (no dup).
-  const isCore = !!item.core
-  const hasUpdate = storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0
-  const blockedUpdate = updateNotice?.kind === 'conflict'
-  const coreWithoutStoreRecord = isCore && !storeInstalled && !hasUpdate
-  const needsFreshInstalledState = hasUpdate || blockedUpdate || (!storeInstalled && !isCore) || (installedUnavailable && coreWithoutStoreRecord)
-  const actionBlockedByInstalledState = installedUnavailable && needsFreshInstalledState
-  const primaryActionDisabled = busy || actionBlockedByInstalledState || coreWithoutStoreRecord
+  const lifecycle = appLifecycleFor(item, {
+    installed,
+    installedVersions,
+    updateNotice,
+    installedUnavailable,
+  })
+  const storeInstalled = lifecycle.installedApp
+  const installedVer = lifecycle.installedVersion
+  const isCore = lifecycle.isCore
+  const hasUpdate = lifecycle.hasUpdate
+  const blockedUpdate = lifecycle.key === 'conflict'
+  const canRetryInstalled = typeof onRetryInstalled === 'function'
+  const primaryActionDisabled =
+    busy ||
+    lifecycle.actionKind === 'none' ||
+    ((lifecycle.actionKind === 'open' || lifecycle.actionKind === 'setup') && !storeInstalled) ||
+    (lifecycle.actionKind === 'retry' && !canRetryInstalled) ||
+    (lifecycle.actionKind === 'resolve' && !updateNotice)
   const ca = m.permissions?.cross_app_access || 'none'
   const sw = m.permissions?.share_with_apps || 'none'
   const ma = !!m.permissions?.manage_apps
@@ -65,8 +72,16 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
         <p className="st-detail-desc">{m.description}</p>
 
         {installedUnavailable && (
-          <div className="st-notice is-warning" role="status">
-            Installed apps could not be refreshed. Install and update actions are paused until this reconnects.
+          <div className="st-notice is-warning st-notice-row" role="status">
+            <span>Installed apps could not be refreshed. Install and update actions are paused until this reconnects.</span>
+            <button
+              type="button"
+              className="st-btn st-btn-secondary st-notice-action"
+              onClick={onRetryInstalled}
+              disabled={busy || !canRetryInstalled}
+            >
+              Retry
+            </button>
           </div>
         )}
 
@@ -116,7 +131,9 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
                 <div className="st-setup-note">{setup.description}</div>
               )}
               <div className="st-setup-meta">
-                {setup.scope === 'system' ? 'Configure from Möbius Settings' : 'Configure inside the app'}
+                {storeInstalled
+                  ? (setup.scope === 'system' ? 'Open the app to finish setup' : 'Configure inside the app')
+                  : (setup.scope === 'system' ? 'Install first, then finish setup' : 'Setup follows install')}
               </div>
             </div>
           </div>
@@ -159,7 +176,7 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
                     disabled={busy}
                   >
                     {updateNotice.kind === 'conflict'
-                      ? 'Reconcile & update'
+                      ? 'Resolve update'
                       : busy
                       ? 'Opening chat...'
                       : 'Review in chat'}
@@ -202,7 +219,8 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
           - installed, up to date:    [ Open App ]           (primary)
           - installed, update ready:  [ Update to vX ]       (primary)
                                       [ Uninstall ]          (secondary)
-          - update blocked (conflict):[ Reconcile & update ] (primary)
+          - update blocked (conflict):[ Resolve update ]     (primary)
+          - app list fetch failed:    [ Retry ]              (primary)
           The Install/Update button commits directly — there is no second
           confirm modal. DetailView is the confirmation surface; the user
           already saw permissions, schedule, esm.sh deps and the host
@@ -220,18 +238,22 @@ export function DetailView({ item, installed, installedVersions, onBack, onInsta
               onReviewUpdate(updateNotice)
               return
             }
+            if (lifecycle.actionKind === 'retry') {
+              onRetryInstalled?.()
+              return
+            }
             if (hasUpdate) onInstall(item, { isUpdate: true, existingId: storeInstalled.id })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
             else if (!isCore) onInstall(item, { isUpdate: false })
           }}
         >
-          {actionBlockedByInstalledState ? 'Unavailable'
-            : blockedUpdate ? 'Reconcile & update'
-            : busy ? (hasUpdate ? 'Updating…' : 'Installing…')
+          {busy ? detailBusyLabel(lifecycle.actionKind)
+            : blockedUpdate ? 'Resolve update'
+            : lifecycle.actionKind === 'retry' ? 'Retry'
             : hasUpdate ? `Update to v${m.version}`
+            : lifecycle.actionKind === 'setup' ? 'Set up'
             : storeInstalled ? 'Open App'
-            : coreWithoutStoreRecord ? 'Built in'
-            : 'Install'}
+            : lifecycle.actionLabel}
         </button>
         {storeInstalled && !isCore && (
           <button

@@ -17,11 +17,11 @@ import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
 import {
   buildCleanMergeReviewMessage,
+  appLifecycleFor,
   canonicalIdentityKey,
   collectCategories,
   filterCatalog,
   findInstalled,
-  installedVersionFor,
   semverCmp,
   sortCatalogForDisplay,
 } from './domain.js'
@@ -47,6 +47,7 @@ import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 
 export {
+  appLifecycleFor,
   canonicalIdentityKey,
   collectCategories,
   filterCatalog,
@@ -92,14 +93,6 @@ function Toast({ toast, onDismiss }) {
       </div>
     </div>
   )
-}
-
-function hasPendingCatalogUpdate(item, installed, installedVersions) {
-  const m = item?.manifest
-  if (!m?.version) return false
-  const storeInstalled = findInstalled(installed, item)
-  const installedVer = installedVersionFor(item, installedVersions, storeInstalled)
-  return !!(storeInstalled && installedVer && semverCmp(installedVer, m.version) < 0)
 }
 
 async function mapWithConcurrency(items, limit, mapper) {
@@ -354,6 +347,11 @@ export default function App({ appId, token }) {
       manifestRehydratingRef.current = false
     }
   }, [token])
+
+  const handleRetryInstalled = useCallback(async () => {
+    const apps = await refreshInstalled()
+    if (apps) await refreshCatalogManifests(apps)
+  }, [refreshInstalled, refreshCatalogManifests])
 
   // The drawer-delete path lives in the shell, not here — when the user
   // uninstalls from the drawer and navigates back, our `installed`
@@ -754,13 +752,55 @@ export default function App({ appId, token }) {
 
   const displayCatalog = useMemo(() => sortCatalogForDisplay(catalog), [catalog])
   const catalogCategories = useMemo(() => collectCategories(displayCatalog), [displayCatalog])
+  const lifecycleById = useMemo(() => {
+    const byId = new Map()
+    for (const item of displayCatalog) {
+      byId.set(item.id, appLifecycleFor(item, {
+        installed,
+        installedVersions,
+        updateNotice: updateNotice?.itemId === item.id ? updateNotice : null,
+        installedUnavailable: !!installedLoadError,
+      }))
+    }
+    return byId
+  }, [displayCatalog, installed, installedVersions, updateNotice, installedLoadError])
+
+  const filterCounts = useMemo(() => {
+    let updates = 0
+    let setup = 0
+    let installedCount = 0
+    for (const item of displayCatalog) {
+      const lifecycle = lifecycleById.get(item.id)
+      if (!lifecycle) continue
+      if (lifecycle.key === 'update' || lifecycle.key === 'conflict') updates += 1
+      if (lifecycle.key === 'setup') setup += 1
+      if (lifecycle.installedApp) installedCount += 1
+    }
+    return {
+      'updates-pending': updates,
+      'needs-setup': setup,
+      installed: installedCount,
+    }
+  }, [displayCatalog, lifecycleById])
 
   const visibleCatalog = useMemo(() => {
-    const catalogCategory = category === 'updates-pending' ? 'all' : category
+    const specialFilters = new Set(['updates-pending', 'needs-setup', 'installed'])
+    const catalogCategory = specialFilters.has(category) ? 'all' : category
     const matches = filterCatalog(displayCatalog, { query, category: catalogCategory })
-    if (category !== 'updates-pending') return matches
-    return matches.filter((item) => hasPendingCatalogUpdate(item, installed, installedVersions))
-  }, [displayCatalog, query, category, installed, installedVersions])
+    if (category === 'updates-pending') {
+      return matches.filter((item) => {
+        const lifecycle = lifecycleById.get(item.id)
+        return lifecycle?.key === 'update' || lifecycle?.key === 'conflict'
+      })
+    }
+    if (category === 'needs-setup') {
+      return matches.filter((item) => lifecycleById.get(item.id)?.key === 'setup')
+    }
+    if (category === 'installed') {
+      return matches.filter((item) => !!lifecycleById.get(item.id)?.installedApp)
+    }
+    return matches
+  }, [displayCatalog, query, category, lifecycleById])
 
   // Detail view replaces the main layout when set.
   if (detail) {
@@ -775,6 +815,7 @@ export default function App({ appId, token }) {
           onInstall={handleInstall}
           onUninstall={handleUninstall}
           onOpenInstalled={handleOpenInstalled}
+          onRetryInstalled={handleRetryInstalled}
           busy={busy}
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
@@ -851,14 +892,23 @@ export default function App({ appId, token }) {
                     query={query}
                     category={category}
                     categories={catalogCategories}
+                    filterCounts={filterCounts}
                     totalCount={catalog.length}
                     resultCount={visibleCatalog.length}
                     onQueryChange={setQuery}
                     onCategoryChange={setCategory}
                   />
                   {installedLoadError && (
-                    <div className="st-notice is-warning" role="status">
-                      {installedLoadError} Install and update actions are paused until this refreshes.
+                    <div className="st-notice is-warning st-notice-row" role="status">
+                      <span>{installedLoadError} Install and update actions are paused until this refreshes.</span>
+                      <button
+                        type="button"
+                        className="st-btn st-btn-secondary st-notice-action"
+                        onClick={handleRetryInstalled}
+                        disabled={busy}
+                      >
+                        Retry
+                      </button>
                     </div>
                   )}
                   <CatalogList
@@ -869,6 +919,7 @@ export default function App({ appId, token }) {
                     onRetry={retryCatalogItem}
                     onUpdate={handleInstall}
                     onOpenInstalled={handleOpenInstalled}
+                    onRetryInstalled={handleRetryInstalled}
                     busy={busy}
                     installedUnavailable={!!installedLoadError}
                     busyItemId={busyItemId}

@@ -8,6 +8,7 @@ export function CatalogList({
   onRetry,
   onUpdate,
   onOpenInstalled,
+  onRetryInstalled,
   busy,
   busyItemId,
   errors,
@@ -37,6 +38,7 @@ export function CatalogList({
       onRetry={onRetry}
       onUpdate={onUpdate}
       onOpenInstalled={onOpenInstalled}
+      onRetryInstalled={onRetryInstalled}
       busy={busyItemId === item.id}
       blocked={busy && busyItemId !== item.id}
       error={errors?.[item.id]}

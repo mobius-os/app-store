@@ -1,13 +1,16 @@
 import { categoryLabel } from '../domain.js'
 
 const PINNED_FILTERS = [
-  { id: 'updates-pending', label: 'Updates pending' },
+  { id: 'updates-pending', label: 'Updates' },
+  { id: 'needs-setup', label: 'Needs setup' },
+  { id: 'installed', label: 'Installed' },
 ]
 
 export function CatalogFilters({
   query,
   category,
   categories = [],
+  filterCounts = {},
   totalCount,
   resultCount,
   onQueryChange,
@@ -16,8 +19,8 @@ export function CatalogFilters({
   const selected = category || 'all'
   const filters = [
     { id: 'all', label: 'All' },
-    ...categories.map((id) => ({ id, label: categoryLabel(id) })),
     ...PINNED_FILTERS,
+    ...categories.map((id) => ({ id, label: categoryLabel(id) })),
   ]
   return (
     <div className="st-discovery">
@@ -50,17 +53,23 @@ export function CatalogFilters({
         </div>
       </div>
       <div className="st-category-strip" aria-label="Catalog filters">
-        {filters.map((filter) => (
-          <button
-            key={filter.id}
-            type="button"
-            className={`st-chip${selected === filter.id ? ' is-active' : ''}`}
-            aria-pressed={selected === filter.id}
-            onClick={() => onCategoryChange(filter.id === 'all' || selected === filter.id ? 'all' : filter.id)}
-          >
-            {filter.label}
-          </button>
-        ))}
+        {filters.map((filter) => {
+          const count = filterCounts[filter.id]
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              className={`st-chip${selected === filter.id ? ' is-active' : ''}`}
+              aria-pressed={selected === filter.id}
+              onClick={() => onCategoryChange(filter.id === 'all' || selected === filter.id ? 'all' : filter.id)}
+            >
+              <span>{filter.label}</span>
+              {Number.isFinite(count) && count > 0 ? (
+                <span className="st-chip-count">{count}</span>
+              ) : null}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
