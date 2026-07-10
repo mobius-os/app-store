@@ -377,3 +377,18 @@ test('STORE_VERSION stays in lockstep with mobius.json', async () => {
   const { STORE_VERSION } = await bundle()
   assert.equal(STORE_VERSION, manifest.version)
 })
+
+test('Beat Machine catalog snapshot matches the sequencer manifest', async () => {
+  const catalog = JSON.parse(await readFile(join(root, '..', 'catalog.json'), 'utf8'))
+  const localManifest = JSON.parse(
+    await readFile(join(root, '..', '..', 'app-beat-machine', 'mobius.json'), 'utf8'),
+  )
+  const entry = catalog.apps.find((item) => item.id === 'beat-machine')
+
+  assert.ok(entry, 'catalog contains Beat Machine')
+  assert.deepEqual(entry.manifest.source_files, localManifest.source_files)
+  assert.equal(entry.manifest.version, localManifest.version)
+  assert.match(entry.manifest.description, /32-step sequencer/i)
+  assert.ok(entry.keywords.includes('sequencer'))
+  assert.ok(entry.capabilities.some((capability) => /32-step/.test(capability)))
+})

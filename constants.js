@@ -134,8 +134,8 @@ export const CATALOG = [
       manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/mobius.json',
       raw_base: 'https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/',
       categories: ['creative'],
-      keywords: ['beats', 'drums', 'sampler', 'music', 'audio', 'recording', 'effects'],
-      capabilities: ['play drum pads', 'record samples', 'mix echo and reverb'],
+      keywords: ['beats', 'sequencer', 'step sequencer', 'patterns', 'music', 'audio', 'recording', 'effects'],
+      capabilities: ['sequence 32-step patterns', 'record custom sounds', 'adjust bpm and effects'],
     },
   {
       id: 'atlas',
