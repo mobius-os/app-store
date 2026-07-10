@@ -307,9 +307,12 @@ export async function fetchCatalog(url, token, opts = {}) {
 // pre-release never reads as "up to date" against its own release.
 export async function installApp({ manifest_url, manifest, raw_base, token }) {
   const body = {}
-  if (manifest_url) body.manifest_url = manifest_url
-  if (manifest) body.manifest = manifest
-  if (raw_base) body.raw_base = raw_base
+  if (manifest_url) {
+    body.manifest_url = manifest_url
+  } else {
+    if (manifest) body.manifest = manifest
+    if (raw_base) body.raw_base = raw_base
+  }
   const res = await fetch('/api/apps/install', {
     method: 'POST',
     headers: {
