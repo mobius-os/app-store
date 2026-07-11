@@ -1,4 +1,4 @@
-import { appLifecycleFor } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 
 function cardVariantClass(variant) {
@@ -10,14 +10,6 @@ function cardVariantClass(variant) {
   return 'st-card'
 }
 
-function busyLabelFor(actionKind) {
-  if (actionKind === 'update') return 'Updating...'
-  if (actionKind === 'resolve') return 'Opening...'
-  if (actionKind === 'retry') return 'Retrying...'
-  if (actionKind === 'open') return 'Opening...'
-  return 'Installing...'
-}
-
 // One catalog tile. The card is a non-interactive container; the open
 // affordance is a real <button class="st-card-open"> (the app name) whose
 // ::after overlay stretches over the card, and the action button is a
@@ -25,7 +17,7 @@ function busyLabelFor(actionKind) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, installedVersions, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function CatalogCard({ item, installed, installedVersions, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -89,7 +81,7 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
   const cardActionDisabled = busy || blocked || !isActionable
   const showUpdateNotice = updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
-  const actionLabel = busy ? busyLabelFor(lifecycle.actionKind) : lifecycle.actionLabel
+  const actionLabel = busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind) : lifecycle.actionLabel
   const onCardAction = () => {
     if (cardActionDisabled) return
     if (lifecycle.actionKind === 'open') {

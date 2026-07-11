@@ -1,15 +1,7 @@
 import { PERM_EXPLAIN } from '../constants.js'
-import { appLifecycleFor, isTrustedHost, scheduleSummary } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 import { PermissionRow } from './PermissionRow.jsx'
-
-function detailBusyLabel(actionKind) {
-  if (actionKind === 'update') return 'Updating...'
-  if (actionKind === 'retry') return 'Retrying...'
-  if (actionKind === 'resolve') return 'Opening chat...'
-  if (actionKind === 'open') return 'Opening...'
-  return 'Installing...'
-}
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -20,7 +12,7 @@ function setupMetaText(setup, storeInstalled) {
     : 'Install first; setup appears on first open'
 }
 
-export function DetailView({ item, installed, installedVersions, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, installed, installedVersions, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = item.manifest
   const lifecycle = appLifecycleFor(item, {
     installed,
@@ -200,10 +192,10 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
                     onClick={() => onReviewUpdate(updateNotice)}
                     disabled={busy}
                   >
-                    {updateNotice.kind === 'conflict'
+                    {busy
+                      ? busyLabelForAction('resolve')
+                      : updateNotice.kind === 'conflict'
                       ? 'Resolve update'
-                      : busy
-                      ? 'Opening chat...'
                       : 'Review in chat'}
                   </button>
                   <button
@@ -272,7 +264,7 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
             else onInstall(item, { isUpdate: false })
           }}
         >
-          {busy ? detailBusyLabel(lifecycle.actionKind)
+          {busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind)
             : blockedUpdate ? 'Resolve update'
             : lifecycle.actionKind === 'retry' ? 'Retry'
             : hasUpdate ? `Update to v${m.version}`

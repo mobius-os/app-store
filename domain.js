@@ -70,6 +70,15 @@ export function installedVersionFor(item, installedVersions, installedApp) {
     ''
 }
 
+export function busyLabelForAction(actionKind) {
+  if (actionKind === 'update') return 'Updating...'
+  if (actionKind === 'resolve') return 'Opening chat...'
+  if (actionKind === 'retry') return 'Retrying...'
+  if (actionKind === 'open') return 'Opening...'
+  if (actionKind === 'uninstall') return 'Uninstalling...'
+  return 'Installing...'
+}
+
 export function appLifecycleFor(item, {
   installed = [],
   installedVersions = {},
