@@ -18,6 +18,7 @@ import { CSS } from './theme.js'
 import {
   buildCleanMergeReviewMessage,
   appLifecycleFor,
+  busyLabelForAction,
   canonicalIdentityKey,
   collectCategories,
   filterCatalog,
@@ -57,6 +58,7 @@ import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 
 export {
   appLifecycleFor,
+  busyLabelForAction,
   canonicalIdentityKey,
   collectCategories,
   filterCatalog,
@@ -149,12 +151,28 @@ async function fetchUpdateChecksFor(rows, token) {
 // up-to-date store must not re-render its grid on every focus regain (mirrors
 // the manifest-refetch skip). Only newly-answered or flipped ids force a new
 // object.
-function mergeUpdateChecks(prev, incoming) {
+export function mergeUpdateChecks(prev, incoming) {
   let changed = false
   for (const k in incoming) {
     if (prev[k] !== incoming[k]) { changed = true; break }
   }
   return changed ? { ...prev, ...incoming } : prev
+}
+
+function withoutKey(prev, key) {
+  if (!key || !Object.prototype.hasOwnProperty.call(prev, key)) return prev
+  const next = { ...prev }
+  delete next[key]
+  return next
+}
+
+function itemIdsSettledByChecks(items, apps, checks) {
+  const settled = new Set()
+  for (const item of items || []) {
+    const app = findInstalled(apps || [], item)
+    if (app && checks?.[app.id] === false) settled.add(item.id)
+  }
+  return settled
 }
 
 export default function App({ appId, token }) {
@@ -201,6 +219,7 @@ export default function App({ appId, token }) {
   // confirmation as in-app state and render our own modal.
   const [busy, setBusy] = useState(false)
   const [busyItemId, setBusyItemId] = useState(null)
+  const [busyActionKind, setBusyActionKind] = useState(null)
   const [toast, setToast] = useState(null)
   const [updateNotice, setUpdateNotice] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
@@ -223,6 +242,16 @@ export default function App({ appId, token }) {
   // window elapses; the mount effect re-stamps once hydration lands.
   const lastManifestRefreshRef = useRef(Date.now())
   const manifestRehydratingRef = useRef(false)
+
+  const clearSettledUpdateArtifacts = useCallback((itemIds) => {
+    if (!itemIds?.size) return
+    setCardErrors(prev => {
+      let next = prev
+      for (const id of itemIds) next = withoutKey(next, id)
+      return next
+    })
+    setUpdateNotice(prev => (prev && itemIds.has(prev.itemId) ? null : prev))
+  }, [])
 
   // Initial fetch: catalog manifests + installed apps + version map.
   // Every await is guarded so a single failing network call can't leave the
@@ -335,6 +364,7 @@ export default function App({ appId, token }) {
         fetchUpdateChecksFor(checkRows, token).then((map) => {
           if (cancelled) return
           setUpdateChecks((prev) => mergeUpdateChecks(prev, map))
+          clearSettledUpdateArtifacts(itemIdsSettledByChecks(nextCatalog, apps, map))
         })
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
@@ -343,7 +373,7 @@ export default function App({ appId, token }) {
     }
     load()
     return () => { cancelled = true }
-  }, [appId, token])
+  }, [appId, token, clearSettledUpdateArtifacts])
 
   // Returns the fresh installed rows, null if a refresh was already in flight,
   // or null on a transport failure. A thrown fetch must NOT escape: this runs
@@ -445,11 +475,12 @@ export default function App({ appId, token }) {
       const checkRows = targets.map(c => findInstalled(apps, c)).filter(Boolean)
       const checks = await fetchUpdateChecksFor(checkRows, token)
       setUpdateChecks(prev => mergeUpdateChecks(prev, checks))
+      clearSettledUpdateArtifacts(itemIdsSettledByChecks(targets, apps, checks))
       lastManifestRefreshRef.current = Date.now()
     } finally {
       manifestRehydratingRef.current = false
     }
-  }, [token])
+  }, [token, clearSettledUpdateArtifacts])
 
   const handleRetryInstalled = useCallback(async () => {
     const apps = await refreshInstalled()
@@ -568,13 +599,11 @@ export default function App({ appId, token }) {
   // the button can disable + show "Installing…" while in flight.
   const handleInstall = async (item, _opts = {}) => {
     if (busy) return
+    const startedActionKind = _opts?.isUpdate ? 'update' : 'install'
     setBusy(true)
     setBusyItemId(item?.id || null)
-    setCardErrors(prev => {
-      const next = { ...prev }
-      delete next[item.id]
-      return next
-    })
+    setBusyActionKind(startedActionKind)
+    setCardErrors(prev => withoutKey(prev, item.id))
     setUpdateNotice(null)
     try {
       // GitHub-backed apps install/update from manifest_url so the backend
@@ -618,6 +647,16 @@ export default function App({ appId, token }) {
       // version it actually applied, which is authoritative.
       const nextVersions = { ...installedVersions, [item.id]: result.version }
       setInstalledVersions(nextVersions)
+      if (result.id) {
+        // A successful install/update just made this app current. The
+        // git-native probe is authoritative over version strings, so leaving a
+        // stale `true` here keeps the card/detail CTA on "Update" until the
+        // next debounced recheck. Clear it optimistically; later focus checks
+        // can flip it back if upstream moves again.
+        setUpdateChecks(prev => mergeUpdateChecks(prev, { [result.id]: false }))
+      }
+      setCardErrors(prev => withoutKey(prev, item.id))
+      setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
       await saveInstalledVersions(appId, token, nextVersions)
       await refreshInstalled()
       const openAction = result.id
@@ -689,17 +728,16 @@ export default function App({ appId, token }) {
     } finally {
       setBusy(false)
       setBusyItemId(null)
+      setBusyActionKind(null)
     }
   }
 
   const handleReviewUpdate = async (notice) => {
     if (busy || !notice) return
     setBusy(true)
-    setCardErrors(prev => {
-      const next = { ...prev }
-      delete next[notice.itemId]
-      return next
-    })
+    setBusyItemId(notice.itemId || null)
+    setBusyActionKind('resolve')
+    setCardErrors(prev => withoutKey(prev, notice.itemId))
     try {
       if (notice.kind === 'conflict') {
         const resolver = await createConflictResolverChat(notice.appId, token)
@@ -724,6 +762,8 @@ export default function App({ appId, token }) {
       setToast({ kind: 'error', message })
     } finally {
       setBusy(false)
+      setBusyItemId(null)
+      setBusyActionKind(null)
     }
   }
 
@@ -741,6 +781,8 @@ export default function App({ appId, token }) {
     const app = pendingUninstall
     if (!app) return
     setBusy(true)
+    setBusyItemId(detail?.id || null)
+    setBusyActionKind('uninstall')
     try {
       const r = await fetch(`/api/apps/${app.id}`, {
         method: 'DELETE',
@@ -774,6 +816,8 @@ export default function App({ appId, token }) {
       setPendingUninstall(null)
     } finally {
       setBusy(false)
+      setBusyItemId(null)
+      setBusyActionKind(null)
     }
   }
 
@@ -965,6 +1009,7 @@ export default function App({ appId, token }) {
           onSetup={handleSetup}
           onRetryInstalled={handleRetryInstalled}
           busy={busy}
+          busyActionKind={busyItemId === detail.id ? busyActionKind : null}
           updateChecks={updateChecks}
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
@@ -1074,6 +1119,7 @@ export default function App({ appId, token }) {
                     busy={busy}
                     installedUnavailable={!!installedLoadError}
                     busyItemId={busyItemId}
+                    busyActionKind={busyActionKind}
                     errors={cardErrors}
                     updateNotice={updateNotice}
                     onReviewUpdate={handleReviewUpdate}

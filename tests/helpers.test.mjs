@@ -11,11 +11,12 @@ const root = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(root, '.build')
 const bundled = join(buildDir, 'index.mjs')
 const reactStub = join(root, 'react-stub.mjs')
+const esbuildBin = process.env.ESBUILD_BIN || 'esbuild'
 
 async function bundle() {
   await rm(buildDir, { recursive: true, force: true })
   await mkdir(buildDir, { recursive: true })
-  await execFileAsync('/home/hmzmrzx/projects/mobius/frontend/node_modules/.bin/esbuild', [
+  await execFileAsync(esbuildBin, [
     join(root, '..', 'index.jsx'),
     '--bundle',
     '--format=esm',
@@ -432,6 +433,55 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
   // null / absent => fall back to the semver compare (exactly today's behavior).
   assert.equal(appLifecycleFor(item, { installed, updateChecks: { 3: null } }).actionKind, 'update')
   assert.equal(appLifecycleFor(upToDate, { installed, updateChecks: {} }).actionKind, 'open')
+})
+
+test('successful updates clear stale git update checks and inline errors', async () => {
+  const { mergeUpdateChecks } = await bundle()
+  const stale = { 61: true }
+  const settled = mergeUpdateChecks(stale, { 61: false })
+  assert.deepEqual(settled, { 61: false })
+  assert.notEqual(settled, stale)
+
+  const alreadySettled = { 61: false }
+  assert.equal(mergeUpdateChecks(alreadySettled, { 61: false }), alreadySettled)
+
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.ok(source.includes('setUpdateChecks(prev => mergeUpdateChecks(prev, { [result.id]: false }))'))
+  assert.ok(source.includes('setCardErrors(prev => withoutKey(prev, item.id))'))
+  assert.ok(source.includes('clearSettledUpdateArtifacts(itemIdsSettledByChecks'))
+})
+
+test('busy labels stay tied to the action that started', async () => {
+  const { appLifecycleFor, busyLabelForAction } = await bundle()
+  const item = {
+    id: 'cuberun',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-cuberun/main/mobius.json',
+    manifest: { id: 'cuberun', name: 'CubeRun', version: '1.0.2-mobius.17' },
+  }
+  const installedBefore = [{
+    id: 60,
+    slug: 'cuberun',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-cuberun/main#manifest-id=cuberun',
+    version: '1.0.2-mobius.16',
+  }]
+  const installedAfter = [{ ...installedBefore[0], version: '1.0.2-mobius.17' }]
+
+  assert.equal(appLifecycleFor(item, { installed: installedBefore }).actionKind, 'update')
+  assert.equal(appLifecycleFor(item, {
+    installed: installedAfter,
+    updateChecks: { 60: false },
+  }).actionKind, 'open')
+
+  assert.equal(busyLabelForAction('update'), 'Updating...')
+  assert.equal(busyLabelForAction('open'), 'Opening...')
+
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
+  const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  assert.ok(source.includes("const startedActionKind = _opts?.isUpdate ? 'update' : 'install'"))
+  assert.ok(source.includes('setBusyActionKind(startedActionKind)'))
+  assert.ok(cardSource.includes('busyActionKind || lifecycle.actionKind'))
+  assert.ok(detailSource.includes('busyActionKind || lifecycle.actionKind'))
 })
 
 test('scheduleSummary handles cron and on-demand jobs', async () => {
