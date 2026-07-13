@@ -8,7 +8,11 @@ export function manifestCapabilityRows(manifest = {}) {
       key: 'chat_log_access',
       label: 'Chat history',
       level: chatLogAccess,
-      info: PERM_EXPLAIN.chat_log_access[chatLogAccess],
+      // Catalog and pasted-URL manifests are rendered before the backend's
+      // install validator runs. Fail visibly and conservatively here so an
+      // unknown tier cannot make the entire disclosure row disappear.
+      info: PERM_EXPLAIN.chat_log_access[chatLogAccess]
+        || PERM_EXPLAIN.chat_log_access.unknown,
     },
   ]
 

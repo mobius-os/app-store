@@ -434,6 +434,17 @@ test('manifestCapabilityRows explains that full chat access is not active yet', 
   assert.match(row.info.hint, /not yet enabled/)
 })
 
+test('manifestCapabilityRows exposes unsupported chat access instead of hiding it', async () => {
+  const { manifestCapabilityRows } = await bundle()
+  const [row] = manifestCapabilityRows({
+    permissions: { chat_log_access: 'everything' },
+  })
+
+  assert.equal(row.level, 'everything')
+  assert.equal(row.info.tag, 'Unsupported')
+  assert.match(row.info.hint, /cannot be installed/)
+})
+
 test('appLifecycleFor chooses one primary action per catalog state', async () => {
   const { appLifecycleFor } = await bundle()
   const item = {

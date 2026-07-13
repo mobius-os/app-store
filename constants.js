@@ -250,6 +250,11 @@ export const PERM_EXPLAIN = {
       summary: 'Requests full chat-history access.',
       hint: 'Möbius currently serves only the redacted view; unredacted access is reserved and not yet enabled.',
     },
+    unknown: {
+      tag: 'Unsupported',
+      summary: 'Requests an unrecognized chat-history access level.',
+      hint: 'This manifest is invalid and cannot be installed until its publisher uses a supported access level.',
+    },
   },
   system_prompt: {
     true: {
