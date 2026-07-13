@@ -1,5 +1,5 @@
 import { PERM_EXPLAIN } from '../constants.js'
-import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, isTrustedHost, manifestCapabilityRows, scheduleSummary } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 import { PermissionRow } from './PermissionRow.jsx'
 
@@ -37,6 +37,7 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
   const ca = m.permissions?.cross_app_access || 'none'
   const sw = m.permissions?.share_with_apps || 'none'
   const ma = !!m.permissions?.manage_apps
+  const agentCapabilities = manifestCapabilityRows(m)
   // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
   // already resolve to trusted hosts, so they pass silently. Invalid
   // URLs fall through to the warn path on purpose. This is now the
@@ -96,6 +97,14 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
 
         <div className="st-detail-section">
           <div className="st-section-label">What this app can do</div>
+          {agentCapabilities.map(capability => (
+            <PermissionRow
+              key={capability.key}
+              label={capability.label}
+              level={capability.level}
+              info={capability.info}
+            />
+          ))}
           <PermissionRow
             label="Other apps' data"
             level={ca}

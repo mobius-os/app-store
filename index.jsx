@@ -24,6 +24,7 @@ import {
   filterCatalog,
   findInstalled,
   isSystemCatalogItem,
+  manifestCapabilityRows,
   semverCmp,
   sortCatalogForDisplay,
 } from './domain.js'
@@ -64,6 +65,7 @@ export {
   filterCatalog,
   findInstalled,
   isSystemCatalogItem,
+  manifestCapabilityRows,
   humanCron,
   isTrustedHost,
   scheduleSummary,

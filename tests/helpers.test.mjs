@@ -394,6 +394,46 @@ test('sortCatalogForDisplay promotes system apps without scrambling groups', asy
   assert.deepEqual(collectCategories(sorted).slice(0, 3), ['system', 'agents', 'development'])
 })
 
+test('manifestCapabilityRows makes agent-facing trust surfaces explicit', async () => {
+  const { manifestCapabilityRows } = await bundle()
+  const rows = manifestCapabilityRows({
+    permissions: { chat_log_access: 'summary' },
+    system_prompt: 'memory-core.md',
+    skills: ['memory.md', 'reflection.md'],
+    embeds_agent: true,
+  })
+
+  assert.deepEqual(rows.map(row => row.key), [
+    'chat_log_access',
+    'system_prompt',
+    'skills',
+    'embeds_agent',
+  ])
+  assert.equal(rows[0].info.tag, 'Redacted')
+  assert.match(rows[0].info.hint, /tool calls/)
+  assert.match(rows[2].info.summary, /2 reusable agent skills/)
+  assert.match(rows[2].info.hint, /remain.*after uninstall/)
+})
+
+test('manifestCapabilityRows shows no chat access and omits undeclared agent powers', async () => {
+  const { manifestCapabilityRows } = await bundle()
+  const rows = manifestCapabilityRows({})
+
+  assert.deepEqual(rows.map(row => row.key), ['chat_log_access'])
+  assert.equal(rows[0].level, 'none')
+  assert.match(rows[0].info.summary, /Cannot read/)
+})
+
+test('manifestCapabilityRows explains that full chat access is not active yet', async () => {
+  const { manifestCapabilityRows } = await bundle()
+  const [row] = manifestCapabilityRows({
+    permissions: { chat_log_access: 'full' },
+  })
+
+  assert.equal(row.info.tag, 'Full requested')
+  assert.match(row.info.hint, /not yet enabled/)
+})
+
 test('appLifecycleFor chooses one primary action per catalog state', async () => {
   const { appLifecycleFor } = await bundle()
   const item = {

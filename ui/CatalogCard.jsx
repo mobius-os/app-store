@@ -148,7 +148,7 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
       <div className="st-card-version">
         v{m.version}
         {m.embeds_agent ? (
-          <span className="st-card-agent" title="This app includes a background agent">agent</span>
+          <span className="st-card-agent" title="This app includes an in-app agent">agent</span>
         ) : null}
       </div>
       <div className={`st-card-state-line is-${lifecycle.key}`}>

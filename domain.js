@@ -1,4 +1,51 @@
-import { TRUSTED_HOSTS } from './constants.js'
+import { PERM_EXPLAIN, TRUSTED_HOSTS } from './constants.js'
+
+export function manifestCapabilityRows(manifest = {}) {
+  const permissions = manifest.permissions || {}
+  const chatLogAccess = permissions.chat_log_access || 'none'
+  const rows = [
+    {
+      key: 'chat_log_access',
+      label: 'Chat history',
+      level: chatLogAccess,
+      info: PERM_EXPLAIN.chat_log_access[chatLogAccess],
+    },
+  ]
+
+  if (typeof manifest.system_prompt === 'string' && manifest.system_prompt) {
+    rows.push({
+      key: 'system_prompt',
+      label: 'Every-chat instructions',
+      level: 'yes',
+      info: PERM_EXPLAIN.system_prompt.true,
+    })
+  }
+
+  const skillCount = Array.isArray(manifest.skills) ? manifest.skills.length : 0
+  if (skillCount > 0) {
+    const noun = skillCount === 1 ? 'skill' : 'skills'
+    rows.push({
+      key: 'skills',
+      label: 'Agent skills',
+      level: 'yes',
+      info: {
+        ...PERM_EXPLAIN.skills.true,
+        summary: `Adds ${skillCount} reusable agent ${noun} to the shared library.`,
+      },
+    })
+  }
+
+  if (manifest.embeds_agent === true) {
+    rows.push({
+      key: 'embeds_agent',
+      label: 'Built-in agent',
+      level: 'yes',
+      info: PERM_EXPLAIN.embeds_agent.true,
+    })
+  }
+
+  return rows
+}
 
 export function isTrustedHost(url) {
   try {
