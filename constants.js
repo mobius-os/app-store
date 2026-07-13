@@ -1,3 +1,5 @@
+import { MANIFEST_SNAPSHOTS } from './manifest-snapshots.js'
+
 // Curated catalog. Each entry points at a public mobius-os repo on
 // the main branch. The web registry can carry embedded manifest snapshots for
 // fast first paint; Browse only fetches manifest_url for entries whose registry
@@ -187,7 +189,10 @@ export const CATALOG = [
       keywords: ['game', 'runner', 'cube', '3d', 'arcade'],
       capabilities: ['play arcade runner', 'render 3d scene'],
     },
-]
+].map((entry) => ({
+  ...entry,
+  manifest: MANIFEST_SNAPSHOTS[entry.id] || null,
+}))
 // Web registry: the store fetches this at mount (via the server proxy) and uses
 // it as the catalog source when it parses to a non-empty list, so a NEW app
 // appears in every instance's store the moment catalog.json lands on main — no
@@ -206,7 +211,7 @@ export const CATALOG_URL =
 // newer than what's running, offer a one-tap update (the same install
 // transaction every other app uses) followed by a reload so the freshly-patched
 // code loads.
-export const STORE_VERSION = '1.11.0'
+export const STORE_VERSION = '1.11.1'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',

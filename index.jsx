@@ -73,7 +73,14 @@ export {
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'
 export { normalizeInstalledVersions } from './storage.js'
-export { fetchCatalog, fetchManifest, installApp, loadInstalledApps, proxyUrl } from './api.js'
+export {
+  fetchCatalog,
+  fetchManifest,
+  installApp,
+  loadInstalledApps,
+  proxyUrl,
+  readErrorDetail,
+} from './api.js'
 
 // Snapshot-less catalogs (catalog.json is now a pure discovery index) hydrate
 // every entry's manifest from its repo on open — ~16 fetches — so a 3-wide pool
@@ -199,8 +206,8 @@ export default function App({ appId, token }) {
   // Git-native update-availability per installed app, keyed by numeric app id:
   // true/false as answered by GET /api/apps/{id}/update-check; a missing key
   // (or a null value) means unknown, so appLifecycleFor falls back to the semver
-  // compare. Refreshed on the same cadence as the installed-manifest refetch
-  // (mount + debounced focus/visibility), never in an unbounded loop.
+  // compare. Refreshed on mount + debounced focus/visibility, never in an
+  // unbounded loop.
   const [updateChecks, setUpdateChecks] = useState({})
   const [setupCompletions, setSetupCompletions] = useState(() => readSetupCompletions())
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
@@ -223,25 +230,30 @@ export default function App({ appId, token }) {
   const [toast, setToast] = useState(null)
   const [updateNotice, setUpdateNotice] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
-  const [loadingCatalog, setLoadingCatalog] = useState(true)
+  // A complete baked snapshot is usable on the very first render. Installed
+  // state and the remote registry hydrate independently; neither should make a
+  // healthy catalog flash a skeleton or feel network-bound.
+  const [loadingCatalog, setLoadingCatalog] = useState(
+    () => !CATALOG.every((entry) => entry.manifest),
+  )
   const [installedLoadError, setInstalledLoadError] = useState('')
   // Guard against overlapping refreshes when several visibility/focus
   // events fire in quick succession (e.g. drawer-close + tab-focus on
   // mobile fire visibilitychange and focus a frame apart). A simple
   // boolean is enough — we only care that one refresh is in flight.
   const refreshingRef = useRef(false)
-  // Last time we re-hydrated catalog manifests from GitHub. Seeded to the
-  // mount-time hydrate so the first focus right after open doesn't refetch.
+  // Last git-native update check. Seeded at mount so the first focus right
+  // after open doesn't immediately duplicate the initial check.
   // A focus flap (visibilitychange + focus a frame apart) won't refetch
   // either: the second event lands well inside the debounce window.
   // Seed with mount time, not 0: the focus/pageshow listeners bind a frame
   // before the async mount hydration finishes, so a focus firing in that gap
   // would otherwise read a 0 timestamp, clear the debounce, and fire a
-  // redundant duplicate manifest fetch alongside the in-flight mount one.
+  // redundant duplicate update check alongside the in-flight mount one.
   // Stamping "now" makes that first focus a reliable no-op until the 50s
-  // window elapses; the mount effect re-stamps once hydration lands.
-  const lastManifestRefreshRef = useRef(Date.now())
-  const manifestRehydratingRef = useRef(false)
+  // window elapses; the mount effect re-stamps once catalog hydration lands.
+  const lastUpdateCheckRef = useRef(Date.now())
+  const updateCheckingRef = useRef(false)
 
   const clearSettledUpdateArtifacts = useCallback((itemIds) => {
     if (!itemIds?.size) return
@@ -263,6 +275,12 @@ export default function App({ appId, token }) {
     let cancelled = false
     async function load() {
       try {
+        // Start the dynamic registry immediately, but do not put it on the
+        // first-paint critical path. The baked snapshot catalog is already a
+        // complete, usable floor; same-origin installed/setup state should be
+        // the only work that can delay the initial cards.
+        const remoteCatalogPromise = fetchCatalog(CATALOG_URL, token)
+          .catch(() => null)
         const [installedResult, versions, nextProviderStatus] = await Promise.all([
           loadInstalledApps(token)
             .then((apps) => ({ apps, error: '' }))
@@ -285,6 +303,9 @@ export default function App({ appId, token }) {
         setSetupCompletions(readSetupCompletions())
         setSystemSetupComplete(readSystemSetupReady())
         if (nextProviderStatus) setProviderStatus(nextProviderStatus)
+        if (CATALOG.every((entry) => entry.manifest)) {
+          setLoadingCatalog(false)
+        }
         // Resolve the catalog SOURCE by MERGING the web registry (catalog.json,
         // fetched via the proxy) OVER the baked CATALOG — never replacing it.
         // Baked is the floor: an app in the baked list can never vanish because
@@ -295,15 +316,11 @@ export default function App({ appId, token }) {
         // main is enough. On fetch failure /
         // empty result, the baked CATALOG carries the store untouched.
         let entries = CATALOG
-        try {
-          const remote = await fetchCatalog(CATALOG_URL, token)
-          if (Array.isArray(remote) && remote.length) {
-            const merged = new Map(CATALOG.map((c) => [c.id, c]))
-            for (const r of remote) merged.set(r.id, { ...(merged.get(r.id) || {}), ...r })
-            entries = [...merged.values()]
-          }
-        } catch {
-          // Registry unreachable / malformed — the baked CATALOG carries the store.
+        const remote = await remoteCatalogPromise
+        if (Array.isArray(remote) && remote.length) {
+          const merged = new Map(CATALOG.map((c) => [c.id, c]))
+          for (const r of remote) merged.set(r.id, { ...(merged.get(r.id) || {}), ...r })
+          entries = [...merged.values()]
         }
         if (cancelled) return
         // Hydrate entries that do not already carry a validated manifest
@@ -325,33 +342,11 @@ export default function App({ appId, token }) {
           },
         )
         if (cancelled) return
-        let nextCatalog = hydrated
         const installedTargets = apps.length
           ? hydrated.filter((c) => findInstalled(apps, c))
           : []
-        if (installedTargets.length > 0) {
-          const refetched = await mapWithConcurrency(
-            installedTargets,
-            MANIFEST_FETCH_CONCURRENCY,
-            async (c) => {
-              try {
-                const manifest = await fetchManifest(c.manifest_url, token)
-                return { id: c.id, manifest }
-              } catch {
-                return null
-              }
-            },
-          )
-          if (cancelled) return
-          const byId = new Map(refetched.filter(Boolean).map(r => [r.id, r.manifest]))
-          if (byId.size > 0) {
-            nextCatalog = hydrated.map(c =>
-              byId.has(c.id) ? { ...c, manifest: byId.get(c.id), error: null } : c
-            )
-          }
-        }
-        setCatalog(nextCatalog)
-        lastManifestRefreshRef.current = Date.now()
+        setCatalog(hydrated)
+        lastUpdateCheckRef.current = Date.now()
         // Git-native update-checks for the installed catalog apps. Fire-and-
         // forget on purpose: a slow or absent (404) endpoint must never gate the
         // skeleton clear in `finally`, so we do NOT await it here. fetchUpdate
@@ -364,7 +359,7 @@ export default function App({ appId, token }) {
         fetchUpdateChecksFor(checkRows, token).then((map) => {
           if (cancelled) return
           setUpdateChecks((prev) => mergeUpdateChecks(prev, map))
-          clearSettledUpdateArtifacts(itemIdsSettledByChecks(nextCatalog, apps, map))
+          clearSettledUpdateArtifacts(itemIdsSettledByChecks(hydrated, apps, map))
         })
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
@@ -397,26 +392,15 @@ export default function App({ appId, token }) {
     }
   }, [token])
 
-  // Re-hydrate catalog manifests from GitHub so an "Update" surfaces when
-  // the owner pushes a newer version while this iframe is already mounted.
-  // hasUpdate compares the installed version against the catalog item's
-  // manifest version, and that manifest is otherwise only fetched at mount —
-  // so without this, a focus regain re-reads installed rows but never the
-  // upstream manifests, and the update stays invisible until a full reopen.
-  //
-  // Scoped to INSTALLED apps: only those can show an Update, so refetching
-  // the whole 11-entry catalog on every focus would be wasted work. We map
-  // the freshly-fetched installed rows back to catalog entries via the same
-  // findInstalled identity match the cards use.
-  //
-  // Debounced to ~50s via lastManifestRefreshRef: a focus flap (visibility-
-  // change + focus firing a frame apart) lands inside the window and is a
-  // no-op, and rapid tab toggling can't trigger a refetch storm. GitHub raw
-  // CDN's ~5min cache is the only inherent freshness lag, well under 50s.
+  // Check installed app repos on foreground regain. This single git-native
+  // probe is authoritative even when a release forgot to bump mobius.json,
+  // and avoids repeatedly downloading/parsing every installed manifest from
+  // GitHub. Catalog metadata refreshes from catalog.json on Store open; the
+  // explicit per-card retry remains for a genuinely missing manifest.
   const REHYDRATE_DEBOUNCE_MS = 50_000
-  const refreshCatalogManifests = useCallback(async (installedApps) => {
-    if (manifestRehydratingRef.current) return
-    if (Date.now() - lastManifestRefreshRef.current < REHYDRATE_DEBOUNCE_MS) return
+  const refreshUpdateChecks = useCallback(async (installedApps) => {
+    if (updateCheckingRef.current) return
+    if (Date.now() - lastUpdateCheckRef.current < REHYDRATE_DEBOUNCE_MS) return
     const apps = installedApps || []
     // Targets come from the HYDRATED catalog (read via catalogRef so this
     // callback keeps a stable [token] dep), NOT the raw CATALOG: findInstalled
@@ -430,62 +414,25 @@ export default function App({ appId, token }) {
     // permanent miss.
     const targets = catalogRef.current.filter(c => findInstalled(apps, c))
     if (targets.length === 0) {
-      // Nothing installed to check — still stamp the time so we don't probe
-      // findInstalled on every single focus event.
-      lastManifestRefreshRef.current = Date.now()
+      lastUpdateCheckRef.current = Date.now()
       return
     }
-    manifestRehydratingRef.current = true
+    updateCheckingRef.current = true
     try {
-      const refetched = await mapWithConcurrency(
-        targets,
-        MANIFEST_FETCH_CONCURRENCY,
-        async (c) => {
-          try {
-            const manifest = await fetchManifest(c.manifest_url, token)
-            return { id: c.id, manifest }
-          } catch {
-            // Leave the existing manifest in place on a transient failure;
-            // a stale-but-present manifest is better than blanking the card.
-            return null
-          }
-        },
-      )
-      const byId = new Map(refetched.filter(Boolean).map(r => [r.id, r.manifest]))
-      if (byId.size > 0) {
-        setCatalog(prev => {
-          // Skip the setState (and the re-render it triggers) when every
-          // refetched manifest carries the same version already in state —
-          // an up-to-date store shouldn't re-render on every focus regain.
-          const changed = prev.some(c =>
-            byId.has(c.id) && byId.get(c.id)?.version !== c.manifest?.version
-          )
-          if (!changed) return prev
-          return prev.map(c =>
-            byId.has(c.id) ? { ...c, manifest: byId.get(c.id), error: null } : c
-          )
-        })
-      }
-      // Git-native update-checks on the SAME debounced cadence. Independent of
-      // the version diff above: git can report changed upstream content even
-      // when the manifest version string didn't move, so we run this whenever we
-      // got past the debounce, not only when a version changed. fetchUpdate
-      // ChecksFor never rejects, so an awaited call here can't strand the
-      // refresh; the outer maybeRefresh already swallows any stray rejection.
       const checkRows = targets.map(c => findInstalled(apps, c)).filter(Boolean)
       const checks = await fetchUpdateChecksFor(checkRows, token)
       setUpdateChecks(prev => mergeUpdateChecks(prev, checks))
       clearSettledUpdateArtifacts(itemIdsSettledByChecks(targets, apps, checks))
-      lastManifestRefreshRef.current = Date.now()
+      lastUpdateCheckRef.current = Date.now()
     } finally {
-      manifestRehydratingRef.current = false
+      updateCheckingRef.current = false
     }
   }, [token, clearSettledUpdateArtifacts])
 
   const handleRetryInstalled = useCallback(async () => {
     const apps = await refreshInstalled()
-    if (apps) await refreshCatalogManifests(apps)
-  }, [refreshInstalled, refreshCatalogManifests])
+    if (apps) await refreshUpdateChecks(apps)
+  }, [refreshInstalled, refreshUpdateChecks])
 
   const refreshSetupState = useCallback(async () => {
     setSetupCompletions(readSetupCompletions())
@@ -511,8 +458,8 @@ export default function App({ appId, token }) {
   // focus + pageshow. Polling would be wasteful — these three cover
   // every realistic path back into a foregrounded App Store iframe
   // (drawer dismiss, tab refocus, mobile bfcache restore). On the same
-  // events we also re-hydrate catalog manifests (debounced) so a version
-  // the owner pushed while the iframe stayed mounted shows up as an Update.
+  // events we also run the debounced git-native update probe so a release
+  // pushed while the iframe stayed mounted shows up as an Update.
   useEffect(() => {
     function maybeRefresh() {
       if (document.visibilityState !== 'visible') return
@@ -520,11 +467,11 @@ export default function App({ appId, token }) {
       refreshInstalled().then(apps => {
         // refreshInstalled returns null if a refresh was already in flight OR
         // on a transport failure; the in-flight one will land the rows, and the
-        // manifest re-hydrate is independently debounced, so skipping is safe.
-        if (apps) return refreshCatalogManifests(apps)
+        // update probe is independently debounced, so skipping is safe.
+        if (apps) return refreshUpdateChecks(apps)
       }).catch(() => {
         // Belt-and-braces: refreshInstalled already swallows its own transport
-        // errors and refreshCatalogManifests catches per-manifest failures, but
+        // errors and refreshUpdateChecks degrades per-app failures, but
         // this runs from a listener with no outer handler — never let a stray
         // rejection escape as an unhandled promise. The prior state is kept; a
         // later focus/visibility event retries.
@@ -538,7 +485,7 @@ export default function App({ appId, token }) {
       window.removeEventListener('focus', maybeRefresh)
       window.removeEventListener('pageshow', maybeRefresh)
     }
-  }, [refreshInstalled, refreshCatalogManifests, refreshSetupState])
+  }, [refreshInstalled, refreshUpdateChecks, refreshSetupState])
 
   // Re-fetch a single catalog manifest. Wired into CatalogCard's
   // "Try again" affordance — replaces the previous behavior where a

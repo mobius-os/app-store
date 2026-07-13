@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "test": "node --test tests/*.mjs"
+    "test": "node --test tests/*.mjs",
+    "refresh-catalog": "node scripts/refresh-manifest-snapshots.mjs"
   },
   "devDependencies": {}
 }

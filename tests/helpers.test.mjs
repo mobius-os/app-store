@@ -177,6 +177,31 @@ test('fetchManifest does not rapidly retry upstream rate limits', async () => {
   }
 })
 
+test('readErrorDetail handles non-JSON update errors without rereading the body', async () => {
+  const { readErrorDetail } = await bundle()
+  const response = new Response('upstream returned an invalid manifest', { status: 502 })
+
+  assert.equal(
+    await readErrorDetail(response, 'Update failed'),
+    'upstream returned an invalid manifest',
+  )
+})
+
+test('readErrorDetail formats FastAPI validation payloads', async () => {
+  const { readErrorDetail } = await bundle()
+  const response = new Response(JSON.stringify({
+    detail: [{ loc: ['body', 'manifest_url'], msg: 'Field required' }],
+  }), {
+    status: 422,
+    headers: { 'content-type': 'application/json' },
+  })
+
+  assert.equal(
+    await readErrorDetail(response, 'Update failed'),
+    'body.manifest_url: Field required',
+  )
+})
+
 test('loadInstalledApps retries transient app-list failures', async () => {
   const oldFetch = globalThis.fetch
   let calls = 0
@@ -472,8 +497,8 @@ test('busy labels stay tied to the action that started', async () => {
     updateChecks: { 60: false },
   }).actionKind, 'open')
 
-  assert.equal(busyLabelForAction('update'), 'Updating...')
-  assert.equal(busyLabelForAction('open'), 'Opening...')
+  assert.equal(busyLabelForAction('update'), 'Updating…')
+  assert.equal(busyLabelForAction('open'), 'Opening…')
 
   const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
@@ -525,16 +550,18 @@ test('STORE_VERSION stays in lockstep with mobius.json', async () => {
   assert.equal(STORE_VERSION, manifest.version)
 })
 
-// catalog.json is a pure discovery index (70d0c82): each app repo's own
-// mobius.json is the sole manifest source, hydrated live by the store, so
-// entries must never re-grow version-coupled `manifest` snapshots — that shape
-// forced a catalog bump on every app release and could serve stale versions.
-test('catalog is a pure discovery index — no manifest snapshots', async () => {
+// Browse must remain useful when the external proxy is slow or unavailable.
+// Snapshots are display/preview data only: installApp still sends manifest_url,
+// and installed apps use the backend's git-native update check.
+test('catalog carries valid resilient first-paint manifest snapshots', async () => {
   const catalog = JSON.parse(await readFile(join(root, '..', 'catalog.json'), 'utf8'))
   assert.ok(Array.isArray(catalog.apps) && catalog.apps.length > 0)
   for (const entry of catalog.apps) {
-    assert.equal(entry.manifest, undefined,
-      `${entry.id}: manifest snapshots are retired — bump the app repo's mobius.json instead`)
+    assert.ok(entry.manifest, `${entry.id}: missing manifest snapshot`)
+    for (const key of ['id', 'name', 'version', 'description', 'entry']) {
+      assert.equal(typeof entry.manifest[key], 'string', `${entry.id}: invalid manifest.${key}`)
+      assert.ok(entry.manifest[key], `${entry.id}: empty manifest.${key}`)
+    }
     assert.match(entry.id, /^[a-z0-9-]+$/)
     assert.ok(entry.name, `${entry.id}: discovery entries carry a name`)
     assert.ok(entry.description, `${entry.id}: discovery entries carry a description`)

@@ -353,14 +353,7 @@ export async function installApp({ manifest_url, manifest, raw_base, token }) {
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`
-    try {
-      const errBody = await res.json()
-      if (errBody && errBody.detail) detail = errBody.detail
-    } catch (e) {
-      detail = await res.text() || detail
-    }
-    throw new Error(detail)
+    throw new Error(await readErrorDetail(res, `HTTP ${res.status}`))
   }
   const out = await res.json()
   return {
@@ -375,16 +368,38 @@ export async function installApp({ manifest_url, manifest, raw_base, token }) {
   }
 }
 
+function formatErrorDetail(detail) {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const messages = detail.map((entry) => {
+      if (typeof entry === 'string') return entry
+      const location = Array.isArray(entry?.loc) ? entry.loc.join('.') : ''
+      const message = typeof entry?.msg === 'string' ? entry.msg : ''
+      return [location, message].filter(Boolean).join(': ')
+    }).filter(Boolean)
+    if (messages.length) return messages.join('; ')
+  }
+  if (detail && typeof detail === 'object') {
+    try { return JSON.stringify(detail) } catch {}
+  }
+  return ''
+}
+
+/** Read a failed response body exactly once, then decode JSON when possible. */
+export async function readErrorDetail(res, fallback) {
+  const text = await res.text()
+  if (!text) return fallback || `HTTP ${res.status}`
+  try {
+    const body = JSON.parse(text)
+    return formatErrorDetail(body?.detail ?? body) || fallback || `HTTP ${res.status}`
+  } catch {
+    return text
+  }
+}
+
 export async function readJsonOrThrow(res, fallback) {
   if (res.ok) return await res.json()
-  let detail = fallback || `HTTP ${res.status}`
-  try {
-    const errBody = await res.json()
-    if (errBody && errBody.detail) detail = errBody.detail
-  } catch {
-    detail = await res.text() || detail
-  }
-  throw new Error(detail)
+  throw new Error(await readErrorDetail(res, fallback || `HTTP ${res.status}`))
 }
 
 export async function loadUpdatePreview(appId, token) {

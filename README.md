@@ -29,9 +29,10 @@ See Möbius ticket 061 for the bootstrap details.
 ## The curated catalog
 
 The default catalog is a hardcoded list of `mobius-os/app-*` repos
-in `index.jsx`'s `CATALOG` constant. On Browse-view mount, the
-store fetches each entry's `mobius.json` from `raw.githubusercontent.com`
-and displays live name/description/version straight from the repo.
+in `constants.js`. Browse renders immediately from generated manifest
+snapshots, then refreshes installed-app status in the background. Install and
+update actions always send the live `manifest_url` to the backend, so a
+snapshot is never treated as install authority.
 
 ### Naming convention
 
@@ -42,8 +43,9 @@ Manifest `id` == repo name minus the `app-` prefix == lowercased display name; r
 1. Publish your app as `mobius-os/app-<id>` (public, MIT or
    compatible). Repo must contain a valid `mobius.json` per
    [the manifest spec](https://github.com/mobius-os/mobius-os.github.io/blob/main/spec/manifest.md).
-2. Submit a PR to this repo adding an entry to `CATALOG` in
-   `index.jsx`.
+2. Add the entry to `CATALOG` in `constants.js` and `catalog.json`.
+3. Run `npm run refresh-catalog` to validate every live manifest and refresh
+   the baked first-paint snapshots.
 
 If you don't want PR-curation, that's fine too — anyone can install
 your app from a `mobius.json` URL using the **From URL** tab,
@@ -59,14 +61,11 @@ just a repo push — you never touch this repo:
    is human-facing: it's what the store shows on the card and in the
    `Update to vX` button.
 
-`catalog.json` is a pure discovery index — id, name, description,
-repo/manifest URLs, categories/keywords. It carries no per-release
-manifest snapshot, so a release never changes it. The store reads
-each app's live `mobius.json` for the version and detail, and update
-detection is git-native (it compares the repo's actual content
-against what's installed), so an update can surface even when the
-version string didn't move. Add or edit a `catalog.json` entry only
-when you're publishing a brand-new app.
+Update detection is git-native: the backend compares each installed repo's
+actual content with upstream, so an update can surface even when the version
+string did not move. The snapshots keep first paint fast and resilient; refresh
+them when publishing Store changes, but app installation and updating still
+resolve the live manifest URL at click time.
 
 ## Permissions
 
