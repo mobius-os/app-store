@@ -357,6 +357,158 @@ test('installApp prefers live manifest_url over embedded manifest snapshots', as
   }
 })
 
+test('capability preview is backend-derived and its digest binds install', async () => {
+  const oldFetch = globalThis.fetch
+  const calls = []
+  const digest = 'a'.repeat(64)
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, body: JSON.parse(opts.body) })
+    if (url === '/api/apps/preview') {
+      return new Response(JSON.stringify({
+        manifest: { id: 'memory', name: 'Memory', version: '2.0.0', description: 'Memory', entry: 'index.jsx' },
+        capability_contract: { schema: 1, system_app: true, agent: {}, data: {}, background: null },
+        capability_digest: digest,
+        installed_contract: null,
+        capability_diff: { unknown_previous: true, added: [], removed: [], changed: [] },
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({
+      id: 57, slug: 'memory', name: 'Memory', version: '2.0.0', mode: 'install',
+    }), { status: 201, headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    const { previewApp, installApp } = await bundle()
+    const source = 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json'
+    const preview = await previewApp({ manifest_url: source, token: 'tok' })
+    await installApp({
+      manifest_url: source,
+      reviewed_capability_digest: preview.capability_digest,
+      token: 'tok',
+    })
+    assert.deepEqual(calls, [
+      { url: '/api/apps/preview', body: { manifest_url: source } },
+      {
+        url: '/api/apps/install',
+        body: { manifest_url: source, reviewed_capability_digest: digest },
+      },
+    ])
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('capability-change 409 exposes the new contract without retrying install', async () => {
+  const oldFetch = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async () => {
+    calls += 1
+    return new Response(JSON.stringify({ detail: {
+      code: 'capability_changed',
+      message: 'Capabilities changed.',
+      manifest: { id: 'memory', version: '2.0.1' },
+      capability_contract: { schema: 1, system_app: true },
+      capability_digest: 'b'.repeat(64),
+    } }), { status: 409, headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    const { installApp } = await bundle()
+    await assert.rejects(
+      installApp({
+        manifest_url: 'https://example.test/mobius.json',
+        reviewed_capability_digest: 'a'.repeat(64),
+        token: 'tok',
+      }),
+      (error) => {
+        assert.equal(error.code, 'capability_changed')
+        assert.equal(error.preview.capability_digest, 'b'.repeat(64))
+        return true
+      },
+    )
+    assert.equal(calls, 1, 'the failed install is never auto-retried')
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('capability rows describe system prompt, redacted logs, and scoped job generically', async () => {
+  const { capabilityRows } = await bundle()
+  const rows = capabilityRows({
+    schema: 1,
+    system_app: true,
+    agent: {
+      system_prompt: { file: 'memory-core.md', scope: 'all_agent_chats', activation: 'next_turn' },
+      skills: ['memory.md'], embeds_agent: false,
+    },
+    data: {
+      chat_logs: { effective: 'summary', redaction: 'structural' },
+      shared_memory: 'write', cross_app_access: 'none', share_with_apps: 'read',
+      filesystem_api: false, github_access: false, manage_apps: false,
+    },
+    background: {
+      mode: 'scheduled', cron: '30 5 * * *', job: 'fetch.sh', agent: true,
+      initialize_on_install: true, authority: 'scoped_system_job',
+    },
+  })
+  assert.match(rows.find(row => row.label === 'Agent chats').summary, /every agent chat/)
+  assert.match(rows.find(row => row.label === 'Chat history').summary, /structurally redacted/)
+  assert.match(rows.find(row => row.label === 'Background work').summary, /initialization run/)
+  assert.match(rows.find(row => row.label === 'Shares its data').summary, /read this app’s private data/)
+  assert.ok(rows.every(row => !/Memory app/i.test(row.summary)), 'renderer has no app-specific branch')
+})
+
+test('ordinary background jobs disclose host process authority', async () => {
+  const { capabilityRows } = await bundle()
+  const rows = capabilityRows({
+    agent: { skills: [] },
+    data: {
+      chat_logs: { effective: 'none' }, shared_memory: 'none',
+      cross_app_access: 'none', share_with_apps: 'none',
+    },
+    background: {
+      mode: 'scheduled', cron: '0 4 * * *', job: 'fetch.sh',
+      agent: false, authority: 'app_job_process',
+    },
+  })
+  const background = rows.find(row => row.label === 'Background work')
+  assert.equal(background.tag, 'Host app job')
+  assert.match(background.summary, /legacy host app process/)
+  assert.match(background.summary, /filesystem-API restrictions do not confine/)
+})
+
+test('capability rows disclose embedded agents, provider credentials, and offline behavior', async () => {
+  const { capabilityRows } = await bundle()
+  const rows = capabilityRows({
+    agent: { embeds_agent: true, skills: [] },
+    data: {
+      chat_logs: { effective: 'none' }, shared_memory: 'none',
+      cross_app_access: 'none', share_with_apps: 'none',
+    },
+    background: {
+      agent: true, mode: 'on_demand', authority: 'scoped_system_job',
+      initialize_on_install: false,
+    },
+    offline: {
+      capable: true,
+      contract: { reads: true, writes: 'none', execution: 'partial' },
+    },
+  })
+  assert.match(rows.find(row => row.label === 'Embedded agent').summary, /agent chat/)
+  assert.match(rows.find(row => row.label === 'Background work').summary, /provider credentials/)
+  assert.match(rows.find(row => row.label === 'Offline use').summary, /partial offline execution/)
+})
+
+test('catalog actions route through detail consent and truthful uninstall copy', async () => {
+  const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  const uninstallSource = await readFile(join(root, '..', 'ui', 'UninstallConfirmModal.jsx'), 'utf8')
+  assert.ok(indexSource.includes('onUpdate={openDetail}'))
+  assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
+  assert.ok(detailSource.includes('<CapabilityContract'))
+  assert.ok(detailSource.includes('capabilityReview.preview.capability_digest'))
+  assert.match(uninstallSource, /kept\s+temporarily for recovery/)
+  assert.match(uninstallSource, /shared files.*not erased/)
+})
+
 test('filterCatalog matches categories, descriptions, and setup metadata', async () => {
   const { collectCategories, filterCatalog } = await bundle()
   const items = [
@@ -412,7 +564,8 @@ test('manifestCapabilityRows makes agent-facing trust surfaces explicit', async 
   assert.equal(rows[0].info.tag, 'Redacted')
   assert.match(rows[0].info.hint, /tool calls/)
   assert.match(rows[2].info.summary, /2 reusable agent skills/)
-  assert.match(rows[2].info.hint, /remain.*after uninstall/)
+  assert.match(rows[2].info.hint, /Uninstall deactivates/)
+  assert.match(rows[1].info.hint, /next turn/)
 })
 
 test('manifestCapabilityRows shows no chat access and omits undeclared agent powers', async () => {

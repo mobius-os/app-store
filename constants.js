@@ -6,16 +6,17 @@ import { MANIFEST_SNAPSHOTS } from './manifest-snapshots.js'
 // snapshot is missing or invalid.
 export const CATALOG = [
   // First screen priority: agent-facing utilities, then broad everyday apps,
-  // then specialist and playful apps. Memory and Reflection are ordinary
-  // installable apps, kept first because they explain the platform's agent loop.
+  // then specialist and playful apps. Memory is an optional system app and
+  // Reflection is an ordinary installable app; both stay first because they
+  // explain the platform's agent loop.
   {
       id: 'memory',
       repo: 'mobius-os/app-memory',
       manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json',
       raw_base: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/',
       categories: ['system', 'agents'],
-      keywords: ['memory graph', 'memory maintenance', 'scheduled consolidation', 'notes', 'knowledge base', 'agent context'],
-      capabilities: ['browse memory graph', 'scheduled memory consolidation', 'inspect knowledge links'],
+      keywords: ['memory graph', 'memory maintenance', 'on-demand recall', 'scheduled consolidation', 'notes', 'knowledge base', 'agent context'],
+      capabilities: ['retrieve memories on demand', 'browse memory graph', 'scheduled memory consolidation'],
       setup: {
         required: true,
         scope: 'system',
@@ -211,7 +212,7 @@ export const CATALOG_URL =
 // newer than what's running, offer a one-tap update (the same install
 // transaction every other app uses) followed by a reload so the freshly-patched
 // code loads.
-export const STORE_VERSION = '1.11.2'
+export const STORE_VERSION = '1.12.0'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -260,14 +261,14 @@ export const PERM_EXPLAIN = {
     true: {
       tag: 'Every chat',
       summary: 'Adds instructions the agent follows in every chat.',
-      hint: 'These app-provided instructions become part of the agent’s system prompt. A platform restart may be needed after install or removal.',
+      hint: 'These app-provided instructions become part of the agent’s system prompt while the app is live. Install or removal applies on the next turn.',
     },
   },
   skills: {
     true: {
       tag: 'Shared',
       summary: 'Adds reusable instructions to the shared skills library.',
-      hint: 'The agent can load these guides for relevant work. They are editable and may remain in the shared library after uninstall.',
+      hint: 'The agent can load these guides for relevant work while the app is active. Uninstall deactivates app-owned copies without discarding user edits.',
     },
   },
   embeds_agent: {

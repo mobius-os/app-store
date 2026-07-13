@@ -68,8 +68,10 @@ export function UninstallConfirmModal({ app, busy, onConfirm, onCancel }) {
       <div className="st-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}>
         <h3 className="st-sheet-title" id="st-uninstall-title">Uninstall {app.name}?</h3>
         <p className="st-sheet-body">
-          This removes the app and its stored data. You can reinstall
-          it later from the store.
+          This disables the app, removes its agent instructions, skills, and
+          scheduled jobs, and hides it from Möbius. Its private files are kept
+          temporarily for recovery; shared files it created are not erased
+          automatically.
         </p>
         <div className="st-sheet-actions">
           <button className="st-btn st-btn-secondary" ref={cancelRef}

@@ -705,6 +705,18 @@ export const CSS = `
 .st-perm-row-main { flex: 1; min-width: 0; }
 .st-perm-label { font-weight: 600; color: var(--text); }
 .st-perm-detail { color: var(--muted); }
+.st-capability-state,
+.st-capability-change {
+  padding: 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.st-capability-change { margin-bottom: 10px; color: var(--text); }
+.st-capability-list { display: grid; gap: 8px; }
 .st-perm-hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
 /* A short capability tag next to each permission row. State (read / write /
    muted) rides is-* modifiers; 'no'/'none' both render muted. */
@@ -862,6 +874,11 @@ export const CSS = `
   font-size: 14px; line-height: 1.4;
 }
 .st-banner-msg { flex: 1; }
+.st-banner-content { flex: 1; min-width: 0; }
+.st-banner.is-reviewing { align-items: flex-start; }
+.st-banner.is-reviewing .st-banner-msg { margin-bottom: 10px; }
+.st-banner.is-reviewing .st-capability-list { gap: 6px; }
+.st-banner.is-reviewing .st-permission-row { background: var(--bg); }
 .st-banner-btn {
   flex-shrink: 0; border: none; border-radius: 8px; padding: 8px 16px;
   background: var(--accent); color: var(--accent-fg); font-weight: 600;

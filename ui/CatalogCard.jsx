@@ -81,7 +81,12 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
   const cardActionDisabled = busy || blocked || !isActionable
   const showUpdateNotice = updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
-  const actionLabel = busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind) : lifecycle.actionLabel
+  const reviewLabel = lifecycle.actionKind === 'install'
+    ? 'Review & install'
+    : lifecycle.actionKind === 'update'
+    ? 'Review update'
+    : lifecycle.actionLabel
+  const actionLabel = busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind) : reviewLabel
   const onCardAction = () => {
     if (cardActionDisabled) return
     if (lifecycle.actionKind === 'open') {
@@ -163,7 +168,7 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
           className={cardActionClass}
           disabled={cardActionDisabled}
           onClick={onCardAction}
-          aria-label={`${lifecycle.actionLabel} ${m.name}`}
+          aria-label={`${reviewLabel} ${m.name}`}
         >
           {actionLabel}
         </button>

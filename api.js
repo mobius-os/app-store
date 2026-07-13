@@ -336,7 +336,7 @@ export async function fetchCatalog(url, token, opts = {}) {
 // Compares the full numeric core (not just 3 segments, so a 4th segment isn't
 // dropped) and honors SemVer pre-release precedence: 1.2.0-rc.1 < 1.2.0, so a
 // pre-release never reads as "up to date" against its own release.
-export async function installApp({ manifest_url, manifest, raw_base, token }) {
+function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capability_digest }) {
   const body = {}
   if (manifest_url) {
     body.manifest_url = manifest_url
@@ -344,6 +344,43 @@ export async function installApp({ manifest_url, manifest, raw_base, token }) {
     if (manifest) body.manifest = manifest
     if (raw_base) body.raw_base = raw_base
   }
+  if (reviewed_capability_digest) {
+    body.reviewed_capability_digest = reviewed_capability_digest
+  }
+  return body
+}
+
+export async function previewApp({ manifest_url, manifest, raw_base, token }) {
+  const res = await fetch('/api/apps/preview', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(installRequestBody({ manifest_url, manifest, raw_base })),
+  })
+  return await readJsonOrThrow(res, 'Capability preview failed')
+}
+
+export class CapabilityChangedError extends Error {
+  constructor(detail) {
+    super(detail?.message || 'The app capabilities changed. Review them and try again.')
+    this.name = 'CapabilityChangedError'
+    this.code = 'capability_changed'
+    this.preview = {
+      manifest: detail?.manifest,
+      capability_contract: detail?.capability_contract,
+      capability_digest: detail?.capability_digest,
+      installed_contract: null,
+      capability_diff: { unknown_previous: true, added: [], removed: [], changed: [] },
+    }
+  }
+}
+
+export async function installApp({ manifest_url, manifest, raw_base, token, reviewed_capability_digest }) {
+  const body = installRequestBody({
+    manifest_url, manifest, raw_base, reviewed_capability_digest,
+  })
   const res = await fetch('/api/apps/install', {
     method: 'POST',
     headers: {
@@ -353,7 +390,14 @@ export async function installApp({ manifest_url, manifest, raw_base, token }) {
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    throw new Error(await readErrorDetail(res, `HTTP ${res.status}`))
+    const text = await res.text()
+    let parsed = null
+    try { parsed = text ? JSON.parse(text) : null } catch {}
+    const detail = parsed?.detail ?? parsed
+    if (res.status === 409 && detail?.code === 'capability_changed') {
+      throw new CapabilityChangedError(detail)
+    }
+    throw new Error(formatErrorDetail(detail) || text || `HTTP ${res.status}`)
   }
   const out = await res.json()
   return {

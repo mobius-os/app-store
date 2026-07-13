@@ -42,6 +42,7 @@ import {
   openChat,
   openInstalledApp,
   openSystemSettings,
+  previewApp,
   readSetupCompletions,
   readSystemSetupReady,
   seedChatMessage,
@@ -80,9 +81,11 @@ export {
   fetchManifest,
   installApp,
   loadInstalledApps,
+  previewApp,
   proxyUrl,
   readErrorDetail,
 } from './api.js'
+export { capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
 
 // Snapshot-less catalogs (catalog.json is now a pure discovery index) hydrate
 // every entry's manifest from its repo on open — ~16 fetches — so a 3-wide pool
@@ -215,6 +218,7 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
+  const [capabilityReviews, setCapabilityReviews] = useState({})
   const navDetailRef = useRef(null)  // pending detail item during nav-push ack
   // B1: preserve the catalog grid's scroll across opening a detail and coming
   // back — the grid unmounts while a detail shows, so it would otherwise
@@ -541,6 +545,34 @@ export default function App({ appId, token }) {
     }
   }, [])
 
+  const reviewCapabilities = useCallback(async (item) => {
+    if (!item?.id) return
+    setCapabilityReviews(prev => ({
+      ...prev,
+      [item.id]: { status: 'loading', preview: null, error: '' },
+    }))
+    try {
+      const preview = await previewApp({
+        manifest_url: item.manifest_url,
+        manifest: item.manifest,
+        raw_base: item.raw_base,
+        token,
+      })
+      setCapabilityReviews(prev => ({
+        ...prev,
+        [item.id]: { status: 'ready', preview, error: '' },
+      }))
+    } catch (error) {
+      setCapabilityReviews(prev => ({
+        ...prev,
+        [item.id]: {
+          status: 'error', preview: null,
+          error: error.message || 'Capabilities could not be checked.',
+        },
+      }))
+    }
+  }, [token])
+
   // Install / update runs inline from DetailView's primary button.
   // There is no intermediate confirm modal — DetailView is the
   // confirmation surface (permissions, schedule, esm.sh deps and the
@@ -548,6 +580,11 @@ export default function App({ appId, token }) {
   // the button can disable + show "Installing…" while in flight.
   const handleInstall = async (item, _opts = {}) => {
     if (busy) return
+    if (!_opts.capabilityDigest) {
+      reviewCapabilities(item)
+      setToast({ kind: 'error', message: 'Review this app’s live access before installing.' })
+      return
+    }
     const startedActionKind = _opts?.isUpdate ? 'update' : 'install'
     setBusy(true)
     setBusyItemId(item?.id || null)
@@ -563,6 +600,7 @@ export default function App({ appId, token }) {
         manifest: item.manifest,
         raw_base: item.raw_base,
         token,
+        reviewed_capability_digest: _opts.capabilityDigest,
       })
       const isConflict = result.mode === 'conflict'
       const isSeamlessUpdate = result.mode === 'update' &&
@@ -670,6 +708,29 @@ export default function App({ appId, token }) {
       // commit on the same surface the user committed it from. The user
       // can use the back arrow / device-back to dismiss when ready.
     } catch (e) {
+      if (e?.code === 'capability_changed') {
+        let preview = e.preview
+        try {
+          preview = await previewApp({
+            manifest_url: item.manifest_url,
+            manifest: item.manifest,
+            raw_base: item.raw_base,
+            token,
+          })
+        } catch {
+          // The 409 already carried the current server-derived contract. Keep
+          // it visible even if the follow-up diff refresh is temporarily down.
+        }
+        setCapabilityReviews(prev => ({
+          ...prev,
+          [item.id]: { status: 'changed', preview, error: '' },
+        }))
+        setToast({
+          kind: 'error',
+          message: 'This app changed its access after review. Nothing was installed; review the current access and click again.',
+        })
+        return
+      }
       const message = e.message || String(e)
       setCardErrors(prev => ({ ...prev, [item.id]: message }))
       window.mobius?.signal?.('error', { message, source: 'install' })
@@ -802,6 +863,7 @@ export default function App({ appId, token }) {
   // concurrent pushes from cross-resolving.
   const openDetail = useCallback(async (item) => {
     if (!item || !item.manifest) return
+    reviewCapabilities(item)
     savedGridScrollRef.current = gridScrollRef.current?.scrollTop || 0
     if (navDetailRef.current && !detail) return
     if (detail) {
@@ -847,7 +909,7 @@ export default function App({ appId, token }) {
       navDetailRef.current = null
       setDetail(item)
     }
-  }, [detail])
+  }, [detail, reviewCapabilities])
 
   // closeDetail: tell the shell to pop its sentinel, then clear our
   // own detail state. Idempotent — calling when detail is already
@@ -949,6 +1011,8 @@ export default function App({ appId, token }) {
         <style>{CSS}</style>
         <DetailView
           item={detail}
+          capabilityReview={capabilityReviews[detail.id]}
+          onRetryCapabilityReview={() => reviewCapabilities(detail)}
           installed={installed}
           installedVersions={installedVersions}
           onBack={closeDetail}
@@ -1062,7 +1126,7 @@ export default function App({ appId, token }) {
                     updateChecks={updateChecks}
                     onPick={(item) => item.manifest && openDetail(item)}
                     onRetry={retryCatalogItem}
-                    onUpdate={handleInstall}
+                    onUpdate={openDetail}
                     onOpenInstalled={handleOpenInstalled}
                     onRetryInstalled={handleRetryInstalled}
                     busy={busy}

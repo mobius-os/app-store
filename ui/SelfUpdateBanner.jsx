@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { STORE_SELF, STORE_VERSION } from '../constants.js'
 import { semverCmp } from '../domain.js'
-import { fetchManifest, installApp } from '../api.js'
+import { installApp, previewApp } from '../api.js'
+import { CapabilityContract } from './CapabilityContract.jsx'
 
 // Self-update banner. The store is bootstrapped separately from its catalog
 // grid, so it checks for its OWN updates here: fetch the published manifest
@@ -10,15 +11,18 @@ import { fetchManifest, installApp } from '../api.js'
 // then prompt a reload so the freshly-patched code loads. Renders null when
 // current.
 export function SelfUpdateBanner({ appId, token }) {
-  const [latest, setLatest] = useState(null)   // manifest of the published store
+  const [review, setReview] = useState(null)
+  const [showReview, setShowReview] = useState(false)
   const [installedVer, setInstalledVer] = useState(null) // DB version of THIS app row
   const [phase, setPhase] = useState('idle')   // idle | updating | done | conflict | error
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
     let cancelled = false
-    fetchManifest(STORE_SELF.manifest_url, token)
-      .then(m => { if (!cancelled) setLatest(m) })
+    previewApp({ manifest_url: STORE_SELF.manifest_url, token })
+      .then(preview => {
+        if (!cancelled) setReview({ status: 'ready', preview, error: '' })
+      })
       .catch(() => {})   // a failed self-check is silent — never block the grid
     // The DB row's version is the ground truth for "what is installed".
     // The baked STORE_VERSION constant is only what is RUNNING — comparing
@@ -34,14 +38,23 @@ export function SelfUpdateBanner({ appId, token }) {
     return () => { cancelled = true }
   }, [appId, token])
 
+  const latest = review?.preview?.manifest
   const runningOrInstalled = installedVer || STORE_VERSION
   const hasUpdate = latest && semverCmp(runningOrInstalled, latest.version) < 0
   if (phase !== 'done' && phase !== 'conflict' && !hasUpdate) return null
 
   const onUpdate = async () => {
+    if (!showReview) {
+      setShowReview(true)
+      return
+    }
     setPhase('updating'); setMsg('')
     try {
-      const result = await installApp({ manifest_url: STORE_SELF.manifest_url, token })
+      const result = await installApp({
+        manifest_url: STORE_SELF.manifest_url,
+        token,
+        reviewed_capability_digest: review.preview.capability_digest,
+      })
       if (result.mode === 'conflict') {
         const paths = result.conflict_paths?.length
           ? ` Conflicts: ${result.conflict_paths.join(', ')}.`
@@ -52,12 +65,22 @@ export function SelfUpdateBanner({ appId, token }) {
       }
       setPhase('done')
     } catch (e) {
+      if (e?.code === 'capability_changed') {
+        let preview = e.preview
+        try {
+          preview = await previewApp({ manifest_url: STORE_SELF.manifest_url, token })
+        } catch {}
+        setReview({ status: 'changed', preview, error: '' })
+        setPhase('error')
+        setMsg('Access changed after review. Review the current contract and click Update again.')
+        return
+      }
       setPhase('error'); setMsg(e.message || String(e))
     }
   }
 
   return (
-    <div className="st-banner">
+    <div className={`st-banner${showReview ? ' is-reviewing' : ''}`}>
       {phase === 'done' ? (
         <>
           <div className="st-banner-msg">App Store updated to v{latest.version}. Reload to apply.</div>
@@ -72,11 +95,14 @@ export function SelfUpdateBanner({ appId, token }) {
         </>
       ) : (
         <>
-          <div className="st-banner-msg">
-            App Store v{latest.version} is available{phase === 'error' && msg ? ` — ${msg}` : ''}.
+          <div className="st-banner-content">
+            <div className="st-banner-msg">
+              App Store v{latest.version} is available{phase === 'error' && msg ? ` — ${msg}` : ''}.
+            </div>
+            {showReview && <CapabilityContract review={review} isInstalled />}
           </div>
           <button className="st-banner-btn" disabled={phase === 'updating'} onClick={onUpdate}>
-            {phase === 'updating' ? 'Updating…' : 'Update'}
+            {phase === 'updating' ? 'Updating…' : showReview ? 'Update' : 'Review access'}
           </button>
         </>
       )}

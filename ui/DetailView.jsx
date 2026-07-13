@@ -1,7 +1,6 @@
-import { PERM_EXPLAIN } from '../constants.js'
-import { appLifecycleFor, busyLabelForAction, isTrustedHost, manifestCapabilityRows, scheduleSummary } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary } from '../domain.js'
+import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox } from './IconBox.jsx'
-import { PermissionRow } from './PermissionRow.jsx'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -12,9 +11,10 @@ function setupMetaText(setup, storeInstalled) {
     : 'Install first; setup appears on first open'
 }
 
-export function DetailView({ item, installed, installedVersions, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
-  const m = item.manifest
-  const lifecycle = appLifecycleFor(item, {
+export function DetailView({ item, capabilityReview, onRetryCapabilityReview, installed, installedVersions, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+  const m = capabilityReview?.preview?.manifest || item.manifest
+  const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
+  const lifecycle = appLifecycleFor(reviewedItem, {
     installed,
     installedVersions,
     updateChecks,
@@ -27,17 +27,16 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
   const installedVer = lifecycle.installedVersion
   const hasUpdate = lifecycle.hasUpdate
   const blockedUpdate = lifecycle.key === 'conflict'
+  const requiresCapabilityReview = !storeInstalled || hasUpdate
+  const capabilityReviewReady = capabilityReview?.status === 'ready' || capabilityReview?.status === 'changed'
   const canRetryInstalled = typeof onRetryInstalled === 'function'
   const primaryActionDisabled =
     busy ||
     lifecycle.actionKind === 'none' ||
     (lifecycle.actionKind === 'open' && !storeInstalled) ||
     (lifecycle.actionKind === 'retry' && !canRetryInstalled) ||
-    (lifecycle.actionKind === 'resolve' && !updateNotice)
-  const ca = m.permissions?.cross_app_access || 'none'
-  const sw = m.permissions?.share_with_apps || 'none'
-  const ma = !!m.permissions?.manage_apps
-  const agentCapabilities = manifestCapabilityRows(m)
+    (lifecycle.actionKind === 'resolve' && !updateNotice) ||
+    (requiresCapabilityReview && !capabilityReviewReady)
   // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
   // already resolve to trusted hosts, so they pass silently. Invalid
   // URLs fall through to the warn path on purpose. This is now the
@@ -47,7 +46,12 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
   if (unfamiliarHost) {
     try { warnHost = new URL(item.manifest_url).hostname } catch { warnHost = item.manifest_url }
   }
-  const scheduleText = scheduleSummary(m.schedule)
+  const scheduleText = capabilityReviewReady && capabilityReview.preview?.capability_contract?.background
+    ? scheduleSummary({
+        default: capabilityReview.preview.capability_contract.background.cron,
+        job: capabilityReview.preview.capability_contract.background.job,
+      })
+    : ''
   const setup = item.setup?.required ? item.setup : null
   const showSetup = !!setup && (
     setup.scope === 'system'
@@ -96,32 +100,12 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
         )}
 
         <div className="st-detail-section">
-          <div className="st-section-label">What this app can do</div>
-          {agentCapabilities.map(capability => (
-            <PermissionRow
-              key={capability.key}
-              label={capability.label}
-              level={capability.level}
-              info={capability.info}
-            />
-          ))}
-          <PermissionRow
-            label="Other apps' data"
-            level={ca}
-            info={PERM_EXPLAIN.cross_app_access[ca]}
+          <div className="st-section-label">Access and agent integration</div>
+          <CapabilityContract
+            review={capabilityReview}
+            onRetry={onRetryCapabilityReview}
+            isInstalled={!!storeInstalled}
           />
-          <PermissionRow
-            label="Sharing with other apps"
-            level={sw}
-            info={PERM_EXPLAIN.share_with_apps[sw]}
-          />
-          {('manage_apps' in (m.permissions || {})) && (
-            <PermissionRow
-              label="Install authority"
-              level={ma ? 'yes' : 'no'}
-              info={PERM_EXPLAIN.manage_apps[String(ma)]}
-            />
-          )}
         </div>
 
         {scheduleText && (
@@ -129,7 +113,7 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
             <div className="st-section-label">Schedule</div>
             <div className="st-schedule-row">
               <div className="st-schedule-main">{scheduleText}</div>
-              {m.schedule.user_configurable && (
+              {capabilityReview.preview.capability_contract.background.user_configurable && (
                 <div className="st-schedule-note">
                   Time is configurable from the app's settings after install.
                 </div>
@@ -268,12 +252,20 @@ export function DetailView({ item, installed, installedVersions, updateChecks = 
               onRetryInstalled?.()
               return
             }
-            if (hasUpdate) onInstall(item, { isUpdate: true, existingId: storeInstalled.id })
+            if (hasUpdate) onInstall(item, {
+              isUpdate: true,
+              existingId: storeInstalled.id,
+              capabilityDigest: capabilityReview.preview.capability_digest,
+            })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
-            else onInstall(item, { isUpdate: false })
+            else onInstall(item, {
+              isUpdate: false,
+              capabilityDigest: capabilityReview.preview.capability_digest,
+            })
           }}
         >
           {busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind)
+            : requiresCapabilityReview && !capabilityReviewReady ? 'Reviewing access…'
             : blockedUpdate ? 'Resolve update'
             : lifecycle.actionKind === 'retry' ? 'Retry'
             : hasUpdate ? `Update to v${m.version}`

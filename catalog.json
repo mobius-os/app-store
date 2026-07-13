@@ -6,7 +6,7 @@
     {
       "id": "memory",
       "name": "Memory",
-      "description": "Browse and maintain the graph of what Möbius has learned over time.",
+      "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
       "repo": "mobius-os/app-memory",
       "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json",
       "raw_base": "https://raw.githubusercontent.com/mobius-os/app-memory/main/",
@@ -17,15 +17,16 @@
       "keywords": [
         "memory graph",
         "memory maintenance",
+        "on-demand recall",
         "scheduled consolidation",
         "notes",
         "knowledge base",
         "agent context"
       ],
       "capabilities": [
+        "retrieve memories on demand",
         "browse memory graph",
-        "scheduled memory consolidation",
-        "inspect knowledge links"
+        "scheduled memory consolidation"
       ],
       "setup": {
         "required": true,
