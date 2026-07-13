@@ -4,12 +4,16 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "1.7.3",
+    "version": "1.8.0",
     "description": "Browse and maintain the graph of what Möbius has learned over time.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-memory",
     "entry": "index.jsx",
+    "system_prompt": "memory-core.md",
+    "skills": [
+      "memory.md"
+    ],
     "icon": "icon.png",
     "offline_capable": true,
     "offline": {
@@ -22,9 +26,19 @@ export const MANIFEST_SNAPSHOTS = {
       "share_with_apps": "none",
       "chat_log_access": "summary"
     },
+    "storage_seeds": {
+      "settings.json": {
+        "primary_agent_mode": "system",
+        "provider": null,
+        "model": null,
+        "secondary_agent_mode": "system",
+        "fallback_provider": null,
+        "fallback_model": null
+      }
+    },
     "schedule": {
       "default": "30 5 * * *",
-      "user_configurable": false,
+      "user_configurable": true,
       "job": "fetch.sh"
     },
     "runtime": {
@@ -41,6 +55,9 @@ export const MANIFEST_SNAPSHOTS = {
     },
     "embeds_agent": true,
     "source_files": [
+      "memory-core.md",
+      "memory.md",
+      "memory_search.py",
       "memory_runner.py",
       "constants.js",
       "theme.js",
@@ -54,7 +71,16 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ListGlyph.jsx",
       "ui/ChatGlyph.jsx",
       "ui/TextGlyph.jsx",
-      "ui/NetworkGlyph.jsx"
+      "ui/NetworkGlyph.jsx",
+      "seed-memory/index.md",
+      "seed-memory/mocs/about-the-user.md",
+      "seed-memory/mocs/building-mobius-apps.md",
+      "seed-memory/mocs/maintaining-memory.md",
+      "seed-memory/mocs/mobius-platform.md",
+      "seed-memory/notes/a-nightly-reflection-pass-exists.md",
+      "seed-memory/notes/how-the-memory-graph-works.md",
+      "seed-memory/notes/memory-is-visible-to-the-partner.md",
+      "seed-memory/notes/this-instance-is-fresh.md"
     ]
   },
   "reflection": {
@@ -835,7 +861,7 @@ export const MANIFEST_SNAPSHOTS = {
   "cuberun": {
     "id": "cuberun",
     "name": "CubeRun",
-    "version": "1.0.2-mobius.18",
+    "version": "1.0.2-mobius.19",
     "description": "Neon 3D runner game packaged for Mobius as a durable static app.",
     "author": "Adam Karlsten, Mobius packaging by Hamza Merzic",
     "license": "MIT",
@@ -864,11 +890,11 @@ export const MANIFEST_SNAPSHOTS = {
       "robots.txt": "build/robots.txt",
       "static/css/main.6f1b544c.chunk.css": "build/static/css/main.6f1b544c.chunk.css",
       "static/css/main.6f1b544c.chunk.css.map": "build/static/css/main.6f1b544c.chunk.css.map",
-      "static/js/2.ef17f9a3.chunk.js": "build/static/js/2.ef17f9a3.chunk.js",
-      "static/js/2.ef17f9a3.chunk.js.LICENSE.txt": "build/static/js/2.ef17f9a3.chunk.js.LICENSE.txt",
-      "static/js/2.ef17f9a3.chunk.js.map": "build/static/js/2.ef17f9a3.chunk.js.map",
-      "static/js/main.ab005072.chunk.js": "build/static/js/main.ab005072.chunk.js",
-      "static/js/main.ab005072.chunk.js.map": "build/static/js/main.ab005072.chunk.js.map",
+      "static/js/2.58f634f4.chunk.js": "build/static/js/2.58f634f4.chunk.js",
+      "static/js/2.58f634f4.chunk.js.LICENSE.txt": "build/static/js/2.58f634f4.chunk.js.LICENSE.txt",
+      "static/js/2.58f634f4.chunk.js.map": "build/static/js/2.58f634f4.chunk.js.map",
+      "static/js/main.6b887f3c.chunk.js": "build/static/js/main.6b887f3c.chunk.js",
+      "static/js/main.6b887f3c.chunk.js.map": "build/static/js/main.6b887f3c.chunk.js.map",
       "static/js/runtime-main.543a1102.js": "build/static/js/runtime-main.543a1102.js",
       "static/js/runtime-main.543a1102.js.map": "build/static/js/runtime-main.543a1102.js.map",
       "static/media/Road_Rage.03e8327b.otf": "build/static/media/Road_Rage.03e8327b.otf",
