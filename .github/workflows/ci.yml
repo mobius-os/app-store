@@ -44,7 +44,9 @@ jobs:
       - name: Test
         env:
           MOBIUS_FRONTEND_NODE_MODULES: ${{ github.workspace }}/.mobius/frontend/node_modules
-        run: npm test --if-present
+        run: |
+          export PATH="$GITHUB_WORKSPACE/.mobius/frontend/node_modules/.bin:$PATH"
+          npm test --if-present
 
       - name: Verify mobius package
         run: npm run verify:mobius --if-present
