@@ -7,13 +7,37 @@ const catalogPath = resolve(root, 'catalog.json')
 const snapshotsPath = resolve(root, 'manifest-snapshots.js')
 const required = ['id', 'name', 'version', 'description', 'entry']
 
+function refreshUrl(value, id) {
+  const url = new URL(value)
+  const parts = url.pathname.split('/').filter(Boolean)
+  if (
+    url.hostname === 'raw.githubusercontent.com' &&
+    parts.length >= 4 &&
+    parts[2] === 'main'
+  ) {
+    // The short raw /main/ form can lag a newly pushed branch tip at some CDN
+    // edges. GitHub's ref-qualified route resolves the branch first, then
+    // redirects to raw content for that exact ref.
+    return new URL(
+      `https://github.com/${parts[0]}/${parts[1]}/raw/refs/heads/main/` +
+      parts.slice(3).join('/'),
+    )
+  }
+  url.searchParams.set('_mobius_refresh', `${Date.now()}-${id}`)
+  return url
+}
+
 const catalog = JSON.parse(await readFile(catalogPath, 'utf8'))
 if (!Array.isArray(catalog.apps) || catalog.apps.length === 0) {
   throw new Error('catalog.json has no apps')
 }
 
 const manifests = await Promise.all(catalog.apps.map(async (entry) => {
-  const response = await fetch(entry.manifest_url)
+  // A refresh must observe the current branch tip rather than silently
+  // republishing an older snapshot. The durable manifest_url stored in the
+  // catalog remains unchanged.
+  const manifestUrl = refreshUrl(entry.manifest_url, entry.id)
+  const response = await fetch(manifestUrl, { cache: 'no-store' })
   if (!response.ok) {
     throw new Error(`${entry.id}: manifest returned HTTP ${response.status}`)
   }
