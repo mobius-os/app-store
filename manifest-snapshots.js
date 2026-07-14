@@ -4,12 +4,13 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "1.8.0",
-    "description": "Browse and maintain the graph of what Möbius has learned over time.",
+    "version": "2.0.0",
+    "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-memory",
     "entry": "index.jsx",
+    "system_app": true,
     "system_prompt": "memory-core.md",
     "skills": [
       "memory.md"
@@ -19,12 +20,14 @@ export const MANIFEST_SNAPSHOTS = {
     "offline": {
       "reads": true,
       "writes": "none",
-      "execution": "none"
+      "execution": "partial"
     },
     "permissions": {
       "cross_app_access": "none",
       "share_with_apps": "none",
-      "chat_log_access": "summary"
+      "shared_memory": "write",
+      "chat_log_access": "summary",
+      "background_agent": true
     },
     "storage_seeds": {
       "settings.json": {
@@ -39,7 +42,8 @@ export const MANIFEST_SNAPSHOTS = {
     "schedule": {
       "default": "30 5 * * *",
       "user_configurable": true,
-      "job": "fetch.sh"
+      "job": "fetch.sh",
+      "initialize_on_install": true
     },
     "runtime": {
       "imports": [
@@ -53,12 +57,14 @@ export const MANIFEST_SNAPSHOTS = {
         "pixi.js"
       ]
     },
-    "embeds_agent": true,
+    "embeds_agent": false,
     "source_files": [
       "memory-core.md",
       "memory.md",
       "memory_search.py",
       "memory_runner.py",
+      "memory_store.py",
+      "memory_graph.py",
       "constants.js",
       "theme.js",
       "domain.js",
