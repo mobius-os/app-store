@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -83,10 +83,8 @@ export const MANIFEST_SNAPSHOTS = {
       "seed-memory/mocs/building-mobius-apps.md",
       "seed-memory/mocs/maintaining-memory.md",
       "seed-memory/mocs/mobius-platform.md",
-      "seed-memory/notes/a-nightly-reflection-pass-exists.md",
       "seed-memory/notes/how-the-memory-graph-works.md",
-      "seed-memory/notes/memory-is-visible-to-the-partner.md",
-      "seed-memory/notes/this-instance-is-fresh.md"
+      "seed-memory/notes/memory-is-visible-to-the-partner.md"
     ]
   },
   "reflection": {
