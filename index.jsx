@@ -17,7 +17,6 @@ import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
 import {
   buildCleanMergeReviewMessage,
-  buildUpdateReviewMessage,
   appLifecycleFor,
   busyLabelForAction,
   capabilityDiffNeedsReview,
@@ -60,7 +59,6 @@ import { DetailView } from './ui/DetailView.jsx'
 import { FromUrlTab } from './ui/FromUrlTab.jsx'
 import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
-import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
 
 export {
   appLifecycleFor,
@@ -239,17 +237,13 @@ export default function App({ appId, token }) {
   const [busy, setBusy] = useState(false)
   const [busyItemId, setBusyItemId] = useState(null)
   const [busyActionKind, setBusyActionKind] = useState(null)
-  // Candidate loading state for the pre-apply update review. The review opens
-  // from either a catalog card or DetailView, so this stays item-scoped.
+  // Catalog updates remain one tap. The item-scoped loading state covers two
+  // quiet, read-only guards (access + exact source bytes) immediately before
+  // the update is applied.
   const [checkingUpdateItemId, setCheckingUpdateItemId] = useState(null)
   const checkingUpdateRef = useRef(null)
   const [toast, setToast] = useState(null)
   const [updateNotice, setUpdateNotice] = useState(null)
-  // The pre-apply review is distinct from updateNotice: it is a read-only
-  // candidate diff opened before every update, while updateNotice describes a
-  // conflict discovered after an apply attempt.
-  const [updateReview, setUpdateReview] = useState(null)
-  const [agentReviewingUpdate, setAgentReviewingUpdate] = useState(false)
   const [cardErrors, setCardErrors] = useState({})
   // A complete baked snapshot is usable on the very first render. Installed
   // state and the remote registry hydrate independently; neither should make a
@@ -934,9 +928,11 @@ export default function App({ appId, token }) {
     }
   }, [detail, reviewCapabilities])
 
-  // Every update opens a read-only review first, matching the system updater.
-  // Capability and source previews are independent, so start both together;
-  // the modal shows access changes inline and only Apply mutates the app.
+  // Keep routine catalog updates one tap while binding the install to exactly
+  // what was checked. Access and source previews are independent, so load both
+  // together; changed/unknown access stops for review, while unchanged access
+  // continues directly with both server-derived digests. If either candidate
+  // changes before install, the backend rejects it without applying anything.
   const handleCatalogUpdate = useCallback(async (item, opts = {}) => {
     if (!opts.isUpdate) {
       openDetail(item)
@@ -956,18 +952,13 @@ export default function App({ appId, token }) {
           raw_base: item.raw_base,
           token,
         }),
-        loadUpdateCandidatePreview(installedApp.id, token).then(
-          (preview) => ({ preview, error: '' }),
-          (error) => ({
-            preview: null,
-            error: error.message || 'Update changes could not be loaded.',
-          }),
-        ),
+        loadUpdateCandidatePreview(installedApp.id, token),
       ])
+      const accessChanged = capabilityDiffNeedsReview(
+        capabilityPreview.capability_diff,
+      )
       const capabilityReview = {
-        status: capabilityDiffNeedsReview(capabilityPreview.capability_diff)
-          ? 'changed'
-          : 'ready',
+        status: accessChanged ? 'changed' : 'ready',
         preview: capabilityPreview,
         error: '',
       }
@@ -975,15 +966,19 @@ export default function App({ appId, token }) {
         ...prev,
         [item.id]: capabilityReview,
       }))
-      setUpdateReview({
-        item,
-        installedApp,
-        preview: candidate.preview || {
-          upstream_version: item.manifest?.version,
-          upstream_diff: '',
-        },
-        previewError: candidate.error,
-        capabilityReview,
+      if (accessChanged) {
+        const message = 'This update changes app access. Open it to review before updating.'
+        setCardErrors(prev => ({ ...prev, [item.id]: message }))
+        setToast({ kind: 'error', message })
+        return
+      }
+      if (!candidate?.source_digest) {
+        throw new Error('The update source could not be verified. Nothing was changed.')
+      }
+      await handleInstall(item, {
+        isUpdate: true,
+        capabilityDigest: capabilityPreview.capability_digest,
+        sourceDigest: candidate.source_digest,
       })
     } catch (error) {
       const message = error.message || 'This update could not be checked.'
@@ -997,42 +992,7 @@ export default function App({ appId, token }) {
       checkingUpdateRef.current = null
       setCheckingUpdateItemId(null)
     }
-  }, [busy, installed, openDetail, token])
-
-  const handleApplyReviewedUpdate = useCallback(async () => {
-    if (!updateReview || busy || agentReviewingUpdate) return
-    const outcome = await handleInstall(updateReview.item, {
-      isUpdate: true,
-      capabilityDigest: updateReview.capabilityReview.preview.capability_digest,
-      sourceDigest: updateReview.preview.source_digest,
-    })
-    if (outcome?.ok || outcome?.conflict) {
-      setUpdateReview(null)
-      return
-    }
-    if (outcome?.reason === 'capability_changed' || outcome?.reason === 'update_changed') {
-      await handleCatalogUpdate(updateReview.item, { isUpdate: true })
-    }
-  }, [agentReviewingUpdate, busy, handleCatalogUpdate, handleInstall, updateReview])
-
-  const handleAgentUpdateReview = useCallback(async () => {
-    if (!updateReview || busy || agentReviewingUpdate) return
-    setAgentReviewingUpdate(true)
-    setCardErrors(prev => withoutKey(prev, updateReview.item.id))
-    try {
-      const title = `Review ${updateReview.item.manifest?.name || updateReview.item.id} update`
-      const chat = await createAppChat(title, token, { ownerVisible: true })
-      const content = buildUpdateReviewMessage(updateReview)
-      await seedChatMessage(chat.id, content, token)
-      openChat(chat.id)
-    } catch (error) {
-      const message = error.message || 'Could not open an agent review.'
-      setCardErrors(prev => ({ ...prev, [updateReview.item.id]: message }))
-      setToast({ kind: 'error', message })
-    } finally {
-      setAgentReviewingUpdate(false)
-    }
-  }, [agentReviewingUpdate, busy, token, updateReview])
+  }, [busy, handleInstall, installed, openDetail, token])
 
   // closeDetail: tell the shell to pop its sentinel, then clear our
   // own detail state. Idempotent — calling when detail is already
@@ -1167,17 +1127,6 @@ export default function App({ appId, token }) {
             onCancel={() => !busy && setPendingUninstall(null)}
           />
         )}
-        {updateReview && (
-          <UpdateReviewModal
-            review={updateReview}
-            applying={busy && busyActionKind === 'update'}
-            agentReviewing={agentReviewingUpdate}
-            error={cardErrors[updateReview.item.id] || ''}
-            onClose={() => setUpdateReview(null)}
-            onApply={handleApplyReviewedUpdate}
-            onReviewWithAgent={handleAgentUpdateReview}
-          />
-        )}
         <Toast toast={toast} onDismiss={() => setToast(null)} />
       </div>
     )
@@ -1298,18 +1247,6 @@ export default function App({ appId, token }) {
           onCancel={() => !busy && setPendingUninstall(null)}
         />
       )}
-      {updateReview && (
-        <UpdateReviewModal
-          review={updateReview}
-          applying={busy && busyActionKind === 'update'}
-          agentReviewing={agentReviewingUpdate}
-          error={cardErrors[updateReview.item.id] || ''}
-          onClose={() => setUpdateReview(null)}
-          onApply={handleApplyReviewedUpdate}
-          onReviewWithAgent={handleAgentUpdateReview}
-        />
-      )}
-
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   )
