@@ -899,6 +899,127 @@ export const CSS = `
 .st-empty-text { margin: 0; font-size: 14px; line-height: 1.6; }
 /* /mobius-ui:Empty */
 
+/* Read-only app-update review. Mirrors the platform updater's hierarchy: a
+   compact file summary first, full unified diff on demand, explicit apply. */
+.st-update-review-scrim {
+  position: absolute; inset: 0; z-index: 150;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  overscroll-behavior: contain;
+}
+.st-update-review {
+  width: min(640px, 100%);
+  height: min(720px, calc(100% - 16px));
+  min-height: 0;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border); border-radius: 16px;
+  background: var(--surface); color: var(--text);
+  overflow: hidden;
+}
+.st-update-review-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+.st-update-review-title {
+  margin: 0; font-size: 18px; line-height: 1.3; font-weight: 700; letter-spacing: 0;
+}
+.st-update-review-subtitle {
+  margin: 3px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted);
+}
+.st-update-review-close {
+  flex: 0 0 auto; width: 36px; height: 36px; margin: -4px -4px 0 0;
+  display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: transparent; color: var(--muted);
+  font: 400 22px/1 var(--font); cursor: pointer;
+}
+.st-update-review-close:disabled { opacity: 0.5; cursor: default; }
+@media (hover: hover) {
+  .st-update-review-close:not(:disabled):hover { background: var(--surface2); color: var(--text); }
+}
+.st-update-review-body {
+  min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: 18px;
+  padding-right: 2px; overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.st-update-review-body::-webkit-scrollbar { display: none; }
+.st-update-review-section { display: flex; flex-direction: column; gap: 9px; }
+.st-update-review-section > h3,
+.st-update-review-section-head h3 {
+  margin: 0; font-size: 12px; line-height: 1.4; font-weight: 650; color: var(--muted);
+}
+.st-update-review-section-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.st-update-review-total,
+.st-update-review-stat {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  font: 600 12px/1.3 var(--mono, monospace);
+}
+.st-update-review-total .is-add,
+.st-update-review-stat .is-add { color: var(--green); }
+.st-update-review-total .is-del,
+.st-update-review-stat .is-del { color: var(--danger); }
+.st-update-review-files {
+  list-style: none; margin: 0; padding: 0;
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.st-update-review-file {
+  min-height: 44px; display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; padding: 8px 4px;
+}
+.st-update-review-file + .st-update-review-file { border-top: 1px solid var(--border); }
+.st-update-review-badge {
+  width: 22px; height: 22px; display: grid; place-items: center;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted);
+  font: 700 11px/1 var(--mono, monospace);
+}
+.st-update-review-badge.is-a {
+  background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green);
+}
+.st-update-review-badge.is-d {
+  background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger);
+}
+.st-update-review-path {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 500 12.5px/1.4 var(--mono, monospace); color: var(--text);
+}
+.st-update-review-toggle { align-self: flex-start; min-height: 38px; padding: 7px 12px; }
+.st-update-review-diff {
+  margin: 0; max-height: 340px; overflow: auto; padding: 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); color: var(--text);
+  font: 12px/1.55 var(--mono, monospace); white-space: pre;
+  overscroll-behavior: contain;
+}
+.st-update-review-notice {
+  padding: 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface2); color: var(--muted);
+  font-size: 13px; line-height: 1.5;
+}
+.st-update-review-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding-top: 14px; border-top: 1px solid var(--border);
+}
+.st-update-review-actions .st-btn:first-child { margin-right: auto; }
+
+@media (max-width: 520px) {
+  .st-update-review-scrim { align-items: stretch; padding: 8px; }
+  .st-update-review { height: calc(100% - 16px); padding: 16px; border-radius: 12px; }
+  .st-update-review-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .st-update-review-actions .st-btn { width: 100%; margin: 0; }
+  .st-update-review-actions .st-btn-primary { grid-column: 1 / -1; order: -2; }
+  .st-update-review-actions .st-btn-secondary { order: -1; }
+}
+
+@media (max-width: 360px) {
+  .st-update-review-actions { grid-template-columns: 1fr; }
+  .st-update-review-actions .st-btn-primary { grid-column: auto; }
+}
+
 /* mobius-ui:Sheet v1 — keep in sync; library candidate. Diverge below the marker only. */
 .st-scrim {
   position: absolute; inset: 0; z-index: 100;   /* absolute → stays inside the app, never over shell chrome */

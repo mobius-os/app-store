@@ -17,6 +17,7 @@ import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
 import {
   buildCleanMergeReviewMessage,
+  buildUpdateReviewMessage,
   appLifecycleFor,
   busyLabelForAction,
   capabilityDiffNeedsReview,
@@ -39,6 +40,7 @@ import {
   installApp,
   loadInstalledApps,
   loadProviderStatus,
+  loadUpdateCandidatePreview,
   loadUpdatePreview,
   openChat,
   openInstalledApp,
@@ -58,6 +60,7 @@ import { DetailView } from './ui/DetailView.jsx'
 import { FromUrlTab } from './ui/FromUrlTab.jsx'
 import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
+import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
 
 export {
   appLifecycleFor,
@@ -78,6 +81,7 @@ export {
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'
 export { normalizeInstalledVersions } from './storage.js'
+export { parseUpdateDiff, summarizeUpdateDiff, updateFileStatusLabel } from './update-review.js'
 export {
   fetchCatalog,
   fetchManifest,
@@ -235,14 +239,17 @@ export default function App({ appId, token }) {
   const [busy, setBusy] = useState(false)
   const [busyItemId, setBusyItemId] = useState(null)
   const [busyActionKind, setBusyActionKind] = useState(null)
-  // Catalog updates remain one tap. We still fetch the live capability
-  // contract immediately before applying one, but keep that check in-place
-  // instead of sending the owner through the detail screen just to press
-  // Update again.
+  // Candidate loading state for the pre-apply update review. The review opens
+  // from either a catalog card or DetailView, so this stays item-scoped.
   const [checkingUpdateItemId, setCheckingUpdateItemId] = useState(null)
   const checkingUpdateRef = useRef(null)
   const [toast, setToast] = useState(null)
   const [updateNotice, setUpdateNotice] = useState(null)
+  // The pre-apply review is distinct from updateNotice: it is a read-only
+  // candidate diff opened before every update, while updateNotice describes a
+  // conflict discovered after an apply attempt.
+  const [updateReview, setUpdateReview] = useState(null)
+  const [agentReviewingUpdate, setAgentReviewingUpdate] = useState(false)
   const [cardErrors, setCardErrors] = useState({})
   // A complete baked snapshot is usable on the very first render. Installed
   // state and the remote registry hydrate independently; neither should make a
@@ -581,17 +588,15 @@ export default function App({ appId, token }) {
     }
   }, [token])
 
-  // Install / update runs inline from DetailView's primary button.
-  // There is no intermediate confirm modal — DetailView is the
-  // confirmation surface (permissions, schedule, esm.sh deps and the
-  // unfamiliar-host warning are all rendered there). `busy` flips so
-  // the button can disable + show "Installing…" while in flight.
+  // Installs run inline from DetailView; updates reach this only after the
+  // candidate-diff review's explicit Apply action. `busy` keeps the initiating
+  // surface dimensionally stable while the transaction is in flight.
   const handleInstall = async (item, _opts = {}) => {
-    if (busy) return
+    if (busy) return { ok: false, reason: 'busy' }
     if (!_opts.capabilityDigest) {
       reviewCapabilities(item)
       setToast({ kind: 'error', message: 'Review this app’s live access before installing.' })
-      return
+      return { ok: false, reason: 'capability_review' }
     }
     const startedActionKind = _opts?.isUpdate ? 'update' : 'install'
     setBusy(true)
@@ -609,6 +614,7 @@ export default function App({ appId, token }) {
         raw_base: item.raw_base,
         token,
         reviewed_capability_digest: _opts.capabilityDigest,
+        reviewed_source_digest: _opts.sourceDigest,
       })
       const isConflict = result.mode === 'conflict'
       const isSeamlessUpdate = result.mode === 'update' &&
@@ -634,7 +640,7 @@ export default function App({ appId, token }) {
         // A conflict needs review, but don't yank the user to the detail
         // view — the persisted updateNotice drives the reconcile affordance
         // in place on whichever surface the owner is using.
-        return
+        return { ok: false, conflict: true, result }
       }
 
       // Record the version we just installed so update detection
@@ -670,7 +676,7 @@ export default function App({ appId, token }) {
           message: `${appName} updated to v${versionText}.`,
           action: openAction,
         })
-        return
+        return { ok: true, result }
       }
 
       if (isCleanMerge) {
@@ -687,7 +693,7 @@ export default function App({ appId, token }) {
           message: `${appName} updated to v${versionText}.`,
           action: openAction,
         })
-        return
+        return { ok: true, result }
       }
 
       const verb = result.mode === 'update' ? 'updated' : 'installed'
@@ -708,6 +714,7 @@ export default function App({ appId, token }) {
         message: `${appName} ${verb}${warnSuffix}.`,
         action: openAction,
       })
+      return { ok: true, result }
       // Stay on the detail view. Two reasons: (1) closing here would
       // bounce the user back to the catalog grid mid-action, which felt
       // like the app didn't acknowledge the tap. (2) after refreshInstalled
@@ -737,12 +744,20 @@ export default function App({ appId, token }) {
           kind: 'error',
           message: 'This app changed its access after review. Nothing was installed; review the current access and click again.',
         })
-        return
+        return { ok: false, reason: 'capability_changed' }
+      }
+      if (e?.code === 'update_changed') {
+        setToast({
+          kind: 'error',
+          message: 'This update changed after review. The latest diff is being loaded.',
+        })
+        return { ok: false, reason: 'update_changed' }
       }
       const message = e.message || String(e)
       setCardErrors(prev => ({ ...prev, [item.id]: message }))
       window.mobius?.signal?.('error', { message, source: 'install' })
       setToast({ kind: 'error', message })
+      return { ok: false, reason: 'error' }
     } finally {
       setBusy(false)
       setBusyItemId(null)
@@ -919,14 +934,9 @@ export default function App({ appId, token }) {
     }
   }, [detail, reviewCapabilities])
 
-  // The grid action used to open DetailView so the owner could manually review
-  // access before updating. That made a routine update two taps. Updates are
-  // now direct again when access is unchanged: fetch a fresh server-derived
-  // contract at click time and pass its digest to the guarded installer. A
-  // changed or previously-unknown contract still opens the detail review; the
-  // owner must explicitly accept new access. If the release changes in the
-  // tiny interval between preview and install, the backend rejects it with
-  // capability_changed and shows the new review instead.
+  // Every update opens a read-only review first, matching the system updater.
+  // Capability and source previews are independent, so start both together;
+  // the modal shows access changes inline and only Apply mutates the app.
   const handleCatalogUpdate = useCallback(async (item, opts = {}) => {
     if (!opts.isUpdate) {
       openDetail(item)
@@ -937,31 +947,43 @@ export default function App({ appId, token }) {
     setCheckingUpdateItemId(item.id)
     setCardErrors(prev => withoutKey(prev, item.id))
     try {
-      const preview = await previewApp({
-        manifest_url: item.manifest_url,
-        manifest: item.manifest,
-        raw_base: item.raw_base,
-        token,
-      })
+      const installedApp = findInstalled(installed, item)
+      if (!installedApp) throw new Error('Installed app could not be matched for review.')
+      const [capabilityPreview, candidate] = await Promise.all([
+        previewApp({
+          manifest_url: item.manifest_url,
+          manifest: item.manifest,
+          raw_base: item.raw_base,
+          token,
+        }),
+        loadUpdateCandidatePreview(installedApp.id, token).then(
+          (preview) => ({ preview, error: '' }),
+          (error) => ({
+            preview: null,
+            error: error.message || 'Update changes could not be loaded.',
+          }),
+        ),
+      ])
+      const capabilityReview = {
+        status: capabilityDiffNeedsReview(capabilityPreview.capability_diff)
+          ? 'changed'
+          : 'ready',
+        preview: capabilityPreview,
+        error: '',
+      }
       setCapabilityReviews(prev => ({
         ...prev,
-        [item.id]: { status: 'ready', preview, error: '' },
+        [item.id]: capabilityReview,
       }))
-      if (capabilityDiffNeedsReview(preview.capability_diff)) {
-        setCapabilityReviews(prev => ({
-          ...prev,
-          [item.id]: { status: 'changed', preview, error: '' },
-        }))
-        await openDetail(item)
-        setToast({
-          kind: 'error',
-          message: 'This update changes app access. Review the current access before updating.',
-        })
-        return
-      }
-      await handleInstall(item, {
-        isUpdate: true,
-        capabilityDigest: preview.capability_digest,
+      setUpdateReview({
+        item,
+        installedApp,
+        preview: candidate.preview || {
+          upstream_version: item.manifest?.version,
+          upstream_diff: '',
+        },
+        previewError: candidate.error,
+        capabilityReview,
       })
     } catch (error) {
       const message = error.message || 'This update could not be checked.'
@@ -975,7 +997,42 @@ export default function App({ appId, token }) {
       checkingUpdateRef.current = null
       setCheckingUpdateItemId(null)
     }
-  }, [busy, handleInstall, openDetail, token])
+  }, [busy, installed, openDetail, token])
+
+  const handleApplyReviewedUpdate = useCallback(async () => {
+    if (!updateReview || busy || agentReviewingUpdate) return
+    const outcome = await handleInstall(updateReview.item, {
+      isUpdate: true,
+      capabilityDigest: updateReview.capabilityReview.preview.capability_digest,
+      sourceDigest: updateReview.preview.source_digest,
+    })
+    if (outcome?.ok || outcome?.conflict) {
+      setUpdateReview(null)
+      return
+    }
+    if (outcome?.reason === 'capability_changed' || outcome?.reason === 'update_changed') {
+      await handleCatalogUpdate(updateReview.item, { isUpdate: true })
+    }
+  }, [agentReviewingUpdate, busy, handleCatalogUpdate, handleInstall, updateReview])
+
+  const handleAgentUpdateReview = useCallback(async () => {
+    if (!updateReview || busy || agentReviewingUpdate) return
+    setAgentReviewingUpdate(true)
+    setCardErrors(prev => withoutKey(prev, updateReview.item.id))
+    try {
+      const title = `Review ${updateReview.item.manifest?.name || updateReview.item.id} update`
+      const chat = await createAppChat(title, token, { ownerVisible: true })
+      const content = buildUpdateReviewMessage(updateReview)
+      await seedChatMessage(chat.id, content, token)
+      openChat(chat.id)
+    } catch (error) {
+      const message = error.message || 'Could not open an agent review.'
+      setCardErrors(prev => ({ ...prev, [updateReview.item.id]: message }))
+      setToast({ kind: 'error', message })
+    } finally {
+      setAgentReviewingUpdate(false)
+    }
+  }, [agentReviewingUpdate, busy, token, updateReview])
 
   // closeDetail: tell the shell to pop its sentinel, then clear our
   // own detail state. Idempotent — calling when detail is already
@@ -1082,13 +1139,17 @@ export default function App({ appId, token }) {
           installed={installed}
           installedVersions={installedVersions}
           onBack={closeDetail}
-          onInstall={handleInstall}
+          onInstall={(item, opts) => opts?.isUpdate
+            ? handleCatalogUpdate(item, opts)
+            : handleInstall(item, opts)}
           onUninstall={handleUninstall}
           onOpenInstalled={handleOpenInstalled}
           onSetup={handleSetup}
           onRetryInstalled={handleRetryInstalled}
-          busy={busy}
-          busyActionKind={busyItemId === detail.id ? busyActionKind : null}
+          busy={busy || checkingUpdateItemId === detail.id}
+          busyActionKind={busyItemId === detail.id
+            ? busyActionKind
+            : checkingUpdateItemId === detail.id ? 'checking_update' : null}
           updateChecks={updateChecks}
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
@@ -1104,6 +1165,17 @@ export default function App({ appId, token }) {
             busy={busy}
             onConfirm={confirmUninstall}
             onCancel={() => !busy && setPendingUninstall(null)}
+          />
+        )}
+        {updateReview && (
+          <UpdateReviewModal
+            review={updateReview}
+            applying={busy && busyActionKind === 'update'}
+            agentReviewing={agentReviewingUpdate}
+            error={cardErrors[updateReview.item.id] || ''}
+            onClose={() => setUpdateReview(null)}
+            onApply={handleApplyReviewedUpdate}
+            onReviewWithAgent={handleAgentUpdateReview}
           />
         )}
         <Toast toast={toast} onDismiss={() => setToast(null)} />
@@ -1224,6 +1296,17 @@ export default function App({ appId, token }) {
           busy={busy}
           onConfirm={confirmUninstall}
           onCancel={() => !busy && setPendingUninstall(null)}
+        />
+      )}
+      {updateReview && (
+        <UpdateReviewModal
+          review={updateReview}
+          applying={busy && busyActionKind === 'update'}
+          agentReviewing={agentReviewingUpdate}
+          error={cardErrors[updateReview.item.id] || ''}
+          onClose={() => setUpdateReview(null)}
+          onApply={handleApplyReviewedUpdate}
+          onReviewWithAgent={handleAgentUpdateReview}
         />
       )}
 

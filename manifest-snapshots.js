@@ -226,7 +226,7 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.3.2",
+    "version": "0.3.3",
     "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
     "author": "mobius-os",
     "license": "MIT",

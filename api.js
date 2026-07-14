@@ -336,7 +336,7 @@ export async function fetchCatalog(url, token, opts = {}) {
 // Compares the full numeric core (not just 3 segments, so a 4th segment isn't
 // dropped) and honors SemVer pre-release precedence: 1.2.0-rc.1 < 1.2.0, so a
 // pre-release never reads as "up to date" against its own release.
-function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capability_digest }) {
+function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capability_digest, reviewed_source_digest }) {
   const body = {}
   if (manifest_url) {
     body.manifest_url = manifest_url
@@ -346,6 +346,9 @@ function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capabil
   }
   if (reviewed_capability_digest) {
     body.reviewed_capability_digest = reviewed_capability_digest
+  }
+  if (reviewed_source_digest) {
+    body.reviewed_source_digest = reviewed_source_digest
   }
   return body
 }
@@ -377,9 +380,18 @@ export class CapabilityChangedError extends Error {
   }
 }
 
-export async function installApp({ manifest_url, manifest, raw_base, token, reviewed_capability_digest }) {
+export class UpdateChangedError extends Error {
+  constructor(detail = {}) {
+    super(detail.message || 'The app source changed after review.')
+    this.name = 'UpdateChangedError'
+    this.code = 'update_changed'
+  }
+}
+
+export async function installApp({ manifest_url, manifest, raw_base, token, reviewed_capability_digest, reviewed_source_digest }) {
   const body = installRequestBody({
     manifest_url, manifest, raw_base, reviewed_capability_digest,
+    reviewed_source_digest,
   })
   const res = await fetch('/api/apps/install', {
     method: 'POST',
@@ -396,6 +408,9 @@ export async function installApp({ manifest_url, manifest, raw_base, token, revi
     const detail = parsed?.detail ?? parsed
     if (res.status === 409 && detail?.code === 'capability_changed') {
       throw new CapabilityChangedError(detail)
+    }
+    if (res.status === 409 && detail?.code === 'update_changed') {
+      throw new UpdateChangedError(detail)
     }
     throw new Error(formatErrorDetail(detail) || text || `HTTP ${res.status}`)
   }
@@ -451,6 +466,17 @@ export async function loadUpdatePreview(appId, token) {
     headers: { Authorization: `Bearer ${token}` },
   })
   return await readJsonOrThrow(res, 'Update preview failed')
+}
+
+// Read-only preview of the currently published candidate. This differs from
+// loadUpdatePreview above: that endpoint describes an upstream commit already
+// recorded by an attempted update (used for conflict resolution), while this
+// one fetches the incoming release before anything is applied.
+export async function loadUpdateCandidatePreview(appId, token) {
+  const res = await fetch(`/api/apps/${appId}/update-candidate-preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return await readJsonOrThrow(res, 'Update changes could not be loaded')
 }
 
 export async function createConflictResolverChat(appId, token) {

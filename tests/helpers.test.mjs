@@ -357,7 +357,7 @@ test('installApp prefers live manifest_url over embedded manifest snapshots', as
   }
 })
 
-test('capability preview is backend-derived and its digest binds install', async () => {
+test('review digests bind capability and source previews to install', async () => {
   const oldFetch = globalThis.fetch
   const calls = []
   const digest = 'a'.repeat(64)
@@ -383,15 +383,41 @@ test('capability preview is backend-derived and its digest binds install', async
     await installApp({
       manifest_url: source,
       reviewed_capability_digest: preview.capability_digest,
+      reviewed_source_digest: 'c'.repeat(64),
       token: 'tok',
     })
     assert.deepEqual(calls, [
       { url: '/api/apps/preview', body: { manifest_url: source } },
       {
         url: '/api/apps/install',
-        body: { manifest_url: source, reviewed_capability_digest: digest },
+        body: {
+          manifest_url: source,
+          reviewed_capability_digest: digest,
+          reviewed_source_digest: 'c'.repeat(64),
+        },
       },
     ])
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('source-change 409 asks the UI to refresh instead of applying', async () => {
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({ detail: {
+    code: 'update_changed',
+    message: 'Source changed.',
+  } }), { status: 409, headers: { 'content-type': 'application/json' } })
+  try {
+    const { installApp } = await bundle()
+    await assert.rejects(
+      installApp({
+        manifest_url: 'https://example.test/mobius.json',
+        reviewed_source_digest: 'c'.repeat(64),
+        token: 'tok',
+      }),
+      (error) => error.code === 'update_changed',
+    )
   } finally {
     globalThis.fetch = oldFetch
   }
@@ -497,18 +523,25 @@ test('capability rows disclose embedded agents, provider credentials, and offlin
   assert.match(rows.find(row => row.label === 'Offline use').summary, /partial offline execution/)
 })
 
-test('catalog updates use a fresh capability guard without a second tap', async () => {
+test('catalog updates open a guarded source review before applying', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
+  const reviewSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
   const uninstallSource = await readFile(join(root, '..', 'ui', 'UninstallConfirmModal.jsx'), 'utf8')
   assert.ok(indexSource.includes('const handleCatalogUpdate = useCallback'))
   assert.ok(indexSource.includes('onUpdate={handleCatalogUpdate}'))
-  assert.ok(indexSource.includes('capabilityDigest: preview.capability_digest'))
-  assert.ok(indexSource.includes('capabilityDiffNeedsReview(preview.capability_diff)'))
+  assert.ok(indexSource.includes('loadUpdateCandidatePreview(installedApp.id, token)'))
+  assert.ok(indexSource.includes('previewError: candidate.error'))
+  assert.ok(indexSource.includes('capabilityDigest: updateReview.capabilityReview.preview.capability_digest'))
+  assert.ok(indexSource.includes('sourceDigest: updateReview.preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
+  assert.ok(indexSource.includes('reviewed_source_digest: _opts.sourceDigest'))
   assert.ok(detailSource.includes('<CapabilityContract'))
   assert.ok(detailSource.includes('capabilityReview.preview.capability_digest'))
+  assert.match(reviewSource, /Review with agent/)
+  assert.match(reviewSource, /Apply update/)
+  assert.match(reviewSource, /Show full diff/)
   assert.ok(cardSource.includes("? 'Update'"))
   assert.match(uninstallSource, /kept\s+temporarily for recovery/)
   assert.match(uninstallSource, /shared files.*not erased/)
@@ -721,7 +754,7 @@ test('busy labels stay tied to the action that started', async () => {
 
   assert.equal(busyLabelForAction('update'), 'Updating…')
   assert.equal(busyLabelForAction('open'), 'Opening…')
-  assert.equal(busyLabelForAction('checking_update'), 'Checking update…')
+  assert.equal(busyLabelForAction('checking_update'), 'Loading changes…')
 
   const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
@@ -730,6 +763,42 @@ test('busy labels stay tied to the action that started', async () => {
   assert.ok(source.includes('setBusyActionKind(startedActionKind)'))
   assert.ok(cardSource.includes('busyActionKind || lifecycle.actionKind'))
   assert.ok(detailSource.includes('busyActionKind || lifecycle.actionKind'))
+})
+
+test('update diff summary parses file status and line counts', async () => {
+  const { parseUpdateDiff, summarizeUpdateDiff, updateFileStatusLabel } = await bundle()
+  const diff = [
+    'diff --git a/index.jsx b/index.jsx',
+    'index 123..456 100644',
+    '--- a/index.jsx',
+    '+++ b/index.jsx',
+    '@@ -1,2 +1,2 @@',
+    '-old line',
+    '+new line',
+    ' same',
+    'diff --git a/new-file.js b/new-file.js',
+    'new file mode 100644',
+    '--- /dev/null',
+    '+++ b/new-file.js',
+    '@@ -0,0 +1 @@',
+    '+export const ready = true',
+  ].join('\n')
+
+  assert.deepEqual(parseUpdateDiff(diff), [
+    {
+      oldPath: 'index.jsx', newPath: 'index.jsx', path: 'index.jsx',
+      status: 'M', insertions: 1, deletions: 1,
+    },
+    {
+      oldPath: 'new-file.js', newPath: 'new-file.js', path: 'new-file.js',
+      status: 'A', insertions: 1, deletions: 0,
+    },
+  ])
+  const summary = summarizeUpdateDiff(diff)
+  assert.equal(summary.fileCount, 2)
+  assert.equal(summary.insertions, 2)
+  assert.equal(summary.deletions, 1)
+  assert.equal(updateFileStatusLabel('A'), 'Added')
 })
 
 test('scheduleSummary handles cron and on-demand jobs', async () => {

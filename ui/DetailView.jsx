@@ -231,10 +231,9 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
                                       [ Uninstall ]          (secondary)
           - update blocked (conflict):[ Resolve update ]     (primary)
           - app list fetch failed:    [ Retry ]              (primary)
-          The Install/Update button commits directly — there is no second
-          confirm modal. DetailView is the confirmation surface; the user
-          already saw permissions, schedule, esm.sh deps and the host
-          warning above before reaching this button.
+          Install commits from this reviewed detail surface. Update opens the
+          source-diff review first; only that review's Apply action mutates the
+          installed app.
           The primary CTA holds a fixed min-height (via .st-btn) and the row
           reserves space for the secondary action, so the busy label swap
           ("Open App" -> "Updating…") never reflows the surrounding layout. */}
