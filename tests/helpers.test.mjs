@@ -667,10 +667,14 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
   }).setupNeedsAttention, false)
 
   // Git-native update-check (keyed by the installed row's numeric id) is
-  // authoritative over the semver compare when it answered.
+  // additive to the package-version signal. A negative source-tree probe must
+  // not hide a versioned release whose changes live in static assets, seeds,
+  // icons, jobs, or manifest metadata.
   const upToDate = { ...item, manifest: { ...item.manifest, version: '1.1.0' } }
-  // false => no update even though the installed 1.1.0 < catalog 1.2.0.
-  assert.equal(appLifecycleFor(item, { installed, updateChecks: { 3: false } }).actionKind, 'open')
+  // false + newer package version => update (e.g. a static-only release).
+  assert.equal(appLifecycleFor(item, { installed, updateChecks: { 3: false } }).actionKind, 'update')
+  // false + equal package version => open.
+  assert.equal(appLifecycleFor(upToDate, { installed, updateChecks: { 3: false } }).actionKind, 'open')
   // true => update even though the versions match (content changed, no bump).
   assert.equal(appLifecycleFor(upToDate, { installed, updateChecks: { 3: true } }).actionKind, 'update')
   // null / absent => fall back to the semver compare (exactly today's behavior).
