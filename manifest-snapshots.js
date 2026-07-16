@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.0.8",
+    "version": "2.1.1",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -78,6 +78,7 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ChatGlyph.jsx",
       "ui/TextGlyph.jsx",
       "ui/NetworkGlyph.jsx",
+      "ui/EffortStepper.jsx",
       "ui/ModelPicker.jsx",
       "seed-memory/index.md",
       "seed-memory/mocs/about-the-user.md",
@@ -91,7 +92,7 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.7.7",
+    "version": "2.7.8",
     "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
@@ -155,6 +156,7 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/StreakBar.jsx",
       "ui/ReportsList.jsx",
       "ui/LastNightStatus.jsx",
+      "ui/EffortStepper.jsx",
       "ui/ModelPicker.jsx",
       "ui/SettingsTab.jsx"
     ]
