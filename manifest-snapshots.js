@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.0.7",
+    "version": "2.0.8",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -78,6 +78,7 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ChatGlyph.jsx",
       "ui/TextGlyph.jsx",
       "ui/NetworkGlyph.jsx",
+      "ui/ModelPicker.jsx",
       "seed-memory/index.md",
       "seed-memory/mocs/about-the-user.md",
       "seed-memory/mocs/building-mobius-apps.md",
@@ -90,7 +91,7 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.7.6",
+    "version": "2.7.7",
     "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
@@ -154,6 +155,7 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/StreakBar.jsx",
       "ui/ReportsList.jsx",
       "ui/LastNightStatus.jsx",
+      "ui/ModelPicker.jsx",
       "ui/SettingsTab.jsx"
     ]
   },
@@ -338,7 +340,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.14.5",
+    "version": "1.14.6",
     "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -372,6 +374,16 @@ export const MANIFEST_SNAPSHOTS = {
     "storage_seeds": {
       "system-prompt.md": "system-prompt.md",
       "topics.txt": "topics.txt",
+      "agent.json": {
+        "primary_agent_mode": "system",
+        "provider": null,
+        "model": null,
+        "effort": null,
+        "secondary_agent_mode": "system",
+        "fallback_provider": null,
+        "fallback_model": null,
+        "fallback_effort": null
+      },
       "schedule.json": {
         "hour": 10,
         "minute": 0
@@ -555,7 +567,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "workout",
     "previous_id": "gym",
     "name": "Workout",
-    "version": "2.8.1",
+    "version": "2.8.2",
     "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
     "author": "mobius-os",
     "license": "MIT",
@@ -878,7 +890,7 @@ export const MANIFEST_SNAPSHOTS = {
   "cuberun": {
     "id": "cuberun",
     "name": "CubeRun",
-    "version": "1.0.2-mobius.21",
+    "version": "1.0.2-mobius.23",
     "description": "Neon 3D runner game packaged for Mobius as a durable static app.",
     "author": "Adam Karlsten",
     "license": "MIT",
@@ -907,11 +919,11 @@ export const MANIFEST_SNAPSHOTS = {
       "robots.txt": "build/robots.txt",
       "static/css/main.6f1b544c.chunk.css": "build/static/css/main.6f1b544c.chunk.css",
       "static/css/main.6f1b544c.chunk.css.map": "build/static/css/main.6f1b544c.chunk.css.map",
-      "static/js/2.d198e136.chunk.js": "build/static/js/2.d198e136.chunk.js",
-      "static/js/2.d198e136.chunk.js.LICENSE.txt": "build/static/js/2.d198e136.chunk.js.LICENSE.txt",
-      "static/js/2.d198e136.chunk.js.map": "build/static/js/2.d198e136.chunk.js.map",
-      "static/js/main.70691e83.chunk.js": "build/static/js/main.70691e83.chunk.js",
-      "static/js/main.70691e83.chunk.js.map": "build/static/js/main.70691e83.chunk.js.map",
+      "static/js/2.34de22c4.chunk.js": "build/static/js/2.34de22c4.chunk.js",
+      "static/js/2.34de22c4.chunk.js.LICENSE.txt": "build/static/js/2.34de22c4.chunk.js.LICENSE.txt",
+      "static/js/2.34de22c4.chunk.js.map": "build/static/js/2.34de22c4.chunk.js.map",
+      "static/js/main.0018e04e.chunk.js": "build/static/js/main.0018e04e.chunk.js",
+      "static/js/main.0018e04e.chunk.js.map": "build/static/js/main.0018e04e.chunk.js.map",
       "static/js/runtime-main.543a1102.js": "build/static/js/runtime-main.543a1102.js",
       "static/js/runtime-main.543a1102.js.map": "build/static/js/runtime-main.543a1102.js.map",
       "static/media/Road_Rage.03e8327b.otf": "build/static/media/Road_Rage.03e8327b.otf",
