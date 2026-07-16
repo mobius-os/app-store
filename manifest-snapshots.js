@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.0.6",
+    "version": "2.0.7",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -226,7 +226,7 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.3.4",
+    "version": "0.3.5",
     "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
     "author": "mobius-os",
     "license": "MIT",
@@ -264,6 +264,7 @@ export const MANIFEST_SNAPSHOTS = {
       "theme.js",
       "domain.js",
       "review.js",
+      "refresh.js",
       "stack.js",
       "source-map.js",
       "diff.js",
@@ -337,7 +338,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.14.4",
+    "version": "1.14.5",
     "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -397,7 +398,7 @@ export const MANIFEST_SNAPSHOTS = {
   "editor": {
     "id": "editor",
     "name": "Editor",
-    "version": "0.6.1",
+    "version": "0.6.2",
     "description": "Browse, inspect, and edit every file on your Möbius. Follow git status, check file details, and ask the agent to make changes with you.",
     "author": "mobius-os",
     "license": "MIT",
@@ -464,7 +465,7 @@ export const MANIFEST_SNAPSHOTS = {
   "webstudio": {
     "id": "webstudio",
     "name": "Web Studio",
-    "version": "0.12.8",
+    "version": "0.12.9",
     "description": "Build a website with the agent and preview it live in an in-app browser.",
     "author": "mobius-os",
     "license": "MIT",
@@ -610,7 +611,7 @@ export const MANIFEST_SNAPSHOTS = {
   "habits": {
     "id": "habits",
     "name": "Habits",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
     "author": "mobius-os",
     "license": "MIT",
@@ -694,7 +695,7 @@ export const MANIFEST_SNAPSHOTS = {
   "atlas": {
     "id": "atlas",
     "name": "Atlas",
-    "version": "1.9.8",
+    "version": "1.9.9",
     "description": "Spin the globe, tap the countries you've visited, and watch your map fill in.",
     "author": "mobius-os",
     "license": "MIT",
@@ -743,7 +744,7 @@ export const MANIFEST_SNAPSHOTS = {
   "latex": {
     "id": "latex",
     "name": "LaTeX",
-    "version": "2.14.6",
+    "version": "2.14.7",
     "description": "Write and compile LaTeX with live PDF preview and an agent that drafts your .tex.",
     "author": "mobius-os",
     "license": "MIT",

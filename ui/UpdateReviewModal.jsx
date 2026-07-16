@@ -19,6 +19,7 @@ export function UpdateReviewModal({
   const [diffOpen, setDiffOpen] = useState(false)
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
+  const openerRef = useRef(null)
   const item = review.item
   const preview = review.preview || {}
   const diff = typeof preview.upstream_diff === 'string' ? preview.upstream_diff : ''
@@ -34,8 +35,19 @@ export function UpdateReviewModal({
     if (!busy) onClose()
   }, [busy, onClose])
 
+  // Capture/restore only once per open. The keyboard-listener effect below
+  // legitimately re-runs when busy changes; coupling restoration to it would
+  // briefly throw focus behind the modal during Apply/agent-review transitions.
   useEffect(() => {
+    openerRef.current = document.activeElement
     closeRef.current?.focus()
+    return () => {
+      const opener = openerRef.current
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus()
+    }
+  }, [])
+
+  useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault()
