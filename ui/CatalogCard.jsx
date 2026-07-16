@@ -17,7 +17,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, installedVersions, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function CatalogCard({ item, installed, installedVersions, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -118,11 +118,11 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
     ? 'st-card-action is-installed'
     : 'st-card-action'
 
-  // When the app is installed, use the raw transparent icon endpoint instead
-  // of the external catalog URL — avoids the proxy round-trip and serves the
-  // original PNG without any background flattening.
+  // Installed icons are same-origin, downscaled, and browser-cacheable. IconBox
+  // prioritises this URL over the remote catalog copy so it is available as an
+  // <img> src on the first render instead of popping in after an effect.
   const itemWithIcon = storeInstalled
-    ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon` }
+    ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon?size=128` }
     : item
   // The card is a non-interactive container. Two cleanly-separated AT
   // targets sit inside it: the app name is a real <button> whose ::after
@@ -188,7 +188,19 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
           </div>
         </div>
       ) : error ? (
-        <div className="st-card-inline-error">{error}</div>
+        <div className="st-card-inline-error" role="alert">
+          <div className="st-card-inline-error-text">{error}</div>
+          {onAskAgentError ? (
+            <button
+              type="button"
+              className="st-btn st-btn-secondary st-card-inline-error-action"
+              onClick={() => onAskAgentError(item, error)}
+              disabled={askingAgentAboutError}
+            >
+              {askingAgentAboutError ? 'Opening agent…' : 'Ask agent'}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )

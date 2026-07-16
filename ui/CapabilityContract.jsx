@@ -129,18 +129,20 @@ export function CapabilityContract({ review, onRetry, isInstalled = false }) {
   }
   const preview = review.preview
   const changes = changedCapabilityPaths(preview?.capability_diff)
+  const unknownPrevious = preview?.capability_diff?.unknown_previous === true
   return (
     <>
       {review.status === 'changed' && (
         <div className="st-notice is-warning" role="alert">
-          The publisher changed this app’s capabilities after your last review.
-          Nothing was installed. Review the current access below, then click again.
+          {unknownPrevious
+            ? 'This app was installed before access receipts were recorded, so the old and new access cannot be compared automatically. Nothing was installed. Review the complete access below.'
+            : 'The publisher changed this app’s capabilities after your last review. Nothing was installed. Review the current access below, then click again.'}
         </div>
       )}
-      {isInstalled && (changes.length > 0 || preview?.capability_diff?.unknown_previous) && (
+      {isInstalled && (changes.length > 0 || unknownPrevious) && (
         <div className="st-capability-change" role="status">
-          {preview.capability_diff?.unknown_previous
-            ? 'The installed version predates capability receipts; review the complete contract.'
+          {unknownPrevious
+            ? 'This warning does not mean the update asked for new access; Möbius simply has no older receipt to compare against.'
             : `This update changes: ${changes.join(', ')}.`}
         </div>
       )}

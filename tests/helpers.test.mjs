@@ -62,6 +62,26 @@ test('findInstalled matches canonical manifest identity, not slug', async () => 
   assert.equal(findInstalled(installed, item), installed[0])
 })
 
+test('appIcon paints installed icons directly and keeps remote icons as discovery fallback', async () => {
+  const { appIcon } = await bundle()
+  const catalogItem = {
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/',
+    manifest: { icon: 'icon.png' },
+  }
+
+  assert.deepEqual(appIcon({
+    ...catalogItem,
+    installed_icon_url: '/api/apps/66/icon?size=128',
+  }), {
+    url: '/api/apps/66/icon?size=128',
+    external: false,
+  })
+  assert.deepEqual(appIcon(catalogItem), {
+    url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/icon.png',
+    external: true,
+  })
+})
+
 test('findInstalled ignores legacy platform rows without canonical identity', async () => {
   const { findInstalled } = await bundle()
   const memory = {
@@ -523,7 +543,7 @@ test('capability rows disclose embedded agents, provider credentials, and offlin
   assert.match(rows.find(row => row.label === 'Offline use').summary, /partial offline execution/)
 })
 
-test('catalog updates use fresh access and source guards without a second tap', async () => {
+test('catalog updates open a read-only review before applying, binding reviewed digests', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
@@ -532,10 +552,16 @@ test('catalog updates use fresh access and source guards without a second tap', 
   assert.ok(indexSource.includes('onUpdate={handleCatalogUpdate}'))
   assert.ok(indexSource.includes('loadUpdateCandidatePreview(installedApp.id, token)'))
   assert.ok(indexSource.includes('capabilityDiffNeedsReview('))
-  assert.ok(indexSource.includes('capabilityDigest: capabilityPreview.capability_digest'))
-  assert.ok(indexSource.includes('sourceDigest: candidate.source_digest'))
-  assert.ok(indexSource.includes('This update changes app access. Open it to review'))
-  assert.equal(indexSource.includes('setUpdateReview({'), false)
+  // Every update now opens a read-only review instead of applying on first tap;
+  // the inline one-tap apply path and its access-blocked toast are both gone.
+  assert.ok(indexSource.includes('setUpdateReview({'))
+  assert.equal(indexSource.includes('This update changes app access. Open it to review'), false)
+  // Applying is a separate, explicit step that binds exactly the digests shown
+  // in the review the owner just approved.
+  assert.ok(indexSource.includes('const handleApplyReviewedUpdate = useCallback'))
+  assert.ok(indexSource.includes('capabilityDigest: updateReview.capabilityReview.preview.capability_digest'))
+  assert.ok(indexSource.includes('sourceDigest: updateReview.preview.source_digest'))
+  assert.ok(indexSource.includes('onApply={handleApplyReviewedUpdate}'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
   assert.ok(indexSource.includes('reviewed_source_digest: _opts.sourceDigest'))
   assert.ok(detailSource.includes('<CapabilityContract'))

@@ -46,20 +46,17 @@ function loadIconBlob(srcUrl, token) {
 // to be fetched through the server proxy and turned into a blob: object URL.
 //
 // Priority:
-//  1. External catalog preview — raw_base + manifest.icon, fetched via proxy.
-//     This is the live, transparent catalog icon. We prefer it even for
-//     installed apps because installed_icon_url serves the app's *stored*
-//     icon, which can be a stale pre-regeneration (opaque, PWA-bg) copy.
-//  2. installed_icon_url — set by the caller when the item maps to an installed
-//     app row (GET /api/apps/{id}/icon). Used only when the item has no catalog
-//     source (an installed app that isn't in the catalog).
-function appIcon(item) {
-  // Catalog source wins: the live transparent icon (external, via proxy).
+//  1. installed_icon_url — a same-origin, browser-cacheable downscaled icon.
+//     This can be used as the <img> src on the FIRST render, so a refresh does
+//     not briefly paint a letter while React fetches + blobs the remote copy.
+//     App updates advance the icon route's ETag, so this remains fresh.
+//  2. External catalog preview — raw_base + manifest.icon, fetched via proxy.
+//     This remains the discovery path for apps that are not installed yet.
+export function appIcon(item) {
+  if (item.installed_icon_url) return { url: item.installed_icon_url, external: false }
   if (item.manifest && item.manifest.icon && item.raw_base) {
     return { url: item.raw_base + item.manifest.icon, external: true }
   }
-  // No catalog source — fall back to the installed app's stored icon route.
-  if (item.installed_icon_url) return { url: item.installed_icon_url, external: false }
   return { url: null, external: false }
 }
 

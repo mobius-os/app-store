@@ -505,6 +505,8 @@ export const CSS = `
   .st-card-action:not(:disabled):active { opacity: 0.8; transform: scale(0.97); }
 }
 .st-card-inline-error {
+  position: relative;
+  z-index: 2;
   width: 100%;
   margin-top: 8px;
   padding: 8px;
@@ -515,6 +517,17 @@ export const CSS = `
   line-height: 1.35;
   border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 30%, transparent);
   box-sizing: border-box;
+}
+.st-card-inline-error-text {
+  user-select: text;
+  cursor: text;
+}
+.st-card-inline-error-action {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 8px;
+  padding: 7px 12px;
+  user-select: none;
 }
 .st-card-notice {
   position: relative;
@@ -1009,6 +1022,15 @@ export const CSS = `
   background: var(--surface2); color: var(--muted);
   font-size: 13px; line-height: 1.5;
 }
+.st-update-review-notice.is-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.st-update-review-error-text,
+.st-selectable-error {
+  user-select: text;
+  cursor: text;
+}
+.st-update-review-error-text { margin-bottom: 6px; color: var(--danger); }
 .st-update-review-actions {
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   padding-top: 14px; border-top: 1px solid var(--border);
@@ -1083,7 +1105,7 @@ export const CSS = `
 }
 .st-toast.is-success { border-color: var(--green); }
 .st-toast.is-error { border-color: var(--danger); }
-.st-toast-msg { flex: 1; }
+.st-toast-msg { flex: 1; user-select: text; cursor: text; }
 .st-toast-actions {
   display: flex;
   align-items: center;

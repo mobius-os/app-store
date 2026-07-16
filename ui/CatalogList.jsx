@@ -15,6 +15,8 @@ export function CatalogList({
   busyActionKind,
   checkingUpdateItemId = null,
   errors,
+  onAskAgentError,
+  agentErrorItemId = null,
   updateNotice,
   onReviewUpdate,
   onDismissNotice,
@@ -52,6 +54,8 @@ export function CatalogList({
       blocked={(busy && busyItemId !== item.id) ||
         (checkingUpdateItemId !== null && checkingUpdateItemId !== item.id)}
       error={errors?.[item.id]}
+      onAskAgentError={onAskAgentError}
+      askingAgentAboutError={agentErrorItemId === item.id}
       updateNotice={updateNotice?.itemId === item.id ? updateNotice : null}
       onReviewUpdate={onReviewUpdate}
       onDismissNotice={onDismissNotice}

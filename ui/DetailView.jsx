@@ -60,11 +60,9 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
   )
   const canOpenSetup = showSetup && (setup.scope === 'system' || storeInstalled)
 
-  // When the app is installed, serve the raw transparent icon from the
-  // same-origin API route rather than the external catalog source. Avoids the
-  // proxy round-trip and ensures the icon's original transparency is preserved.
+  // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
-    ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon` }
+    ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon?size=128` }
     : item
 
   return (

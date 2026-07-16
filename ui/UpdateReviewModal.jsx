@@ -27,7 +27,10 @@ export function UpdateReviewModal({
   const capabilitiesChanged = capabilityDiffNeedsReview(
     review.capabilityReview?.preview?.capability_diff,
   )
+  const unknownPrevious = review.capabilityReview?.preview?.capability_diff?.unknown_previous === true
   const busy = applying || agentReviewing
+  const sourceVerified = !!preview.source_digest
+  const hasFailure = !!(error || review.previewError)
   const name = item.manifest?.name || item.id
   const version = preview.upstream_version || item.manifest?.version || 'latest'
 
@@ -103,9 +106,9 @@ export function UpdateReviewModal({
 
         <div className="st-update-review-body">
           {review.previewError ? (
-            <div className="st-update-review-notice" role="status">
-              Couldn’t load the source diff. You can review the update with the agent,
-              or apply it without reviewing the file changes.
+            <div className="st-update-review-notice is-error" role="alert">
+              <div className="st-update-review-error-text">{review.previewError}</div>
+              <div>Nothing will be changed until the source can be verified. You can close and try again, or ask the agent to investigate.</div>
             </div>
           ) : summary.fileCount === 0 ? (
             <div className="st-update-review-notice" role="status">
@@ -153,12 +156,12 @@ export function UpdateReviewModal({
 
           {capabilitiesChanged ? (
             <section className="st-update-review-section">
-              <h3>Access changes</h3>
+              <h3>{unknownPrevious ? 'Access review' : 'Access changes'}</h3>
               <CapabilityContract review={review.capabilityReview} isInstalled />
             </section>
           ) : null}
 
-          {error ? <div className="st-error-box" role="alert">{error}</div> : null}
+          {error ? <div className="st-error-box st-selectable-error" role="alert">{error}</div> : null}
         </div>
 
         <div className="st-update-review-actions">
@@ -171,10 +174,10 @@ export function UpdateReviewModal({
             onClick={onReviewWithAgent}
             disabled={busy}
           >
-            {agentReviewing ? 'Opening agent…' : 'Review with agent'}
+            {agentReviewing ? 'Opening agent…' : hasFailure ? 'Ask agent about error' : 'Review with agent'}
           </button>
-          <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={busy}>
-            {applying ? 'Updating…' : 'Apply update'}
+          <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={busy || !sourceVerified}>
+            {applying ? 'Updating…' : sourceVerified ? 'Apply update' : 'Update unavailable'}
           </button>
         </div>
       </div>
