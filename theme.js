@@ -105,7 +105,7 @@ export const CSS = `
   .st-seg-btn:active { opacity: 0.75; }
 }
 .st-seg-btn.is-active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
-.st-seg.is-accent .st-seg-btn.is-active { background: var(--accent); color: var(--accent-fg); box-shadow: none; }
+.st-seg.is-accent .st-seg-btn.is-active { background: var(--accent-hover, var(--accent)); color: var(--accent-fg); box-shadow: none; }
 /* /mobius-ui:Segmented */
 
 /* The store's tab bar: segmented control shares the header row with the
@@ -435,7 +435,7 @@ export const CSS = `
 .st-card-agent {
   font-family: var(--font, inherit); font-weight: 600;
   font-size: 12px; letter-spacing: 0;
-  color: var(--accent);
+  color: var(--text);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
   border-radius: 999px; padding: 1px 7px;
@@ -472,7 +472,7 @@ export const CSS = `
   border: 1px solid transparent;
   border-radius: 7px;
   padding: 5px 12px;
-  background: var(--accent);
+  background: var(--accent-hover, var(--accent));
   color: var(--accent-fg);
   font-weight: 600;
   font-size: 12px;
@@ -485,7 +485,7 @@ export const CSS = `
    dot (see .st-card.is-update) carry the "update available" signal without
    an off-brand second button colour. Installed = a muted, lower-emphasis
    fill so the primary actions stay the eye-catchers in the grid. */
-.st-card-action.is-update { background: var(--accent); }
+.st-card-action.is-update { background: var(--accent-hover, var(--accent)); }
 .st-card-action.is-conflict {
   background: var(--danger, #e5484d);
   color: var(--accent-fg);
@@ -605,7 +605,7 @@ export const CSS = `
 .st-url-input:focus:not(:focus-visible) { outline: none; }
 .st-primary-btn {
   padding: 12px 20px; border-radius: 10px; border: none;
-  background: var(--accent); color: var(--accent-fg);
+  background: var(--accent-hover, var(--accent)); color: var(--accent-fg);
   font-size: 14px; font-weight: 600; cursor: pointer;
   font-family: var(--font);
   min-height: 44px;
@@ -615,7 +615,7 @@ export const CSS = `
 }
 .st-primary-btn:disabled { pointer-events: none; opacity: 0.65; }
 @media (hover: hover) {
-  .st-primary-btn:not(:disabled):hover { filter: brightness(1.08); }
+  .st-primary-btn:not(:disabled):hover { filter: brightness(0.94); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .st-primary-btn:not(:disabled):active { opacity: 0.82; transform: scale(0.98); }
@@ -832,7 +832,7 @@ export const CSS = `
    use the canonical st-btn now; this stays for the in-flow update notice.) */
 .st-big-btn {
   width: 100%; padding: 12px 16px; border-radius: 10px;
-  border: none; background: var(--accent); color: var(--accent-fg);
+  border: none; background: var(--accent-hover, var(--accent)); color: var(--accent-fg);
   font-size: 14px; font-weight: 600; cursor: pointer;
   font-family: var(--font);
   min-height: 44px;
@@ -890,7 +890,7 @@ export const CSS = `
 .st-banner.is-reviewing .st-permission-row { background: var(--bg); }
 .st-banner-btn {
   flex-shrink: 0; border: none; border-radius: 8px; padding: 8px 16px;
-  background: var(--accent); color: var(--accent-fg); font-weight: 600;
+  background: var(--accent-hover, var(--accent)); color: var(--accent-fg); font-weight: 600;
   font-size: 13px; cursor: pointer; font-family: var(--font);
   min-height: 44px;
   touch-action: manipulation; user-select: none;
@@ -1061,9 +1061,9 @@ export const CSS = `
 }
 .st-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .st-btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
-.st-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.st-btn-primary { background: var(--accent-hover, var(--accent)); border-color: var(--accent-hover, var(--accent)); color: var(--accent-fg); }
 @media (hover: hover) {
-  .st-btn-primary:hover { filter: brightness(1.06); }
+  .st-btn-primary:hover { filter: brightness(0.94); }
   .st-btn-secondary:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
   .st-btn-ghost:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 }
@@ -1097,7 +1097,7 @@ export const CSS = `
   min-height: 44px;
   touch-action: manipulation; user-select: none;
 }
-.st-toast-btn-primary { background: var(--accent); color: var(--accent-fg); }
+.st-toast-btn-primary { background: var(--accent-hover, var(--accent)); color: var(--accent-fg); }
 .st-toast-btn-secondary {
   background: var(--surface2, var(--surface));
   color: var(--text);

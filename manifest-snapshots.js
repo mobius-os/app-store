@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.1.2",
+    "version": "2.1.3",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -92,7 +92,7 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.7.8",
+    "version": "2.7.9",
     "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
@@ -230,7 +230,7 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.3.5",
+    "version": "0.3.6",
     "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
     "author": "mobius-os",
     "license": "MIT",
@@ -289,7 +289,7 @@ export const MANIFEST_SNAPSHOTS = {
   "notes": {
     "id": "notes",
     "name": "Notes",
-    "version": "1.2.26",
+    "version": "1.2.27",
     "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
     "author": "mobius-os",
     "license": "MIT",
@@ -342,7 +342,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.14.6",
+    "version": "1.14.7",
     "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -412,7 +412,7 @@ export const MANIFEST_SNAPSHOTS = {
   "editor": {
     "id": "editor",
     "name": "Editor",
-    "version": "0.6.2",
+    "version": "0.6.3",
     "description": "Browse, inspect, and edit every file on your Möbius. Follow git status, check file details, and ask the agent to make changes with you.",
     "author": "mobius-os",
     "license": "MIT",
@@ -479,7 +479,7 @@ export const MANIFEST_SNAPSHOTS = {
   "webstudio": {
     "id": "webstudio",
     "name": "Web Studio",
-    "version": "0.12.9",
+    "version": "0.12.10",
     "description": "Build a website with the agent and preview it live in an in-app browser.",
     "author": "mobius-os",
     "license": "MIT",
@@ -569,7 +569,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "workout",
     "previous_id": "gym",
     "name": "Workout",
-    "version": "2.8.2",
+    "version": "2.8.3",
     "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
     "author": "mobius-os",
     "license": "MIT",
@@ -625,7 +625,7 @@ export const MANIFEST_SNAPSHOTS = {
   "habits": {
     "id": "habits",
     "name": "Habits",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
     "author": "mobius-os",
     "license": "MIT",
@@ -671,7 +671,7 @@ export const MANIFEST_SNAPSHOTS = {
   "beat-machine": {
     "id": "beat-machine",
     "name": "Beat Machine",
-    "version": "1.0.11",
+    "version": "1.0.12",
     "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
     "author": "mobius-os",
     "license": "MIT",
@@ -709,7 +709,7 @@ export const MANIFEST_SNAPSHOTS = {
   "atlas": {
     "id": "atlas",
     "name": "Atlas",
-    "version": "1.9.9",
+    "version": "1.9.10",
     "description": "Spin the globe, tap the countries you've visited, and watch your map fill in.",
     "author": "mobius-os",
     "license": "MIT",
@@ -758,7 +758,7 @@ export const MANIFEST_SNAPSHOTS = {
   "latex": {
     "id": "latex",
     "name": "LaTeX",
-    "version": "2.14.7",
+    "version": "2.14.8",
     "description": "Write and compile LaTeX with live PDF preview and an agent that drafts your .tex.",
     "author": "mobius-os",
     "license": "MIT",
@@ -835,7 +835,7 @@ export const MANIFEST_SNAPSHOTS = {
   "tandem": {
     "id": "tandem",
     "name": "Tandem",
-    "version": "0.13.3",
+    "version": "0.13.4",
     "description": "Split-pane bilingual reader for language learning. Top and bottom panes show each language independently with sync-scroll; drag the slim divider to resize. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one (the generation agent loads the relevant stories itself). Pick the generation agent (Claude or OpenAI Codex) in settings; tap any word to highlight it, its sentence, and its translation inline in both panes.",
     "offline_capable": true,
     "offline": {
