@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.0.5",
+    "version": "2.0.6",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -90,7 +90,7 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.7.5",
+    "version": "2.7.6",
     "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
@@ -337,7 +337,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.14.3",
+    "version": "1.14.4",
     "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -397,8 +397,8 @@ export const MANIFEST_SNAPSHOTS = {
   "editor": {
     "id": "editor",
     "name": "Editor",
-    "version": "0.5.3",
-    "description": "Browse, inspect, and edit every file on your Möbius — a MiXplorer-style file explorer with breadcrumbs, sort, view modes, a properties inspector, git status, and disk usage, plus an agent that can edit for you.",
+    "version": "0.6.1",
+    "description": "Browse, inspect, and edit every file on your Möbius. Follow git status, check file details, and ask the agent to make changes with you.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-editor",
@@ -407,6 +407,7 @@ export const MANIFEST_SNAPSHOTS = {
       "constants.js",
       "paths.js",
       "theme.js",
+      "source-syntax.js",
       "domain.js",
       "storage.js",
       "ui/Icons.jsx",
@@ -553,7 +554,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "workout",
     "previous_id": "gym",
     "name": "Workout",
-    "version": "2.7.8",
+    "version": "2.8.1",
     "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
     "author": "mobius-os",
     "license": "MIT",
@@ -609,7 +610,7 @@ export const MANIFEST_SNAPSHOTS = {
   "habits": {
     "id": "habits",
     "name": "Habits",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
     "author": "mobius-os",
     "license": "MIT",
@@ -655,7 +656,7 @@ export const MANIFEST_SNAPSHOTS = {
   "beat-machine": {
     "id": "beat-machine",
     "name": "Beat Machine",
-    "version": "1.0.10",
+    "version": "1.0.11",
     "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
     "author": "mobius-os",
     "license": "MIT",
