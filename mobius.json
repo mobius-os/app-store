@@ -1,18 +1,19 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "description": "Discover, install, and update M\u00f6bius apps.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-store",
   "icon": "icon.png",
   "entry": "index.jsx",
-  "offline_capable": false,
+  "offline_capable": true,
   "offline": {
-    "reads": false,
+    "reads": true,
     "writes": "none",
-    "execution": "none"
+    "execution": "partial",
+    "reads_detail": "The bundled catalog and validated manifest snapshots remain browsable offline. Installed-state refresh, installs, updates, and URL imports require a connection and stay disabled when installed state cannot be verified."
   },
   "permissions": {
     "cross_app_access": "none",

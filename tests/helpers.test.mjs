@@ -840,6 +840,15 @@ test('STORE_VERSION stays in lockstep with mobius.json', async () => {
   assert.equal(STORE_VERSION, manifest.version)
 })
 
+test('offline contract preserves bundled browsing without claiming network actions', async () => {
+  const manifest = JSON.parse(await readFile(join(root, '..', 'mobius.json'), 'utf8'))
+  assert.equal(manifest.offline_capable, true)
+  assert.equal(manifest.offline.reads, true)
+  assert.equal(manifest.offline.writes, 'none')
+  assert.equal(manifest.offline.execution, 'partial')
+  assert.match(manifest.offline.reads_detail, /bundled catalog/i)
+})
+
 // Browse must remain useful when the external proxy is slow or unavailable.
 // Snapshots are display/preview data only: installApp still sends manifest_url,
 // and installed apps use the backend's git-native update check.

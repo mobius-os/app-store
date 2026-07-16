@@ -21,7 +21,8 @@ export const CSS = `
 .st-scroll {
   flex: 1; min-height: 0;
   overflow-y: auto; overflow-x: hidden;
-  padding: 16px; overscroll-behavior: contain;
+  padding: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overscroll-behavior: contain;
   word-break: break-word; overflow-wrap: anywhere;
 }
 /* /mobius-ui:Root */
@@ -65,7 +66,8 @@ export const CSS = `
 /* App-specific header — title + a segmented tab bar, not the canonical
    brand-cluster header. Kept on the store's own values. */
 .st-header {
-  padding: 16px 16px 12px; flex-shrink: 0;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+  flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
@@ -81,7 +83,7 @@ export const CSS = `
 .st-brand-fallback {
   width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  background: var(--accent, currentColor); color: var(--bg, #0c0c0c);
+  background: var(--accent); color: var(--accent-fg);
   font-size: 22px; font-weight: 700; line-height: 1;
 }
 
@@ -159,8 +161,8 @@ export const CSS = `
 }
 .st-search-clear {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface2, var(--surface));
@@ -196,7 +198,8 @@ export const CSS = `
 .st-category-strip::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .st-chip {
   flex: 0 0 auto;
-  min-height: 36px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 7px 12px;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -323,9 +326,15 @@ export const CSS = `
   font-family: var(--font); color: var(--text);
   font-size: 14px; font-weight: 600; line-height: 1.25;
   cursor: pointer;
+  min-height: 44px;
+  align-items: flex-start;
   display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;
   touch-action: manipulation; user-select: none;
+}
+.st-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 .st-card-open::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit;

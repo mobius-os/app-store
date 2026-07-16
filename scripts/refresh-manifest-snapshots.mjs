@@ -6,6 +6,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const catalogPath = resolve(root, 'catalog.json')
 const snapshotsPath = resolve(root, 'manifest-snapshots.js')
 const required = ['id', 'name', 'version', 'description', 'entry']
+const localAppsRoot = process.env.MOBIUS_LOCAL_APPS_ROOT
 
 function refreshUrl(value, id) {
   const url = new URL(value)
@@ -33,6 +34,18 @@ if (!Array.isArray(catalog.apps) || catalog.apps.length === 0) {
 }
 
 const manifests = await Promise.all(catalog.apps.map(async (entry) => {
+  if (localAppsRoot) {
+    const repoName = String(entry.repo || '').split('/').filter(Boolean).at(-1)
+    if (!repoName) throw new Error(`${entry.id}: catalog entry has no repo`)
+    const localPath = resolve(localAppsRoot, repoName, 'mobius.json')
+    const manifest = JSON.parse(await readFile(localPath, 'utf8'))
+    for (const key of required) {
+      if (typeof manifest?.[key] !== 'string' || !manifest[key]) {
+        throw new Error(`${entry.id}: local manifest is missing ${key}`)
+      }
+    }
+    return manifest
+  }
   // A refresh must observe the current branch tip rather than silently
   // republishing an older snapshot. The durable manifest_url stored in the
   // catalog remains unchanged.

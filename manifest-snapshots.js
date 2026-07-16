@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.0.3",
+    "version": "2.0.4",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -90,7 +90,7 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.7.3",
+    "version": "2.7.4",
     "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
@@ -226,7 +226,7 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.3.3",
+    "version": "0.3.4",
     "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
     "author": "mobius-os",
     "license": "MIT",
@@ -263,6 +263,8 @@ export const MANIFEST_SNAPSHOTS = {
     "source_files": [
       "theme.js",
       "domain.js",
+      "stack.js",
+      "source-map.js",
       "diff.js",
       "api.js",
       "storage.js",
@@ -273,13 +275,15 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/DiffView.jsx",
       "ui/FileDiffList.jsx",
       "ui/ContributionCard.jsx",
-      "ui/Feed.jsx"
+      "ui/ContributionStack.jsx",
+      "ui/Feed.jsx",
+      "ui/SourceMap.jsx"
     ]
   },
   "notes": {
     "id": "notes",
     "name": "Notes",
-    "version": "1.2.25",
+    "version": "1.2.26",
     "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
     "author": "mobius-os",
     "license": "MIT",
@@ -332,7 +336,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.14.1",
+    "version": "1.14.2",
     "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -392,7 +396,7 @@ export const MANIFEST_SNAPSHOTS = {
   "editor": {
     "id": "editor",
     "name": "Editor",
-    "version": "0.5.2",
+    "version": "0.5.3",
     "description": "Browse, inspect, and edit every file on your Möbius — a MiXplorer-style file explorer with breadcrumbs, sort, view modes, a properties inspector, git status, and disk usage, plus an agent that can edit for you.",
     "author": "mobius-os",
     "license": "MIT",
@@ -458,14 +462,14 @@ export const MANIFEST_SNAPSHOTS = {
   "webstudio": {
     "id": "webstudio",
     "name": "Web Studio",
-    "version": "0.12.7",
+    "version": "0.12.8",
     "description": "Build a website with the agent and preview it live in an in-app browser.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-webstudio",
     "entry": "index.jsx",
     "icon": "icon.png",
-    "offline_capable": false,
+    "offline_capable": true,
     "offline": {
       "reads": true,
       "writes": "queued",
@@ -548,7 +552,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "workout",
     "previous_id": "gym",
     "name": "Workout",
-    "version": "2.7.6",
+    "version": "2.7.7",
     "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
     "author": "mobius-os",
     "license": "MIT",
@@ -604,7 +608,7 @@ export const MANIFEST_SNAPSHOTS = {
   "habits": {
     "id": "habits",
     "name": "Habits",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
     "author": "mobius-os",
     "license": "MIT",
@@ -650,7 +654,7 @@ export const MANIFEST_SNAPSHOTS = {
   "beat-machine": {
     "id": "beat-machine",
     "name": "Beat Machine",
-    "version": "1.0.9",
+    "version": "1.0.10",
     "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
     "author": "mobius-os",
     "license": "MIT",
@@ -737,7 +741,7 @@ export const MANIFEST_SNAPSHOTS = {
   "latex": {
     "id": "latex",
     "name": "LaTeX",
-    "version": "2.14.5",
+    "version": "2.14.6",
     "description": "Write and compile LaTeX with live PDF preview and an agent that drafts your .tex.",
     "author": "mobius-os",
     "license": "MIT",
@@ -814,7 +818,7 @@ export const MANIFEST_SNAPSHOTS = {
   "tandem": {
     "id": "tandem",
     "name": "Tandem",
-    "version": "0.13.1",
+    "version": "0.13.2",
     "description": "Split-pane bilingual reader for language learning. Top and bottom panes show each language independently with sync-scroll; drag the slim divider to resize. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one (the generation agent loads the relevant stories itself). Pick the generation agent (Claude or OpenAI Codex) in settings; tap any word to highlight it, its sentence, and its translation inline in both panes.",
     "offline_capable": true,
     "author": "mobius-os",
@@ -865,7 +869,7 @@ export const MANIFEST_SNAPSHOTS = {
   "cuberun": {
     "id": "cuberun",
     "name": "CubeRun",
-    "version": "1.0.2-mobius.20",
+    "version": "1.0.2-mobius.21",
     "description": "Neon 3D runner game packaged for Mobius as a durable static app.",
     "author": "Adam Karlsten",
     "license": "MIT",

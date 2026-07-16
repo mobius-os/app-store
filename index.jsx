@@ -1135,6 +1135,7 @@ export default function App({ appId, token }) {
   return (
     <div className="st-root">
       <style>{CSS}</style>
+      <h1 className="st-sr-only">App Store</h1>
       <div className="st-header">
         <div className="st-title-row">
           {/* Brand mark: the app's real glossy icon (downscaled + cached),
