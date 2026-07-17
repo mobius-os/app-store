@@ -230,7 +230,7 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.3.6",
+    "version": "0.4.2",
     "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
     "author": "mobius-os",
     "license": "MIT",
@@ -342,7 +342,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.14.7",
+    "version": "1.14.8",
     "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -479,7 +479,7 @@ export const MANIFEST_SNAPSHOTS = {
   "webstudio": {
     "id": "webstudio",
     "name": "Web Studio",
-    "version": "0.12.10",
+    "version": "0.13.2",
     "description": "Build a website with the agent and preview it live in an in-app browser.",
     "author": "mobius-os",
     "license": "MIT",
@@ -530,6 +530,7 @@ export const MANIFEST_SNAPSHOTS = {
       "theme.js",
       "domain.js",
       "storage.js",
+      "source-syntax.js",
       "preview/previewDomain.js",
       "preview/HtmlPreview.jsx",
       "build/useBuild.js",
@@ -709,7 +710,7 @@ export const MANIFEST_SNAPSHOTS = {
   "atlas": {
     "id": "atlas",
     "name": "Atlas",
-    "version": "1.9.10",
+    "version": "1.9.12",
     "description": "Spin the globe, tap the countries you've visited, and watch your map fill in.",
     "author": "mobius-os",
     "license": "MIT",
@@ -758,7 +759,7 @@ export const MANIFEST_SNAPSHOTS = {
   "latex": {
     "id": "latex",
     "name": "LaTeX",
-    "version": "2.14.8",
+    "version": "2.15.2",
     "description": "Write and compile LaTeX with live PDF preview and an agent that drafts your .tex.",
     "author": "mobius-os",
     "license": "MIT",
@@ -769,6 +770,7 @@ export const MANIFEST_SNAPSHOTS = {
       "theme.js",
       "domain.js",
       "storage.js",
+      "source-syntax.js",
       "pdf/zoom.js",
       "build/useBuild.js",
       "ui/CodeEditor.jsx",
@@ -835,8 +837,8 @@ export const MANIFEST_SNAPSHOTS = {
   "tandem": {
     "id": "tandem",
     "name": "Tandem",
-    "version": "0.13.4",
-    "description": "Split-pane bilingual reader for language learning. Top and bottom panes show each language independently with sync-scroll; drag the slim divider to resize. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one (the generation agent loads the relevant stories itself). Pick the generation agent (Claude or OpenAI Codex) in settings; tap any word to highlight it, its sentence, and its translation inline in both panes.",
+    "version": "0.13.5",
+    "description": "Split-pane bilingual reader for language learning. Wide screens show the languages left/right; phones and narrow windows stack them top/bottom. The panes sync-scroll and the divider resizes them. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one. Pick the generation agent (Claude or OpenAI Codex) in settings; tap a word for its exact glossary match or honest aligned-sentence context.",
     "offline_capable": true,
     "offline": {
       "reads": true,
