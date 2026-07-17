@@ -296,6 +296,64 @@
       }
     },
     {
+      "id": "artifacts",
+      "name": "Artifacts",
+      "description": "Browse, preview, version, and share the interactive HTML artifacts and documents your agent builds in chat — and jump back to the chat that made each one.",
+      "repo": "mobius-os/app-artifacts",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-artifacts/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-artifacts/main/",
+      "categories": [
+        "development",
+        "productivity"
+      ],
+      "keywords": [
+        "artifacts",
+        "interactive",
+        "html",
+        "canvas",
+        "preview",
+        "share",
+        "version history",
+        "documents"
+      ],
+      "capabilities": [
+        "build interactive artifacts in chat",
+        "preview and version artifacts",
+        "share artifacts publicly"
+      ],
+      "manifest": {
+        "id": "artifacts",
+        "name": "Artifacts",
+        "version": "0.2.0",
+        "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
+        "author": "mobius-os",
+        "license": "MIT",
+        "homepage": "https://github.com/mobius-os/app-artifacts",
+        "entry": "index.jsx",
+        "icon": "icon.png",
+        "skills": [
+          "artifacts.md"
+        ],
+        "permissions": {
+          "chat_log_access": "summary"
+        },
+        "source_files": [
+          "artifacts.md",
+          "domain.js",
+          "storage.js",
+          "theme.js",
+          "preview/ArtifactFrame.jsx",
+          "ui/ArtifactCard.jsx",
+          "ui/Detail.jsx",
+          "ui/Empty.jsx",
+          "ui/Gallery.jsx",
+          "ui/Icons.jsx",
+          "ui/ShareSheet.jsx",
+          "ui/VersionTimeline.jsx"
+        ]
+      }
+    },
+    {
       "id": "tasks",
       "name": "Tasks",
       "description": "See your agent's scheduled check-ins at a glance — status, due times, and what needs attention. Reschedule or cancel through the agent.",

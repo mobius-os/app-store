@@ -53,6 +53,15 @@ export const CATALOG = [
       capabilities: ['browse skills', 'read agent procedures', 'search instructions'],
     },
   {
+      id: 'artifacts',
+      repo: 'mobius-os/app-artifacts',
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-artifacts/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-artifacts/main/',
+      categories: ['development', 'productivity'],
+      keywords: ['artifacts', 'interactive', 'html', 'canvas', 'preview', 'share', 'version history', 'documents'],
+      capabilities: ['build interactive artifacts in chat', 'preview and version artifacts', 'share artifacts publicly'],
+    },
+  {
       id: 'tasks',
       repo: 'mobius-os/app-tasks',
       manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-tasks/main/mobius.json',
