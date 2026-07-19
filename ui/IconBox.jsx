@@ -6,10 +6,9 @@ import { proxyUrl } from '../api.js'
 // fetch promise resolving to a blob: object URL, so a card that mounts,
 // unmounts, and re-mounts (store re-open, view switch, the card + the
 // open-detail hero both showing the same app) reuses the one fetch instead
-// of paying another proxy → GitHub round-trip. The backend /api/proxy route
-// emits no Cache-Control and the body is consumed as a blob, so the browser
-// can't HTTP-cache it for us — this Map is the only thing that stops the
-// ~8-9 not-installed catalog icons re-fetching on every render pass.
+// of paying another proxy → GitHub round-trip. The shell service worker also
+// keeps proxy image responses across document reloads; this Map is the faster
+// same-document tier that avoids even recreating the object URL.
 //
 // The object URL is deliberately NEVER revoked: the cache OWNS it for the
 // life of the page, which is what lets it outlive component unmounts. The
@@ -19,6 +18,7 @@ import { proxyUrl } from '../api.js'
 // hiccup retries on the next mount rather than pinning the card to its
 // letter fallback forever.
 const _iconBlobCache = new Map()
+const _resolvedIconBlobCache = new Map()
 
 function loadIconBlob(srcUrl, token) {
   const cached = _iconBlobCache.get(srcUrl)
@@ -30,7 +30,11 @@ function loadIconBlob(srcUrl, token) {
       if (!r.ok) throw new Error(`icon ${r.status}`)
       return r.blob()
     })
-    .then(blob => URL.createObjectURL(blob))
+    .then(blob => {
+      const objectUrl = URL.createObjectURL(blob)
+      _resolvedIconBlobCache.set(srcUrl, objectUrl)
+      return objectUrl
+    })
     .catch(err => {
       // Drop the failed promise so the next mount can retry.
       if (_iconBlobCache.get(srcUrl) === p) _iconBlobCache.delete(srcUrl)
@@ -60,12 +64,24 @@ export function appIcon(item) {
   return { url: null, external: false }
 }
 
+// Installed icon URLs are immutable identities, not merely endpoints. The app
+// row's updated_at changes whenever an install/update can replace the stored
+// icon, so including it in the URL lets the browser keep the bytes indefinitely
+// while a changed app naturally requests a new URL.
+export function installedIconUrl(app) {
+  if (!app?.id) return null
+  const version = app.updated_at ? `&v=${encodeURIComponent(app.updated_at)}` : ''
+  return `/api/apps/${app.id}/icon?size=128${version}`
+}
+
 export function IconBox({ item, size = 'normal', token }) {
   const { url, external } = appIcon(item)
   const [errored, setErrored] = useState(false)
   // For external icons, the blob: object URL the proxy fetch produced.
   // Same-origin icons render directly from `url`.
-  const [blobUrl, setBlobUrl] = useState(null)
+  const [blobUrl, setBlobUrl] = useState(() => (
+    external && url ? (_resolvedIconBlobCache.get(url) || null) : null
+  ))
   // Letter-fallback variant: needs the surface tile so the letter reads
   // on an opaque background. Real icons sit on transparent.
   const isLetter = !((external ? blobUrl : url) && !errored)
@@ -103,6 +119,18 @@ export function IconBox({ item, size = 'normal', token }) {
              onError={() => setErrored(true)} />
       </div>
     )
+  }
+
+  // A known icon that is still resolving is not an iconless app. Previously
+  // this branch painted the letter first and replaced it a frame later even on
+  // a warm cache hit, making the cache visibly useless. Keep the final icon's
+  // footprint reserved instead; letters are now only the true no-icon/error
+  // fallback.
+  if (url && external && !errored) {
+    const loadingWrapClass = size === 'hero'
+      ? 'st-hero-icon st-icon-loading'
+      : 'st-icon-wrap st-icon-loading'
+    return <div className={loadingWrapClass} aria-hidden="true" />
   }
   const letterWrapClass = size === 'hero' ? 'st-hero-icon is-letter' : 'st-icon-wrap st-icon-wrap--letter'
   return (

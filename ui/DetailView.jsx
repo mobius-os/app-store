@@ -1,6 +1,6 @@
 import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
-import { IconBox } from './IconBox.jsx'
+import { IconBox, installedIconUrl } from './IconBox.jsx'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -62,7 +62,7 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
-    ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon?size=128` }
+    ? { ...item, installed_icon_url: installedIconUrl(storeInstalled) }
     : item
 
   return (

@@ -93,7 +93,7 @@ export {
   readErrorDetail,
 } from './api.js'
 export { capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
-export { appIcon } from './ui/IconBox.jsx'
+export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
 
 // Snapshot-less catalogs (catalog.json is now a pure discovery index) hydrate
 // every entry's manifest from its repo on open — ~16 fetches — so a 3-wide pool
@@ -257,9 +257,13 @@ export default function App({ appId, token }) {
   // A complete baked snapshot is usable on the very first render. Installed
   // state and the remote registry hydrate independently; neither should make a
   // healthy catalog flash a skeleton or feel network-bound.
-  const [loadingCatalog, setLoadingCatalog] = useState(
-    () => !CATALOG.every((entry) => entry.manifest),
-  )
+  // Do not expose catalog cards until installed identity has resolved. The
+  // previous snapshot fast path rendered every app as "not installed" for one
+  // pass, which selected the asynchronous remote-icon path and visibly painted
+  // letters before the same-origin installed icons replaced them. A stable
+  // skeleton for this one local read gives the first real card render its final,
+  // browser-cached icon URL on its first meaningful paint.
+  const [loadingCatalog, setLoadingCatalog] = useState(true)
   const [installedLoadError, setInstalledLoadError] = useState('')
   // Guard against overlapping refreshes when several visibility/focus
   // events fire in quick succession (e.g. drawer-close + tab-focus on

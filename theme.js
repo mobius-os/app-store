@@ -377,6 +377,12 @@ export const CSS = `
    .st-icon-wrap's overflow: hidden. Spacing-below lives on this slot. */
 .st-icon-slot { position: relative; margin-bottom: 12px; display: inline-block; }
 .st-icon-img { width: 100%; height: 100%; object-fit: contain; }
+/* Known remote icon still resolving. Never use the letter as a loading state:
+   it creates a visible false identity immediately before the real icon. */
+.st-icon-loading {
+  background: color-mix(in srgb, var(--surface2) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
 /* Letter fallback (no icon / load error) gets a surface tile + border so the
    initial reads as a recognisable icon slot — real icons float transparent,
    but an iconless app still looks finished. */

@@ -14,6 +14,7 @@ export function capabilityRows(contract) {
   const data = contract.data || {}
   const background = contract.background
   const offline = contract.offline || {}
+  const runtime = contract.runtime || {}
   const prompt = agent.system_prompt
   const logs = data.chat_logs || {}
   const rows = [
@@ -91,6 +92,21 @@ export function capabilityRows(contract) {
   }
   if (data.manage_apps) {
     rows.push(row('Installed apps', 'Manages', 'Can install and uninstall apps.', 'write'))
+  }
+  for (const [capability, declaration] of Object.entries(runtime).sort()) {
+    const limits = declaration?.limits || {}
+    const duration = Number(limits.max_duration_ms)
+    const durationText = Number.isFinite(duration)
+      ? ` for up to ${Math.round(duration / 100) / 10} seconds per request`
+      : ''
+    rows.push(row(
+      declaration?.title || capability,
+      `v${declaration?.version || '?'}`,
+      `${declaration?.description || capability}${durationText}${
+        declaration?.reason ? ` Reason: ${declaration.reason}` : ''
+      }`,
+      declaration?.risk === 'device' ? 'write' : 'read',
+    ))
   }
   rows.push(
     offline.capable

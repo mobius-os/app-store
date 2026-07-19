@@ -1,5 +1,5 @@
 import { appLifecycleFor, busyLabelForAction } from '../domain.js'
-import { IconBox } from './IconBox.jsx'
+import { IconBox, installedIconUrl } from './IconBox.jsx'
 
 function cardVariantClass(variant) {
   if (variant === 'update') return 'st-card is-update'
@@ -122,7 +122,7 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
   // prioritises this URL over the remote catalog copy so it is available as an
   // <img> src on the first render instead of popping in after an effect.
   const itemWithIcon = storeInstalled
-    ? { ...item, installed_icon_url: `/api/apps/${storeInstalled.id}/icon?size=128` }
+    ? { ...item, installed_icon_url: installedIconUrl(storeInstalled) }
     : item
   // The card is a non-interactive container. Two cleanly-separated AT
   // targets sit inside it: the app name is a real <button> whose ::after
