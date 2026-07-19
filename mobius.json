@@ -31,7 +31,6 @@
     "constants.js",
     "theme.js",
     "domain.js",
-    "update-review.js",
     "storage.js",
     "api.js",
     "manifest-snapshots.js",
@@ -46,6 +45,10 @@
     "ui/FromUrlTab.jsx",
     "ui/DetailView.jsx",
     "ui/UpdateReviewModal.jsx",
-    "ui/SelfUpdateBanner.jsx"
+    "ui/SelfUpdateBanner.jsx",
+    "ui/diff/parseUnifiedDiff.js",
+    "ui/diff/DiffView.jsx",
+    "ui/diff/FileDiffList.jsx",
+    "ui/diff/styles.js"
   ]
 }

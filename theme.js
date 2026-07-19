@@ -980,49 +980,12 @@ export const CSS = `
 .st-update-review-section-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
-.st-update-review-total,
-.st-update-review-stat {
+.st-update-review-total {
   display: inline-flex; align-items: baseline; gap: 8px;
   font: 600 12px/1.3 var(--mono, monospace);
 }
-.st-update-review-total .is-add,
-.st-update-review-stat .is-add { color: var(--green); }
-.st-update-review-total .is-del,
-.st-update-review-stat .is-del { color: var(--danger); }
-.st-update-review-files {
-  list-style: none; margin: 0; padding: 0;
-  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
-}
-.st-update-review-file {
-  min-height: 44px; display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  align-items: center; gap: 10px; padding: 8px 4px;
-}
-.st-update-review-file + .st-update-review-file { border-top: 1px solid var(--border); }
-.st-update-review-badge {
-  width: 22px; height: 22px; display: grid; place-items: center;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted);
-  font: 700 11px/1 var(--mono, monospace);
-}
-.st-update-review-badge.is-a {
-  background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green);
-}
-.st-update-review-badge.is-d {
-  background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger);
-}
-.st-update-review-path {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 500 12.5px/1.4 var(--mono, monospace); color: var(--text);
-}
-.st-update-review-toggle { align-self: flex-start; min-height: 38px; padding: 7px 12px; }
-.st-update-review-diff {
-  margin: 0; max-height: 340px; overflow: auto; padding: 12px;
-  border: 1px solid var(--border); border-radius: 10px;
-  background: var(--bg); color: var(--text);
-  font: 12px/1.55 var(--mono, monospace); white-space: pre;
-  overscroll-behavior: contain;
-}
+.st-update-review-total .is-add { color: var(--green); }
+.st-update-review-total .is-del { color: var(--danger); }
 .st-update-review-notice {
   padding: 12px; border: 1px solid var(--border); border-radius: 10px;
   background: var(--surface2); color: var(--muted);

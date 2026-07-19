@@ -7,6 +7,8 @@ export function useLayoutEffect() {}
 export function useCallback(fn) { return fn }
 export function useMemo(fn) { return fn() }
 export function useRef(initial) { return { current: initial } }
+let idSeq = 0
+export function useId() { idSeq += 1; return `:stub-${idSeq}:` }
 
 export default {
   Fragment,
@@ -18,4 +20,5 @@ export default {
   useCallback,
   useMemo,
   useRef,
+  useId,
 }

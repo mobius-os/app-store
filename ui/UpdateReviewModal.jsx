@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { capabilityDiffNeedsReview } from '../domain.js'
-import { summarizeUpdateDiff, updateFileStatusLabel } from '../update-review.js'
+import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
+import FileDiffList from './diff/FileDiffList.jsx'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
 function fileCountLabel(count) {
@@ -16,14 +17,15 @@ export function UpdateReviewModal({
   onApply,
   onReviewWithAgent,
 }) {
-  const [diffOpen, setDiffOpen] = useState(false)
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
   const openerRef = useRef(null)
   const item = review.item
   const preview = review.preview || {}
   const diff = typeof preview.upstream_diff === 'string' ? preview.upstream_diff : ''
-  const summary = useMemo(() => summarizeUpdateDiff(diff), [diff])
+  const files = useMemo(() => parseUnifiedDiff(diff), [diff])
+  const insertions = files.reduce((sum, file) => sum + (file.insertions || 0), 0)
+  const deletions = files.reduce((sum, file) => sum + (file.deletions || 0), 0)
   const capabilitiesChanged = capabilityDiffNeedsReview(
     review.capabilityReview?.preview?.capability_diff,
   )
@@ -91,7 +93,7 @@ export function UpdateReviewModal({
             <h2 id="st-update-review-title" className="st-update-review-title">Review update</h2>
             <p className="st-update-review-subtitle">
               {name} to v{version}
-              {summary.fileCount > 0 ? ` · ${fileCountLabel(summary.fileCount)}` : ''}
+              {files.length > 0 ? ` · ${fileCountLabel(files.length)}` : ''}
             </p>
           </div>
           <button
@@ -110,49 +112,22 @@ export function UpdateReviewModal({
               <div className="st-update-review-error-text">{review.previewError}</div>
               <div>Nothing will be changed until the source can be verified. You can close and try again, or ask the agent to investigate.</div>
             </div>
-          ) : summary.fileCount === 0 ? (
+          ) : files.length === 0 ? (
             <div className="st-update-review-notice" role="status">
               No source-file changes to show. This release may update package metadata or assets.
             </div>
           ) : (
             <section className="st-update-review-section">
               <div className="st-update-review-section-head">
-                <h3>{fileCountLabel(summary.fileCount)}</h3>
-                <div className="st-update-review-total" aria-label={`${summary.insertions} additions and ${summary.deletions} deletions`}>
-                  <span className="is-add">+{summary.insertions}</span>
-                  <span className="is-del">−{summary.deletions}</span>
+                <h3>{fileCountLabel(files.length)}</h3>
+                <div className="st-update-review-total" aria-label={`${insertions} additions and ${deletions} deletions`}>
+                  <span className="is-add">+{insertions}</span>
+                  <span className="is-del">−{deletions}</span>
                 </div>
               </div>
-              <ul className="st-update-review-files">
-                {summary.files.map((file) => (
-                  <li key={`${file.status}:${file.oldPath}:${file.newPath}`} className="st-update-review-file">
-                    <span className={`st-update-review-badge is-${file.status.toLowerCase()}`} title={updateFileStatusLabel(file.status)}>
-                      {file.status}
-                    </span>
-                    <span className="st-update-review-path">{file.path}</span>
-                    <span className="st-update-review-stat">
-                      {file.insertions > 0 ? <span className="is-add">+{file.insertions}</span> : null}
-                      {file.deletions > 0 ? <span className="is-del">−{file.deletions}</span> : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <FileDiffList files={files} />
             </section>
           )}
-
-          {diff ? (
-            <section className="st-update-review-section">
-              <button
-                type="button"
-                className="st-btn st-btn-secondary st-update-review-toggle"
-                onClick={() => setDiffOpen((open) => !open)}
-                aria-expanded={diffOpen}
-              >
-                {diffOpen ? 'Hide full diff' : 'Show full diff'}
-              </button>
-              {diffOpen ? <pre className="st-update-review-diff"><code>{diff}</code></pre> : null}
-            </section>
-          ) : null}
 
           {capabilitiesChanged ? (
             <section className="st-update-review-section">

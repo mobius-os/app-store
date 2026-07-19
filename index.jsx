@@ -82,7 +82,6 @@ export {
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'
 export { normalizeInstalledVersions } from './storage.js'
-export { parseUpdateDiff, summarizeUpdateDiff, updateFileStatusLabel } from './update-review.js'
 export {
   fetchCatalog,
   fetchManifest,

@@ -789,42 +789,6 @@ test('busy labels stay tied to the action that started', async () => {
   assert.ok(detailSource.includes('busyActionKind || lifecycle.actionKind'))
 })
 
-test('update diff summary parses file status and line counts', async () => {
-  const { parseUpdateDiff, summarizeUpdateDiff, updateFileStatusLabel } = await bundle()
-  const diff = [
-    'diff --git a/index.jsx b/index.jsx',
-    'index 123..456 100644',
-    '--- a/index.jsx',
-    '+++ b/index.jsx',
-    '@@ -1,2 +1,2 @@',
-    '-old line',
-    '+new line',
-    ' same',
-    'diff --git a/new-file.js b/new-file.js',
-    'new file mode 100644',
-    '--- /dev/null',
-    '+++ b/new-file.js',
-    '@@ -0,0 +1 @@',
-    '+export const ready = true',
-  ].join('\n')
-
-  assert.deepEqual(parseUpdateDiff(diff), [
-    {
-      oldPath: 'index.jsx', newPath: 'index.jsx', path: 'index.jsx',
-      status: 'M', insertions: 1, deletions: 1,
-    },
-    {
-      oldPath: 'new-file.js', newPath: 'new-file.js', path: 'new-file.js',
-      status: 'A', insertions: 1, deletions: 0,
-    },
-  ])
-  const summary = summarizeUpdateDiff(diff)
-  assert.equal(summary.fileCount, 2)
-  assert.equal(summary.insertions, 2)
-  assert.equal(summary.deletions, 1)
-  assert.equal(updateFileStatusLabel('A'), 'Added')
-})
-
 test('scheduleSummary handles cron and on-demand jobs', async () => {
   const { scheduleSummary } = await bundle()
 
