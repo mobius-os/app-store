@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.1.3",
+    "version": "2.1.5",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -92,8 +92,8 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.7.9",
-    "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
+    "version": "2.8.2",
+    "description": "While you sleep, Möbius learns from recent work, improves its own approach, anticipates what may help next, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-reflection",
@@ -144,6 +144,7 @@ export const MANIFEST_SNAPSHOTS = {
     "embeds_agent": true,
     "source_files": [
       "reflection_runner.py",
+      "resource_monitor.py",
       "constants.js",
       "theme.js",
       "domain.js",
@@ -164,7 +165,7 @@ export const MANIFEST_SNAPSHOTS = {
   "skills": {
     "id": "skills",
     "name": "Skills",
-    "version": "1.0.10",
+    "version": "1.1.2",
     "description": "Browse and search your agent's skills — the SKILL.md guides that shape what it can do. Tap any skill to read it. Create or edit through the agent.",
     "author": "mobius-os",
     "license": "MIT",
@@ -194,6 +195,40 @@ export const MANIFEST_SNAPSHOTS = {
       "writes": "none",
       "execution": "none"
     }
+  },
+  "artifacts": {
+    "id": "artifacts",
+    "name": "Artifacts",
+    "version": "0.5.2",
+    "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
+    "author": "mobius-os",
+    "license": "MIT",
+    "homepage": "https://github.com/mobius-os/app-artifacts",
+    "entry": "index.jsx",
+    "system_app": true,
+    "system_prompt": "artifacts-core.md",
+    "icon": "icon.png",
+    "skills": [
+      "artifacts.md"
+    ],
+    "permissions": {
+      "chat_log_access": "summary"
+    },
+    "source_files": [
+      "artifacts-core.md",
+      "artifacts.md",
+      "domain.js",
+      "storage.js",
+      "theme.js",
+      "preview/ArtifactFrame.jsx",
+      "ui/ArtifactCard.jsx",
+      "ui/Detail.jsx",
+      "ui/Empty.jsx",
+      "ui/Gallery.jsx",
+      "ui/Icons.jsx",
+      "ui/ShareSheet.jsx",
+      "ui/VersionTimeline.jsx"
+    ]
   },
   "tasks": {
     "id": "tasks",
@@ -230,7 +265,7 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.4.2",
+    "version": "0.4.3",
     "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
     "author": "mobius-os",
     "license": "MIT",
@@ -272,6 +307,7 @@ export const MANIFEST_SNAPSHOTS = {
       "stack.js",
       "source-map.js",
       "diff.js",
+      "parse-unified-diff.js",
       "api.js",
       "storage.js",
       "contributing.md",
@@ -289,7 +325,7 @@ export const MANIFEST_SNAPSHOTS = {
   "notes": {
     "id": "notes",
     "name": "Notes",
-    "version": "1.2.27",
+    "version": "1.2.28",
     "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
     "author": "mobius-os",
     "license": "MIT",
@@ -312,12 +348,11 @@ export const MANIFEST_SNAPSHOTS = {
         "@codemirror/lang-markdown",
         "@codemirror/language",
         "@lezer/highlight",
-        "katex"
-      ],
-      "esm_deps": [
+        "katex",
         "marked",
         "dompurify"
-      ]
+      ],
+      "esm_deps": []
     },
     "storage_seeds": {
       "notes-meta.json": {
@@ -342,7 +377,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.14.8",
+    "version": "1.14.10",
     "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -412,7 +447,7 @@ export const MANIFEST_SNAPSHOTS = {
   "editor": {
     "id": "editor",
     "name": "Editor",
-    "version": "0.6.3",
+    "version": "0.6.4",
     "description": "Browse, inspect, and edit every file on your Möbius. Follow git status, check file details, and ask the agent to make changes with you.",
     "author": "mobius-os",
     "license": "MIT",
@@ -479,7 +514,7 @@ export const MANIFEST_SNAPSHOTS = {
   "webstudio": {
     "id": "webstudio",
     "name": "Web Studio",
-    "version": "0.13.2",
+    "version": "0.13.3",
     "description": "Build a website with the agent and preview it live in an in-app browser.",
     "author": "mobius-os",
     "license": "MIT",
@@ -570,7 +605,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "workout",
     "previous_id": "gym",
     "name": "Workout",
-    "version": "2.8.3",
+    "version": "2.8.4",
     "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
     "author": "mobius-os",
     "license": "MIT",
@@ -672,7 +707,7 @@ export const MANIFEST_SNAPSHOTS = {
   "beat-machine": {
     "id": "beat-machine",
     "name": "Beat Machine",
-    "version": "1.0.12",
+    "version": "1.0.14",
     "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
     "author": "mobius-os",
     "license": "MIT",
@@ -837,7 +872,7 @@ export const MANIFEST_SNAPSHOTS = {
   "tandem": {
     "id": "tandem",
     "name": "Tandem",
-    "version": "0.13.5",
+    "version": "0.14.2",
     "description": "Split-pane bilingual reader for language learning. Wide screens show the languages left/right; phones and narrow windows stack them top/bottom. The panes sync-scroll and the divider resizes them. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one. Pick the generation agent (Claude or OpenAI Codex) in settings; tap a word for its exact glossary match or honest aligned-sentence context.",
     "offline_capable": true,
     "offline": {
@@ -849,13 +884,14 @@ export const MANIFEST_SNAPSHOTS = {
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-tandem",
-    "icon": "icon-v6.png",
+    "icon": "icon-v7.png",
     "entry": "index.jsx",
     "source_files": [
       "story-schema.mjs",
       "text-align.mjs",
       "gen-model.mjs",
       "scroll-sync.mjs",
+      "reader-layout.mjs",
       "constants.js",
       "signals.js",
       "theme.js",
