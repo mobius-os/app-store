@@ -325,7 +325,7 @@
       "manifest": {
         "id": "artifacts",
         "name": "Artifacts",
-        "version": "0.5.3",
+        "version": "0.5.4",
         "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
         "author": "mobius-os",
         "license": "MIT",
