@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-07-19",
+  "updated": "2026-07-21",
   "note": "Web registry of Mobius App Store catalog entries. The store fetches this at mount (via the server proxy) so a new app appears in every instance's store the moment this file lands on main — no store-app redeploy. constants.js CATALOG is the baked fallback used only if this fetch fails; keep the two in sync. Each entry: { id, repo, manifest_url, raw_base, categories?, keywords?, capabilities?, setup?, manifest? }. manifest is an optional validated summary/full manifest used for fast first paint; missing or invalid manifests fall back to fetching manifest_url. setup marks apps that need system or in-app configuration before their agent/scheduled features are useful. categories/keywords/capabilities are intentionally machine-readable so agents can search existing apps before building or remixing.",
   "apps": [
     {
@@ -236,6 +236,69 @@
           "ui/ModelPicker.jsx",
           "ui/SettingsTab.jsx"
         ]
+      }
+    },
+    {
+      "id": "workflows",
+      "name": "Workflows",
+      "description": "A git-graph timeline of your chats — see the subagents each turn spawned, whether they merged back, are still out, or failed.",
+      "repo": "mobius-os/app-workflows",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-workflows/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-workflows/main/",
+      "categories": [
+        "system",
+        "agents"
+      ],
+      "keywords": [
+        "workflows",
+        "subagents",
+        "helpers",
+        "timeline",
+        "git graph",
+        "observability",
+        "background agents",
+        "chat history",
+        "turns"
+      ],
+      "capabilities": [
+        "timeline of chat turns and their subagents",
+        "subagent lifecycle: merged / launched / failed / stopped",
+        "scheduled and on-demand digest of chats"
+      ],
+      "manifest": {
+        "id": "workflows",
+        "name": "Workflows",
+        "version": "1.0.0",
+        "description": "A git-graph timeline of your chats — see the subagents each turn spawned, whether they merged back, are still out, or failed, with the agent's own words and the brief each was given.",
+        "author": "mobius-os",
+        "license": "MIT",
+        "homepage": "https://github.com/mobius-os/app-workflows",
+        "entry": "index.jsx",
+        "icon": "icon.png",
+        "source_files": [
+          "storage.js",
+          "domain.js",
+          "theme.js",
+          "views/Home.jsx",
+          "views/ChatDetail.jsx",
+          "views/HelperDetail.jsx",
+          "views/Timeline.jsx",
+          "views/Markdown.jsx",
+          "parse_runs.py"
+        ],
+        "runtime": {
+          "imports": [
+            "react",
+            "react-dom"
+          ],
+          "esm_deps": []
+        },
+        "schedule": {
+          "default": "17 4 * * *",
+          "user_configurable": true,
+          "job": "refresh.sh"
+        },
+        "permissions": {}
       }
     },
     {

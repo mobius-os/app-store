@@ -44,6 +44,15 @@ export const CATALOG = [
       },
     },
   {
+      id: 'workflows',
+      repo: 'mobius-os/app-workflows',
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-workflows/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-workflows/main/',
+      categories: ['system', 'agents'],
+      keywords: ['workflows', 'subagents', 'helpers', 'timeline', 'git graph', 'observability', 'background agents', 'chat history', 'turns'],
+      capabilities: ['timeline of chat turns and their subagents', 'subagent lifecycle: merged / launched / failed / stopped', 'scheduled and on-demand digest of chats'],
+    },
+  {
       id: 'skills',
       repo: 'mobius-os/app-skills',
       manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-skills/main/mobius.json',
