@@ -447,7 +447,7 @@ export const MANIFEST_SNAPSHOTS = {
   "editor": {
     "id": "editor",
     "name": "Editor",
-    "version": "0.6.4",
+    "version": "0.6.5",
     "description": "Browse, inspect, and edit every file on your Möbius. Follow git status, check file details, and ask the agent to make changes with you.",
     "author": "mobius-os",
     "license": "MIT",
@@ -479,7 +479,7 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ChatPanel.jsx",
       "ui/ChatBubbleIcon.jsx"
     ],
-    "icon": "icon.png",
+    "icon": "icon-v2.png",
     "offline_capable": false,
     "offline": {
       "reads": false,
