@@ -737,22 +737,152 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
   // null / absent => fall back to the semver compare (exactly today's behavior).
   assert.equal(appLifecycleFor(item, { installed, updateChecks: { 3: null } }).actionKind, 'update')
   assert.equal(appLifecycleFor(upToDate, { installed, updateChecks: {} }).actionKind, 'open')
+
+  // A pending receipt is not synonymous with an unresolved conflict. Only the
+  // click-gated conflict opens a resolver; marker-free committed source is a
+  // replay/update retry and the resolver endpoint correctly rejects it.
+  const unresolved = appLifecycleFor(upToDate, {
+    installed,
+    updateChecks: { 3: {
+      available: true,
+      pendingUpdateState: 'needs_resolution',
+    } },
+  })
+  assert.equal(unresolved.actionKind, 'resolve')
+  assert.equal(unresolved.statusLabel, 'Update blocked')
+  assert.deepEqual(unresolved.resolutionNotice, {
+    kind: 'conflict',
+    itemId: 'news',
+    appId: 3,
+    message: 'This copy has local changes, so updating needs a quick reconcile.',
+  })
+  const replayPending = appLifecycleFor(upToDate, {
+    installed,
+    updateChecks: { 3: {
+      available: true,
+      pendingUpdateState: 'replay_pending',
+    } },
+    updateNotice: { kind: 'conflict', itemId: 'news', appId: 3 },
+  })
+  assert.equal(replayPending.actionKind, 'update')
+  assert.equal(replayPending.pendingUpdateState, 'replay_pending')
+  const unknownPending = appLifecycleFor(upToDate, {
+    installed,
+    updateChecks: { 3: {
+      available: true,
+      pendingUpdateState: 'unknown',
+    } },
+    updateNotice: { kind: 'conflict', itemId: 'news', appId: 3 },
+  })
+  assert.equal(unknownPending.actionKind, 'update')
+  assert.equal(unknownPending.pendingUpdateState, 'unknown')
+
+  // Rolling-deploy compatibility: old object responses may omit the enum.
+  assert.equal(appLifecycleFor(upToDate, {
+    installed,
+    updateChecks: { 3: { available: true } },
+  }).actionKind, 'update')
+  assert.equal(appLifecycleFor(upToDate, {
+    installed,
+    updateChecks: { 3: { available: true, needsResolution: true } },
+  }).actionKind, 'resolve')
+})
+
+test('fetchUpdateCheck normalizes current, legacy, and pre-state backends', async () => {
+  const { fetchUpdateCheck } = await bundle()
+  const oldFetch = globalThis.fetch
+  const replies = [
+    { update_available: true, pending_update_state: 'replay_pending', upstream_version: '2.0.0' },
+    { update_available: true, pending_update_state: 'unknown', upstream_version: '2.0.0' },
+    { update_available: true, needs_resolution: true, upstream_version: '2.0.0' },
+    { update_available: false, upstream_version: '1.0.0' },
+  ]
+  globalThis.fetch = async () => new Response(JSON.stringify(replies.shift()), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+  try {
+    assert.deepEqual(await fetchUpdateCheck(1, 'token'), {
+      available: true,
+      pendingUpdateState: 'replay_pending',
+      upstreamVersion: '2.0.0',
+    })
+    assert.deepEqual(await fetchUpdateCheck(1, 'token'), {
+      available: true,
+      pendingUpdateState: 'unknown',
+      upstreamVersion: '2.0.0',
+    })
+    assert.deepEqual(await fetchUpdateCheck(1, 'token'), {
+      available: true,
+      pendingUpdateState: 'needs_resolution',
+      upstreamVersion: '2.0.0',
+    })
+    assert.deepEqual(await fetchUpdateCheck(1, 'token'), {
+      available: false,
+      pendingUpdateState: null,
+      upstreamVersion: '1.0.0',
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
 })
 
 test('successful updates clear stale git update checks and inline errors', async () => {
   const { mergeUpdateChecks } = await bundle()
-  const stale = { 61: true }
-  const settled = mergeUpdateChecks(stale, { 61: false })
-  assert.deepEqual(settled, { 61: false })
+  const stale = { 61: { available: true, pendingUpdateState: 'replay_pending' } }
+  const current = {
+    available: false,
+    pendingUpdateState: 'none',
+    upstreamVersion: '2.0.0',
+  }
+  const settled = mergeUpdateChecks(stale, { 61: current })
+  assert.deepEqual(settled, { 61: current })
   assert.notEqual(settled, stale)
 
-  const alreadySettled = { 61: false }
-  assert.equal(mergeUpdateChecks(alreadySettled, { 61: false }), alreadySettled)
+  const alreadySettled = { 61: current }
+  assert.equal(mergeUpdateChecks(alreadySettled, { 61: { ...current } }), alreadySettled)
+
+  const priorConflict = {
+    61: {
+      available: true,
+      pendingUpdateState: 'needs_resolution',
+      upstreamVersion: '2.0.0',
+    },
+  }
+  const uncertain = mergeUpdateChecks(priorConflict, {
+    61: {
+      available: true,
+      pendingUpdateState: 'unknown',
+      upstreamVersion: '2.0.1',
+    },
+  })
+  assert.deepEqual(uncertain[61], {
+    available: true,
+    pendingUpdateState: 'needs_resolution',
+    upstreamVersion: '2.0.1',
+  })
+  assert.equal(mergeUpdateChecks({}, {
+    61: { available: true, pendingUpdateState: 'unknown', upstreamVersion: null },
+  })[61].pendingUpdateState, 'unknown')
+  const previouslyClear = mergeUpdateChecks({
+    61: { available: false, pendingUpdateState: 'none', upstreamVersion: '2.0.0' },
+  }, {
+    61: { available: true, pendingUpdateState: 'unknown', upstreamVersion: '2.0.1' },
+  })
+  assert.deepEqual(previouslyClear[61], {
+    available: true,
+    pendingUpdateState: 'unknown',
+    upstreamVersion: '2.0.1',
+  })
 
   const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
-  assert.ok(source.includes('setUpdateChecks(prev => mergeUpdateChecks(prev, { [result.id]: false }))'))
+  assert.ok(source.includes("pendingUpdateState: 'none'"))
+  assert.ok(source.includes("pendingUpdateState: 'needs_resolution'"))
+  assert.ok(source.includes('if (r.check !== null) out[r.id] = r.check'))
   assert.ok(source.includes('setCardErrors(prev => withoutKey(prev, item.id))'))
   assert.ok(source.includes('clearSettledUpdateArtifacts(itemIdsSettledByChecks'))
+  const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  assert.ok(detailSource.includes('!blockedUpdate && (!storeInstalled || hasUpdate)'))
 })
 
 test('busy labels stay tied to the action that started', async () => {

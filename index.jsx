@@ -85,6 +85,7 @@ export { normalizeInstalledVersions } from './storage.js'
 export {
   fetchCatalog,
   fetchManifest,
+  fetchUpdateCheck,
   installApp,
   loadInstalledApps,
   previewApp,
@@ -148,7 +149,7 @@ async function mapWithConcurrency(items, limit, mapper) {
 }
 
 // Probe GET /api/apps/{id}/update-check for the given installed rows and return
-// a { [numericAppId]: update_available } map (true | false | null). Same
+// a { [numericAppId]: { available, pendingUpdateState, upstreamVersion } } map.
 // bounded pool as the manifest refetch. fetchUpdateCheck never throws — it
 // degrades to null — so this resolves cleanly even when the endpoint 404s on an
 // older backend; callers merge the answered ids and leave the rest on the
@@ -158,11 +159,36 @@ async function fetchUpdateChecksFor(rows, token) {
   if (!rows.length) return {}
   const results = await mapWithConcurrency(rows, MANIFEST_FETCH_CONCURRENCY, async (app) => ({
     id: app.id,
-    available: await fetchUpdateCheck(app.id, token),
+    check: await fetchUpdateCheck(app.id, token),
   }))
   const out = {}
-  for (const r of results) out[r.id] = r.available
+  for (const r of results) {
+    // A transport/404 failure is not a fresh state answer. Preserve any prior
+    // durable conflict/replay state until a later successful check replaces it;
+    // a first-load miss still has no key and naturally falls back to semver.
+    if (r.check !== null) out[r.id] = r.check
+  }
   return out
+}
+
+function sameUpdateCheck(left, right) {
+  if (left === right) return true
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
+    return false
+  }
+  return left.available === right.available &&
+    left.pendingUpdateState === right.pendingUpdateState &&
+    left.upstreamVersion === right.upstreamVersion
+}
+
+function knownPendingUpdateState(check) {
+  if (!check || typeof check !== 'object') return null
+  if (
+    check.pendingUpdateState === 'needs_resolution' ||
+    check.pendingUpdateState === 'replay_pending'
+  ) return check.pendingUpdateState
+  // Accept a cached rolling-deploy object created before the enum contract.
+  return check.needsResolution === true ? 'needs_resolution' : null
 }
 
 // Merge fresh update-check answers into the prior map, but return the SAME
@@ -171,11 +197,21 @@ async function fetchUpdateChecksFor(rows, token) {
 // the manifest-refetch skip). Only newly-answered or flipped ids force a new
 // object.
 export function mergeUpdateChecks(prev, incoming) {
-  let changed = false
+  let next = prev
   for (const k in incoming) {
-    if (prev[k] !== incoming[k]) { changed = true; break }
+    let value = incoming[k]
+    if (value?.pendingUpdateState === 'unknown') {
+      // Git could not classify the current receipt. Keep the new availability
+      // and version facts, but never let uncertainty erase a previously known
+      // durable resolution/replay phase.
+      const priorState = knownPendingUpdateState(prev[k])
+      if (priorState) value = { ...value, pendingUpdateState: priorState }
+    }
+    if (sameUpdateCheck(prev[k], value)) continue
+    if (next === prev) next = { ...prev }
+    next[k] = value
   }
-  return changed ? { ...prev, ...incoming } : prev
+  return next
 }
 
 function withoutKey(prev, key) {
@@ -189,7 +225,9 @@ function itemIdsSettledByChecks(items, apps, checks) {
   const settled = new Set()
   for (const item of items || []) {
     const app = findInstalled(apps || [], item)
-    if (app && checks?.[app.id] === false) settled.add(item.id)
+    const check = app ? checks?.[app.id] : undefined
+    const available = check && typeof check === 'object' ? check.available : check
+    if (app && available === false) settled.add(item.id)
   }
   return settled
 }
@@ -215,11 +253,9 @@ export default function App({ appId, token }) {
   useEffect(() => { catalogRef.current = catalog }, [catalog])
   const [installed, setInstalled] = useState([])
   const [installedVersions, setInstalledVersions] = useState({})
-  // Git-native update-availability per installed app, keyed by numeric app id:
-  // true/false as answered by GET /api/apps/{id}/update-check; a missing key
-  // (or a null value) means unknown, so appLifecycleFor falls back to the semver
-  // compare. Refreshed on mount + debounced focus/visibility, never in an
-  // unbounded loop.
+  // Git-native update state per installed app, keyed by numeric app id. Each
+  // answered check carries availability and the pending resolution/replay
+  // phase; a missing/null answer is unknown and falls back to semver.
   const [updateChecks, setUpdateChecks] = useState({})
   const [setupCompletions, setSetupCompletions] = useState(() => readSetupCompletions())
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
@@ -641,6 +677,15 @@ export default function App({ appId, token }) {
           result,
           item,
         }
+        if (result.id) {
+          setUpdateChecks(prev => mergeUpdateChecks(prev, {
+            [result.id]: {
+              available: true,
+              pendingUpdateState: 'needs_resolution',
+              upstreamVersion: result.upstream_version || null,
+            },
+          }))
+        }
         setUpdateNotice(notice)
         await refreshInstalled()
         // A conflict needs review, but don't yank the user to the detail
@@ -660,7 +705,13 @@ export default function App({ appId, token }) {
         // stale `true` here keeps the card/detail CTA on "Update" until the
         // next debounced recheck. Clear it optimistically; later focus checks
         // can flip it back if upstream moves again.
-        setUpdateChecks(prev => mergeUpdateChecks(prev, { [result.id]: false }))
+        setUpdateChecks(prev => mergeUpdateChecks(prev, {
+          [result.id]: {
+            available: false,
+            pendingUpdateState: 'none',
+            upstreamVersion: result.version || null,
+          },
+        }))
       }
       setCardErrors(prev => withoutKey(prev, item.id))
       setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))

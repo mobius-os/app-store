@@ -27,7 +27,11 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
   const installedVer = lifecycle.installedVersion
   const hasUpdate = lifecycle.hasUpdate
   const blockedUpdate = lifecycle.key === 'conflict'
-  const requiresCapabilityReview = !storeInstalled || hasUpdate
+  const resolutionNotice = lifecycle.resolutionNotice
+  // Conflict resolution reuses the candidate already reviewed and journaled by
+  // the backend. Do not disable its durable resolver action just because a new
+  // read-only capability preview is temporarily unavailable.
+  const requiresCapabilityReview = !blockedUpdate && (!storeInstalled || hasUpdate)
   const capabilityReviewReady = capabilityReview?.status === 'ready' || capabilityReview?.status === 'changed'
   const canRetryInstalled = typeof onRetryInstalled === 'function'
   const primaryActionDisabled =
@@ -35,7 +39,7 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
     lifecycle.actionKind === 'none' ||
     (lifecycle.actionKind === 'open' && !storeInstalled) ||
     (lifecycle.actionKind === 'retry' && !canRetryInstalled) ||
-    (lifecycle.actionKind === 'resolve' && !updateNotice) ||
+    (lifecycle.actionKind === 'resolve' && !resolutionNotice) ||
     (requiresCapabilityReview && !capabilityReviewReady)
   // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
   // already resolve to trusted hosts, so they pass silently. Invalid
@@ -173,7 +177,7 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
             <div className="st-installed-note">
               Currently installed: {installedVer ? `v${installedVer}` : 'version unknown'}.
             </div>
-            {updateNotice && (
+            {blockedUpdate && updateNotice && (
               <div className="st-update-notice">
                 <div>{updateNotice.message}</div>
                 <div className="st-update-notice-actions">
@@ -242,7 +246,7 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
           onClick={() => {
             if (primaryActionDisabled) return
             if (blockedUpdate) {
-              onReviewUpdate(updateNotice)
+              onReviewUpdate(resolutionNotice)
               return
             }
             if (lifecycle.actionKind === 'retry') {
