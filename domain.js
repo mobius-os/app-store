@@ -1,5 +1,34 @@
 import { PERM_EXPLAIN, TRUSTED_HOSTS } from './constants.js'
 
+// A blocked apply replaces the review modal's primary action. Move focus to
+// the new action after React commits that result so keyboard users do not fall
+// through to <body>. The dialog is a safe fallback if the action is absent.
+export function focusBlockedUpdateResult(resolveButton, dialog) {
+  const target = resolveButton && typeof resolveButton.focus === 'function'
+    ? resolveButton
+    : dialog && typeof dialog.focus === 'function'
+      ? dialog
+      : null
+  target?.focus()
+  return target
+}
+
+// Update probes clear settled card-level artifacts. Keep the open result modal
+// in the same state machine: once the matching app has settled, its old
+// "Update not applied" result no longer describes the installed state.
+export function clearSettledBlockedReview(review, itemIds) {
+  if (!review?.blockedNotice || !itemIds?.size) return review
+  const itemId = review.blockedNotice.itemId || review.item?.id
+  return itemId && itemIds.has(itemId) ? null : review
+}
+
+export function clearResolvedBlockedReview(review, notice) {
+  if (!review?.blockedNotice || !notice) return review
+  const reviewItemId = review.blockedNotice.itemId || review.item?.id
+  const resolvedItemId = notice.itemId
+  return resolvedItemId && reviewItemId === resolvedItemId ? null : review
+}
+
 export function manifestCapabilityRows(manifest = {}) {
   const permissions = manifest.permissions || {}
   const chatLogAccess = permissions.chat_log_access || 'none'

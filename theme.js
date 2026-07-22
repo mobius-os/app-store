@@ -946,6 +946,11 @@ export const CSS = `
   background: var(--surface); color: var(--text);
   overflow: hidden;
 }
+.st-update-review.is-result {
+  height: auto;
+  max-width: 560px;
+  grid-template-rows: auto auto auto;
+}
 .st-update-review-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
 }
@@ -994,6 +999,13 @@ export const CSS = `
 .st-update-review-notice.is-error {
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
+.st-update-review-notice.is-blocked {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+.st-update-review-result-title {
+  margin-bottom: 7px; color: var(--text); font-size: 16px; font-weight: 700;
+}
 .st-update-review-error-text,
 .st-selectable-error {
   user-select: text;
@@ -1009,10 +1021,14 @@ export const CSS = `
 @media (max-width: 520px) {
   .st-update-review-scrim { align-items: stretch; padding: 8px; }
   .st-update-review { height: calc(100% - 16px); padding: 16px; border-radius: 12px; }
+  .st-update-review.is-result { height: auto; align-self: center; }
   .st-update-review-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .st-update-review-actions .st-btn { width: 100%; margin: 0; }
   .st-update-review-actions .st-btn-primary { grid-column: 1 / -1; order: -2; }
   .st-update-review-actions .st-btn-secondary { order: -1; }
+  .st-update-review.is-result .st-update-review-actions .st-btn-primary {
+    grid-column: auto; order: initial;
+  }
 }
 
 @media (max-width: 360px) {

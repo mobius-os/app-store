@@ -23,6 +23,8 @@ import {
   busyLabelForAction,
   capabilityDiffNeedsReview,
   canonicalIdentityKey,
+  clearResolvedBlockedReview,
+  clearSettledBlockedReview,
   collectCategories,
   filterCatalog,
   findInstalled,
@@ -68,9 +70,12 @@ export {
   busyLabelForAction,
   capabilityDiffNeedsReview,
   canonicalIdentityKey,
+  clearResolvedBlockedReview,
+  clearSettledBlockedReview,
   collectCategories,
   filterCatalog,
   findInstalled,
+  focusBlockedUpdateResult,
   isSystemCatalogItem,
   manifestCapabilityRows,
   humanCron,
@@ -326,6 +331,7 @@ export default function App({ appId, token }) {
       return next
     })
     setUpdateNotice(prev => (prev && itemIds.has(prev.itemId) ? null : prev))
+    setUpdateReview(prev => clearSettledBlockedReview(prev, itemIds))
   }, [])
 
   // Initial fetch: catalog manifests + installed apps + version map.
@@ -691,7 +697,7 @@ export default function App({ appId, token }) {
         // A conflict needs review, but don't yank the user to the detail
         // view — the persisted updateNotice drives the reconcile affordance
         // in place on whichever surface the owner is using.
-        return { ok: false, conflict: true, result }
+        return { ok: false, conflict: true, result, notice }
       }
 
       // Record the version we just installed so update detection
@@ -831,6 +837,9 @@ export default function App({ appId, token }) {
     try {
       if (notice.kind === 'conflict') {
         const resolver = await createConflictResolverChat(notice.appId, token)
+        // Retire only the result that opened this resolver. The global conflict
+        // notice remains until a later update probe confirms durable state.
+        setUpdateReview(current => clearResolvedBlockedReview(current, notice))
         openChat(resolver.chat_id)
         return
       }
@@ -844,9 +853,11 @@ export default function App({ appId, token }) {
       openChat(chat.id)
     } catch (e) {
       const message = e.message || String(e)
-      // Drop the calm conflict notice so the card's precedence (notice
-      // over inline error) can't hide this real failure — the item
-      // falls back to its Update affordance with the red error shown.
+      // The reviewed result modal may still own the conflict notice after a
+      // blocked Apply. Keep that result visible and render this error inside
+      // it so the owner can retry Resolve in chat without losing context. The
+      // separate card notice is cleared so it cannot mask the same failure if
+      // the modal is dismissed.
       setUpdateNotice(prev => (prev?.itemId === notice.itemId ? null : prev))
       setCardErrors(prev => ({ ...prev, [notice.itemId]: message }))
       setToast({ kind: 'error', message })
@@ -1068,8 +1079,17 @@ export default function App({ appId, token }) {
       capabilityDigest: updateReview.capabilityReview.preview.capability_digest,
       sourceDigest: updateReview.preview.source_digest,
     })
-    if (outcome?.ok || outcome?.conflict) {
+    if (outcome?.ok) {
       setUpdateReview(null)
+      return
+    }
+    if (outcome?.conflict) {
+      // The request completed, but the update did not. Keep the reviewed
+      // surface open as an explicit result instead of making a blocked apply
+      // look like a successful completion followed by an unrelated card state.
+      setUpdateReview(current => current
+        ? { ...current, blockedNotice: outcome.notice }
+        : current)
       return
     }
     if (outcome?.reason === 'capability_changed' || outcome?.reason === 'update_changed') {
@@ -1261,10 +1281,12 @@ export default function App({ appId, token }) {
           <UpdateReviewModal
             review={updateReview}
             applying={busy && busyActionKind === 'update'}
+            resolving={busy && busyActionKind === 'resolve'}
             agentReviewing={agentReviewingUpdate}
             error={cardErrors[updateReview.item.id] || ''}
             onClose={() => setUpdateReview(null)}
             onApply={handleApplyReviewedUpdate}
+            onResolve={() => handleReviewUpdate(updateReview.blockedNotice)}
             onReviewWithAgent={handleAgentUpdateReview}
           />
         )}
@@ -1395,10 +1417,12 @@ export default function App({ appId, token }) {
         <UpdateReviewModal
           review={updateReview}
           applying={busy && busyActionKind === 'update'}
+          resolving={busy && busyActionKind === 'resolve'}
           agentReviewing={agentReviewingUpdate}
           error={cardErrors[updateReview.item.id] || ''}
           onClose={() => setUpdateReview(null)}
           onApply={handleApplyReviewedUpdate}
+          onResolve={() => handleReviewUpdate(updateReview.blockedNotice)}
           onReviewWithAgent={handleAgentUpdateReview}
         />
       )}
