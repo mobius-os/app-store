@@ -571,6 +571,56 @@ test('catalog updates open a read-only review before applying, binding reviewed 
   assert.match(uninstallSource, /shared files.*not erased/)
 })
 
+test('a conflicting apply remains visible as an explicit unchanged result', async () => {
+  const {
+    clearResolvedBlockedReview,
+    clearSettledBlockedReview,
+    focusBlockedUpdateResult,
+  } = await bundle()
+  const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
+  const themeSource = await readFile(join(root, '..', 'theme.js'), 'utf8')
+
+  assert.ok(indexSource.includes('blockedNotice: outcome.notice'))
+  assert.ok(indexSource.includes('onResolve={() => handleReviewUpdate(updateReview.blockedNotice)}'))
+  assert.ok(modalSource.includes('Update not applied'))
+  assert.ok(modalSource.includes('Your app was left unchanged'))
+  assert.ok(modalSource.includes('Resolve in chat'))
+  // A resolver-chat failure must stay visible inside the blocked result while
+  // leaving the same Resolve action enabled for a retry.
+  assert.match(modalSource, /blockedNotice[\s\S]*\{error \? \([\s\S]*role="alert"/)
+  assert.ok(modalSource.includes('Nothing changed. Try opening the resolver again.'))
+  // Applying replaces the focused button. Exercise the focus transition and
+  // its fallback, then verify that the component wires it to the result state.
+  const focused = []
+  const resolveButton = { focus: () => focused.push('resolve') }
+  const dialog = { focus: () => focused.push('dialog') }
+  assert.equal(focusBlockedUpdateResult(resolveButton, dialog), resolveButton)
+  assert.equal(focusBlockedUpdateResult(null, dialog), dialog)
+  assert.deepEqual(focused, ['resolve', 'dialog'])
+  assert.ok(modalSource.includes('focusBlockedUpdateResult(resolveRef.current, dialogRef.current)'))
+  assert.ok(modalSource.includes('ref={resolveRef}'))
+
+  // A successful resolver or a settled update probe must retire the matching
+  // cached result instead of resurrecting stale conflict text from the iframe.
+  const review = { item: { id: 'news' }, blockedNotice: { itemId: 'news' } }
+  assert.equal(clearSettledBlockedReview(review, new Set(['news'])), null)
+  assert.equal(clearSettledBlockedReview(review, new Set(['atlas'])), review)
+  assert.equal(clearSettledBlockedReview({ item: { id: 'news' } }, new Set(['news'])).item.id, 'news')
+  assert.ok(indexSource.includes('setUpdateReview(prev => clearSettledBlockedReview(prev, itemIds))'))
+
+  // Opening a resolver retires the exact blocked result before navigation,
+  // while a late response for another app cannot close the current modal.
+  assert.equal(clearResolvedBlockedReview(review, { itemId: 'news' }), null)
+  assert.equal(clearResolvedBlockedReview(review, { itemId: 'atlas' }), review)
+  const clearBeforeOpen = indexSource.indexOf(
+    'setUpdateReview(current => clearResolvedBlockedReview(current, notice))',
+  )
+  const openResolver = indexSource.indexOf('openChat(resolver.chat_id)', clearBeforeOpen)
+  assert.ok(clearBeforeOpen >= 0 && openResolver > clearBeforeOpen)
+  assert.match(themeSource, /\.st-update-review\.is-result\s*\{[^}]*height: auto/)
+})
+
 test('one-tap updates stop for changed or unknown capabilities', async () => {
   const { capabilityDiffNeedsReview } = await bundle()
   assert.equal(capabilityDiffNeedsReview(null), true)
