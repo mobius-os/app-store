@@ -169,7 +169,26 @@ export function appLifecycleFor(item, {
   // semver signal in the union so such package-only releases remain updateable.
   // undefined/null is UNKNOWN (older backend, no repo, or a failed probe), for
   // which the same semver comparison remains the safe fallback.
-  const gitUpdate = installedApp ? updateChecks[installedApp.id] : undefined
+  const updateCheck = installedApp ? updateChecks[installedApp.id] : undefined
+  // Keep accepting the original bool|null cache shape while rolling out the
+  // object contract. The enum is authoritative when present. A legacy
+  // needsResolution boolean is understood only when no enum was supplied.
+  const gitUpdate = updateCheck && typeof updateCheck === 'object'
+    ? updateCheck.available
+    : updateCheck
+  const hasPendingUpdateState = !!(
+    updateCheck && typeof updateCheck === 'object' && (
+      updateCheck.pendingUpdateState === 'needs_resolution' ||
+      updateCheck.pendingUpdateState === 'replay_pending' ||
+      updateCheck.pendingUpdateState === 'unknown' ||
+      updateCheck.pendingUpdateState === 'none'
+    )
+  )
+  const pendingUpdateState = hasPendingUpdateState
+    ? updateCheck.pendingUpdateState
+    : updateCheck && typeof updateCheck === 'object' && updateCheck.needsResolution === true
+      ? 'needs_resolution'
+      : null
   const semverUpdate = !!(
     installedApp &&
     installedVersion &&
@@ -177,7 +196,10 @@ export function appLifecycleFor(item, {
     semverCmp(installedVersion, m.version) < 0
   )
   const hasUpdate = gitUpdate === true || semverUpdate
-  const conflict = updateNotice?.kind === 'conflict' && updateNotice?.itemId === item?.id
+  const conflict = pendingUpdateState === 'needs_resolution' || (
+    !hasPendingUpdateState &&
+    updateNotice?.kind === 'conflict' && updateNotice?.itemId === item?.id
+  )
   const needsFreshInstalledState =
     hasUpdate ||
     conflict ||
@@ -199,15 +221,25 @@ export function appLifecycleFor(item, {
   }
 
   if (conflict) {
+    const resolutionNotice = updateNotice?.kind === 'conflict'
+      ? updateNotice
+      : {
+          kind: 'conflict',
+          itemId: item?.id,
+          appId: installedApp?.id,
+          message: 'This copy has local changes, so updating needs a quick reconcile.',
+        }
     return {
       key: 'conflict',
-      statusLabel: 'Conflict',
-      actionLabel: 'Resolve',
+      statusLabel: 'Update blocked',
+      actionLabel: 'Resolve in chat',
       actionKind: 'resolve',
       cardVariant: 'conflict',
       installedApp,
       installedVersion,
       hasUpdate,
+      pendingUpdateState: 'needs_resolution',
+      resolutionNotice,
       setupRequired,
       setupNeedsAttention,
     }
@@ -223,6 +255,7 @@ export function appLifecycleFor(item, {
       installedApp,
       installedVersion,
       hasUpdate,
+      pendingUpdateState,
       setupRequired,
       setupNeedsAttention,
     }

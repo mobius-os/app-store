@@ -96,12 +96,15 @@ export async function loadInstalledApps(token, opts = {}) {
 // repo's actual content differ from the recorded upstream?" probe. It is
 // authoritative over the client-side semver compare precisely because it
 // catches a release that shipped new content without bumping mobius.json's
-// version. Returns the raw update_available tri-state as bool | null:
-//   true  — upstream content changed → an update exists regardless of versions
-//   false — git says nothing changed upstream → no update even if strings differ
-//   null  — UNKNOWN: an older backend 404s this route, the app has no repo, or
-//           the fetch failed. The caller falls back to the semver comparison,
-//           i.e. exactly today's behavior. A 404 is treated as null on purpose.
+// version. Returns { available, pendingUpdateState, upstreamVersion } or null:
+//   available true/false — the authoritative content comparison
+//   pendingUpdateState  — none, needs_resolution, replay_pending, or unknown
+//   null                — UNKNOWN: an older backend 404s this route, the app has
+//                         no repo, or the fetch failed. The caller falls back to
+//                         the semver comparison, i.e. exactly today's behavior.
+// During a rolling deploy, a backend may expose only the compatibility
+// needs_resolution boolean or neither pending-state field; normalize both
+// shapes here so the rest of the app has one truthful enum contract.
 // NEVER throws and NEVER retries: it runs from focus/visibility listeners whose
 // callers have no rejection handler, so a read-only availability probe must
 // degrade to null rather than let a rejection escape and strand the grid.
@@ -112,7 +115,24 @@ export async function fetchUpdateCheck(appId, token) {
     })
     if (!r.ok) return null
     const body = await r.json()
-    return typeof body?.update_available === 'boolean' ? body.update_available : null
+    const hasPendingUpdateState = (
+      body?.pending_update_state === 'needs_resolution' ||
+      body?.pending_update_state === 'replay_pending' ||
+      body?.pending_update_state === 'unknown' ||
+      body?.pending_update_state === 'none'
+    )
+    const pendingUpdateState = hasPendingUpdateState
+      ? body.pending_update_state
+      : typeof body?.needs_resolution === 'boolean'
+        ? body.needs_resolution ? 'needs_resolution' : 'none'
+        : null
+    return {
+      available: typeof body?.update_available === 'boolean'
+        ? body.update_available
+        : null,
+      pendingUpdateState,
+      upstreamVersion: body?.upstream_version || null,
+    }
   } catch {
     return null
   }

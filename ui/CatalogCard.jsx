@@ -72,14 +72,15 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
   const cardVariant = lifecycle.cardVariant
   const canOpenInstalledApp = !!storeInstalled && typeof onOpenInstalled === 'function'
   const canRetryInstalled = typeof onRetryInstalled === 'function'
-  const canResolveUpdate = lifecycle.actionKind !== 'resolve' || !!updateNotice
+  const canResolveUpdate = lifecycle.actionKind !== 'resolve' || !!lifecycle.resolutionNotice
   const isActionable =
     lifecycle.actionKind !== 'none' &&
     (lifecycle.actionKind !== 'open' || canOpenInstalledApp) &&
     (lifecycle.actionKind !== 'retry' || canRetryInstalled) &&
     canResolveUpdate
   const cardActionDisabled = busy || blocked || !isActionable
-  const showUpdateNotice = updateNotice?.kind === 'conflict'
+  const showUpdateNotice = lifecycle.actionKind === 'resolve' &&
+    updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
   const reviewLabel = lifecycle.actionKind === 'install'
     ? 'Review & install'
@@ -94,7 +95,7 @@ export function CatalogCard({ item, installed, installedVersions, updateChecks =
       return
     }
     if (lifecycle.actionKind === 'resolve') {
-      onReviewUpdate?.(updateNotice)
+      onReviewUpdate?.(lifecycle.resolutionNotice)
       return
     }
     if (lifecycle.actionKind === 'retry') {
