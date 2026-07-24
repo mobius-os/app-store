@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.1.5",
+    "version": "2.1.10",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -51,10 +51,6 @@ export const MANIFEST_SNAPSHOTS = {
         "react-dom",
         "marked",
         "dompurify"
-      ],
-      "esm_deps": [
-        "d3",
-        "pixi.js"
       ]
     },
     "embeds_agent": false,
@@ -79,6 +75,8 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/TextGlyph.jsx",
       "ui/NetworkGlyph.jsx",
       "ui/EffortStepper.jsx",
+      "ui/BackgroundAgentList.jsx",
+      "ui/backgroundAgentOrder.js",
       "ui/ModelPicker.jsx",
       "seed-memory/index.md",
       "seed-memory/mocs/about-the-user.md",
@@ -92,7 +90,7 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.8.2",
+    "version": "2.8.8",
     "description": "While you sleep, Möbius learns from recent work, improves its own approach, anticipates what may help next, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
@@ -117,10 +115,7 @@ export const MANIFEST_SNAPSHOTS = {
         "primary_agent_mode": "system",
         "secondary_agent_mode": "system",
         "fallback_provider": null,
-        "fallback_model": null,
-        "verbosity": "standard",
-        "focus": null,
-        "avoid": null
+        "fallback_model": null
       }
     },
     "offline": {
@@ -145,6 +140,7 @@ export const MANIFEST_SNAPSHOTS = {
     "source_files": [
       "reflection_runner.py",
       "resource_monitor.py",
+      "memory_health.py",
       "constants.js",
       "theme.js",
       "domain.js",
@@ -159,26 +155,64 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/LastNightStatus.jsx",
       "ui/EffortStepper.jsx",
       "ui/ModelPicker.jsx",
+      "ui/BackgroundAgentList.jsx",
+      "ui/backgroundAgentOrder.js",
       "ui/SettingsTab.jsx"
     ]
+  },
+  "workflows": {
+    "id": "workflows",
+    "name": "Workflows",
+    "version": "2.3.0",
+    "description": "An outcome journal for background work: skim completed outcomes, items that need attention, and each helper's assignment.",
+    "author": "mobius-os",
+    "license": "MIT",
+    "homepage": "https://github.com/mobius-os/app-workflows",
+    "entry": "index.jsx",
+    "icon": "icon.png",
+    "source_files": [
+      "storage.js",
+      "domain.js",
+      "theme.js",
+      "views/Home.jsx",
+      "views/ChatDetail.jsx",
+      "views/Timeline.jsx",
+      "views/Markdown.jsx",
+      "parse_runs.py"
+    ],
+    "runtime": {
+      "imports": [
+        "react",
+        "react-dom"
+      ],
+      "esm_deps": []
+    },
+    "schedule": {
+      "default": "17 4 * * *",
+      "user_configurable": true,
+      "job": "refresh.sh"
+    },
+    "permissions": {}
   },
   "skills": {
     "id": "skills",
     "name": "Skills",
-    "version": "1.1.2",
-    "description": "Browse and search your agent's skills — the SKILL.md guides that shape what it can do. Tap any skill to read it. Create or edit through the agent.",
+    "version": "2.0.0",
+    "description": "Browse and read your agent's skills, and grow them: install from public skill catalogs, or ask the agent to find the right one for you.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-skills",
     "entry": "index.jsx",
     "icon": "icon.png",
     "source_files": [
-      "domain.js"
+      "domain.js",
+      "catalog.js"
     ],
     "offline_capable": false,
     "permissions": {
       "cross_app_access": "none",
-      "share_with_apps": "none"
+      "share_with_apps": "none",
+      "manage_skills": true
     },
     "runtime": {
       "imports": [
@@ -199,7 +233,7 @@ export const MANIFEST_SNAPSHOTS = {
   "artifacts": {
     "id": "artifacts",
     "name": "Artifacts",
-    "version": "0.5.2",
+    "version": "0.5.6",
     "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
     "author": "mobius-os",
     "license": "MIT",
@@ -222,11 +256,13 @@ export const MANIFEST_SNAPSHOTS = {
       "theme.js",
       "preview/ArtifactFrame.jsx",
       "ui/ArtifactCard.jsx",
+      "ui/detailSync.js",
       "ui/Detail.jsx",
       "ui/Empty.jsx",
       "ui/Gallery.jsx",
       "ui/Icons.jsx",
       "ui/ShareSheet.jsx",
+      "ui/sharePolling.js",
       "ui/VersionTimeline.jsx"
     ]
   },
@@ -265,7 +301,7 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.4.3",
+    "version": "0.5.2",
     "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
     "author": "mobius-os",
     "license": "MIT",
@@ -281,7 +317,8 @@ export const MANIFEST_SNAPSHOTS = {
     "permissions": {
       "cross_app_access": "none",
       "share_with_apps": "none",
-      "github_access": true
+      "github_access": true,
+      "github_connect": true
     },
     "runtime": {
       "imports": [
@@ -302,6 +339,7 @@ export const MANIFEST_SNAPSHOTS = {
     "source_files": [
       "theme.js",
       "domain.js",
+      "labels.js",
       "review.js",
       "refresh.js",
       "stack.js",
@@ -309,6 +347,7 @@ export const MANIFEST_SNAPSHOTS = {
       "diff.js",
       "parse-unified-diff.js",
       "api.js",
+      "github-connection.js",
       "storage.js",
       "contributing.md",
       "ui/Icons.jsx",
@@ -319,13 +358,14 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ContributionCard.jsx",
       "ui/ContributionStack.jsx",
       "ui/Feed.jsx",
-      "ui/SourceMap.jsx"
+      "ui/SourceMap.jsx",
+      "ui/SourceOverview.jsx"
     ]
   },
   "notes": {
     "id": "notes",
     "name": "Notes",
-    "version": "1.2.28",
+    "version": "1.2.33",
     "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
     "author": "mobius-os",
     "license": "MIT",
@@ -371,13 +411,15 @@ export const MANIFEST_SNAPSHOTS = {
       "execution": "full"
     },
     "schedule": {
+      "default": "*/10 * * * *",
+      "user_configurable": false,
       "job": "job.sh"
     }
   },
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.14.10",
+    "version": "1.14.11",
     "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -400,6 +442,8 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ReportsTab.jsx",
       "ui/ModelPicker.jsx",
       "ui/EffortStepper.jsx",
+      "ui/BackgroundAgentList.jsx",
+      "ui/backgroundAgentOrder.js",
       "ui/SettingsTab.jsx"
     ],
     "theme_color": "#0c0f14",
@@ -707,7 +751,7 @@ export const MANIFEST_SNAPSHOTS = {
   "beat-machine": {
     "id": "beat-machine",
     "name": "Beat Machine",
-    "version": "1.0.14",
+    "version": "1.0.15",
     "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
     "author": "mobius-os",
     "license": "MIT",
@@ -734,6 +778,7 @@ export const MANIFEST_SNAPSHOTS = {
     },
     "source_files": [
       "audio.js",
+      "gestures.js",
       "storage.js",
       "styles.js",
       "ui/ControlPanel.jsx",
@@ -745,10 +790,10 @@ export const MANIFEST_SNAPSHOTS = {
   "atlas": {
     "id": "atlas",
     "name": "Atlas",
-    "version": "1.9.13",
+    "version": "1.9.14",
     "description": "Spin the globe, tap the countries you've visited, and watch your map fill in.",
     "author": "mobius-os",
-    "license": "MIT",
+    "license": "MIT AND CC-BY-3.0-IGO",
     "homepage": "https://github.com/mobius-os/app-atlas",
     "entry": "index.jsx",
     "icon": "icon-v2.png",
@@ -794,7 +839,7 @@ export const MANIFEST_SNAPSHOTS = {
   "latex": {
     "id": "latex",
     "name": "LaTeX",
-    "version": "2.15.2",
+    "version": "2.15.3",
     "description": "Write and compile LaTeX with live PDF preview and an agent that drafts your .tex.",
     "author": "mobius-os",
     "license": "MIT",
@@ -807,6 +852,7 @@ export const MANIFEST_SNAPSHOTS = {
       "storage.js",
       "source-syntax.js",
       "pdf/zoom.js",
+      "pdf/worker.js",
       "build/useBuild.js",
       "ui/CodeEditor.jsx",
       "ui/ImagePreview.jsx",
@@ -872,7 +918,7 @@ export const MANIFEST_SNAPSHOTS = {
   "tandem": {
     "id": "tandem",
     "name": "Tandem",
-    "version": "0.14.3",
+    "version": "0.14.4",
     "description": "Split-pane bilingual reader for language learning. Wide screens show the languages left/right; phones and narrow windows stack them top/bottom. The panes sync-scroll and the divider resizes them. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one. Pick the generation agent (Claude or OpenAI Codex) in settings; tap a word for its exact glossary match or honest aligned-sentence context.",
     "offline_capable": true,
     "offline": {
@@ -930,7 +976,7 @@ export const MANIFEST_SNAPSHOTS = {
   "cuberun": {
     "id": "cuberun",
     "name": "CubeRun",
-    "version": "1.0.2-mobius.23",
+    "version": "1.0.2-mobius.27",
     "description": "Neon 3D runner game packaged for Mobius as a durable static app.",
     "author": "Adam Karlsten",
     "license": "MIT",
@@ -959,11 +1005,11 @@ export const MANIFEST_SNAPSHOTS = {
       "robots.txt": "build/robots.txt",
       "static/css/main.6f1b544c.chunk.css": "build/static/css/main.6f1b544c.chunk.css",
       "static/css/main.6f1b544c.chunk.css.map": "build/static/css/main.6f1b544c.chunk.css.map",
-      "static/js/2.34de22c4.chunk.js": "build/static/js/2.34de22c4.chunk.js",
-      "static/js/2.34de22c4.chunk.js.LICENSE.txt": "build/static/js/2.34de22c4.chunk.js.LICENSE.txt",
-      "static/js/2.34de22c4.chunk.js.map": "build/static/js/2.34de22c4.chunk.js.map",
-      "static/js/main.0018e04e.chunk.js": "build/static/js/main.0018e04e.chunk.js",
-      "static/js/main.0018e04e.chunk.js.map": "build/static/js/main.0018e04e.chunk.js.map",
+      "static/js/2.c8db477f.chunk.js": "build/static/js/2.c8db477f.chunk.js",
+      "static/js/2.c8db477f.chunk.js.LICENSE.txt": "build/static/js/2.c8db477f.chunk.js.LICENSE.txt",
+      "static/js/2.c8db477f.chunk.js.map": "build/static/js/2.c8db477f.chunk.js.map",
+      "static/js/main.79a28b98.chunk.js": "build/static/js/main.79a28b98.chunk.js",
+      "static/js/main.79a28b98.chunk.js.map": "build/static/js/main.79a28b98.chunk.js.map",
       "static/js/runtime-main.543a1102.js": "build/static/js/runtime-main.543a1102.js",
       "static/js/runtime-main.543a1102.js.map": "build/static/js/runtime-main.543a1102.js.map",
       "static/media/Road_Rage.03e8327b.otf": "build/static/media/Road_Rage.03e8327b.otf",
