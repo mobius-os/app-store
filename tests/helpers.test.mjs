@@ -543,6 +543,54 @@ test('capability rows disclose embedded agents, provider credentials, and offlin
   assert.match(rows.find(row => row.label === 'Offline use').summary, /partial offline execution/)
 })
 
+test('capability rows disclose GitHub connection and skill management separately', async () => {
+  const { capabilityRows } = await bundle()
+  const rows = capabilityRows({
+    agent: { skills: [] },
+    data: {
+      chat_logs: { effective: 'none' },
+      shared_memory: 'none',
+      cross_app_access: 'none',
+      share_with_apps: 'none',
+      github_access: true,
+      github_connect: true,
+      manage_skills: true,
+    },
+  })
+
+  assert.match(
+    rows.find(row => row.label === 'GitHub data').summary,
+    /connected GitHub account/,
+  )
+  assert.match(
+    rows.find(row => row.label === 'GitHub connection').summary,
+    /disconnect the owner’s GitHub connection/,
+  )
+  assert.match(
+    rows.find(row => row.label === 'Agent skills' && row.tag === 'Manages').summary,
+    /install and remove agent skills/,
+  )
+})
+
+test('capability rows fail visibly for a future data grant', async () => {
+  const { capabilityRows } = await bundle()
+  const rows = capabilityRows({
+    agent: { skills: [] },
+    data: {
+      chat_logs: { effective: 'none' },
+      shared_memory: 'none',
+      cross_app_access: 'none',
+      share_with_apps: 'none',
+      future_owner_control: true,
+    },
+  })
+
+  const future = rows.find(row => row.label === 'Future Owner Control')
+  assert.equal(future.tag, 'Review')
+  assert.match(future.summary, /unrecognized “future_owner_control” data grant/)
+  assert.equal(future.tone, 'write')
+})
+
 test('catalog updates open a read-only review before applying, binding reviewed digests', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')

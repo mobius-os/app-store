@@ -17,16 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout app
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Checkout mobius frontend (test dependencies)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mobius-os/mobius
           path: .mobius
           sparse-checkout: frontend
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
