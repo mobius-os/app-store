@@ -8,6 +8,66 @@ function accessText(level, subject) {
   return `Cannot access ${subject}.`
 }
 
+// Boolean data capabilities belong in one disclosure registry. Keeping their
+// owner-facing copy next to the contract key makes a newly introduced grant
+// difficult to wire into the backend while accidentally hiding it in review.
+const BOOLEAN_DATA_CAPABILITIES = [
+  {
+    key: 'filesystem_api',
+    label: 'Owner files',
+    tag: 'Access',
+    summary: 'Can use the guarded owner-filesystem API.',
+  },
+  {
+    key: 'github_access',
+    label: 'GitHub data',
+    tag: 'Access',
+    summary: 'Can use the connected GitHub account.',
+  },
+  {
+    key: 'github_connect',
+    label: 'GitHub connection',
+    tag: 'Manages',
+    summary:
+      'Can start, resume, refresh, cancel, or disconnect the owner’s GitHub connection.',
+  },
+  {
+    key: 'manage_apps',
+    label: 'Installed apps',
+    tag: 'Manages',
+    summary: 'Can install and uninstall apps.',
+  },
+  {
+    key: 'manage_skills',
+    label: 'Agent skills',
+    tag: 'Manages',
+    summary: 'Can install and remove agent skills.',
+  },
+]
+const DISCLOSED_DATA_KEYS = new Set([
+  'chat_logs',
+  'shared_memory',
+  'cross_app_access',
+  'share_with_apps',
+  ...BOOLEAN_DATA_CAPABILITIES.map(capability => capability.key),
+])
+
+function readableCapabilityKey(key) {
+  return String(key || '')
+    .split('_')
+    .filter(Boolean)
+    .map(word => word[0]?.toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+function isActiveUnknownGrant(value) {
+  return value !== false
+    && value !== null
+    && value !== undefined
+    && value !== ''
+    && value !== 'none'
+}
+
 export function capabilityRows(contract) {
   if (!contract || typeof contract !== 'object') return []
   const agent = contract.agent || {}
@@ -84,14 +144,27 @@ export function capabilityRows(contract) {
       'read',
     ))
   }
-  if (data.filesystem_api) {
-    rows.push(row('Owner files', 'Access', 'Can use the guarded owner-filesystem API.', 'write'))
+  for (const capability of BOOLEAN_DATA_CAPABILITIES) {
+    if (data[capability.key]) {
+      rows.push(row(
+        capability.label,
+        capability.tag,
+        capability.summary,
+        'write',
+      ))
+    }
   }
-  if (data.github_access) {
-    rows.push(row('GitHub', 'Access', 'Can use the connected GitHub account.', 'write'))
-  }
-  if (data.manage_apps) {
-    rows.push(row('Installed apps', 'Manages', 'Can install and uninstall apps.', 'write'))
+  // Platform and App Store can ship independently. Never hide a newly added
+  // data grant just because this Store version lacks its polished copy.
+  for (const [key, value] of Object.entries(data).sort()) {
+    if (!DISCLOSED_DATA_KEYS.has(key) && isActiveUnknownGrant(value)) {
+      rows.push(row(
+        readableCapabilityKey(key) || 'Additional data grant',
+        'Review',
+        `The platform reports the unrecognized “${key}” data grant. Update App Store for a detailed explanation.`,
+        'write',
+      ))
+    }
   }
   for (const [capability, declaration] of Object.entries(runtime).sort()) {
     const limits = declaration?.limits || {}
