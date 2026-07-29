@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "updated": "2026-07-29",
-  "note": "Web registry of Mobius App Store catalog entries. The store fetches this at mount (via the server proxy) so a new app appears in every instance's store the moment this file lands on main — no store-app redeploy. constants.js CATALOG is the baked fallback used only if this fetch fails; keep the two in sync. Each entry: { id, repo, manifest_url, raw_base, categories?, keywords?, capabilities?, setup?, manifest? }. manifest is an optional validated summary/full manifest used for fast first paint; missing or invalid manifests fall back to fetching manifest_url. setup marks apps that need system or in-app configuration before their agent/scheduled features are useful. categories/keywords/capabilities are intentionally machine-readable so agents can search existing apps before building or remixing.",
+  "note": "Web registry of Mobius App Store discovery entries. The store fetches this at mount so catalog membership and discovery copy can update without a Store release. Each entry points to its app repo and live mobius.json; version-coupled manifest snapshots belong only in manifest-snapshots.js for the baked offline first-paint floor. Keep catalog.json and constants.js membership in sync.",
   "apps": [
     {
       "id": "memory",
@@ -39,92 +39,6 @@
           "model",
           "fallback"
         ]
-      },
-      "manifest": {
-        "id": "memory",
-        "name": "Memory",
-        "version": "2.1.10",
-        "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-memory",
-        "entry": "index.jsx",
-        "system_app": true,
-        "system_prompt": "memory-core.md",
-        "skills": [
-          "memory.md"
-        ],
-        "icon": "icon.png",
-        "offline_capable": true,
-        "offline": {
-          "reads": true,
-          "writes": "none",
-          "execution": "partial"
-        },
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none",
-          "shared_memory": "write",
-          "chat_log_access": "summary",
-          "background_agent": true
-        },
-        "storage_seeds": {
-          "settings.json": {
-            "primary_agent_mode": "system",
-            "provider": null,
-            "model": null,
-            "secondary_agent_mode": "system",
-            "fallback_provider": null,
-            "fallback_model": null
-          }
-        },
-        "schedule": {
-          "default": "30 5 * * *",
-          "user_configurable": true,
-          "job": "fetch.sh",
-          "initialize_on_install": true
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom",
-            "marked",
-            "dompurify"
-          ]
-        },
-        "embeds_agent": false,
-        "source_files": [
-          "memory-core.md",
-          "memory.md",
-          "memory_search.py",
-          "memory_runner.py",
-          "memory_store.py",
-          "memory_graph.py",
-          "constants.js",
-          "theme.js",
-          "domain.js",
-          "storage.js",
-          "graph/render.jsx",
-          "ui/Th.jsx",
-          "ui/ImportanceDots.jsx",
-          "ui/EmptyConstellation.jsx",
-          "ui/GraphGlyph.jsx",
-          "ui/ListGlyph.jsx",
-          "ui/ChatGlyph.jsx",
-          "ui/TextGlyph.jsx",
-          "ui/NetworkGlyph.jsx",
-          "ui/EffortStepper.jsx",
-          "ui/BackgroundAgentList.jsx",
-          "ui/backgroundAgentOrder.js",
-          "ui/ModelPicker.jsx",
-          "seed-memory/index.md",
-          "seed-memory/mocs/about-the-user.md",
-          "seed-memory/mocs/building-mobius-apps.md",
-          "seed-memory/mocs/maintaining-memory.md",
-          "seed-memory/mocs/mobius-platform.md",
-          "seed-memory/notes/how-the-memory-graph-works.md",
-          "seed-memory/notes/memory-is-visible-to-the-partner.md"
-        ]
       }
     },
     {
@@ -161,79 +75,6 @@
           "model",
           "fallback"
         ]
-      },
-      "manifest": {
-        "id": "reflection",
-        "name": "Reflection",
-        "version": "2.8.8",
-        "description": "While you sleep, Möbius learns from recent work, improves its own approach, anticipates what may help next, and leaves a one-page morning brief.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-reflection",
-        "entry": "index.jsx",
-        "icon": "icon.png",
-        "offline_capable": true,
-        "permissions": {
-          "cross_app_access": "read",
-          "share_with_apps": "none",
-          "chat_log_access": "summary"
-        },
-        "storage_seeds": {
-          "settings.json": {
-            "hour": 6,
-            "minute": 0,
-            "timezone": null,
-            "cron": "0 6 * * *",
-            "exclude_apps": [],
-            "provider": null,
-            "model": null,
-            "primary_agent_mode": "system",
-            "secondary_agent_mode": "system",
-            "fallback_provider": null,
-            "fallback_model": null
-          }
-        },
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "none",
-          "reads_detail": "The reports list, each opened brief body, and the streak/state are read through window.mobius.storage (list/getText/get), so they render offline from the runtime read-through cache. A brief opens offline after it has been opened once online (its body is mirrored on that read)."
-        },
-        "schedule": {
-          "default": "0 6 * * *",
-          "user_configurable": true,
-          "job": "fetch.sh"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom"
-          ],
-          "esm_deps": []
-        },
-        "embeds_agent": true,
-        "source_files": [
-          "reflection_runner.py",
-          "resource_monitor.py",
-          "memory_health.py",
-          "constants.js",
-          "theme.js",
-          "domain.js",
-          "providers.js",
-          "storage.js",
-          "ui/ChatBubbleIcon.jsx",
-          "ui/ChatPanel.jsx",
-          "ui/ReportQuestions.jsx",
-          "ui/ReportDetail.jsx",
-          "ui/StreakBar.jsx",
-          "ui/ReportsList.jsx",
-          "ui/LastNightStatus.jsx",
-          "ui/EffortStepper.jsx",
-          "ui/ModelPicker.jsx",
-          "ui/BackgroundAgentList.jsx",
-          "ui/backgroundAgentOrder.js",
-          "ui/SettingsTab.jsx"
-        ]
       }
     },
     {
@@ -262,41 +103,7 @@
         "timeline of chat turns and their subagents",
         "subagent lifecycle: merged / launched / failed / stopped",
         "scheduled and on-demand digest of chats"
-      ],
-      "manifest": {
-        "id": "workflows",
-        "name": "Workflows",
-        "version": "2.3.0",
-        "description": "An outcome journal for background work: skim completed outcomes, items that need attention, and each helper's assignment.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-workflows",
-        "entry": "index.jsx",
-        "icon": "icon.png",
-        "source_files": [
-          "storage.js",
-          "domain.js",
-          "theme.js",
-          "views/Home.jsx",
-          "views/ChatDetail.jsx",
-          "views/Timeline.jsx",
-          "views/Markdown.jsx",
-          "parse_runs.py"
-        ],
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom"
-          ],
-          "esm_deps": []
-        },
-        "schedule": {
-          "default": "17 4 * * *",
-          "user_configurable": true,
-          "job": "refresh.sh"
-        },
-        "permissions": {}
-      }
+      ]
     },
     {
       "id": "skills",
@@ -320,43 +127,7 @@
         "browse skills",
         "read agent procedures",
         "search instructions"
-      ],
-      "manifest": {
-        "id": "skills",
-        "name": "Skills",
-        "version": "2.0.0",
-        "description": "Browse and read your agent's skills, and grow them: install from public skill catalogs, or ask the agent to find the right one for you.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-skills",
-        "entry": "index.jsx",
-        "icon": "icon.png",
-        "source_files": [
-          "domain.js",
-          "catalog.js"
-        ],
-        "offline_capable": false,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none",
-          "manage_skills": true
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom"
-          ],
-          "esm_deps": [
-            "marked",
-            "dompurify"
-          ]
-        },
-        "offline": {
-          "reads": false,
-          "writes": "none",
-          "execution": "none"
-        }
-      }
+      ]
     },
     {
       "id": "artifacts",
@@ -383,43 +154,7 @@
         "build interactive artifacts in chat",
         "preview and version artifacts",
         "share artifacts publicly"
-      ],
-      "manifest": {
-        "id": "artifacts",
-        "name": "Artifacts",
-        "version": "0.5.6",
-        "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-artifacts",
-        "entry": "index.jsx",
-        "system_app": true,
-        "system_prompt": "artifacts-core.md",
-        "icon": "icon.png",
-        "skills": [
-          "artifacts.md"
-        ],
-        "permissions": {
-          "chat_log_access": "summary"
-        },
-        "source_files": [
-          "artifacts-core.md",
-          "artifacts.md",
-          "domain.js",
-          "storage.js",
-          "theme.js",
-          "preview/ArtifactFrame.jsx",
-          "ui/ArtifactCard.jsx",
-          "ui/detailSync.js",
-          "ui/Detail.jsx",
-          "ui/Empty.jsx",
-          "ui/Gallery.jsx",
-          "ui/Icons.jsx",
-          "ui/ShareSheet.jsx",
-          "ui/sharePolling.js",
-          "ui/VersionTimeline.jsx"
-        ]
-      }
+      ]
     },
     {
       "id": "maps",
@@ -446,48 +181,7 @@
         "turn location recommendations into interactive maps",
         "keep maps linked to source chats",
         "browse saved places"
-      ],
-      "manifest": {
-        "id": "maps",
-        "previous_id": "mapbook",
-        "name": "Maps",
-        "version": "0.1.10",
-        "description": "Visualise and keep maps created in Möbius, with a location skill and links back to their source conversations.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-maps",
-        "entry": "index.jsx",
-        "icon": "icon.png",
-        "offline_capable": false,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom",
-            "@openai/apps-sdk-ui/components/Icon"
-          ],
-          "esm_deps": []
-        },
-        "skills": [
-          "maps-app.md"
-        ],
-        "source_files": [
-          "clipboard.js",
-          "domain.js",
-          "publicMap.js",
-          "share.js",
-          "shareSheet.jsx",
-          "storage.js",
-          "skillIcon.js",
-          "theme.js",
-          "maps-app.md",
-          "scripts/add_map.py",
-          "scripts/maps_client.py"
-        ]
-      }
+      ]
     },
     {
       "id": "tasks",
@@ -510,39 +204,7 @@
         "manage tasks",
         "organize projects",
         "track status"
-      ],
-      "manifest": {
-        "id": "tasks",
-        "name": "Tasks",
-        "version": "1.0.9",
-        "description": "See your agent's scheduled check-ins at a glance — status, due times, and what needs attention. Reschedule or cancel through the agent.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-tasks",
-        "entry": "index.jsx",
-        "source_files": [
-          "domain.js"
-        ],
-        "icon": "icon.png",
-        "offline_capable": false,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom",
-            "date-fns"
-          ],
-          "esm_deps": []
-        },
-        "offline": {
-          "reads": false,
-          "writes": "none",
-          "execution": "none"
-        }
-      }
+      ]
     },
     {
       "id": "contribute",
@@ -575,70 +237,6 @@
         "fields": [
           "github"
         ]
-      },
-      "manifest": {
-        "id": "contribute",
-        "name": "Contribute",
-        "version": "0.5.2",
-        "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-contribute",
-        "icon": "icon.png",
-        "entry": "index.jsx",
-        "offline_capable": true,
-        "offline": {
-          "reads": true,
-          "writes": "none",
-          "execution": "none"
-        },
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none",
-          "github_access": true,
-          "github_connect": true
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom",
-            "marked",
-            "dompurify"
-          ],
-          "esm_deps": []
-        },
-        "schedule": {
-          "default": "0 * * * *",
-          "job": "job.sh"
-        },
-        "skills": [
-          "contributing.md"
-        ],
-        "source_files": [
-          "theme.js",
-          "domain.js",
-          "labels.js",
-          "review.js",
-          "refresh.js",
-          "stack.js",
-          "source-map.js",
-          "diff.js",
-          "parse-unified-diff.js",
-          "api.js",
-          "github-connection.js",
-          "storage.js",
-          "contributing.md",
-          "ui/Icons.jsx",
-          "ui/ConnectionCard.jsx",
-          "ui/MarkdownView.jsx",
-          "ui/DiffView.jsx",
-          "ui/FileDiffList.jsx",
-          "ui/ContributionCard.jsx",
-          "ui/ContributionStack.jsx",
-          "ui/Feed.jsx",
-          "ui/SourceMap.jsx",
-          "ui/SourceOverview.jsx"
-        ]
       }
     },
     {
@@ -664,61 +262,7 @@
         "write markdown notes",
         "preview while editing",
         "attach images and files"
-      ],
-      "manifest": {
-        "id": "notes",
-        "name": "Notes",
-        "version": "1.2.33",
-        "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-notes",
-        "entry": "index.jsx",
-        "icon": "icon.png",
-        "offline_capable": true,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom",
-            "codemirror",
-            "@codemirror/state",
-            "@codemirror/view",
-            "@codemirror/commands",
-            "@codemirror/lang-markdown",
-            "@codemirror/language",
-            "@lezer/highlight",
-            "katex",
-            "marked",
-            "dompurify"
-          ],
-          "esm_deps": []
-        },
-        "storage_seeds": {
-          "notes-meta.json": {
-            "app": "notes",
-            "data_type": "notes",
-            "format": "json",
-            "note_shape": "{ meta: {frontmatter fields}, body: markdown-string }",
-            "dir": "notes/",
-            "index": "index.json",
-            "attachments": "attachments/"
-          }
-        },
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "full"
-        },
-        "schedule": {
-          "default": "*/10 * * * *",
-          "user_configurable": false,
-          "job": "job.sh"
-        }
-      }
+      ]
     },
     {
       "id": "news",
@@ -756,78 +300,6 @@
           "model",
           "fallback"
         ]
-      },
-      "manifest": {
-        "id": "news",
-        "name": "News",
-        "version": "1.14.11",
-        "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
-        "offline_capable": true,
-        "embeds_agent": true,
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-news",
-        "icon": "icon.png",
-        "entry": "index.jsx",
-        "source_files": [
-          "report-schema.mjs",
-          "constants.js",
-          "theme.js",
-          "domain.js",
-          "storage.js",
-          "signals.js",
-          "ui/Icons.jsx",
-          "ui/ChatPanel.jsx",
-          "ui/ReportQuestions.jsx",
-          "ui/ReportReader.jsx",
-          "ui/ReportsTab.jsx",
-          "ui/ModelPicker.jsx",
-          "ui/EffortStepper.jsx",
-          "ui/BackgroundAgentList.jsx",
-          "ui/backgroundAgentOrder.js",
-          "ui/SettingsTab.jsx"
-        ],
-        "theme_color": "#0c0f14",
-        "background_color": "#0c0f14",
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "storage_seeds": {
-          "system-prompt.md": "system-prompt.md",
-          "topics.txt": "topics.txt",
-          "agent.json": {
-            "primary_agent_mode": "system",
-            "provider": null,
-            "model": null,
-            "effort": null,
-            "secondary_agent_mode": "system",
-            "fallback_provider": null,
-            "fallback_model": null,
-            "fallback_effort": null
-          },
-          "schedule.json": {
-            "hour": 10,
-            "minute": 0
-          }
-        },
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "none"
-        },
-        "schedule": {
-          "default": "0 10 * * *",
-          "user_configurable": true,
-          "job": "fetch.sh"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom"
-          ],
-          "esm_deps": []
-        }
       }
     },
     {
@@ -852,74 +324,7 @@
         "edit files",
         "write markdown",
         "preview content"
-      ],
-      "manifest": {
-        "id": "editor",
-        "name": "Editor",
-        "version": "0.6.5",
-        "description": "Browse, inspect, and edit every file on your Möbius. Follow git status, check file details, and ask the agent to make changes with you.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-editor",
-        "entry": "index.jsx",
-        "source_files": [
-          "constants.js",
-          "paths.js",
-          "theme.js",
-          "source-syntax.js",
-          "domain.js",
-          "storage.js",
-          "ui/Icons.jsx",
-          "ui/TabStrip.jsx",
-          "ui/Breadcrumb.jsx",
-          "ui/EntryRow.jsx",
-          "ui/Thumb.jsx",
-          "ui/StatusBar.jsx",
-          "ui/OverflowMenu.jsx",
-          "ui/BookmarksDrawer.jsx",
-          "ui/PropertiesSheet.jsx",
-          "ui/FileViewer.jsx",
-          "ui/Preview.jsx",
-          "ui/CodeEditor.jsx",
-          "ui/useModalFocus.js",
-          "ui/NameModal.jsx",
-          "ui/ConfirmModal.jsx",
-          "ui/GitPanel.jsx",
-          "ui/ChatPanel.jsx",
-          "ui/ChatBubbleIcon.jsx"
-        ],
-        "icon": "icon-v2.png",
-        "offline_capable": false,
-        "offline": {
-          "reads": false,
-          "writes": "none",
-          "execution": "none"
-        },
-        "embeds_agent": true,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none",
-          "filesystem_access": true
-        },
-        "storage_seeds": {
-          "chat_id.json": null
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom",
-            "@codemirror/state",
-            "@codemirror/view",
-            "@codemirror/commands",
-            "@codemirror/language",
-            "@codemirror/lang-markdown",
-            "@lezer/highlight",
-            "katex",
-            "pdfjs-dist"
-          ],
-          "esm_deps": []
-        }
-      }
+      ]
     },
     {
       "id": "webstudio",
@@ -944,97 +349,7 @@
         "build web pages",
         "preview projects",
         "edit site files"
-      ],
-      "manifest": {
-        "id": "webstudio",
-        "name": "Web Studio",
-        "version": "0.13.3",
-        "description": "Build a website with the agent and preview it live in an in-app browser.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-webstudio",
-        "entry": "index.jsx",
-        "icon": "icon.png",
-        "offline_capable": true,
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "none"
-        },
-        "embeds_agent": true,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "storage_seeds": {
-          "files/index.html": "seeds/files/index.html",
-          "files/style.css": "seeds/files/style.css",
-          "files/app.js": "seeds/files/app.js",
-          "files-index.json": [
-            "files/app.js",
-            "files/index.html",
-            "files/style.css"
-          ],
-          "main.json": {
-            "path": "files/index.html"
-          }
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom",
-            "@codemirror/state",
-            "@codemirror/view",
-            "@codemirror/commands",
-            "@codemirror/language"
-          ],
-          "esm_deps": []
-        },
-        "schedule": {
-          "job": "build.sh"
-        },
-        "source_files": [
-          "constants.js",
-          "analytics.js",
-          "theme.js",
-          "domain.js",
-          "storage.js",
-          "source-syntax.js",
-          "preview/previewDomain.js",
-          "preview/HtmlPreview.jsx",
-          "build/useBuild.js",
-          "ui/CodeEditor.jsx",
-          "ui/ImagePreview.jsx",
-          "ui/FileGlyph.jsx",
-          "ui/ChevronIcon.jsx",
-          "ui/EyeIcon.jsx",
-          "ui/CodeIcon.jsx",
-          "ui/PlayIcon.jsx",
-          "ui/BuildingIndicator.jsx",
-          "ui/KebabIcon.jsx",
-          "ui/ChatBubbleIcon.jsx",
-          "ui/PublishIcon.jsx",
-          "ui/UnpublishIcon.jsx",
-          "ui/CheckIcon.jsx",
-          "ui/PencilIcon.jsx",
-          "ui/PlusIcon.jsx",
-          "ui/NewFileIcon.jsx",
-          "ui/NewFolderIcon.jsx",
-          "ui/UploadIcon.jsx",
-          "ui/TrashIcon.jsx",
-          "ui/CopyIcon.jsx",
-          "ui/ContextMenu.jsx",
-          "ui/useLongPress.js",
-          "ui/FileNode.jsx",
-          "ui/ProjectSelector.jsx",
-          "ui/PublishDrawerAction.jsx",
-          "ui/FileNavPanel.jsx",
-          "ui/ChatPanel.jsx",
-          "ui/useModal.jsx",
-          "ui/ModalView.jsx",
-          "ui/SyncPill.jsx"
-        ]
-      }
+      ]
     },
     {
       "id": "gym",
@@ -1059,64 +374,7 @@
         "log workouts",
         "track progress",
         "plan routines"
-      ],
-      "manifest": {
-        "id": "workout",
-        "previous_id": "gym",
-        "name": "Workout",
-        "version": "2.8.4",
-        "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-workout",
-        "entry": "index.jsx",
-        "source_files": [
-          "logic.js",
-          "constants.js",
-          "storage.js",
-          "agent-prompt.js",
-          "format.js",
-          "theme.js",
-          "ui/SportIcon.jsx",
-          "ui/Icons.jsx",
-          "ui/SyncPill.jsx",
-          "ui/ConfirmModal.jsx",
-          "ui/ConfirmCard.jsx",
-          "ui/AgentChatPanel.jsx",
-          "ui/QuickAddStrip.jsx",
-          "ui/EntryCard.jsx",
-          "ui/SessionDraftCard.jsx",
-          "ui/CurrentSessionPanel.jsx",
-          "ui/Heatmap.jsx",
-          "ui/Sparkline.jsx",
-          "ui/ExerciseDetailSheet.jsx",
-          "ui/CategoryVolumeBars.jsx",
-          "ui/CategoryStats.jsx",
-          "ui/ExerciseLink.jsx",
-          "ui/InsightsTab.jsx",
-          "ui/AllTab.jsx"
-        ],
-        "icon": "icon.png",
-        "offline_capable": true,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom"
-          ],
-          "esm_deps": []
-        },
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "full"
-        },
-        "storage_seeds": {},
-        "embeds_agent": true
-      }
+      ]
     },
     {
       "id": "habits",
@@ -1140,53 +398,7 @@
         "track streaks",
         "schedule reminders",
         "view habit calendar"
-      ],
-      "manifest": {
-        "id": "habits",
-        "name": "Habits",
-        "version": "1.0.8",
-        "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-habits",
-        "entry": "index.jsx",
-        "source_files": [
-          "domain.js",
-          "storage.js",
-          "theme.js",
-          "constants.js",
-          "ui/Chrome.jsx",
-          "ui/Today.jsx",
-          "ui/AllHabits.jsx",
-          "ui/Detail.jsx",
-          "ui/HabitForm.jsx",
-          "ui/Charts.jsx",
-          "ui/Heatmap.jsx"
-        ],
-        "icon": "icon.png",
-        "offline_capable": true,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "recharts"
-          ],
-          "esm_deps": []
-        },
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "full"
-        },
-        "schedule": {
-          "default": "* * * * *",
-          "job": "remind.sh"
-        },
-        "embeds_agent": false
-      }
+      ]
     },
     {
       "id": "beat-machine",
@@ -1212,46 +424,7 @@
         "sequence 32-step patterns",
         "record custom sounds",
         "adjust bpm and effects"
-      ],
-      "manifest": {
-        "id": "beat-machine",
-        "name": "Beat Machine",
-        "version": "1.0.15",
-        "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-beat-machine",
-        "entry": "index.jsx",
-        "icon": "icon.png",
-        "offline_capable": true,
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "none",
-          "reads_detail": "Beat Machine stores sequencer state through window.mobius.storage. The 32-step grid, BPM, recorded pads, volumes, and effects are read-through cached and writes queue while offline; the app code is cached by the offline_capable flag."
-        },
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom"
-          ],
-          "esm_deps": []
-        },
-        "source_files": [
-          "audio.js",
-          "gestures.js",
-          "storage.js",
-          "styles.js",
-          "ui/ControlPanel.jsx",
-          "ui/Header.jsx",
-          "ui/PadBanks.jsx",
-          "ui/Sequencer.jsx"
-        ]
-      }
+      ]
     },
     {
       "id": "atlas",
@@ -1275,56 +448,7 @@
         "explore globe",
         "select countries",
         "inspect geography"
-      ],
-      "manifest": {
-        "id": "atlas",
-        "name": "Atlas",
-        "version": "1.9.14",
-        "description": "Spin the globe, tap the countries you've visited, and watch your map fill in.",
-        "author": "mobius-os",
-        "license": "MIT AND CC-BY-3.0-IGO",
-        "homepage": "https://github.com/mobius-os/app-atlas",
-        "entry": "index.jsx",
-        "icon": "icon-v2.png",
-        "theme_color": "#101820",
-        "background_color": "#101820",
-        "offline_capable": true,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "storage_seeds": {
-          "visited.json": [],
-          "wishlist.json": [],
-          "countries.geo.json": "countries.geo.json"
-        },
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "full",
-          "precache": [
-            "countries.geo.json"
-          ]
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom"
-          ],
-          "esm_deps": [
-            "d3-geo"
-          ]
-        },
-        "source_files": [
-          "constants.js",
-          "theme.js",
-          "domain.js",
-          "storage.js",
-          "ui/Globe.jsx",
-          "ui/BottomSheet.jsx",
-          "ui/SyncPill.jsx"
-        ]
-      }
+      ]
     },
     {
       "id": "latex",
@@ -1349,86 +473,7 @@
         "edit latex",
         "compile pdf",
         "manage document files"
-      ],
-      "manifest": {
-        "id": "latex",
-        "name": "LaTeX",
-        "version": "2.15.3",
-        "description": "Write and compile LaTeX with live PDF preview and an agent that drafts your .tex.",
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-latex",
-        "entry": "index.jsx",
-        "source_files": [
-          "constants.js",
-          "theme.js",
-          "domain.js",
-          "storage.js",
-          "source-syntax.js",
-          "pdf/zoom.js",
-          "pdf/worker.js",
-          "build/useBuild.js",
-          "ui/CodeEditor.jsx",
-          "ui/ImagePreview.jsx",
-          "ui/PdfPreview.jsx",
-          "ui/FileGlyph.jsx",
-          "ui/ChevronIcon.jsx",
-          "ui/PencilIcon.jsx",
-          "ui/PlusIcon.jsx",
-          "ui/NewFileIcon.jsx",
-          "ui/NewFolderIcon.jsx",
-          "ui/UploadIcon.jsx",
-          "ui/TrashIcon.jsx",
-          "ui/ToolIcon.jsx",
-          "ui/KebabIcon.jsx",
-          "ui/ChatBubbleIcon.jsx",
-          "ui/PlayIcon.jsx",
-          "ui/BuildingIndicator.jsx",
-          "ui/ContextMenu.jsx",
-          "ui/useLongPress.js",
-          "ui/FileNode.jsx",
-          "ui/ProjectSelector.jsx",
-          "ui/FileNavPanel.jsx",
-          "ui/ChatPanel.jsx",
-          "ui/useModal.jsx",
-          "ui/ModalView.jsx",
-          "ui/SyncPill.jsx"
-        ],
-        "icon": "icon.png",
-        "offline_capable": true,
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "read"
-        },
-        "storage_seeds": {
-          "files/welcome.tex": "files/welcome.tex",
-          "chat_id.json": null,
-          "files-index.json": [
-            "files/welcome.tex"
-          ]
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom",
-            "pdfjs-dist",
-            "@codemirror/state",
-            "@codemirror/view",
-            "@codemirror/commands",
-            "@codemirror/language"
-          ],
-          "esm_deps": []
-        },
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "none"
-        },
-        "schedule": {
-          "job": "build.sh"
-        },
-        "embeds_agent": true
-      }
+      ]
     },
     {
       "id": "tandem",
@@ -1466,64 +511,6 @@
           "provider",
           "model"
         ]
-      },
-      "manifest": {
-        "id": "tandem",
-        "name": "Tandem",
-        "version": "0.14.4",
-        "description": "Split-pane bilingual reader for language learning. Wide screens show the languages left/right; phones and narrow windows stack them top/bottom. The panes sync-scroll and the divider resizes them. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one. Pick the generation agent (Claude or OpenAI Codex) in settings; tap a word for its exact glossary match or honest aligned-sentence context.",
-        "offline_capable": true,
-        "offline": {
-          "reads": true,
-          "writes": "queued",
-          "execution": "none",
-          "reads_detail": "Previously opened stories, the story index, preferences, and pending-generation state use window.mobius.storage, so cached content remains readable and edits queue while offline. Creating a new story still requires a connection because generation runs on the server."
-        },
-        "author": "mobius-os",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-tandem",
-        "icon": "icon-v8.png",
-        "entry": "index.jsx",
-        "source_files": [
-          "story-schema.mjs",
-          "text-align.mjs",
-          "gen-model.mjs",
-          "scroll-sync.mjs",
-          "reader-layout.mjs",
-          "constants.js",
-          "signals.js",
-          "theme.js",
-          "storage.js",
-          "ui/useModalFocus.js",
-          "ui/useShellBackTarget.js",
-          "ui/Icons.jsx",
-          "ui/ParaText.jsx",
-          "ui/StoryReader.jsx",
-          "ui/GenerateSheet.jsx",
-          "ui/DeleteConfirmModal.jsx",
-          "ui/SettingsSheet.jsx",
-          "ui/LibraryTab.jsx",
-          "ui/SetupView.jsx"
-        ],
-        "theme_color": "#0c0f14",
-        "background_color": "#0c0f14",
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "storage_seeds": {
-          "system-prompt.md": "system-prompt.md"
-        },
-        "schedule": {
-          "job": "generate.sh"
-        },
-        "runtime": {
-          "imports": [
-            "react",
-            "react-dom"
-          ],
-          "esm_deps": []
-        }
       }
     },
     {
@@ -1546,68 +533,7 @@
       "capabilities": [
         "play arcade runner",
         "render 3d scene"
-      ],
-      "manifest": {
-        "id": "cuberun",
-        "name": "CubeRun",
-        "version": "1.0.2-mobius.27",
-        "description": "Neon 3D runner game packaged for Mobius as a durable static app.",
-        "author": "Adam Karlsten",
-        "license": "MIT",
-        "homepage": "https://github.com/mobius-os/app-cuberun",
-        "entry": "index.jsx",
-        "icon": "icon.png",
-        "offline_capable": false,
-        "theme_color": "#10121f",
-        "background_color": "#10121f",
-        "permissions": {
-          "cross_app_access": "none",
-          "share_with_apps": "none"
-        },
-        "static_assets": {
-          "asset-manifest.json": "build/asset-manifest.json",
-          "cuberun-logo.png": "build/cuberun-logo.png",
-          "favicon.png": "build/favicon.png",
-          "fonts.css": "build/fonts.css",
-          "fonts/Road_Rage.otf": "build/fonts/Road_Rage.otf",
-          "fonts/commando.ttf": "build/fonts/commando.ttf",
-          "index.html": "build/index.html",
-          "logo192.png": "build/logo192.png",
-          "logo512.png": "build/logo512.png",
-          "manifest.json": "build/manifest.json",
-          "regular.PNG": "build/regular.PNG",
-          "robots.txt": "build/robots.txt",
-          "static/css/main.6f1b544c.chunk.css": "build/static/css/main.6f1b544c.chunk.css",
-          "static/css/main.6f1b544c.chunk.css.map": "build/static/css/main.6f1b544c.chunk.css.map",
-          "static/js/2.c8db477f.chunk.js": "build/static/js/2.c8db477f.chunk.js",
-          "static/js/2.c8db477f.chunk.js.LICENSE.txt": "build/static/js/2.c8db477f.chunk.js.LICENSE.txt",
-          "static/js/2.c8db477f.chunk.js.map": "build/static/js/2.c8db477f.chunk.js.map",
-          "static/js/main.79a28b98.chunk.js": "build/static/js/main.79a28b98.chunk.js",
-          "static/js/main.79a28b98.chunk.js.map": "build/static/js/main.79a28b98.chunk.js.map",
-          "static/js/runtime-main.543a1102.js": "build/static/js/runtime-main.543a1102.js",
-          "static/js/runtime-main.543a1102.js.map": "build/static/js/runtime-main.543a1102.js.map",
-          "static/media/Road_Rage.03e8327b.otf": "build/static/media/Road_Rage.03e8327b.otf",
-          "static/media/commando.68717231.ttf": "build/static/media/commando.68717231.ttf",
-          "static/media/cuberun-logo.2a67aff7.png": "build/static/media/cuberun-logo.2a67aff7.png",
-          "static/media/enginetextureflip.d0f77b17.png": "build/static/media/enginetextureflip.d0f77b17.png",
-          "static/media/galaxy.ef4e164b.jpg": "build/static/media/galaxy.ef4e164b.jpg",
-          "static/media/galaxyTextureBW.3bf07a9f.png": "build/static/media/galaxyTextureBW.3bf07a9f.png",
-          "static/media/grid-rainbow.1dc05ea5.png": "build/static/media/grid-rainbow.1dc05ea5.png",
-          "static/media/intro-loop.85c70e50.mp3": "build/static/media/intro-loop.85c70e50.mp3",
-          "static/media/main-nodrums.b36a5309.mp3": "build/static/media/main-nodrums.b36a5309.mp3",
-          "static/media/main-onlydrums.f5b7b0b0.mp3": "build/static/media/main-onlydrums.f5b7b0b0.mp3",
-          "static/media/noise.2793ebd0.png": "build/static/media/noise.2793ebd0.png",
-          "static/media/spaceship.52879d8f.gltf": "build/static/media/spaceship.52879d8f.gltf",
-          "static/media/speedup.d71ead93.mp3": "build/static/media/speedup.d71ead93.mp3",
-          "tunnelred.PNG": "build/tunnelred.PNG"
-        },
-        "runtime": {
-          "imports": [
-            "react"
-          ],
-          "esm_deps": []
-        }
-      }
+      ]
     }
   ]
 }

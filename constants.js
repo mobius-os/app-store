@@ -1,9 +1,9 @@
 import { MANIFEST_SNAPSHOTS } from './manifest-snapshots.js'
 
 // Curated catalog. Each entry points at a public mobius-os repo on
-// the main branch. The web registry can carry embedded manifest snapshots for
-// fast first paint; Browse only fetches manifest_url for entries whose registry
-// snapshot is missing or invalid.
+// the main branch. The web registry stays a release-independent discovery
+// index; these baked entries carry generated manifests for resilient first
+// paint and Browse hydrates the live registry from each manifest_url.
 export const CATALOG = [
   // First screen priority: agent-facing utilities, then broad everyday apps,
   // then specialist and playful apps. Memory is an optional system app and
@@ -227,9 +227,10 @@ export const CATALOG = [
 // store-app redeploy, no per-instance store update. The CATALOG above is the
 // baked FALLBACK, used only if this fetch fails or returns nothing usable; keep
 // the two in sync when you add an app. Entries are validated (id + https
-// manifest_url/raw_base; optional manifest snapshots must carry the required
-// manifest strings) before use — the install confirm's trusted-host check and
-// the backend SSRF defenses remain the real security boundary.
+// manifest_url/raw_base) before use. Remote entries deliberately carry no
+// version-coupled manifest snapshots; the baked CATALOG above owns the offline
+// first-paint floor. The install confirm's trusted-host check and the backend
+// SSRF defenses remain the real security boundary.
 export const CATALOG_URL =
   'https://raw.githubusercontent.com/mobius-os/app-store/main/catalog.json'
 

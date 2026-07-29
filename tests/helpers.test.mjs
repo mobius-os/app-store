@@ -1067,28 +1067,32 @@ test('offline contract preserves bundled browsing without claiming network actio
   assert.match(manifest.offline.reads_detail, /bundled catalog/i)
 })
 
-// Browse must remain useful when the external proxy is slow or unavailable.
-// Snapshots are display/preview data only: installApp still sends manifest_url,
-// and installed apps use the backend's git-native update check.
-test('catalog carries valid resilient first-paint manifest snapshots', async () => {
+// Browse must remain useful when the external proxy is slow or unavailable,
+// without coupling the live discovery index to every app release. The generated
+// fallback still carries first-paint manifests; install/update always resolves
+// the live manifest_url.
+test('catalog is a release-independent discovery index with a baked snapshot floor', async () => {
   const catalog = JSON.parse(await readFile(join(root, '..', 'catalog.json'), 'utf8'))
+  const constants = await readFile(join(root, '..', 'constants.js'), 'utf8')
+  const snapshots = await readFile(join(root, '..', 'manifest-snapshots.js'), 'utf8')
+  const refresh = await readFile(join(root, '..', 'scripts', 'refresh-manifest-snapshots.mjs'), 'utf8')
+
   assert.ok(Array.isArray(catalog.apps) && catalog.apps.length > 0)
   for (const entry of catalog.apps) {
-    assert.ok(entry.manifest, `${entry.id}: missing manifest snapshot`)
-    for (const key of ['id', 'name', 'version', 'description', 'entry']) {
-      assert.equal(typeof entry.manifest[key], 'string', `${entry.id}: invalid manifest.${key}`)
-      assert.ok(entry.manifest[key], `${entry.id}: empty manifest.${key}`)
-    }
+    assert.equal(entry.manifest, undefined,
+      `${entry.id}: live discovery entries must not carry release snapshots`)
     assert.match(entry.id, /^[a-z0-9-]+$/)
     assert.ok(entry.name, `${entry.id}: discovery entries carry a name`)
     assert.ok(entry.description, `${entry.id}: discovery entries carry a description`)
     assert.match(entry.manifest_url, /^https:\/\//)
     assert.match(entry.raw_base, /^https:\/\//)
-    // The manifest is what the user reviews and trusts on install, so the
-    // source + icon files it pulls must come from the SAME origin.
     assert.equal(new URL(entry.manifest_url).host, new URL(entry.raw_base).host,
       `${entry.id}: raw_base must share manifest_url's host`)
   }
+  assert.match(constants, /manifest: MANIFEST_SNAPSHOTS\[entry\.id\] \|\| null/)
+  assert.match(snapshots, /export const MANIFEST_SNAPSHOTS = \{/)
+  assert.doesNotMatch(refresh, /entry\.manifest\s*=/)
+  assert.doesNotMatch(refresh, /writeFile\(catalogPath/)
 })
 
 test('Beat Machine discovery entry describes the sequencer', async () => {
@@ -1109,5 +1113,5 @@ test('Maps discovery entry exposes saved-map and skill capabilities', async () =
   assert.equal(entry.repo, 'mobius-os/app-maps')
   assert.ok(entry.keywords.includes('geocoding'))
   assert.ok(entry.capabilities.some((capability) => /source chats/.test(capability)))
-  assert.deepEqual(entry.manifest.skills, ['maps-app.md'])
+  assert.equal(entry.manifest, undefined)
 })

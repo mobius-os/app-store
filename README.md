@@ -28,11 +28,13 @@ See Möbius ticket 061 for the bootstrap details.
 
 ## The curated catalog
 
-The default catalog is a hardcoded list of `mobius-os/app-*` repos
-in `constants.js`. Browse renders immediately from generated manifest
-snapshots, then refreshes installed-app status in the background. Install and
-update actions always send the live `manifest_url` to the backend, so a
-snapshot is never treated as install authority.
+The default catalog is a hardcoded list of `mobius-os/app-*` repos in
+`constants.js`. Browse renders immediately from generated manifest snapshots,
+then refreshes the live discovery index and each app manifest in the
+background. The remote `catalog.json` never embeds version-coupled manifests,
+so publishing an app release does not require an App Store catalog change.
+Install and update actions always send the live `manifest_url` to the backend,
+so a snapshot is never treated as install authority.
 
 ### Naming convention
 
@@ -45,7 +47,8 @@ Manifest `id` == repo name minus the `app-` prefix == lowercased display name; r
    [the manifest spec](https://github.com/mobius-os/mobius-os.github.io/blob/main/spec/manifest.md).
 2. Add the entry to `CATALOG` in `constants.js` and `catalog.json`.
 3. Run `npm run refresh-catalog` to validate every live manifest and refresh
-   the baked first-paint snapshots.
+   the baked first-paint snapshots. This never writes manifests into the remote
+   discovery index.
 
 If you don't want PR-curation, that's fine too — anyone can install
 your app from a `mobius.json` URL using the **From URL** tab,
