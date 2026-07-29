@@ -270,7 +270,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "maps",
     "previous_id": "mapbook",
     "name": "Maps",
-    "version": "0.1.1",
+    "version": "0.1.10",
     "description": "Visualise and keep maps created in Möbius, with a location skill and links back to their source conversations.",
     "author": "mobius-os",
     "license": "MIT",
@@ -286,7 +286,7 @@ export const MANIFEST_SNAPSHOTS = {
       "imports": [
         "react",
         "react-dom",
-        "lucide-react"
+        "@openai/apps-sdk-ui/components/Icon"
       ],
       "esm_deps": []
     },
@@ -294,7 +294,11 @@ export const MANIFEST_SNAPSHOTS = {
       "maps-app.md"
     ],
     "source_files": [
+      "clipboard.js",
       "domain.js",
+      "publicMap.js",
+      "share.js",
+      "shareSheet.jsx",
       "storage.js",
       "skillIcon.js",
       "theme.js",

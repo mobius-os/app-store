@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-07-26",
+  "updated": "2026-07-29",
   "note": "Web registry of Mobius App Store catalog entries. The store fetches this at mount (via the server proxy) so a new app appears in every instance's store the moment this file lands on main — no store-app redeploy. constants.js CATALOG is the baked fallback used only if this fetch fails; keep the two in sync. Each entry: { id, repo, manifest_url, raw_base, categories?, keywords?, capabilities?, setup?, manifest? }. manifest is an optional validated summary/full manifest used for fast first paint; missing or invalid manifests fall back to fetching manifest_url. setup marks apps that need system or in-app configuration before their agent/scheduled features are useful. categories/keywords/capabilities are intentionally machine-readable so agents can search existing apps before building or remixing.",
   "apps": [
     {
@@ -451,7 +451,7 @@
         "id": "maps",
         "previous_id": "mapbook",
         "name": "Maps",
-        "version": "0.1.1",
+        "version": "0.1.10",
         "description": "Visualise and keep maps created in Möbius, with a location skill and links back to their source conversations.",
         "author": "mobius-os",
         "license": "MIT",
@@ -467,7 +467,7 @@
           "imports": [
             "react",
             "react-dom",
-            "lucide-react"
+            "@openai/apps-sdk-ui/components/Icon"
           ],
           "esm_deps": []
         },
@@ -475,7 +475,11 @@
           "maps-app.md"
         ],
         "source_files": [
+          "clipboard.js",
           "domain.js",
+          "publicMap.js",
+          "share.js",
+          "shareSheet.jsx",
           "storage.js",
           "skillIcon.js",
           "theme.js",
