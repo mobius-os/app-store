@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
 import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
@@ -81,7 +82,9 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
   return (
     <>
       <div className="st-detail-header">
-        <button className="st-back-btn" onClick={onBack}>← Back</button>
+        <button className="st-back-btn" onClick={onBack}>
+          <ArrowLeft width="1em" height="1em" aria-hidden="true" /> Back
+        </button>
       </div>
       <div className="st-scroll">
         <div className="st-hero">

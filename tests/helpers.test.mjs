@@ -11,6 +11,7 @@ const root = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(root, '.build')
 const bundled = join(buildDir, 'index.mjs')
 const reactStub = join(root, 'react-stub.mjs')
+const iconStub = join(root, 'sdk-icon-stub.mjs')
 const esbuildBin = process.env.ESBUILD_BIN || 'esbuild'
 
 async function bundle() {
@@ -24,6 +25,7 @@ async function bundle() {
     '--jsx=automatic',
     `--alias:react=${reactStub}`,
     `--alias:react/jsx-runtime=${reactStub}`,
+    `--alias:@openai/apps-sdk-ui/components/Icon=${iconStub}`,
     `--outfile=${bundled}`,
   ])
   return import(pathToFileURL(bundled))

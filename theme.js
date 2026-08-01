@@ -175,6 +175,7 @@ export const CSS = `
   touch-action: manipulation;
   user-select: none;
 }
+.st-search-clear svg { display: block; margin: auto; }
 @media (hover: hover) {
   .st-search-clear:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 }
@@ -716,6 +717,7 @@ export const CSS = `
   transition: background 150ms;
   touch-action: manipulation; user-select: none;
 }
+.st-back-btn svg { width: 16px; height: 16px; }
 @media (hover: hover) {
   .st-back-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 }
@@ -1034,6 +1036,7 @@ export const CSS = `
   border: 0; border-radius: 8px; background: transparent; color: var(--muted);
   font: 400 22px/1 var(--font); cursor: pointer;
 }
+.st-update-review-close svg { width: 18px; height: 18px; }
 .st-update-review-close:disabled { opacity: 0.5; cursor: default; }
 @media (hover: hover) {
   .st-update-review-close:not(:disabled):hover { background: var(--surface2); color: var(--text); }

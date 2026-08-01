@@ -1,3 +1,5 @@
+import { X } from '@openai/apps-sdk-ui/components/Icon'
+
 const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'installed', label: 'Installed' },
@@ -38,7 +40,7 @@ export function CatalogFilters({
             aria-label="Clear search"
             onClick={() => onQueryChange('')}
           >
-            ×
+            <X width="1em" height="1em" aria-hidden="true" />
           </button>
         )}
         <div className="st-result-count" aria-live="polite">

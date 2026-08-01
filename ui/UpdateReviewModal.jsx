@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react'
+import { X } from '@openai/apps-sdk-ui/components/Icon'
 import { capabilityDiffNeedsReview, focusBlockedUpdateResult } from '../domain.js'
 import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
 import FileDiffList from './diff/FileDiffList.jsx'
@@ -117,7 +118,7 @@ export function UpdateReviewModal({
             onClick={requestClose}
             disabled={busy}
             aria-label="Close update review"
-          >×</button>
+          ><X width="1em" height="1em" aria-hidden="true" /></button>
         </div>
 
         <div className="st-update-review-body">
