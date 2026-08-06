@@ -9,6 +9,18 @@ export const CATALOG = [
   // discovery metadata and provides the fallback for older catalog entries.
   // Array order remains the stable order within each shelf.
   {
+      id: 'voice',
+      audience: 'general',
+      collection: 'everyday',
+      summary: "On-device text-to-speech, with voice cloning.",
+      repo: 'mobius-os/app-voice',
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/',
+      categories: ['media', 'accessibility'],
+      keywords: ['text to speech', 'tts', 'voice', 'read aloud', 'voice cloning', 'pocket tts', 'on-device speech'],
+      capabilities: ['read text aloud on-device', 'clone your voice', 'pick a voice other apps read in'],
+  },
+  {
       id: 'memory',
       audience: 'developer',
       collection: 'developer',

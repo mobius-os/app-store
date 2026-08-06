@@ -4,6 +4,32 @@
   "note": "Web registry of Mobius App Store discovery entries. The store fetches this at mount so membership and concise browse copy can update without a Store release. Each entry points to its app repo and live mobius.json; audience and collection shape the curated shelves, while summary is short card copy. Version-coupled manifest snapshots belong only in manifest-snapshots.js for the baked offline first-paint floor. Keep catalog.json and constants.js membership in sync.",
   "apps": [
     {
+      "id": "voice",
+      "name": "Voice",
+      "description": "Give your agent a voice — on-device text-to-speech with model management and voice cloning saved to your instance.",
+      "repo": "mobius-os/app-voice",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-voice/main/",
+      "categories": [
+        "media",
+        "accessibility"
+      ],
+      "keywords": [
+        "text to speech",
+        "tts",
+        "voice",
+        "read aloud",
+        "voice cloning",
+        "pocket tts",
+        "on-device speech"
+      ],
+      "capabilities": [
+        "read text aloud on-device",
+        "clone your voice",
+        "pick a voice other apps read in"
+      ]
+    },
+    {
       "id": "memory",
       "name": "Memory",
       "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",

@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.3.5",
+    "version": "2.3.6",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -36,7 +36,6 @@ export const MANIFEST_SNAPSHOTS = {
         "secondary_agent_mode": "system",
         "fallback_provider": null,
         "fallback_model": null,
-        "live_breadth": 4,
         "live_depth": 4,
         "night_breadth": 6,
         "night_depth": 6
@@ -66,6 +65,7 @@ export const MANIFEST_SNAPSHOTS = {
       "memory_runner.py",
       "memory_store.py",
       "memory_graph.py",
+      "personalization_profile.py",
       "constants.js",
       "theme.js",
       "domain.js",
@@ -94,10 +94,43 @@ export const MANIFEST_SNAPSHOTS = {
       "seed-memory/notes/memory-is-visible-to-the-partner.md"
     ]
   },
+  "connections": {
+    "id": "connections",
+    "name": "Connections",
+    "version": "0.3.0",
+    "description": "Add remote MCP services once and both agent runtimes can use them — with live health, honest per-message cost, and curated suggestions.",
+    "author": "mobius-os",
+    "license": "MIT",
+    "icon": "icon.png",
+    "entry": "index.jsx",
+    "offline_capable": false,
+    "permissions": {
+      "cross_app_access": "none",
+      "share_with_apps": "none",
+      "connections_manage": true
+    },
+    "runtime": {
+      "imports": [
+        "react",
+        "react-dom"
+      ],
+      "esm_deps": []
+    },
+    "skills": [
+      "connections.md"
+    ],
+    "source_files": [
+      "theme.js",
+      "api.js",
+      "suggestions.js",
+      "connections.md",
+      "icon.png"
+    ]
+  },
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.8.17",
+    "version": "2.8.19",
     "description": "While you sleep, Möbius learns from recent work, improves its own approach, anticipates what may help next, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
@@ -152,11 +185,13 @@ export const MANIFEST_SNAPSHOTS = {
       "housekeeping.py",
       "resource_monitor.py",
       "memory_health.py",
+      "personalization_profile.py",
       "tool_friction.py",
       "constants.js",
       "theme.js",
       "domain.js",
       "providers.js",
+      "storage-core.js",
       "storage.js",
       "ui/ChatBubbleIcon.jsx",
       "ui/ChatPanel.jsx",
@@ -175,37 +210,30 @@ export const MANIFEST_SNAPSHOTS = {
   "subagents": {
     "id": "codex",
     "name": "Subagents",
-    "version": "0.3.0",
-    "description": "Connect and independently enable Claude or Codex subagents, choose provider-specific defaults, and give the Möbius agent one guarded delegation capability.",
+    "version": "0.4.1",
+    "description": "Connect Claude or Codex, choose provider defaults, and run guarded delegated tasks that survive planned platform restarts.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-subagents",
-    "entry": "index.jsx",
     "icon": "icon.png",
-    "offline_capable": false,
-    "permissions": {},
+    "entry": "index.jsx",
     "skills": [
       "subagents.md"
     ],
+    "storage": {
+      "max_bytes": 1048576
+    },
     "source_files": [
       "models.json",
       "subagents.md",
       "subagents.py",
       "test_subagents.py"
-    ],
-    "runtime": {
-      "imports": [
-        "react",
-        "react-dom",
-        "@openai/apps-sdk-ui/components/Icon"
-      ],
-      "esm_deps": []
-    }
+    ]
   },
   "workflows": {
     "id": "workflows",
     "name": "Workflows",
-    "version": "2.3.2",
+    "version": "2.3.3",
     "description": "An outcome journal for background work: skim completed outcomes, items that need attention, and each helper's assignment.",
     "author": "mobius-os",
     "license": "MIT",
@@ -240,7 +268,7 @@ export const MANIFEST_SNAPSHOTS = {
   "skills": {
     "id": "skills",
     "name": "Skills",
-    "version": "2.0.1",
+    "version": "2.2.1",
     "description": "Browse and read your agent's skills, and grow them: install from public skill catalogs, or ask the agent to find the right one for you.",
     "author": "mobius-os",
     "license": "MIT",
@@ -277,7 +305,7 @@ export const MANIFEST_SNAPSHOTS = {
   "artifacts": {
     "id": "artifacts",
     "name": "Artifacts",
-    "version": "0.6.1",
+    "version": "0.6.2",
     "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
     "author": "mobius-os",
     "license": "MIT",
@@ -331,7 +359,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "maps",
     "previous_id": "mapbook",
     "name": "Maps",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "description": "Visualise and keep maps created in Möbius, with a location skill and links back to their source conversations.",
     "author": "mobius-os",
     "license": "MIT",
@@ -380,7 +408,7 @@ export const MANIFEST_SNAPSHOTS = {
   "tasks": {
     "id": "tasks",
     "name": "Tasks",
-    "version": "1.0.9",
+    "version": "1.0.10",
     "description": "See your agent's scheduled check-ins at a glance — status, due times, and what needs attention. Reschedule or cancel through the agent.",
     "author": "mobius-os",
     "license": "MIT",
@@ -413,7 +441,7 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.5.21",
+    "version": "0.5.27",
     "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
     "author": "mobius-os",
     "license": "MIT",
@@ -484,7 +512,7 @@ export const MANIFEST_SNAPSHOTS = {
   "notes": {
     "id": "notes",
     "name": "Notes",
-    "version": "1.2.33",
+    "version": "1.2.35",
     "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
     "author": "mobius-os",
     "license": "MIT",
@@ -539,7 +567,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.15.3",
+    "version": "1.26.3",
     "description": "A personal daily news digest shaped by your interests, source mix, and listening preferences.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -550,6 +578,7 @@ export const MANIFEST_SNAPSHOTS = {
     "entry": "index.jsx",
     "source_files": [
       "report-schema.mjs",
+      "system-prompt.md",
       "constants.js",
       "preferences.js",
       "theme.js",
@@ -562,23 +591,47 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ReportReader.jsx",
       "ui/ReportsTab.jsx",
       "ui/ListenControls.jsx",
+      "speech-audio.js",
+      "speech-media.js",
+      "shell-playback.js",
+      "speech-timeline.js",
+      "browser-tts.js",
+      "browser-tts-xn-module.js",
+      "browser-tts-xn-wasm-1.js",
+      "browser-tts-xn-wasm-2.js",
+      "browser-tts-worker-source.js",
+      "browser-tts-worker-entry.js",
+      "tts-model-pack.js",
+      "THIRD_PARTY_NOTICES.md",
+      "licenses/XN-RUNTIME-LICENSES.md",
       "ui/PreferenceFields.jsx",
+      "ui/TtsModelPackProgress.jsx",
       "ui/SetupFlow.jsx",
       "ui/ModelPicker.jsx",
       "ui/EffortStepper.jsx",
       "ui/BackgroundAgentList.jsx",
       "ui/backgroundAgentOrder.js",
-      "ui/SettingsTab.jsx"
+      "ui/SettingsTab.jsx",
+      "codex_output.py"
     ],
     "theme_color": "#0c0f14",
     "background_color": "#0c0f14",
+    "capabilities": {
+      "device.asset-cache": {
+        "version": 1,
+        "reason": "Optionally keep the Pocket TTS model in this browser for private on-device listening.",
+        "limits": {
+          "max_bytes": 402653184,
+          "max_asset_bytes": 268435456,
+          "max_chunk_bytes": 8388608
+        }
+      }
+    },
     "permissions": {
       "cross_app_access": "none",
       "share_with_apps": "none"
     },
     "storage_seeds": {
-      "system-prompt.md": "system-prompt.md",
-      "prompt-additions.txt": "prompt-additions.txt",
       "topics.txt": "topics.txt",
       "agent.json": {
         "primary_agent_mode": "system",
@@ -632,8 +685,8 @@ export const MANIFEST_SNAPSHOTS = {
   "editor": {
     "id": "editor",
     "name": "Editor",
-    "version": "0.6.5",
-    "description": "Browse, inspect, and edit every file on your Möbius. Follow git status, check file details, and ask the agent to make changes with you.",
+    "version": "0.6.9",
+    "description": "Browse, inspect, and edit every file on your Möbius, with focused details and an agent ready to help.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-editor",
@@ -660,7 +713,6 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/useModalFocus.js",
       "ui/NameModal.jsx",
       "ui/ConfirmModal.jsx",
-      "ui/GitPanel.jsx",
       "ui/ChatPanel.jsx",
       "ui/ChatBubbleIcon.jsx"
     ],
@@ -700,7 +752,7 @@ export const MANIFEST_SNAPSHOTS = {
   "webstudio": {
     "id": "webstudio",
     "name": "Web Studio",
-    "version": "0.13.5",
+    "version": "0.13.6",
     "description": "Build a website with the agent and preview it live in an in-app browser.",
     "author": "mobius-os",
     "license": "MIT",
@@ -792,7 +844,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "workout",
     "previous_id": "gym",
     "name": "Workout",
-    "version": "2.9.1",
+    "version": "2.9.2",
     "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
     "author": "mobius-os",
     "license": "MIT",
@@ -849,7 +901,7 @@ export const MANIFEST_SNAPSHOTS = {
   "habits": {
     "id": "habits",
     "name": "Habits",
-    "version": "1.0.10",
+    "version": "1.0.11",
     "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
     "author": "mobius-os",
     "license": "MIT",
@@ -896,7 +948,7 @@ export const MANIFEST_SNAPSHOTS = {
   "beat-machine": {
     "id": "beat-machine",
     "name": "Beat Machine",
-    "version": "1.0.15",
+    "version": "1.0.16",
     "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
     "author": "mobius-os",
     "license": "MIT",
@@ -936,7 +988,7 @@ export const MANIFEST_SNAPSHOTS = {
   "atlas": {
     "id": "atlas",
     "name": "Atlas",
-    "version": "1.9.15",
+    "version": "1.9.16",
     "description": "Spin the globe, tap the countries you've visited, and watch your map fill in.",
     "author": "mobius-os",
     "license": "MIT AND CC-BY-3.0-IGO",
@@ -990,7 +1042,7 @@ export const MANIFEST_SNAPSHOTS = {
   "latex": {
     "id": "latex",
     "name": "LaTeX",
-    "version": "2.15.5",
+    "version": "2.15.6",
     "description": "Write and compile LaTeX with live PDF preview and an agent that drafts your .tex.",
     "author": "mobius-os",
     "license": "MIT",
@@ -1070,7 +1122,7 @@ export const MANIFEST_SNAPSHOTS = {
   "tandem": {
     "id": "tandem",
     "name": "Tandem",
-    "version": "0.14.5",
+    "version": "0.14.6",
     "description": "Split-pane bilingual reader for language learning. Wide screens show the languages left/right; phones and narrow windows stack them top/bottom. The panes sync-scroll and the divider resizes them. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one. Pick the generation agent (Claude or OpenAI Codex) in settings; tap a word for its exact glossary match or honest aligned-sentence context.",
     "offline_capable": true,
     "offline": {
@@ -1129,7 +1181,7 @@ export const MANIFEST_SNAPSHOTS = {
   "cuberun": {
     "id": "cuberun",
     "name": "CubeRun",
-    "version": "1.0.2-mobius.27",
+    "version": "1.0.2-mobius.28",
     "description": "Neon 3D runner game packaged for Mobius as a durable static app.",
     "author": "Adam Karlsten",
     "license": "MIT",
