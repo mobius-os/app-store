@@ -66,6 +66,7 @@ import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
 import { UpdateAllModal } from './ui/UpdateAllModal.jsx'
+import { BatchInstallModal } from './ui/BatchInstallModal.jsx'
 
 export {
   appLifecycleFor,
@@ -303,6 +304,8 @@ export default function App({ appId, token }) {
   const [agentReviewingUpdate, setAgentReviewingUpdate] = useState(false)
   const [agentErrorItemId, setAgentErrorItemId] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
+  const [selectedItemIds, setSelectedItemIds] = useState(() => new Set())
+  const [batchReview, setBatchReview] = useState(null)
   // A complete baked snapshot is usable on the very first render. Installed
   // state and the remote registry hydrate independently; neither should make a
   // healthy catalog flash a skeleton or feel network-bound. Catalog releases
@@ -1380,6 +1383,149 @@ export default function App({ appId, token }) {
     return matches
   }, [displayCatalog, query, category, lifecycleById])
 
+  const selectedItems = useMemo(
+    () => displayCatalog.filter(item => selectedItemIds.has(item.id)),
+    [displayCatalog, selectedItemIds],
+  )
+
+  // Installed state can change while the Store remains open (another pane may
+  // install an app). Keep the selection truthful instead of carrying a stale
+  // checkbox into the review tray.
+  useEffect(() => {
+    setSelectedItemIds(current => {
+      const next = new Set([...current].filter(
+        id => lifecycleById.get(id)?.actionKind === 'install',
+      ))
+      if (next.size === current.size && [...next].every(id => current.has(id))) return current
+      return next
+    })
+  }, [lifecycleById])
+
+  const toggleBatchSelection = useCallback((item) => {
+    setSelectedItemIds(current => {
+      const next = new Set(current)
+      if (next.has(item.id)) next.delete(item.id)
+      else next.add(item.id)
+      return next
+    })
+  }, [])
+
+  const clearBatchSelection = useCallback(() => setSelectedItemIds(new Set()), [])
+
+  const loadBatchReviews = useCallback(async (items) => {
+    const rows = await mapWithConcurrency(items, 4, async item => {
+      try {
+        const preview = await previewApp({
+          manifest_url: item.manifest_url,
+          manifest: item.manifest,
+          raw_base: item.raw_base,
+          token,
+        })
+        return [item.id, { status: 'ready', preview, error: '' }]
+      } catch (error) {
+        return [item.id, {
+          status: 'error',
+          preview: null,
+          error: error.message || 'Capabilities could not be checked.',
+        }]
+      }
+    })
+    return Object.fromEntries(rows)
+  }, [token])
+
+  const openBatchReview = useCallback(async () => {
+    const items = selectedItems.filter(item => lifecycleById.get(item.id)?.actionKind === 'install')
+    if (!items.length || busy || installedLoadError) return
+    setBatchReview({ phase: 'loading', items, reviews: {}, results: {} })
+    const reviews = await loadBatchReviews(items)
+    setBatchReview(current => current ? { ...current, phase: 'ready', reviews } : current)
+  }, [busy, installedLoadError, lifecycleById, loadBatchReviews, selectedItems, token])
+
+  const retryBatchReviews = useCallback(async () => {
+    if (!batchReview || batchReview.phase === 'installing') return
+    const items = batchReview.items
+    setBatchReview(current => current ? { ...current, phase: 'loading' } : current)
+    const reviews = await loadBatchReviews(items)
+    setBatchReview(current => current ? { ...current, phase: 'ready', reviews, results: {} } : current)
+  }, [batchReview, loadBatchReviews])
+
+  const approveBatchInstall = useCallback(async () => {
+    if (!batchReview || busy || batchReview.phase !== 'ready') return
+    const approved = batchReview.items.every(item => batchReview.reviews[item.id]?.preview?.capability_digest)
+    if (!approved) return
+    setBusy(true)
+    setBusyActionKind('install')
+    setBatchReview(current => ({ ...current, phase: 'installing', results: {} }))
+    const results = {}
+    const nextVersions = { ...installedVersions }
+    const installedIds = []
+    for (const [itemIndex, item] of batchReview.items.entries()) {
+      setBusyItemId(item.id)
+      setBatchReview(current => ({
+        ...current,
+        currentItemId: item.id,
+        currentItemIndex: itemIndex,
+        results: { ...results },
+      }))
+      try {
+        const result = await installApp({
+          manifest_url: item.manifest_url,
+          manifest: item.manifest,
+          raw_base: item.raw_base,
+          token,
+          reviewed_capability_digest: batchReview.reviews[item.id].preview.capability_digest,
+        })
+        results[item.id] = { status: 'installed', result }
+        installedIds.push(item.id)
+        nextVersions[item.id] = result.version
+        if (result.id) {
+          setUpdateChecks(prev => mergeUpdateChecks(prev, {
+            [result.id]: { available: false, pendingUpdateState: 'none', upstreamVersion: result.version || null },
+          }))
+        }
+        window.mobius?.signal?.('app_installed', { slug: result.id || item.id })
+      } catch (error) {
+        results[item.id] = { status: 'error', error: error.message || 'Installation failed.' }
+      }
+      setBatchReview(current => ({ ...current, results: { ...results } }))
+    }
+    setInstalledVersions(nextVersions)
+    let receiptWarning = ''
+    try {
+      await saveInstalledVersions(appId, token, nextVersions)
+    } catch (error) {
+      // The installs are already committed on the server. Keep the result
+      // truthful and let the next installed-app refresh repair the small local
+      // display cache rather than leaving the batch dialog permanently busy.
+      receiptWarning = error.message || 'The installed-version cache could not be refreshed.'
+    }
+    await refreshInstalled()
+    setSelectedItemIds(current => {
+      const next = new Set(current)
+      installedIds.forEach(id => next.delete(id))
+      return next
+    })
+    setBatchReview(current => ({
+      ...current,
+      phase: 'done',
+      currentItemId: null,
+      currentItemIndex: null,
+      results: { ...results },
+    }))
+    setBusy(false)
+    setBusyItemId(null)
+    setBusyActionKind(null)
+    const failureCount = Object.values(results).filter(result => result.status === 'error').length
+    setToast({
+      kind: failureCount || receiptWarning ? 'error' : 'success',
+      message: failureCount
+        ? `${installedIds.length} installed; ${failureCount} need attention.`
+        : receiptWarning
+        ? `${installedIds.length} installed. ${receiptWarning}`
+        : `${installedIds.length} ${installedIds.length === 1 ? 'app' : 'apps'} installed.`,
+    })
+  }, [appId, batchReview, busy, installedVersions, refreshInstalled, token])
+
   // Detail view replaces the main layout when set.
   if (detail) {
     return (
@@ -1544,6 +1690,8 @@ export default function App({ appId, token }) {
                     emptyText="Try a different search or filter."
                     setupCompletions={setupCompletions}
                     systemSetupReady={systemSetupReady}
+                    selectedItemIds={selectedItemIds}
+                    onSelectionToggle={toggleBatchSelection}
                   />
                 </>}
           </>
@@ -1552,6 +1700,14 @@ export default function App({ appId, token }) {
           <FromUrlTab onPreview={openDetail} token={token} />
         )}
       </div>
+
+      {tab === 'browse' && selectedItems.length > 0 && !batchReview ? (
+        <div className="st-batch-bar" role="region" aria-label="Batch install selection">
+          <div className="st-batch-count"><strong>{selectedItems.length}</strong> selected</div>
+          <button type="button" className="st-btn st-btn-ghost" onClick={clearBatchSelection} disabled={busy}>Clear</button>
+          <button type="button" className="st-btn st-btn-primary" onClick={openBatchReview} disabled={busy || !!installedLoadError}>Review selected</button>
+        </div>
+      ) : null}
 
       {pendingUninstall && (
         <UninstallConfirmModal
@@ -1572,6 +1728,15 @@ export default function App({ appId, token }) {
           onApply={handleApplyReviewedUpdate}
           onResolve={(policy) => handleReviewUpdate(updateReview.blockedNotice, policy)}
           onReviewWithAgent={handleAgentUpdateReview}
+        />
+      )}
+      {batchReview && (
+        <BatchInstallModal
+          review={batchReview}
+          token={token}
+          onClose={() => setBatchReview(null)}
+          onRetry={retryBatchReviews}
+          onApprove={approveBatchInstall}
         />
       )}
 

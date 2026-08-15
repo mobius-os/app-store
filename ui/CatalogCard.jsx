@@ -18,7 +18,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, selected = false, onSelectionToggle }) {
   const m = item.manifest
 
   if (!m) {
@@ -79,6 +79,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     (lifecycle.actionKind !== 'retry' || canRetryInstalled) &&
     canResolveUpdate
   const cardActionDisabled = busy || blocked || !isActionable
+  const canSelect = lifecycle.actionKind === 'install' && !installedUnavailable && !busy
   const showUpdateNotice = lifecycle.actionKind === 'resolve' &&
     updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
@@ -133,7 +134,18 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   // z-index layer above that overlay so it stays independently clickable.
   // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div className={cardVariantClass(cardVariant)}>
+    <div className={`${cardVariantClass(cardVariant)}${selected ? ' is-selected' : ''}`}>
+      {canSelect ? (
+        <label className="st-card-select" title={`Select ${m.name} for batch install`}>
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onSelectionToggle?.(item)}
+            aria-label={`Select ${m.name} for batch install`}
+          />
+          <span aria-hidden="true">✓</span>
+        </label>
+      ) : null}
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
         {(cardVariant === 'installed' || cardVariant === 'update') && (

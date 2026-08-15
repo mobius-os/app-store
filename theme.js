@@ -386,6 +386,33 @@ export const CSS = `
 .st-card.is-error {
   border: 1px dashed var(--border);
 }
+.st-card.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.st-card-select {
+  position: absolute; z-index: 3; top: 4px; right: 4px;
+  width: 44px; height: 44px; border-radius: 999px;
+  display: grid; place-items: center;
+  cursor: pointer; touch-action: manipulation;
+}
+.st-card-select input {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+  opacity: 0; cursor: pointer;
+}
+.st-card-select span {
+  width: 24px; height: 24px; border-radius: 7px;
+  display: grid; place-items: center;
+  border: 1px solid color-mix(in srgb, var(--text) 34%, var(--border));
+  background: var(--surface); color: transparent;
+  font-size: 14px; font-weight: 800; line-height: 1;
+  box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+.st-card-select input:checked + span {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+}
+.st-card-select input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The app name is the card's open affordance. Its ::after overlay covers
    the whole card so the icon / name / description all open details. */
 .st-card-open {
@@ -1290,6 +1317,78 @@ export const CSS = `
 }
 .st-btn-secondary { background: var(--surface2, var(--surface)); }
 .st-btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }
+
+/* Batch install: selection remains in-flow; review becomes one bounded dialog. */
+.st-batch-bar {
+  flex: 0 0 auto; z-index: 20;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 -5px 18px rgba(0,0,0,.12);
+}
+.st-batch-count { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
+.st-batch-count strong { color: var(--text); font-size: 16px; }
+.st-batch-scrim {
+  position: absolute; inset: 0; z-index: 130;
+  display: grid; place-items: center;
+  padding: 16px; background: rgba(0,0,0,.56);
+}
+.st-batch-review {
+  width: min(680px, 100%); max-height: min(860px, calc(100% - 4px));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: 0 18px 55px rgba(0,0,0,.34);
+}
+.st-batch-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding: 20px 20px 14px; border-bottom: 1px solid var(--border);
+}
+.st-batch-title { margin: 0; font-size: 20px; line-height: 1.2; }
+.st-batch-subtitle { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.st-batch-close {
+  width: 44px; height: 44px; flex: 0 0 auto; border: 0; border-radius: 10px;
+  display: grid; place-items: center; background: transparent; color: var(--muted);
+  font-size: 20px; cursor: pointer;
+}
+.st-batch-body { min-height: 0; overflow-y: auto; padding: 16px 20px; scrollbar-width: none; }
+.st-batch-body::-webkit-scrollbar { display: none; }
+.st-batch-guidance, .st-batch-loading {
+  margin-bottom: 14px; padding: 11px 12px; border-radius: 10px;
+  background: var(--surface2, var(--surface)); color: var(--muted);
+  font-size: 13px; line-height: 1.45;
+}
+.st-batch-list { display: grid; gap: 10px; }
+.st-batch-item { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: clip; }
+.st-batch-item.is-installed { border-color: color-mix(in srgb, var(--green) 50%, var(--border)); }
+.st-batch-item.is-error { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); }
+.st-batch-item summary {
+  min-height: 66px; padding: 10px 12px; display: flex; align-items: center; gap: 11px;
+  cursor: pointer; list-style: none; user-select: none;
+}
+.st-batch-item summary::-webkit-details-marker { display: none; }
+.st-batch-icon { width: 42px; height: 42px; flex: 0 0 auto; display: block; }
+.st-batch-icon .st-icon-wrap { width: 42px; height: 42px; border-radius: 10px; }
+.st-batch-icon .st-icon-letter { font-size: 18px; }
+.st-batch-item-copy { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.st-batch-item-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.st-batch-item-copy small { color: var(--muted); font-size: 12px; }
+.st-batch-chevron { color: var(--muted); font-size: 24px; transform: rotate(90deg); transition: transform .15s; }
+.st-batch-item[open] .st-batch-chevron { transform: rotate(-90deg); }
+.st-batch-access { padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.st-batch-access .st-capability-list { margin-top: 12px; }
+.st-batch-actions {
+  flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 8px;
+  padding: 14px 20px max(14px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+@media (max-width: 520px) {
+  .st-batch-scrim { padding: 0; place-items: end stretch; }
+  .st-batch-review { width: 100%; max-height: 92%; border-radius: 18px 18px 0 0; }
+  .st-batch-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .st-batch-actions .st-btn-primary { grid-column: 1 / -1; order: -1; }
+  .st-batch-bar .st-btn { padding-inline: 12px; }
+}
 .st-btn-danger { background: var(--danger); border-color: var(--danger); color: var(--accent-fg); }
 .st-btn-icon { width: 44px; padding: 0; border-radius: 8px; font-size: 18px; }
 /* /mobius-ui:Button */

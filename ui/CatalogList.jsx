@@ -57,6 +57,8 @@ export function CatalogList({
   installedUnavailable = false,
   setupCompletions = {},
   systemSetupReady = false,
+  selectedItemIds = new Set(),
+  onSelectionToggle,
   emptyTitle = 'No apps',
   emptyText = 'No apps in the catalog yet.',
 }) {
@@ -95,6 +97,8 @@ export function CatalogList({
       installedUnavailable={installedUnavailable}
       setupCompletions={setupCompletions}
       systemSetupReady={systemSetupReady}
+      selected={selectedItemIds.has(item.id)}
+      onSelectionToggle={onSelectionToggle}
     />
   )
   const groups = CATALOG_COLLECTIONS
