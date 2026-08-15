@@ -338,7 +338,11 @@ export async function fetchCatalog(url, token, opts = {}) {
   return entries
 }
 
-function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capability_digest, reviewed_source_digest }) {
+// Compare two semver strings. Returns -1 / 0 / 1. Bad input → 0.
+// Compares the full numeric core (not just 3 segments, so a 4th segment isn't
+// dropped) and honors SemVer pre-release precedence: 1.2.0-rc.1 < 1.2.0, so a
+// pre-release never reads as "up to date" against its own release.
+function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capability_digest, reviewed_source_digest, include_install_size }) {
   const body = {}
   if (manifest_url) {
     body.manifest_url = manifest_url
@@ -352,17 +356,18 @@ function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capabil
   if (reviewed_source_digest) {
     body.reviewed_source_digest = reviewed_source_digest
   }
+  if (include_install_size) body.include_install_size = true
   return body
 }
 
-export async function previewApp({ manifest_url, manifest, raw_base, token }) {
+export async function previewApp({ manifest_url, manifest, raw_base, token, include_install_size = false }) {
   const res = await fetch('/api/apps/preview', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(installRequestBody({ manifest_url, manifest, raw_base })),
+    body: JSON.stringify(installRequestBody({ manifest_url, manifest, raw_base, include_install_size })),
   })
   return await readJsonOrThrow(res, 'Capability preview failed')
 }

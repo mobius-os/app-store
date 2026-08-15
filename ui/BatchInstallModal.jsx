@@ -5,13 +5,19 @@ import { X } from '@openai/apps-sdk-ui/components/Icon'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox } from './IconBox.jsx'
 
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return 'Size unavailable'
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+}
+
 function resultCopy(result) {
   if (result?.status === 'installed') return 'Installed'
   if (result?.status === 'error') return 'Needs attention'
   return ''
 }
 
-export function BatchInstallModal({ review, token, onClose, onRetry, onApprove }) {
+export function BatchInstallModal({ review, token, onClose, onRetry, onApprove, onRemove }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
   const openerRef = useRef(null)
@@ -24,6 +30,11 @@ export function BatchInstallModal({ review, token, onClose, onRetry, onApprove }
   )
   const installedCount = Object.values(results).filter(result => result.status === 'installed').length
   const failedCount = Object.values(results).filter(result => result.status === 'error').length
+  const estimates = review.items.map(item => reviews[item.id]?.preview?.estimated_install_bytes)
+  const selectedBytes = estimates.every(Number.isFinite) ? estimates.reduce((sum, size) => sum + size, 0) : null
+  const availableBytes = review.items.map(item => reviews[item.id]?.preview?.storage_budget?.available_bytes).filter(Number.isFinite).reduce((lowest, value) => Math.min(lowest, value), Infinity)
+  const hasBudget = Number.isFinite(selectedBytes) && Number.isFinite(availableBytes)
+  const overQuota = hasBudget && selectedBytes > availableBytes
 
   const requestClose = useCallback(() => {
     if (!busy) onClose()
@@ -95,6 +106,13 @@ export function BatchInstallModal({ review, token, onClose, onRetry, onApprove }
           {review.phase !== 'done' ? (
             <div className="st-batch-guidance">Review the access for each app below. Nothing is installed until you approve the complete selection.</div>
           ) : null}
+          {review.phase !== 'done' && hasBudget ? (
+            <div className={`st-quota-panel${overQuota ? ' is-exceeded' : ''}`} role={overQuota ? 'alert' : 'status'}>
+              <div className="st-quota-head"><strong>{overQuota ? 'Storage quota exceeded' : 'Install storage'}</strong><span>{formatBytes(selectedBytes)} selected · {formatBytes(availableBytes)} available</span></div>
+              <div className="st-quota-track" aria-hidden="true"><span style={{ width: `${Math.min(100, availableBytes ? selectedBytes / availableBytes * 100 : 100)}%` }} /></div>
+              <small>{overQuota ? 'Unselect one or more apps to continue.' : `${formatBytes(Math.max(0, availableBytes - selectedBytes))} will remain within the safe storage quota.`}</small>
+            </div>
+          ) : null}
           <div className="st-batch-list">
             {review.items.map((item, index) => {
               const itemReview = reviews[item.id]
@@ -102,15 +120,17 @@ export function BatchInstallModal({ review, token, onClose, onRetry, onApprove }
               const itemName = item.manifest?.name || item.name || item.id
               const isInstalling = review.phase === 'installing' && review.currentItemId === item.id
               return (
-                <details className={`st-batch-item${result ? ` is-${result.status}` : ''}`} key={item.id} defaultOpen={review.items.length <= 3 || index === 0 || result?.status === 'error'}>
+                <details className={`st-batch-item${result ? ` is-${result.status}` : ''}${overQuota ? ' is-over-quota' : ''}`} key={item.id} defaultOpen={review.items.length <= 3 || index === 0 || result?.status === 'error'}>
                   <summary>
+                    {review.phase === 'ready' ? <button type="button" className="st-batch-remove" onClick={event => { event.preventDefault(); event.stopPropagation(); onRemove(item.id) }} aria-label={`Unselect ${itemName}`}>×</button> : null}
                     <span className="st-batch-icon"><IconBox item={item} token={token} /></span>
                     <span className="st-batch-item-copy">
                       <strong>{itemName}</strong>
-                      <small>{isInstalling ? 'Installing…' : resultCopy(result) || (itemReview?.status === 'error' ? 'Access check failed' : 'Review access')}</small>
+                      <small>{isInstalling ? 'Installing…' : resultCopy(result) || (itemReview?.status === 'error' ? 'Access check failed' : `${formatBytes(itemReview?.preview?.estimated_install_bytes)} · Review access`)}</small>
                     </span>
                     <span className="st-batch-chevron" aria-hidden="true">›</span>
                   </summary>
+                  <div className={`st-item-progress${isInstalling ? ' is-active' : ''}${result?.status === 'installed' ? ' is-complete' : ''}${result?.status === 'error' ? ' is-error' : ''}`} role="progressbar" aria-label={`${itemName} installation progress`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={result || !isInstalling ? (result ? 100 : 0) : undefined}><span /></div>
                   <div className="st-batch-access">
                     {result?.status === 'error' ? <div className="st-error-box" role="alert">{result.error}</div> : null}
                     <CapabilityContract review={itemReview} onRetry={onRetry} />
@@ -130,8 +150,8 @@ export function BatchInstallModal({ review, token, onClose, onRetry, onApprove }
               {hasReviewError ? (
                 <button type="button" className="st-btn st-btn-secondary" onClick={onRetry} disabled={busy}>Retry checks</button>
               ) : null}
-              <button type="button" className="st-btn st-btn-primary" onClick={onApprove} disabled={busy || !ready}>
-                {review.phase === 'installing' ? `Installing ${(review.currentItemIndex ?? 0) + 1} of ${review.items.length}…` : ready ? `Approve & install ${review.items.length}` : 'Checking access…'}
+              <button type="button" className="st-btn st-btn-primary" onClick={onApprove} disabled={busy || !ready || !hasBudget || overQuota}>
+                {review.phase === 'installing' ? `Installing ${(review.currentItemIndex ?? 0) + 1} of ${review.items.length}…` : ready && hasBudget ? `Approve & install ${review.items.length}` : ready ? 'Storage unavailable' : 'Checking access…'}
               </button>
             </>
           )}

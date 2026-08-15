@@ -19,17 +19,23 @@ test('update all traps focus and restores its opener', () => {
 })
 
 const batchReview = readFileSync(new URL('../ui/BatchInstallModal.jsx', import.meta.url), 'utf8')
+const batchUninstall = readFileSync(new URL('../ui/BatchUninstallModal.jsx', import.meta.url), 'utf8')
 const catalogCard = readFileSync(new URL('../ui/CatalogCard.jsx', import.meta.url), 'utf8')
 const indexSource = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
 const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
 
-test('batch installs keep selection, review, and approval accessible', () => {
+test('batch app management keeps selection, review, and approval accessible', () => {
   assert.match(catalogCard, /type="checkbox"/)
-  assert.match(catalogCard, /aria-label={`Select \${m\.name} for batch install`}/)
+  assert.match(catalogCard, /`Select \${m\.name} to \${selectionAction}`/)
   assert.match(theme, /\.st-card-select \{[\s\S]*width: 44px; height: 44px;/)
   assert.match(batchReview, /role="dialog"/)
   assert.match(batchReview, /aria-modal="true"/)
   assert.match(batchReview, /Review selected apps/)
+  assert.match(batchReview, /role="progressbar"/)
+  assert.match(batchReview, /Storage quota exceeded/)
+  assert.match(batchUninstall, /role="dialog"/)
+  assert.match(batchUninstall, /role="progressbar"/)
+  assert.match(batchUninstall, /recoverable for 7 days/)
   assert.match(indexSource, /reviewed_capability_digest: batchReview\.reviews\[item\.id\]\.preview\.capability_digest/)
   assert.match(indexSource, /currentItemIndex: itemIndex/)
 })

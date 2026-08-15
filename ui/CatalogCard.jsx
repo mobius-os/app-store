@@ -18,7 +18,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, selected = false, onSelectionToggle }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, selected = false, selectionMode = null, currentAppId = null, onSelectionToggle }) {
   const m = item.manifest
 
   if (!m) {
@@ -79,7 +79,11 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     (lifecycle.actionKind !== 'retry' || canRetryInstalled) &&
     canResolveUpdate
   const cardActionDisabled = busy || blocked || !isActionable
-  const canSelect = lifecycle.actionKind === 'install' && !installedUnavailable && !busy
+  const selectionAction = storeInstalled ? 'uninstall'
+    : lifecycle.actionKind === 'install' ? 'install' : null
+  const isSelf = selectionAction === 'uninstall' && String(storeInstalled?.id) === String(currentAppId)
+  const canSelect = !!selectionAction && !installedUnavailable && !busy
+  const selectionDisabled = isSelf || (!!selectionMode && selectionMode !== selectionAction)
   const showUpdateNotice = lifecycle.actionKind === 'resolve' &&
     updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
@@ -134,14 +138,15 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   // z-index layer above that overlay so it stays independently clickable.
   // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div className={`${cardVariantClass(cardVariant)}${selected ? ' is-selected' : ''}`}>
+    <div className={`${cardVariantClass(cardVariant)}${selected ? ' is-selected' : ''}${selectionDisabled ? ' is-selection-disabled' : ''}`}>
       {canSelect ? (
-        <label className="st-card-select" title={`Select ${m.name} for batch install`}>
+        <label className="st-card-select" title={isSelf ? 'The App Store must be uninstalled on its own' : `Select ${m.name} to ${selectionAction}`}>
           <input
             type="checkbox"
             checked={selected}
-            onChange={() => onSelectionToggle?.(item)}
-            aria-label={`Select ${m.name} for batch install`}
+            disabled={selectionDisabled}
+            onChange={() => onSelectionToggle?.(item, selectionAction)}
+            aria-label={isSelf ? `${m.name} cannot be included in a batch uninstall` : `Select ${m.name} to ${selectionAction}`}
           />
           <span aria-hidden="true">✓</span>
         </label>

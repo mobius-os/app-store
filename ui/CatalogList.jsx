@@ -58,6 +58,8 @@ export function CatalogList({
   setupCompletions = {},
   systemSetupReady = false,
   selectedItemIds = new Set(),
+  selectionMode = null,
+  currentAppId = null,
   onSelectionToggle,
   emptyTitle = 'No apps',
   emptyText = 'No apps in the catalog yet.',
@@ -98,6 +100,8 @@ export function CatalogList({
       setupCompletions={setupCompletions}
       systemSetupReady={systemSetupReady}
       selected={selectedItemIds.has(item.id)}
+      selectionMode={selectionMode}
+      currentAppId={currentAppId}
       onSelectionToggle={onSelectionToggle}
     />
   )
