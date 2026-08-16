@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-08-01",
+  "updated": "2026-08-20",
   "note": "Sole registry of Mobius App Store membership and discovery copy. The Store bundles this file as its offline floor and fetches the published copy at mount so new entries can appear without a Store release. Version-coupled manifest snapshots belong only in manifest-snapshots.js.",
   "apps": [
     {
@@ -680,6 +680,37 @@
       "audience": "general",
       "collection": "play",
       "summary": "Chase a high score in a neon 3D world."
+    },
+    {
+      "id": "workspace-shortcuts",
+      "name": "Shortcuts",
+      "description": "Enable Chrome-friendly tab shortcuts across Möbius on Windows, Linux, and Mac.",
+      "repo": "dzanahmed/app-workspace-shortcuts",
+      "manifest_url": "https://raw.githubusercontent.com/dzanahmed/app-workspace-shortcuts/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/dzanahmed/app-workspace-shortcuts/main/",
+      "categories": [
+        "productivity",
+        "system"
+      ],
+      "keywords": [
+        "keyboard shortcuts",
+        "tabs",
+        "workspace",
+        "chrome",
+        "windows",
+        "linux",
+        "mac",
+        "hotkeys",
+        "tab switching"
+      ],
+      "capabilities": [
+        "open, close, and restore workspace tabs by keyboard",
+        "switch and jump between tabs by keyboard",
+        "keeps shortcuts scoped to the focused pane"
+      ],
+      "audience": "general",
+      "collection": "everyday",
+      "summary": "Chrome-friendly keyboard shortcuts for your tabs."
     }
   ]
 }
