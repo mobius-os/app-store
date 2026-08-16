@@ -48,6 +48,7 @@
     "ui/UpdateReviewModal.jsx",
     "ui/UpdateAllModal.jsx",
     "ui/BatchInstallModal.jsx",
+    "ui/BatchUninstallModal.jsx",
     "ui/SelfUpdateBanner.jsx",
     "ui/diff/parseUnifiedDiff.js",
     "ui/diff/DiffView.jsx",

@@ -23,6 +23,7 @@ const batchUninstall = readFileSync(new URL('../ui/BatchUninstallModal.jsx', imp
 const catalogCard = readFileSync(new URL('../ui/CatalogCard.jsx', import.meta.url), 'utf8')
 const detailView = readFileSync(new URL('../ui/DetailView.jsx', import.meta.url), 'utf8')
 const indexSource = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
+const manifest = JSON.parse(readFileSync(new URL('../mobius.json', import.meta.url), 'utf8'))
 const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
 
 test('batch app management keeps selection, review, and approval accessible', () => {
@@ -41,6 +42,8 @@ test('batch app management keeps selection, review, and approval accessible', ()
   assert.match(batchUninstall, /role="dialog"/)
   assert.match(batchUninstall, /role="progressbar"/)
   assert.match(batchUninstall, /recoverable for 7 days/)
+  assert.ok(manifest.source_files.includes('ui/BatchInstallModal.jsx'))
+  assert.ok(manifest.source_files.includes('ui/BatchUninstallModal.jsx'))
   assert.match(indexSource, /reviewed_capability_digest: batchReview\.reviews\[item\.id\]\.preview\.capability_digest/)
   assert.match(indexSource, /currentItemIndex: itemIndex/)
 })
