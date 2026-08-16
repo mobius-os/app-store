@@ -68,6 +68,7 @@ import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
 import { UpdateAllModal } from './ui/UpdateAllModal.jsx'
 import { BatchInstallModal } from './ui/BatchInstallModal.jsx'
 import { BatchUninstallModal } from './ui/BatchUninstallModal.jsx'
+import { IconBox, installedIconUrl } from './ui/IconBox.jsx'
 
 export {
   appLifecycleFor,
@@ -116,6 +117,12 @@ export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
 // left first paint needlessly slow. 6 keeps concurrency modest against the raw
 // CDN while roughly halving the hydrate wall time.
 const MANIFEST_FETCH_CONCURRENCY = 6
+
+function formatStorageBytes(bytes) {
+  if (!Number.isFinite(bytes)) return null
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+}
 
 function Toast({ toast, onDismiss }) {
   if (!toast) return null
@@ -650,6 +657,7 @@ export default function App({ appId, token }) {
         manifest: item.manifest,
         raw_base: item.raw_base,
         token,
+        include_install_size: true,
       })
       setCapabilityReviews(prev => ({
         ...prev,
@@ -1390,6 +1398,20 @@ export default function App({ appId, token }) {
     () => catalog.filter(item => selectedItemIds.has(item.id)),
     [catalog, selectedItemIds],
   )
+  const selectedSizeValues = selectedItems.map(
+    item => capabilityReviews[item.id]?.preview?.estimated_install_bytes,
+  )
+  const selectedStorageReady = selectedItems.length > 0 && selectedSizeValues.every(Number.isFinite)
+  const selectedStorageBytes = selectedStorageReady
+    ? selectedSizeValues.reduce((sum, value) => sum + value, 0)
+    : null
+  const selectedAvailableBytes = selectedItems
+    .map(item => capabilityReviews[item.id]?.preview?.storage_budget?.available_bytes)
+    .filter(Number.isFinite)
+    .reduce((lowest, value) => Math.min(lowest, value), Infinity)
+  const selectedStorageFailed = selectedItems.some(
+    item => capabilityReviews[item.id]?.status === 'error',
+  )
 
   // Installed state can change while the Store remains open (another pane may
   // install an app). Keep the selection truthful instead of carrying a stale
@@ -1408,6 +1430,7 @@ export default function App({ appId, token }) {
   }, [batchMode, lifecycleById])
 
   const toggleBatchSelection = useCallback((item, action) => {
+    if (!selectedItemIds.has(item.id)) reviewCapabilities(item)
     setSelectedItemIds(current => {
       const next = new Set(current)
       if (next.has(item.id)) {
@@ -1419,7 +1442,7 @@ export default function App({ appId, token }) {
       }
       return next
     })
-  }, [batchMode])
+  }, [batchMode, reviewCapabilities, selectedItemIds])
 
   const clearBatchSelection = useCallback(() => {
     setSelectedItemIds(new Set())
@@ -1772,7 +1795,6 @@ export default function App({ appId, token }) {
                     items={visibleCatalog}
                     installed={installed}
                     updateChecks={updateChecks}
-                    onPick={(item) => item.manifest && openDetail(item)}
                     onRetry={retryCatalogItem}
                     onUpdate={handleCatalogUpdate}
                     onOpenInstalled={handleOpenInstalled}
@@ -1808,7 +1830,30 @@ export default function App({ appId, token }) {
 
       {tab === 'browse' && selectedItems.length > 0 && !batchReview ? (
         <div className="st-batch-bar" role="region" aria-label={`Batch ${batchMode} selection`}>
-          <div className="st-batch-count"><strong>{selectedItems.length}</strong> selected to {batchMode}</div>
+          <div className="st-batch-summary">
+            <div className="st-batch-icons" aria-hidden="true">
+              {selectedItems.slice(0, 6).map(item => {
+                const installedApp = lifecycleById.get(item.id)?.installedApp
+                const trayItem = installedApp
+                  ? { ...item, installed_icon_url: installedIconUrl(installedApp) }
+                  : item
+                return <span className="st-batch-thumb" key={item.id}><IconBox item={trayItem} token={token} /></span>
+              })}
+              {selectedItems.length > 6 ? <span className="st-batch-more">+{selectedItems.length - 6}</span> : null}
+            </div>
+            <div className="st-batch-count">
+              <strong>{selectedItems.length}</strong> selected to {batchMode}
+              <small>
+                {selectedStorageReady
+                  ? batchMode === 'uninstall'
+                    ? `0 B freed now · ~${formatStorageBytes(selectedStorageBytes)} package space after 7-day recovery`
+                    : `${formatStorageBytes(selectedStorageBytes)} to install${Number.isFinite(selectedAvailableBytes) ? ` · ${formatStorageBytes(selectedAvailableBytes)} available` : ''}`
+                  : selectedStorageFailed
+                  ? 'Storage estimate unavailable · review to retry'
+                  : 'Calculating storage impact…'}
+              </small>
+            </div>
+          </div>
           <button type="button" className="st-btn st-btn-ghost" onClick={clearBatchSelection} disabled={busy}>Clear</button>
           <button type="button" className="st-btn st-btn-primary" onClick={batchMode === 'uninstall' ? openBatchUninstall : openBatchReview} disabled={busy || !!installedLoadError}>Review selected</button>
         </div>

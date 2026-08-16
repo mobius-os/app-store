@@ -11,13 +11,10 @@ function cardVariantClass(variant) {
   return 'st-card'
 }
 
-// One catalog tile. The card is a non-interactive container; the open
-// affordance is a real <button class="st-card-open"> (the app name) whose
-// ::after overlay stretches over the card, and the action button is a
-// sibling — two cleanly-separated AT targets, no nested role=button. The
-// interactive lift (hover/focus) lives in CSS pseudo-classes via
-// .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
-// grid no longer rerenders a tile on every pointer move.
+// One catalog tile. When selectable, a full-surface aria-pressed button owns
+// bulk selection; the app name is its own <button class="st-card-name"> so
+// opening details stays reachable even while that overlay is present, and
+// the action button remains above both for single-app review/opening.
 export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, selected = false, selectionMode = null, currentAppId = null, onSelectionToggle }) {
   const m = item.manifest
 
@@ -84,6 +81,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   const isSelf = selectionAction === 'uninstall' && String(storeInstalled?.id) === String(currentAppId)
   const canSelect = !!selectionAction && !installedUnavailable && !busy
   const selectionDisabled = isSelf || (!!selectionMode && selectionMode !== selectionAction)
+  const selectionMuted = !!selectionMode && selectionMode !== selectionAction
   const showUpdateNotice = lifecycle.actionKind === 'resolve' &&
     updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
@@ -110,10 +108,8 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     onUpdate?.(item, { isUpdate: lifecycle.actionKind === 'update' })
   }
 
-  // The subtle hover/focus lift (translate + accent shadow/border) rides
-  // CSS pseudo-classes via .st-card:has(.st-card-open:hover/:focus-visible)
-  // — see the Card rules in CSS. The action button's variant + disabled
-  // styling ride is-* / :disabled, not inline objects.
+  // The action button's variant + disabled styling rides is-* / :disabled;
+  // the tile surface owns selection hover/focus independently.
   const cardActionClass = cardVariant === 'update'
     ? 'st-card-action is-update'
     : cardVariant === 'conflict'
@@ -131,25 +127,21 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     ? { ...item, installed_icon_url: installedIconUrl(storeInstalled) }
     : item
   const description = catalogCardDescription(item)
-  // The card is a non-interactive container. Two cleanly-separated AT
-  // targets sit inside it: the app name is a real <button> whose ::after
-  // overlay stretches across the whole card to open details (so the icon /
-  // description region is still tappable), and the action button rides a
-  // z-index layer above that overlay so it stays independently clickable.
-  // No nested role=button, no stopPropagation gymnastics.
+  const selectionLabel = isSelf
+    ? `${m.name} cannot be included in a batch uninstall`
+    : `${selected ? 'Unselect' : 'Select'} ${m.name} to ${selectionAction}`
   return (
-    <div className={`${cardVariantClass(cardVariant)}${selected ? ' is-selected' : ''}${selectionDisabled ? ' is-selection-disabled' : ''}`}>
+    <div className={`${cardVariantClass(cardVariant)}${selected ? ' is-selected' : ''}${selectionMuted ? ' is-selection-disabled' : ''}`}>
       {canSelect ? (
-        <label className="st-card-select" title={isSelf ? 'The App Store must be uninstalled on its own' : `Select ${m.name} to ${selectionAction}`}>
-          <input
-            type="checkbox"
-            checked={selected}
-            disabled={selectionDisabled}
-            onChange={() => onSelectionToggle?.(item, selectionAction)}
-            aria-label={isSelf ? `${m.name} cannot be included in a batch uninstall` : `Select ${m.name} to ${selectionAction}`}
-          />
-          <span aria-hidden="true">✓</span>
-        </label>
+        <button
+          type="button"
+          className="st-card-selection"
+          aria-pressed={selected}
+          aria-label={selectionLabel}
+          title={isSelf ? 'The App Store must be uninstalled on its own' : selectionLabel}
+          disabled={selectionDisabled}
+          onClick={() => onSelectionToggle?.(item, selectionAction)}
+        />
       ) : null}
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
@@ -163,7 +155,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       </div>
       <button
         type="button"
-        className="st-card-open"
+        className="st-card-name"
         onClick={() => onPick(item)}
         aria-label={`${m.name} — open details`}
       >

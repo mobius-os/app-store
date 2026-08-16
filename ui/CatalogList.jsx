@@ -38,7 +38,6 @@ export function CatalogList({
   items,
   installed,
   updateChecks,
-  onPick,
   onRetry,
   onUpdate,
   onOpenInstalled,
@@ -78,7 +77,6 @@ export function CatalogList({
       item={item}
       installed={installed}
       updateChecks={updateChecks}
-      onPick={onPick}
       onRetry={onRetry}
       onUpdate={onUpdate}
       onOpenInstalled={onOpenInstalled}

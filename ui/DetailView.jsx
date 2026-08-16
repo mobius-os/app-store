@@ -28,6 +28,12 @@ function checkedAtText(value) {
   })
 }
 
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return null
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+}
+
 export function DetailView({ item, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
@@ -93,6 +99,8 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
   const releaseSummary = storeInstalled && installedVer && installedVer !== m.version
     ? `Installed label v${installedVer} · catalog label v${m.version}`
     : `Version label v${m.version}`
+  const installSize = formatBytes(capabilityReview?.preview?.estimated_install_bytes)
+  const installSpace = formatBytes(capabilityReview?.preview?.storage_budget?.available_bytes)
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
@@ -242,6 +250,19 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
                 isInstalled={!!storeInstalled}
               />
             </div>
+
+            {installSize && (
+              <div className="st-technical-section">
+                <div className="st-section-label">Storage</div>
+                <div className="st-esm-note">
+                  Estimated install size: <strong>{installSize}</strong>
+                  {installSpace && (
+                    <div className="st-esm-dep-list">Space available for app installs: {installSpace}</div>
+                  )}
+                  <div className="st-esm-dep-list">Includes the editable app source, compiled app, and repository overhead.</div>
+                </div>
+              </div>
+            )}
 
             {m.runtime?.esm_deps?.length > 0 && (
               <div className="st-technical-section">

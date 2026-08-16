@@ -350,11 +350,8 @@ export const CSS = `
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 16px;
 }
-/* The card is a non-interactive container (not role=button). The open
-   affordance is a real <button class="st-card-open"> whose ::after overlay
-   stretches across the whole card, so hover/focus on it lifts the card and
-   a click anywhere outside the action button opens details. The action
-   button rides z-index:1 above that overlay. */
+/* The tile surface is the selection control; its explicit action button stays
+   above that surface so single-app review remains independent. */
 .st-card {
   position: relative;
   display: flex; flex-direction: column;
@@ -368,8 +365,9 @@ export const CSS = `
   touch-action: manipulation; user-select: none;
 }
 .st-card.is-update {
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  border-color: var(--accent);
+  background: color-mix(in srgb, #d97706 9%, var(--surface));
+  border-color: color-mix(in srgb, #d97706 72%, var(--border));
+  box-shadow: inset 0 4px 0 #d97706;
 }
 .st-card.is-conflict {
   background: color-mix(in srgb, var(--danger, #e5484d) 8%, var(--surface));
@@ -391,68 +389,61 @@ export const CSS = `
   background: color-mix(in srgb, var(--accent) 9%, var(--surface));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
 }
-.st-card-select {
-  position: absolute; z-index: 3; top: 4px; right: 4px;
-  width: 44px; height: 44px; border-radius: 999px;
-  display: grid; place-items: center;
-  cursor: pointer; touch-action: manipulation;
+.st-card.is-update.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  box-shadow:
+    inset 0 4px 0 #d97706,
+    0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
 }
-.st-card-select input {
-  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
-  opacity: 0; cursor: pointer;
+.st-card-selection {
+  position: absolute; inset: 0; z-index: 1;
+  width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit;
+  background: transparent; cursor: pointer; touch-action: manipulation;
 }
-.st-card-select span {
-  width: 24px; height: 24px; border-radius: 7px;
-  display: grid; place-items: center;
-  border: 1px solid color-mix(in srgb, var(--text) 34%, var(--border));
-  background: var(--surface); color: transparent;
-  font-size: 14px; font-weight: 800; line-height: 1;
-  box-shadow: 0 1px 3px rgba(0,0,0,.12);
-}
-.st-card-select input:checked + span {
-  background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
-}
-.st-card-select input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* The app name is the card's open affordance. Its ::after overlay covers
-   the whole card so the icon / name / description all open details. */
-.st-card-open {
-  position: static;
-  border: 0; background: transparent; padding: 0; margin: 0 0 4px;
-  font-family: var(--font); color: var(--text);
+.st-card-selection:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-card-name {
+  position: relative; z-index: 2;
+  margin: 0 0 4px;
+  width: 100%;
+  padding: 0; border: 0; background: transparent;
+  color: var(--text); text-align: left; font: inherit; cursor: pointer;
   font-size: 14px; font-weight: 600; line-height: 1.25;
-  cursor: pointer;
   min-height: 44px;
   align-items: flex-start;
   display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;
-  touch-action: manipulation; user-select: none;
 }
+.st-card-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .st-sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
-.st-card-open::after {
-  content: ""; position: absolute; inset: 0; border-radius: inherit;
-}
-.st-card-open:focus-visible { outline: none; }
-.st-card-open:focus-visible::after {
-  outline: 2px solid var(--accent); outline-offset: 2px;
-}
 /* Interaction lift — gated on hover:hover so touch devices don't get stuck hover states. */
 @media (hover: hover) {
-  .st-card:has(.st-card-open:hover) {
+  .st-card:has(.st-card-selection:hover) {
     transform: translateY(-1px);
     box-shadow: 0 4px 8px color-mix(in srgb, var(--accent) 14%, transparent);
     border-color: var(--accent);
   }
+  .st-card.is-update:has(.st-card-selection:hover) {
+    box-shadow:
+      inset 0 4px 0 #d97706,
+      0 4px 8px color-mix(in srgb, #d97706 18%, transparent);
+  }
 }
-.st-card:has(.st-card-open:focus-visible) {
+.st-card:has(.st-card-selection:focus-visible) {
   transform: translateY(-1px);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
   border-color: var(--accent);
 }
+.st-card.is-update:has(.st-card-selection:focus-visible) {
+  box-shadow:
+    inset 0 4px 0 #d97706,
+    0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
+}
 @media (prefers-reduced-motion: no-preference) {
-  .st-card:has(.st-card-open:active) { transform: scale(0.98); opacity: 0.9; }
+  .st-card:has(.st-card-selection:active) { transform: scale(0.98); opacity: 0.9; }
 }
 /* Icons float on the card with no tile or border — clean transparent
    presentation. Almost every catalog repo ships a transparent glossy-3D PNG
@@ -506,12 +497,6 @@ export const CSS = `
   font-size: 12px; font-weight: 700; line-height: 1;
 }
 .st-installed-dot-inner.is-update { background: var(--accent); }
-.st-card-name {
-  font-size: 14px; font-weight: 600; line-height: 1.25;
-  margin-bottom: 4px;
-  display: -webkit-box; -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical; overflow: hidden;
-}
 .st-card-state-row {
   width: 100%;
   min-height: 20px;
@@ -551,11 +536,11 @@ export const CSS = `
 }
 /* Top-border separator between the description and the one card action.
    Each card reads as exactly one state/action: Install, Installed, or Update.
-   z-index:1 lifts the action above the .st-card-open ::after overlay so it
+   z-index lifts the action above the selection surface so it
    stays independently clickable. */
 .st-card-status-row {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: 100%;
   padding-top: 8px;
   border-top: 1px solid var(--border);
@@ -1327,8 +1312,23 @@ export const CSS = `
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   box-shadow: 0 -5px 18px rgba(0,0,0,.12);
 }
+.st-batch-summary { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.st-batch-icons { flex: 0 0 auto; display: flex; align-items: center; padding-left: 5px; }
+.st-batch-thumb, .st-batch-more {
+  width: 34px; height: 34px; margin-left: -5px; border-radius: 10px;
+  display: grid; place-items: center; overflow: hidden;
+  border: 2px solid var(--surface); background: var(--surface2, var(--surface));
+  box-shadow: 0 1px 4px rgba(0,0,0,.16);
+}
+.st-batch-thumb .st-icon-wrap { width: 30px; height: 30px; border-radius: 8px; }
+.st-batch-thumb .st-icon-letter { font-size: 13px; }
+.st-batch-more { color: var(--muted); font-size: 11px; font-weight: 700; }
 .st-batch-count { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
 .st-batch-count strong { color: var(--text); font-size: 16px; }
+.st-batch-count small {
+  display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--muted); font-size: 11px;
+}
 .st-batch-scrim {
   position: absolute; inset: 0; z-index: 130;
   display: grid; place-items: center;
@@ -1412,13 +1412,15 @@ export const CSS = `
 @keyframes st-progress-slide { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
 @media (prefers-reduced-motion: reduce) { .st-item-progress.is-active span { width: 100%; animation: none; } }
 .st-card.is-selection-disabled { opacity: .5; filter: grayscale(.5); }
-.st-card-select input:disabled + span { cursor: not-allowed; }
+.st-card-selection:disabled { cursor: not-allowed; }
 @media (max-width: 520px) {
   .st-batch-scrim { padding: 0; place-items: end stretch; }
   .st-batch-review { width: 100%; max-height: 92%; border-radius: 18px 18px 0 0; }
   .st-batch-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .st-batch-actions .st-btn-primary { grid-column: 1 / -1; order: -1; }
   .st-batch-bar .st-btn { padding-inline: 12px; }
+  .st-batch-icons { max-width: 112px; overflow: hidden; }
+  .st-batch-count small { white-space: normal; line-height: 1.25; }
 }
 .st-btn-danger { background: var(--danger); border-color: var(--danger); color: var(--accent-fg); }
 .st-btn-icon { width: 44px; padding: 0; border-radius: 8px; font-size: 18px; }
