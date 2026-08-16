@@ -12,7 +12,7 @@
 // Only App lives here: it owns top-level catalog/install/navigation state and
 // mounts the browse grid, From URL tab, detail view, modal, banner, and toast.
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
-import { CATALOG, CATALOG_URL } from './constants.js'
+import { CATALOG, CATALOG_URL, PACKAGE_METADATA_URL } from './constants.js'
 import { CSS } from './theme.js'
 import {
   buildCleanMergeReviewMessage,
@@ -39,7 +39,10 @@ import {
   createAppChat,
   createConflictResolverChat,
   fetchCatalog,
+  fetchInstallBudget,
+  fetchInstalledFootprint,
   fetchManifest,
+  fetchPackageMetadata,
   fetchUpdateCheck,
   hasConnectedProvider,
   installApp,
@@ -122,6 +125,14 @@ function formatStorageBytes(bytes) {
   if (!Number.isFinite(bytes)) return null
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
   return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+}
+
+function packageFootprintFor(item) {
+  const footprint = item?.package_footprint || item?.manifest?.package_footprint
+  if (!footprint || footprint.schema !== 1) return null
+  const manifestVersion = item?.manifest?.version
+  if (manifestVersion && footprint.version !== manifestVersion) return null
+  return Number.isFinite(footprint.estimated_install_bytes) ? footprint : null
 }
 
 function Toast({ toast, onDismiss }) {
@@ -271,6 +282,10 @@ export default function App({ appId, token }) {
   const catalogRef = useRef(catalog)
   useEffect(() => { catalogRef.current = catalog }, [catalog])
   const [installed, setInstalled] = useState([])
+  // Recently completed batch install/uninstall results, keyed by app id — lets
+  // the just-finished tile show its landed version without waiting on the next
+  // full installed-apps refresh.
+  const [installedVersions, setInstalledVersions] = useState({})
   // Git-native update state per installed app, keyed by numeric app id. Each
   // answered check carries availability and the pending resolution/replay
   // phase; a missing/null answer is unknown and never becomes a version-based
@@ -281,6 +296,10 @@ export default function App({ appId, token }) {
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
   const [capabilityReviews, setCapabilityReviews] = useState({})
+  const [installedFootprints, setInstalledFootprints] = useState({})
+  const [installBudget, setInstallBudget] = useState(null)
+  const capabilityReviewPromisesRef = useRef(new Map())
+  const footprintPromisesRef = useRef(new Map())
   const navDetailRef = useRef(null)  // pending detail item during nav-push ack
   // B1: preserve the catalog grid's scroll across opening a detail and coming
   // back — the grid unmounts while a detail shows, so it would otherwise
@@ -314,7 +333,7 @@ export default function App({ appId, token }) {
   const [cardErrors, setCardErrors] = useState({})
   const [selectedItemIds, setSelectedItemIds] = useState(() => new Set())
   const [batchMode, setBatchMode] = useState(null)
-  const [batchReview, setBatchReview] = useState(null)
+  const [batchInstallReview, setBatchInstallReview] = useState(null)
   const [batchUninstall, setBatchUninstall] = useState(null)
   // A complete baked snapshot is usable on the very first render. Installed
   // state and the remote registry hydrate independently; neither should make a
@@ -373,7 +392,9 @@ export default function App({ appId, token }) {
         // the only work that can delay the initial cards.
         const remoteCatalogPromise = fetchCatalog(CATALOG_URL, token)
           .catch(() => null)
-        const [installedResult, nextProviderStatus] = await Promise.all([
+        const packageMetadataPromise = fetchPackageMetadata(PACKAGE_METADATA_URL, token)
+          .catch(() => null)
+        const [installedResult, nextProviderStatus, nextInstallBudget] = await Promise.all([
           loadInstalledApps(token)
             .then((apps) => ({ apps, error: '' }))
             .catch((err) => ({
@@ -381,6 +402,7 @@ export default function App({ appId, token }) {
               error: err?.message || 'Installed apps could not be loaded.',
             })),
           loadProviderStatus(token),
+          fetchInstallBudget(token).catch(() => null),
         ])
         if (cancelled) return
         const apps = installedResult.apps || []
@@ -393,6 +415,7 @@ export default function App({ appId, token }) {
         setSetupCompletions(readSetupCompletions())
         setSystemSetupComplete(readSystemSetupReady())
         if (nextProviderStatus) setProviderStatus(nextProviderStatus)
+        if (nextInstallBudget) setInstallBudget(nextInstallBudget)
         if (CATALOG.every((entry) => entry.manifest)) {
           setLoadingCatalog(false)
         }
@@ -405,8 +428,16 @@ export default function App({ appId, token }) {
         // appear without a store-app redeploy — appending it to catalog.json on
         // main is enough. On fetch failure /
         // empty result, the baked CATALOG carries the store untouched.
-        const remote = await remoteCatalogPromise
-        const entries = mergeCatalogEntries(CATALOG, remote)
+        const [remote, packageMetadata] = await Promise.all([
+          remoteCatalogPromise,
+          packageMetadataPromise,
+        ])
+        let entries = mergeCatalogEntries(CATALOG, remote)
+        if (packageMetadata) {
+          entries = entries.map(entry => packageMetadata[entry.id]
+            ? { ...entry, package_footprint: packageMetadata[entry.id] }
+            : entry)
+        }
         if (cancelled) return
         // A baked manifest gives every discovery card a fast first paint, but
         // it must not freeze an installed app at the last Store release. Fetch
@@ -646,33 +677,77 @@ export default function App({ appId, token }) {
   }, [])
 
   const reviewCapabilities = useCallback(async (item) => {
-    if (!item?.id) return
+    if (!item?.id) return null
+    const pending = capabilityReviewPromisesRef.current.get(item.id)
+    if (pending) return await pending
     setCapabilityReviews(prev => ({
       ...prev,
       [item.id]: { status: 'loading', preview: null, error: '' },
     }))
-    try {
-      const preview = await previewApp({
-        manifest_url: item.manifest_url,
-        manifest: item.manifest,
-        raw_base: item.raw_base,
-        token,
-        include_install_size: true,
-      })
-      setCapabilityReviews(prev => ({
-        ...prev,
-        [item.id]: { status: 'ready', preview, error: '' },
-      }))
-    } catch (error) {
-      setCapabilityReviews(prev => ({
-        ...prev,
-        [item.id]: {
+    const request = (async () => {
+      let result
+      try {
+        const preview = await previewApp({
+          manifest_url: item.manifest_url,
+          manifest: item.manifest,
+          raw_base: item.raw_base,
+          token,
+          include_install_size: true,
+        })
+        result = { status: 'ready', preview, error: '' }
+      } catch (error) {
+        result = {
           status: 'error', preview: null,
           error: error.message || 'Capabilities could not be checked.',
-        },
-      }))
+        }
+      }
+      setCapabilityReviews(prev => ({ ...prev, [item.id]: result }))
+      return result
+    })()
+    capabilityReviewPromisesRef.current.set(item.id, request)
+    try {
+      return await request
+    } finally {
+      if (capabilityReviewPromisesRef.current.get(item.id) === request) {
+        capabilityReviewPromisesRef.current.delete(item.id)
+      }
     }
   }, [token])
+
+  const loadInstalledFootprint = useCallback(async (installedApp) => {
+    if (!installedApp?.id) return null
+    const key = String(installedApp.id)
+    const cached = installedFootprints[key]
+    if (cached?.status === 'ready') return cached
+    const pending = footprintPromisesRef.current.get(key)
+    if (pending) return await pending
+    setInstalledFootprints(prev => ({
+      ...prev,
+      [key]: { status: 'loading', bytes: null, error: '' },
+    }))
+    const request = (async () => {
+      let result
+      try {
+        const footprint = await fetchInstalledFootprint(installedApp.id, token)
+        result = { status: 'ready', bytes: footprint.bytes, error: '' }
+      } catch (error) {
+        result = {
+          status: 'error', bytes: null,
+          error: error.message || 'Installed app size could not be measured.',
+        }
+      }
+      setInstalledFootprints(prev => ({ ...prev, [key]: result }))
+      return result
+    })()
+    footprintPromisesRef.current.set(key, request)
+    try {
+      return await request
+    } finally {
+      if (footprintPromisesRef.current.get(key) === request) {
+        footprintPromisesRef.current.delete(key)
+      }
+    }
+  }, [installedFootprints, token])
 
   // Installs run inline from DetailView; updates reach this only after the
   // candidate-diff review's explicit Apply action. `busy` keeps the initiating
@@ -1398,20 +1473,33 @@ export default function App({ appId, token }) {
     () => catalog.filter(item => selectedItemIds.has(item.id)),
     [catalog, selectedItemIds],
   )
-  const selectedSizeValues = selectedItems.map(
-    item => capabilityReviews[item.id]?.preview?.estimated_install_bytes,
-  )
+  const selectedSizeValues = selectedItems.map(item => {
+    if (batchMode !== 'uninstall') {
+      return packageFootprintFor(item)?.estimated_install_bytes ??
+        capabilityReviews[item.id]?.preview?.estimated_install_bytes
+    }
+    const installedApp = lifecycleById.get(item.id)?.installedApp
+    return installedFootprints[String(installedApp?.id)]?.bytes
+  })
   const selectedStorageReady = selectedItems.length > 0 && selectedSizeValues.every(Number.isFinite)
   const selectedStorageBytes = selectedStorageReady
     ? selectedSizeValues.reduce((sum, value) => sum + value, 0)
     : null
-  const selectedAvailableBytes = selectedItems
+  const reviewedAvailableBytes = selectedItems
     .map(item => capabilityReviews[item.id]?.preview?.storage_budget?.available_bytes)
     .filter(Number.isFinite)
     .reduce((lowest, value) => Math.min(lowest, value), Infinity)
-  const selectedStorageFailed = selectedItems.some(
-    item => capabilityReviews[item.id]?.status === 'error',
-  )
+  const selectedAvailableBytes = Number.isFinite(installBudget?.available_bytes)
+    ? installBudget.available_bytes
+    : reviewedAvailableBytes
+  const selectionOverQuota = batchMode === 'install' &&
+    selectedStorageReady && Number.isFinite(selectedAvailableBytes) &&
+    selectedStorageBytes > selectedAvailableBytes
+  const selectedStorageFailed = selectedItems.some(item => {
+    if (batchMode !== 'uninstall') return capabilityReviews[item.id]?.status === 'error'
+    const installedApp = lifecycleById.get(item.id)?.installedApp
+    return installedFootprints[String(installedApp?.id)]?.status === 'error'
+  })
 
   // Installed state can change while the Store remains open (another pane may
   // install an app). Keep the selection truthful instead of carrying a stale
@@ -1430,7 +1518,13 @@ export default function App({ appId, token }) {
   }, [batchMode, lifecycleById])
 
   const toggleBatchSelection = useCallback((item, action) => {
-    if (!selectedItemIds.has(item.id)) reviewCapabilities(item)
+    if (!selectedItemIds.has(item.id)) {
+      if (action === 'uninstall') {
+        loadInstalledFootprint(lifecycleById.get(item.id)?.installedApp)
+      } else if (!packageFootprintFor(item)) {
+        reviewCapabilities(item)
+      }
+    }
     setSelectedItemIds(current => {
       const next = new Set(current)
       if (next.has(item.id)) {
@@ -1442,7 +1536,7 @@ export default function App({ appId, token }) {
       }
       return next
     })
-  }, [batchMode, reviewCapabilities, selectedItemIds])
+  }, [batchMode, lifecycleById, loadInstalledFootprint, reviewCapabilities, selectedItemIds])
 
   const clearBatchSelection = useCallback(() => {
     setSelectedItemIds(new Set())
@@ -1451,33 +1545,33 @@ export default function App({ appId, token }) {
 
   const loadBatchReviews = useCallback(async (items) => {
     const rows = await mapWithConcurrency(items, 4, async item => {
-      try {
-        const preview = await previewApp({
-          manifest_url: item.manifest_url,
-          manifest: item.manifest,
-          raw_base: item.raw_base,
-          token,
-          include_install_size: true,
-        })
-        return [item.id, { status: 'ready', preview, error: '' }]
-      } catch (error) {
-        return [item.id, {
-          status: 'error',
-          preview: null,
-          error: error.message || 'Capabilities could not be checked.',
-        }]
-      }
+      return [item.id, await reviewCapabilities(item)]
     })
     return Object.fromEntries(rows)
-  }, [token])
+  }, [reviewCapabilities])
 
   const openBatchReview = useCallback(async () => {
     const items = selectedItems.filter(item => lifecycleById.get(item.id)?.actionKind === 'install')
     if (!items.length || busy || installedLoadError) return
-    setBatchReview({ phase: 'loading', items, reviews: {}, results: {} })
-    const reviews = await loadBatchReviews(items)
-    setBatchReview(current => current ? { ...current, phase: 'ready', reviews } : current)
-  }, [busy, installedLoadError, lifecycleById, loadBatchReviews, selectedItems, token])
+    const cachedReviews = Object.fromEntries(items.flatMap(item => {
+      const review = capabilityReviews[item.id]
+      return review?.status === 'ready' ? [[item.id, review]] : []
+    }))
+    const missing = items.filter(item => !cachedReviews[item.id])
+    setBatchInstallReview({
+      phase: missing.length ? 'loading' : 'ready',
+      items,
+      reviews: cachedReviews,
+      results: {},
+    })
+    if (!missing.length) return
+    const loaded = await loadBatchReviews(missing)
+    setBatchInstallReview(current => current ? {
+      ...current,
+      phase: 'ready',
+      reviews: { ...current.reviews, ...loaded },
+    } : current)
+  }, [busy, capabilityReviews, installedLoadError, lifecycleById, loadBatchReviews, selectedItems])
 
   const openBatchUninstall = useCallback(() => {
     const items = selectedItems.filter(item => {
@@ -1495,7 +1589,7 @@ export default function App({ appId, token }) {
       if (next.size === 0) setBatchMode(null)
       return next
     })
-    setBatchReview(current => {
+    setBatchInstallReview(current => {
       if (!current || current.phase !== 'ready') return current
       const items = current.items.filter(item => item.id !== itemId)
       return items.length ? { ...current, items } : null
@@ -1503,28 +1597,28 @@ export default function App({ appId, token }) {
   }, [])
 
   const retryBatchReviews = useCallback(async () => {
-    if (!batchReview || batchReview.phase === 'installing') return
-    const items = batchReview.items
-    setBatchReview(current => current ? { ...current, phase: 'loading' } : current)
+    if (!batchInstallReview || batchInstallReview.phase === 'installing') return
+    const items = batchInstallReview.items
+    setBatchInstallReview(current => current ? { ...current, phase: 'loading' } : current)
     const reviews = await loadBatchReviews(items)
-    setBatchReview(current => current ? { ...current, phase: 'ready', reviews, results: {} } : current)
-  }, [batchReview, loadBatchReviews])
+    setBatchInstallReview(current => current ? { ...current, phase: 'ready', reviews, results: {} } : current)
+  }, [batchInstallReview, loadBatchReviews])
 
   const approveBatchInstall = useCallback(async () => {
-    if (!batchReview || busy || batchReview.phase !== 'ready') return
-    const approved = batchReview.items.every(item => batchReview.reviews[item.id]?.preview?.capability_digest)
-    const selectedBytes = batchReview.items.reduce((sum, item) => sum + (batchReview.reviews[item.id]?.preview?.estimated_install_bytes || 0), 0)
-    const availableBytes = batchReview.items.reduce((lowest, item) => Math.min(lowest, batchReview.reviews[item.id]?.preview?.storage_budget?.available_bytes ?? Infinity), Infinity)
+    if (!batchInstallReview || busy || batchInstallReview.phase !== 'ready') return
+    const approved = batchInstallReview.items.every(item => batchInstallReview.reviews[item.id]?.preview?.capability_digest)
+    const selectedBytes = batchInstallReview.items.reduce((sum, item) => sum + (batchInstallReview.reviews[item.id]?.preview?.estimated_install_bytes || 0), 0)
+    const availableBytes = batchInstallReview.items.reduce((lowest, item) => Math.min(lowest, batchInstallReview.reviews[item.id]?.preview?.storage_budget?.available_bytes ?? Infinity), Infinity)
     if (!approved || !Number.isFinite(availableBytes) || selectedBytes > availableBytes) return
     setBusy(true)
     setBusyActionKind('install')
-    setBatchReview(current => ({ ...current, phase: 'installing', results: {} }))
+    setBatchInstallReview(current => ({ ...current, phase: 'installing', results: {} }))
     const results = {}
     const nextVersions = { ...installedVersions }
     const installedIds = []
-    for (const [itemIndex, item] of batchReview.items.entries()) {
+    for (const [itemIndex, item] of batchInstallReview.items.entries()) {
       setBusyItemId(item.id)
-      setBatchReview(current => ({
+      setBatchInstallReview(current => ({
         ...current,
         currentItemId: item.id,
         currentItemIndex: itemIndex,
@@ -1536,7 +1630,7 @@ export default function App({ appId, token }) {
           manifest: item.manifest,
           raw_base: item.raw_base,
           token,
-          reviewed_capability_digest: batchReview.reviews[item.id].preview.capability_digest,
+          reviewed_capability_digest: batchInstallReview.reviews[item.id].preview.capability_digest,
         })
         results[item.id] = { status: 'installed', result }
         installedIds.push(item.id)
@@ -1550,7 +1644,7 @@ export default function App({ appId, token }) {
       } catch (error) {
         results[item.id] = { status: 'error', error: error.message || 'Installation failed.' }
       }
-      setBatchReview(current => ({ ...current, results: { ...results } }))
+      setBatchInstallReview(current => ({ ...current, results: { ...results } }))
     }
     setInstalledVersions(nextVersions)
     let receiptWarning = ''
@@ -1568,7 +1662,7 @@ export default function App({ appId, token }) {
       installedIds.forEach(id => next.delete(id))
       return next
     })
-    setBatchReview(current => ({
+    setBatchInstallReview(current => ({
       ...current,
       phase: 'done',
       currentItemId: null,
@@ -1587,7 +1681,7 @@ export default function App({ appId, token }) {
         ? `${installedIds.length} installed. ${receiptWarning}`
         : `${installedIds.length} ${installedIds.length === 1 ? 'app' : 'apps'} installed.`,
     })
-  }, [appId, batchReview, busy, installedVersions, refreshInstalled, token])
+  }, [appId, batchInstallReview, busy, installedVersions, refreshInstalled, token])
 
   const confirmBatchUninstall = useCallback(async () => {
     if (!batchUninstall || batchUninstall.phase !== 'ready' || busy) return
@@ -1682,6 +1776,7 @@ export default function App({ appId, token }) {
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}
           systemSetupReady={systemSetupReady}
+          installBudget={installBudget}
         />
         {pendingUninstall && (
           <UninstallConfirmModal
@@ -1819,6 +1914,7 @@ export default function App({ appId, token }) {
                     selectionMode={batchMode}
                     currentAppId={appId}
                     onSelectionToggle={toggleBatchSelection}
+                    selectionOverQuota={selectionOverQuota}
                   />
                 </>}
           </>
@@ -1828,7 +1924,7 @@ export default function App({ appId, token }) {
         )}
       </div>
 
-      {tab === 'browse' && selectedItems.length > 0 && !batchReview ? (
+      {tab === 'browse' && selectedItems.length > 0 && !batchInstallReview ? (
         <div className="st-batch-bar" role="region" aria-label={`Batch ${batchMode} selection`}>
           <div className="st-batch-summary">
             <div className="st-batch-icons" aria-hidden="true">
@@ -1855,7 +1951,7 @@ export default function App({ appId, token }) {
             </div>
           </div>
           <button type="button" className="st-btn st-btn-ghost" onClick={clearBatchSelection} disabled={busy}>Clear</button>
-          <button type="button" className="st-btn st-btn-primary" onClick={batchMode === 'uninstall' ? openBatchUninstall : openBatchReview} disabled={busy || !!installedLoadError}>Review selected</button>
+          <button type="button" className="st-btn st-btn-primary" onClick={batchMode === 'uninstall' ? openBatchUninstall : openBatchReview} disabled={busy || !!installedLoadError || selectionOverQuota}>{selectionOverQuota ? 'Storage quota exceeded' : 'Review selected'}</button>
         </div>
       ) : null}
 
@@ -1880,11 +1976,11 @@ export default function App({ appId, token }) {
           onReviewWithAgent={handleAgentUpdateReview}
         />
       )}
-      {batchReview && (
+      {batchInstallReview && (
         <BatchInstallModal
-          review={batchReview}
+          review={batchInstallReview}
           token={token}
-          onClose={() => setBatchReview(null)}
+          onClose={() => setBatchInstallReview(null)}
           onRetry={retryBatchReviews}
           onApprove={approveBatchInstall}
           onRemove={removeBatchReviewItem}

@@ -14,6 +14,8 @@ export const CATALOG = CATALOG_REGISTRY.apps.map((entry) => ({
 // floor; the remote copy may be newer but never defines a second schema.
 export const CATALOG_URL =
   'https://raw.githubusercontent.com/mobius-os/app-store/main/catalog.json'
+export const PACKAGE_METADATA_URL =
+  'https://raw.githubusercontent.com/mobius-os/app-store/main/package-metadata.json'
 
 // Human-facing release label for diagnostics. The Store's self-update banner
 // uses verified source provenance, not this value, to decide availability.

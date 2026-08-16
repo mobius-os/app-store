@@ -2,7 +2,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.mjs",
-    "refresh-catalog": "node scripts/refresh-manifest-snapshots.mjs"
+    "refresh-catalog": "node scripts/refresh-manifest-snapshots.mjs",
+    "verify:package-metadata": "node scripts/refresh-manifest-snapshots.mjs && git diff --exit-code -- package-metadata.json manifest-snapshots.js"
   },
   "devDependencies": {}
 }

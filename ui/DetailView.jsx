@@ -34,7 +34,7 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
 }
 
-export function DetailView({ item, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, installBudget = null }) {
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const lifecycle = appLifecycleFor(reviewedItem, {
@@ -99,8 +99,13 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
   const releaseSummary = storeInstalled && installedVer && installedVer !== m.version
     ? `Installed label v${installedVer} · catalog label v${m.version}`
     : `Version label v${m.version}`
-  const installSize = formatBytes(capabilityReview?.preview?.estimated_install_bytes)
-  const installSpace = formatBytes(capabilityReview?.preview?.storage_budget?.available_bytes)
+  const packageFootprint = item.package_footprint || m.package_footprint
+  const installSize = formatBytes(
+    capabilityReview?.preview?.estimated_install_bytes ?? packageFootprint?.estimated_install_bytes,
+  )
+  const installSpace = formatBytes(
+    capabilityReview?.preview?.storage_budget?.available_bytes ?? installBudget?.available_bytes,
+  )
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled

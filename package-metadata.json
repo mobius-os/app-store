@@ -1,0 +1,159 @@
+{
+  "schema": 1,
+  "apps": {
+    "voice": {
+      "schema": 1,
+      "version": "1.12.8",
+      "payload_bytes": 4559867,
+      "estimated_install_bytes": 14466033,
+      "content_sha256": "ba940aa5cc32d2038201ef1731210d84f3dc25c7bbd3fdc88936d3166f2b0fc9"
+    },
+    "memory": {
+      "schema": 1,
+      "version": "2.3.7",
+      "payload_bytes": 631911,
+      "estimated_install_bytes": 2682165,
+      "content_sha256": "0bd02aaf7c98d0ae28eec809cd298a2852cc4689485c13a912ffbe527125420f"
+    },
+    "connections": {
+      "schema": 1,
+      "version": "0.4.0",
+      "payload_bytes": 523611,
+      "estimated_install_bytes": 2357265,
+      "content_sha256": "172e7518a130aec3321a2aba2be8b1380bdb1074f61be847429b03727cb76cc8"
+    },
+    "reflection": {
+      "schema": 1,
+      "version": "2.8.19",
+      "payload_bytes": 611106,
+      "estimated_install_bytes": 2619750,
+      "content_sha256": "7525382978840d6c829a303776074d0770dc5a242a53986ed2d7bf058f04d709"
+    },
+    "subagents": {
+      "schema": 1,
+      "version": "0.4.3",
+      "payload_bytes": 215063,
+      "estimated_install_bytes": 1431621,
+      "content_sha256": "264cd8ce8f15df4fd8dff85b1387a93d0efdff3b1eed714d6c8dd65256c35236"
+    },
+    "workflows": {
+      "schema": 1,
+      "version": "2.3.4",
+      "payload_bytes": 550465,
+      "estimated_install_bytes": 2437827,
+      "content_sha256": "f9da9b7f9fd5b1f0dcd4b47cb2f3667e87ee19e95ce51df2e26fa7a788c4077a"
+    },
+    "skills": {
+      "schema": 1,
+      "version": "2.2.2",
+      "payload_bytes": 365850,
+      "estimated_install_bytes": 1883982,
+      "content_sha256": "3a3593901c10fa4dd985c15976f124cac0a1006e069ddf8b7d64f8e648ab1e1c"
+    },
+    "artifacts": {
+      "schema": 1,
+      "version": "0.6.2",
+      "payload_bytes": 495226,
+      "estimated_install_bytes": 2272110,
+      "content_sha256": "fdc308bf4a03fe15afb94a8a2544b7a3b0fe40b67c022fe9326b2fe58c89a7a1"
+    },
+    "maps": {
+      "schema": 1,
+      "version": "0.2.2",
+      "payload_bytes": 459129,
+      "estimated_install_bytes": 2163819,
+      "content_sha256": "e2534602a95366af029c0556b60d1b3b29099e353029b8ca4c18779f75de599a"
+    },
+    "tasks": {
+      "schema": 1,
+      "version": "1.0.11",
+      "payload_bytes": 273880,
+      "estimated_install_bytes": 1608072,
+      "content_sha256": "61657b257f4852dbb0c22f82a7b5cd770b26e7d5c02e606d000ec844d6260cad"
+    },
+    "contribute": {
+      "schema": 1,
+      "version": "0.5.27",
+      "payload_bytes": 668816,
+      "estimated_install_bytes": 2792880,
+      "content_sha256": "0e1d1fb79f0fcd32e35ba7ac37da0ec3a9afd7d6d5a2967de8f92c1654e13935"
+    },
+    "notes": {
+      "schema": 1,
+      "version": "1.2.35",
+      "payload_bytes": 411990,
+      "estimated_install_bytes": 2022402,
+      "content_sha256": "b8c021336109fac50d3a10a29930abe9b71a0469e5a91529043680e1202c2e7d"
+    },
+    "news": {
+      "schema": 1,
+      "version": "1.29.5",
+      "payload_bytes": 528943,
+      "estimated_install_bytes": 2373261,
+      "content_sha256": "ba3f27737581738e11a714ea60c0b19947784e301ffc3104cd682f4a98efde39"
+    },
+    "editor": {
+      "schema": 1,
+      "version": "0.6.10",
+      "payload_bytes": 328022,
+      "estimated_install_bytes": 1770498,
+      "content_sha256": "2313e47f074c1449b4d3834c15e3a46c4a989b6d3fb6a2da14a76ee826cf0036"
+    },
+    "webstudio": {
+      "schema": 1,
+      "version": "0.13.7",
+      "payload_bytes": 531759,
+      "estimated_install_bytes": 2381709,
+      "content_sha256": "65777be62a4233999d9aa6782a55f24cefbdc00023713d253a1ed6560061f05f"
+    },
+    "gym": {
+      "schema": 1,
+      "version": "2.9.3",
+      "payload_bytes": 478125,
+      "estimated_install_bytes": 2220807,
+      "content_sha256": "9b0bcdf332a14148936a4c5f62f43b3f623649f5ee7e4220a7a4ac731889db41"
+    },
+    "habits": {
+      "schema": 1,
+      "version": "1.0.12",
+      "payload_bytes": 384936,
+      "estimated_install_bytes": 1941240,
+      "content_sha256": "0c98c14993caac2ce8388ae37041cab6e1339d72570c7fee2a68e0a00689b7b7"
+    },
+    "beat-machine": {
+      "schema": 1,
+      "version": "1.0.17",
+      "payload_bytes": 346429,
+      "estimated_install_bytes": 1825719,
+      "content_sha256": "28cf07d37ead913354564984990b1a8287b22fa49269ade46e0fd622dfe4365e"
+    },
+    "atlas": {
+      "schema": 1,
+      "version": "1.10.1",
+      "payload_bytes": 2717231,
+      "estimated_install_bytes": 8938125,
+      "content_sha256": "1a1c646fc63c02405c78f42ed6bb45a2d8533babd28f0cc3b6c61a468313297d"
+    },
+    "latex": {
+      "schema": 1,
+      "version": "2.15.7",
+      "payload_bytes": 428800,
+      "estimated_install_bytes": 2072832,
+      "content_sha256": "7bd735db4a75cf1b5a4770022c33f0f98227dd76e2cb668c0a2f587e0539c497"
+    },
+    "tandem": {
+      "schema": 1,
+      "version": "0.14.7",
+      "payload_bytes": 467911,
+      "estimated_install_bytes": 2190165,
+      "content_sha256": "183526f02fc126b03f79dcf6bf7a5fef0626de3a7eb654e87a0527fae388faeb"
+    },
+    "cuberun": {
+      "schema": 1,
+      "version": "1.0.2-mobius.28",
+      "payload_bytes": 19685907,
+      "estimated_install_bytes": 59844153,
+      "content_sha256": "aa78222b0be707d62293a03ef8b228953cfe5309929fbc1b2e4c55b52ed0c391"
+    }
+  }
+}

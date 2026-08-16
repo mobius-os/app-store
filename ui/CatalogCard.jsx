@@ -15,7 +15,7 @@ function cardVariantClass(variant) {
 // bulk selection; the app name is its own <button class="st-card-name"> so
 // opening details stays reachable even while that overlay is present, and
 // the action button remains above both for single-app review/opening.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, selected = false, selectionMode = null, currentAppId = null, onSelectionToggle }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, selected = false, selectionMode = null, currentAppId = null, onSelectionToggle, selectionOverQuota = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -131,7 +131,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     ? `${m.name} cannot be included in a batch uninstall`
     : `${selected ? 'Unselect' : 'Select'} ${m.name} to ${selectionAction}`
   return (
-    <div className={`${cardVariantClass(cardVariant)}${selected ? ' is-selected' : ''}${selectionMuted ? ' is-selection-disabled' : ''}`}>
+    <div className={`${cardVariantClass(cardVariant)}${selected ? ' is-selected' : ''}${selectionMuted || (selected && selectionOverQuota) ? ' is-selection-disabled' : ''}`}>
       {canSelect ? (
         <button
           type="button"

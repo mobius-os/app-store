@@ -60,6 +60,7 @@ export function CatalogList({
   selectionMode = null,
   currentAppId = null,
   onSelectionToggle,
+  selectionOverQuota = false,
   emptyTitle = 'No apps',
   emptyText = 'No apps in the catalog yet.',
 }) {
@@ -101,6 +102,7 @@ export function CatalogList({
       selectionMode={selectionMode}
       currentAppId={currentAppId}
       onSelectionToggle={onSelectionToggle}
+      selectionOverQuota={selectionOverQuota}
     />
   )
   const groups = CATALOG_COLLECTIONS

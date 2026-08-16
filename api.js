@@ -86,6 +86,20 @@ export async function loadInstalledApps(token, opts = {}) {
   throw new Error(lastError?.message || 'Installed apps could not be loaded.')
 }
 
+export async function fetchInstalledFootprint(appId, token) {
+  const response = await fetch(`/api/apps/${encodeURIComponent(appId)}/footprint`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return await readJsonOrThrow(response, 'Installed app size could not be measured')
+}
+
+export async function fetchInstallBudget(token) {
+  const response = await fetch('/api/apps/install-budget', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return await readJsonOrThrow(response, 'Install space could not be checked')
+}
+
 // GET /api/apps/{id}/update-check — the backend's git-native "does the app
 // repo's actual content differ from the recorded upstream?" probe. It is
 // authoritative over the client-side semver compare precisely because it
@@ -219,6 +233,36 @@ export async function fetchManifest(url, token, opts = {}) {
   throw lastError || new Error('Manifest fetch failed')
 }
 
+function normalizePackageFootprint(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  if (value.schema !== 1 || typeof value.version !== 'string') return null
+  if (!Number.isFinite(value.payload_bytes) || !Number.isFinite(value.estimated_install_bytes)) return null
+  if (!/^[0-9a-f]{64}$/.test(value.content_sha256 || '')) return null
+  return {
+    schema: 1,
+    version: value.version,
+    payload_bytes: value.payload_bytes,
+    estimated_install_bytes: value.estimated_install_bytes,
+    content_sha256: value.content_sha256,
+  }
+}
+
+export async function fetchPackageMetadata(url, token) {
+  const response = await fetch(proxyUrl(url), {
+    cache: 'no-cache',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) throw new Error(`Package metadata fetch failed: ${response.status}`)
+  const body = await response.json()
+  if (body?.schema !== 1 || !body.apps || typeof body.apps !== 'object') {
+    throw new Error('Package metadata is invalid')
+  }
+  return Object.fromEntries(Object.entries(body.apps).flatMap(([id, value]) => {
+    const footprint = normalizePackageFootprint(value)
+    return typeof id === 'string' && footprint ? [[id, footprint]] : []
+  }))
+}
+
 // Fetch the web registry (catalog.json) via the proxy and return a validated
 // list of catalog entries, or throw. Schema 1 is the only supported contract;
 // each entry must carry a string id and https
@@ -319,6 +363,9 @@ export async function fetchCatalog(url, token, opts = {}) {
       'everyday', 'create', 'explore', 'play', 'developer',
     ].includes(e.collection) ? e.collection : null
     const summary = cleanString(e.summary, 96)
+    const manifest = (e.manifest && typeof e.manifest === 'object' && !Array.isArray(e.manifest))
+      ? e.manifest
+      : null
     entries.push({
       id: e.id,
       name: cleanString(e.name),
@@ -333,6 +380,8 @@ export async function fetchCatalog(url, token, opts = {}) {
       keywords: cleanList(e.keywords, 16),
       capabilities: cleanList(e.capabilities, 12),
       setup: normalizeSetup(e.setup),
+      package_footprint: normalizePackageFootprint(e.package_footprint),
+      ...(manifest ? { manifest } : {}),
     })
   }
   return entries

@@ -250,7 +250,9 @@ export function findInstalled(installed, item) {
 // human-facing labels stay current; source provenance remains the only update
 // authority.
 export function shouldRefreshCatalogManifest(item, installed = []) {
-  return !item?.manifest || Boolean(findInstalled(installed, item))
+  return !item?.manifest ||
+    (item.package_footprint?.version && item.package_footprint.version !== item.manifest.version) ||
+    Boolean(findInstalled(installed, item))
 }
 
 export function busyLabelForAction(actionKind) {
