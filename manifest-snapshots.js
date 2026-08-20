@@ -208,9 +208,10 @@ export const MANIFEST_SNAPSHOTS = {
     ]
   },
   "subagents": {
-    "id": "codex",
+    "id": "subagents",
+    "previous_id": "codex",
     "name": "Subagents",
-    "version": "0.4.1",
+    "version": "0.4.4",
     "description": "Connect Claude or Codex, choose provider defaults, and run guarded delegated tasks that survive planned platform restarts.",
     "author": "mobius-os",
     "license": "MIT",
@@ -224,6 +225,7 @@ export const MANIFEST_SNAPSHOTS = {
       "max_bytes": 1048576
     },
     "source_files": [
+      "delegationActivity.js",
       "models.json",
       "subagents.md",
       "subagents.py",
