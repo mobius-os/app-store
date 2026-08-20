@@ -127,6 +127,34 @@ export const MANIFEST_SNAPSHOTS = {
       "icon.png"
     ]
   },
+  "identity": {
+    "id": "identity",
+    "name": "Möbius · You",
+    "version": "0.3.0",
+    "description": "Your Möbius account, profile and active deployments.",
+    "author": "mobius-os",
+    "license": "MIT",
+    "homepage": "https://github.com/mobius-os/app-mobius-you",
+    "entry": "index.jsx",
+    "icon": "icon.png",
+    "offline_capable": false,
+    "permissions": {
+      "identity_manage": true,
+      "railway_manage": true
+    },
+    "runtime": {
+      "imports": [
+        "react",
+        "react-dom",
+        "@openai/apps-sdk-ui/components/Icon"
+      ],
+      "esm_deps": []
+    },
+    "source_files": [
+      "identity-contract.js",
+      "identity-styles.js"
+    ]
+  },
   "reflection": {
     "id": "reflection",
     "name": "Reflection",

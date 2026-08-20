@@ -103,6 +103,36 @@
       "summary": "Give your agent remote tools, with honest costs."
     },
     {
+      "id": "identity",
+      "name": "Möbius · You",
+      "description": "Your Möbius account, profile and active deployments.",
+      "repo": "mobius-os/app-mobius-you",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-mobius-you/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-mobius-you/main/",
+      "categories": [
+        "system",
+        "development"
+      ],
+      "keywords": [
+        "account",
+        "identity",
+        "handle",
+        "profile",
+        "deployments",
+        "railway",
+        "mobius.you",
+        "sign in"
+      ],
+      "capabilities": [
+        "view your account and handle",
+        "manage profile and avatar",
+        "create and manage Railway deployments"
+      ],
+      "audience": "developer",
+      "collection": "developer",
+      "summary": "Your account, handle, and deployments in one place."
+    },
+    {
       "id": "reflection",
       "name": "Reflection",
       "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
