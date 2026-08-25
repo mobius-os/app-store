@@ -538,7 +538,7 @@
     {
       "id": "gym",
       "name": "Workout",
-      "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
+      "description": "Plan routines, log every set, explore exercises, and follow your progress.",
       "repo": "mobius-os/app-workout",
       "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-workout/main/mobius.json",
       "raw_base": "https://raw.githubusercontent.com/mobius-os/app-workout/main/",
@@ -551,17 +551,21 @@
         "gym",
         "sets",
         "exercises",
+        "exercise library",
+        "routines",
         "progress",
-        "training"
+        "training",
+        "personal records"
       ],
       "capabilities": [
-        "log workouts",
-        "track progress",
-        "plan routines"
+        "plan reusable routines",
+        "log sets with previous values and rest timers",
+        "browse exercise guidance",
+        "review history and personal records"
       ],
       "audience": "general",
       "collection": "everyday",
-      "summary": "Log workouts by chat and track your progress."
+      "summary": "Plan routines, log sets, and track strength."
     },
     {
       "id": "habits",
