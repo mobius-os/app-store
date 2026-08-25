@@ -1452,6 +1452,7 @@ export default function App({ appId, token }) {
             width={40}
             height={40}
             className="st-brand-icon"
+            ref={(el) => el && window.mobius.immersive && window.mobius.immersive.holdToToggle(el)}
             onError={(e) => {
               e.currentTarget.style.display = 'none'
               const f = e.currentTarget.nextElementSibling

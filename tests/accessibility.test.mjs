@@ -27,6 +27,10 @@ test('Official and Community form one keyboard-navigable tab set', () => {
   assert.match(app, /role="tabpanel"/)
 })
 
+test('brand icon preserves the immersive hold gesture', () => {
+  assert.match(app, /window\.mobius\.immersive\.holdToToggle\(el\)/)
+})
+
 test('Community preserves the reviewed manifest preview flow', () => {
   assert.match(community, /<FromUrlTab onPreview=\{onPreview\} token=\{token\} \/>/)
   assert.match(community, /aria-label="Publish your apps"/)
