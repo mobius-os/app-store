@@ -60,6 +60,26 @@
     "ui/diff/parseUnifiedDiff.js",
     "ui/diff/DiffView.jsx",
     "ui/diff/FileDiffList.jsx",
-    "ui/diff/styles.js"
-  ]
+    "ui/diff/styles.js",
+    "LISTING_ART.md"
+  ],
+  "static_assets": {
+    "previews/artifacts-screen.png": "listing-assets/artifacts-screen.png",
+    "previews/beat-machine-hero.png": "listing-assets/beat-machine-hero.png",
+    "previews/beat-machine-screen.png": "listing-assets/beat-machine-screen.png",
+    "previews/connections-screen.png": "listing-assets/connections-screen.png",
+    "previews/cuberun-screen.png": "listing-assets/cuberun-screen.png",
+    "previews/habits-screen.png": "listing-assets/habits-screen.png",
+    "previews/maps-hero.png": "listing-assets/maps-hero.png",
+    "previews/maps-screen.png": "listing-assets/maps-screen.png",
+    "previews/news-screen.png": "listing-assets/news-screen.png",
+    "previews/notes-screen.png": "listing-assets/notes-screen.png",
+    "previews/reflection-screen.png": "listing-assets/reflection-screen.png",
+    "previews/skills-screen.png": "listing-assets/skills-screen.png",
+    "previews/tandem-screen.png": "listing-assets/tandem-screen.png",
+    "previews/tasks-screen.png": "listing-assets/tasks-screen.png",
+    "previews/voice-hero.png": "listing-assets/voice-hero.png",
+    "previews/voice-screen.png": "listing-assets/voice-screen.png",
+    "previews/workflows-screen.png": "listing-assets/workflows-screen.png"
+  }
 }

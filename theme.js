@@ -1962,10 +1962,11 @@ export const CSS = `
   display: grid; grid-auto-flow: column; grid-auto-columns: min(86%, 670px); gap: 12px;
   margin: 0 0 22px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
 }
+.st-detail-gallery.is-single { grid-auto-columns: 100%; }
 .st-detail-gallery::-webkit-scrollbar { display: none; }
 .st-detail-gallery figure { margin: 0; overflow: hidden; scroll-snap-align: start; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
 .st-detail-gallery-image,
-.st-detail-gallery .st-store-image-placeholder { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top center; }
+.st-detail-gallery .st-store-image-placeholder { display: block; width: 100%; aspect-ratio: 5 / 3; object-fit: cover; object-position: top center; }
 .st-detail-gallery .st-store-image-placeholder { background: var(--surface2, var(--surface)); }
 .st-detail-gallery figcaption { padding: 9px 12px; color: var(--muted); border-top: 1px solid var(--border); font-size: 11px; font-weight: 650; }
 .st-detail-byline { margin: -14px 0 26px; color: var(--muted); font: 11px/1.4 var(--mono, monospace); }

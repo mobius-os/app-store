@@ -57,7 +57,7 @@ test('canonicalIdentityKey matches backend-style manifest identities', async () 
 })
 
 test('store artwork resolves only through the accepted manifest mapping', async () => {
-  const { storeAssetSource, storeAssetUrl } = await bundle()
+  const { catalogAssetFilename, catalogAssetUrl, storeAssetSource, storeAssetUrl } = await bundle()
   const imageSource = await readFile(join(root, '..', 'ui', 'StoreImage.jsx'), 'utf8')
   const manifest = {
     static_assets: {
@@ -76,8 +76,69 @@ test('store artwork resolves only through the accepted manifest mapping', async 
     storeAssetUrl({ manifest, local_asset_base: '/app-assets/by-id/7/static/' }, 'listing/hero.png'),
     '/app-assets/by-id/7/static/listing/hero.png',
   )
+  assert.equal(catalogAssetFilename('voice-screen.png'), 'voice-screen.png')
+  assert.equal(catalogAssetFilename('../identity-screen.png'), '')
+  assert.equal(catalogAssetFilename('https://attacker.test/hero.png'), '')
+  assert.equal(catalogAssetUrl(39, 'voice-screen.png'), '/app-assets/by-id/39/previews/voice-screen.png')
+  assert.equal(catalogAssetUrl(39, '../identity-screen.png'), '')
+  assert.equal(catalogAssetUrl('not-an-app', 'voice-screen.png'), '')
   assert.match(imageSource, /URL\.revokeObjectURL\(objectUrl\)/)
   assert.doesNotMatch(imageSource, /const resolvedImages = new Map/)
+})
+
+test('catalog listing artwork is bounded and sanitized before it reaches the UI', async () => {
+  const { fetchCatalog } = await bundle()
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    schema: 1,
+    apps: [{
+      id: 'voice',
+      manifest_url: 'https://raw.example/apps/voice/mobius.json',
+      raw_base: 'https://raw.example/apps/voice/',
+      listing: {
+        hero: '../private.png',
+        tagline: '  A private voice   for your agent.  ',
+        screenshots: [
+          { src: 'voice-screen.png', alt: ' Voice screen ', label: ' Choose a voice ' },
+          { src: 'https://attacker.test/tracker.png', alt: 'Remote tracker' },
+          { src: '../identity-screen.png', alt: 'Private data' },
+        ],
+        featured: true,
+      },
+    }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const [item] = await fetchCatalog('https://raw.example/catalog.json', 'owner-token')
+    assert.deepEqual(item.listing, {
+      screenshots: [{
+        src: 'voice-screen.png',
+        alt: 'Voice screen',
+        label: 'Choose a voice',
+      }],
+      tagline: 'A private voice for your agent.',
+      featured: true,
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('every curated listing asset is packaged by the App Store', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../mobius.json', import.meta.url), 'utf8'))
+  const catalog = JSON.parse(await readFile(new URL('../catalog.json', import.meta.url), 'utf8'))
+  const referenced = new Set()
+  for (const item of catalog.apps) {
+    if (item.listing?.hero) referenced.add(item.listing.hero)
+    for (const shot of item.listing?.screenshots || []) referenced.add(shot.src)
+  }
+  assert.equal(referenced.size, 17)
+  for (const filename of referenced) {
+    assert.equal(
+      manifest.static_assets[`previews/${filename}`],
+      `listing-assets/${filename}`,
+      `${filename} is missing from static_assets`,
+    )
+  }
 })
 
 test('community listings join the ordinary install path with social provenance', async () => {

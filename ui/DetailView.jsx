@@ -4,7 +4,7 @@ import { appLifecycleFor, busyLabelForAction, distributionStatus, isTrustedHost,
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
-import { StoreImage } from './StoreImage.jsx'
+import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -107,11 +107,18 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const previewUrl = item.preview && storeAppId
     ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`
     : ''
-  const listing = m.store && typeof m.store === 'object' ? m.store : null
+  const catalogListing = !item.community && item.listing && typeof item.listing === 'object'
+    ? item.listing
+    : null
+  const manifestListing = m.store && typeof m.store === 'object' ? m.store : null
+  const listing = catalogListing || manifestListing
   const listingHero = typeof listing?.hero === 'string' ? listing.hero : listing?.hero?.path
   const listingScreenshots = Array.isArray(listing?.screenshots) ? listing.screenshots : []
-  const listingTagline = listing?.tagline || m.description
-  const listingDescription = listing?.description || m.description
+  const listingTagline = catalogListing?.tagline || manifestListing?.tagline || item.summary || m.description
+  const listingDescription = catalogListing?.description || manifestListing?.description || m.description
+  const listingImage = (path, alt, className, loading = 'lazy') => catalogListing
+    ? <CatalogStoreImage storeAppId={storeAppId} path={path} alt={alt} className={className} loading={loading} />
+    : <StoreImage item={reviewedItem} path={path} token={token} alt={alt} className={className} loading={loading} />
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
@@ -128,7 +135,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
       <div className="st-scroll">
         {listingHero ? (
           <section className="st-detail-editorial" aria-labelledby="st-detail-name">
-            <StoreImage item={reviewedItem} path={listingHero} token={token} alt="" className="st-detail-editorial-image" loading="eager" />
+            {listingImage(listingHero, '', 'st-detail-editorial-image', 'eager')}
             <div className="st-detail-editorial-shade" />
             <div className="st-detail-editorial-copy">
               <IconBox item={heroItemWithIcon} token={token} />
@@ -148,13 +155,13 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
         )}
 
         {listingScreenshots.length ? (
-          <div className="st-detail-gallery" aria-label={`${m.name} screenshots`}>
+          <div className={`st-detail-gallery${listingScreenshots.length === 1 ? ' is-single' : ''}`} aria-label={`${m.name} screenshots`}>
             {listingScreenshots.map((shot, index) => {
               const path = typeof shot === 'string' ? shot : shot.src
               const alt = typeof shot === 'string' ? `${m.name} screenshot ${index + 1}` : shot.alt
               return (
                 <figure key={`${path}-${index}`}>
-                  <StoreImage item={reviewedItem} path={path} token={token} alt={alt} className="st-detail-gallery-image" />
+                  {listingImage(path, alt, 'st-detail-gallery-image')}
                   {typeof shot === 'object' && shot.label ? <figcaption>{shot.label}</figcaption> : null}
                 </figure>
               )

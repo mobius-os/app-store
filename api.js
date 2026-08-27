@@ -460,6 +460,36 @@ export async function fetchCatalog(url, token, opts = {}) {
       fields,
     }
   }
+  const cleanAsset = (value) => typeof value === 'string'
+    && /^[a-z0-9][a-z0-9._-]*\.(?:png|webp|jpe?g)$/i.test(value.trim())
+    ? value.trim()
+    : undefined
+  const normalizeListing = (listing) => {
+    if (!listing || typeof listing !== 'object' || Array.isArray(listing)) return null
+    const hero = cleanAsset(typeof listing.hero === 'string' ? listing.hero : listing.hero?.path)
+    const screenshots = []
+    if (Array.isArray(listing.screenshots)) {
+      for (const rawShot of listing.screenshots.slice(0, 6)) {
+        const src = cleanAsset(typeof rawShot === 'string' ? rawShot : rawShot?.src)
+        if (!src) continue
+        screenshots.push({
+          src,
+          alt: cleanString(rawShot?.alt, 140) || '',
+          label: cleanString(rawShot?.label, 72) || '',
+        })
+      }
+    }
+    const tagline = cleanString(listing.tagline, 96)
+    const description = cleanString(listing.description, 480)
+    if (!hero && screenshots.length === 0 && !tagline && !description) return null
+    return {
+      ...(hero ? { hero } : {}),
+      ...(screenshots.length ? { screenshots } : {}),
+      ...(tagline ? { tagline } : {}),
+      ...(description ? { description } : {}),
+      featured: listing.featured === true,
+    }
+  }
   const seen = new Set()
   const entries = []
   for (const e of raw) {
@@ -485,12 +515,14 @@ export async function fetchCatalog(url, token, opts = {}) {
     const preview = typeof e.preview === 'string' && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(e.preview)
       ? e.preview
       : undefined
+    const listing = normalizeListing(e.listing)
     entries.push({
       id: e.id,
       name: cleanString(e.name),
       description: cleanString(e.description),
       ...(summary ? { summary } : {}),
       ...(preview ? { preview } : {}),
+      ...(listing ? { listing } : {}),
       repo: typeof e.repo === 'string' ? e.repo : undefined,
       manifest_url: e.manifest_url,
       raw_base: e.raw_base,

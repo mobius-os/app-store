@@ -30,7 +30,20 @@
       ],
       "audience": "general",
       "collection": "everyday",
-      "summary": "Give your agent an on-device voice."
+      "summary": "Give your agent an on-device voice.",
+      "listing": {
+        "tagline": "Give your agent an on-device voice.",
+        "description": "Give your agent a voice — on-device text-to-speech with model management and voice cloning saved to your instance.",
+        "screenshots": [
+          {
+            "src": "voice-screen.png",
+            "alt": "Standalone Voice app screen",
+            "label": "Choose and preview the voice that fits your agent."
+          }
+        ],
+        "hero": "voice-hero.png",
+        "featured": true
+      }
     },
     {
       "id": "memory",
@@ -100,7 +113,18 @@
       ],
       "audience": "developer",
       "collection": "developer",
-      "summary": "Give your agent remote tools, with honest costs."
+      "summary": "Give your agent remote tools, with honest costs.",
+      "listing": {
+        "tagline": "Give your agent remote tools, with honest costs.",
+        "description": "Add remote MCP services once and both agent runtimes can use them — with live health, honest per-message cost, and curated suggestions.",
+        "screenshots": [
+          {
+            "src": "connections-screen.png",
+            "alt": "Standalone Connections app screen",
+            "label": "See connected tools and their availability at a glance."
+          }
+        ]
+      }
     },
     {
       "id": "connect",
@@ -199,7 +223,18 @@
       },
       "audience": "developer",
       "collection": "developer",
-      "summary": "A morning brief on what Möbius learned."
+      "summary": "A morning brief on what Möbius learned.",
+      "listing": {
+        "tagline": "A morning brief on what Möbius learned.",
+        "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
+        "screenshots": [
+          {
+            "src": "reflection-screen.png",
+            "alt": "Standalone Reflection app screen",
+            "label": "Return to each dated reflection from a quiet archive."
+          }
+        ]
+      }
     },
     {
       "id": "subagents",
@@ -260,7 +295,18 @@
       ],
       "audience": "developer",
       "collection": "developer",
-      "summary": "See what every background agent did."
+      "summary": "See what every background agent did.",
+      "listing": {
+        "tagline": "See what every background agent did.",
+        "description": "A git-graph timeline of your chats — see the subagents each turn spawned, whether they merged back, are still out, or failed.",
+        "screenshots": [
+          {
+            "src": "workflows-screen.png",
+            "alt": "Standalone Workflows app screen",
+            "label": "Completed agent workflows stay organized in one place."
+          }
+        ]
+      }
     },
     {
       "id": "skills",
@@ -287,7 +333,18 @@
       ],
       "audience": "developer",
       "collection": "developer",
-      "summary": "Browse the playbooks behind your agent."
+      "summary": "Browse the playbooks behind your agent.",
+      "listing": {
+        "tagline": "Browse the playbooks behind your agent.",
+        "description": "Browse and search your agent's skills — the SKILL.md guides that shape what it can do. Tap any skill to read it. Create or edit through the agent.",
+        "screenshots": [
+          {
+            "src": "skills-screen.png",
+            "alt": "Standalone Skills app screen",
+            "label": "Browse and search the playbooks behind your agent."
+          }
+        ]
+      }
     },
     {
       "id": "artifacts",
@@ -317,7 +374,18 @@
       ],
       "audience": "general",
       "collection": "create",
-      "summary": "Create interactive pages and polished reports."
+      "summary": "Create interactive pages and polished reports.",
+      "listing": {
+        "tagline": "Create interactive pages and polished reports.",
+        "description": "Browse, preview, version, and share the interactive HTML artifacts and documents your agent builds in chat — and jump back to the chat that made each one.",
+        "screenshots": [
+          {
+            "src": "artifacts-screen.png",
+            "alt": "Standalone Artifacts app screen",
+            "label": "Begin from a focused canvas for interactive work."
+          }
+        ]
+      }
     },
     {
       "id": "maps",
@@ -347,7 +415,19 @@
       ],
       "audience": "general",
       "collection": "explore",
-      "summary": "Turn place ideas into maps you can keep."
+      "summary": "Turn place ideas into maps you can keep.",
+      "listing": {
+        "tagline": "Turn place ideas into maps you can keep.",
+        "description": "Visualise and keep maps created in Möbius, with a location skill and links back to their source conversations.",
+        "screenshots": [
+          {
+            "src": "maps-screen.png",
+            "alt": "Standalone Maps app screen",
+            "label": "Start a private map from any place idea."
+          }
+        ],
+        "hero": "maps-hero.png"
+      }
     },
     {
       "id": "tasks",
@@ -373,7 +453,18 @@
       ],
       "audience": "general",
       "collection": "everyday",
-      "summary": "See every scheduled agent check-in."
+      "summary": "See every scheduled agent check-in.",
+      "listing": {
+        "tagline": "See every scheduled agent check-in.",
+        "description": "See your agent's scheduled check-ins at a glance — status, due times, and what needs attention. Reschedule or cancel through the agent.",
+        "screenshots": [
+          {
+            "src": "tasks-screen.png",
+            "alt": "Standalone Tasks app screen",
+            "label": "See every scheduled agent check-in in one place."
+          }
+        ]
+      }
     },
     {
       "id": "contribute",
@@ -437,7 +528,18 @@
       ],
       "audience": "general",
       "collection": "everyday",
-      "summary": "Markdown notes with checklists, images, and search."
+      "summary": "Markdown notes with checklists, images, and search.",
+      "listing": {
+        "tagline": "Markdown notes with checklists, images, and search.",
+        "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
+        "screenshots": [
+          {
+            "src": "notes-screen.png",
+            "alt": "Standalone Notes app screen",
+            "label": "Capture a note or checklist in seconds."
+          }
+        ]
+      }
     },
     {
       "id": "news",
@@ -478,7 +580,18 @@
       },
       "audience": "general",
       "collection": "everyday",
-      "summary": "A daily briefing on the topics you care about."
+      "summary": "A daily briefing on the topics you care about.",
+      "listing": {
+        "tagline": "A daily briefing on the topics you care about.",
+        "description": "A daily AI-curated news digest you can tune by topic, schedule, and editorial brief.",
+        "screenshots": [
+          {
+            "src": "news-screen.png",
+            "alt": "Standalone News app screen",
+            "label": "Read a focused briefing in a calm daily feed."
+          }
+        ]
+      }
     },
     {
       "id": "editor",
@@ -592,7 +705,18 @@
       ],
       "audience": "general",
       "collection": "everyday",
-      "summary": "Build lasting routines with streaks and reminders."
+      "summary": "Build lasting routines with streaks and reminders.",
+      "listing": {
+        "tagline": "Build lasting routines with streaks and reminders.",
+        "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
+        "screenshots": [
+          {
+            "src": "habits-screen.png",
+            "alt": "Standalone Habits app screen",
+            "label": "Build a routine from a clear, encouraging start."
+          }
+        ]
+      }
     },
     {
       "id": "beat-machine",
@@ -622,7 +746,19 @@
       ],
       "audience": "general",
       "collection": "play",
-      "summary": "Make beats with 32 steps and your own sounds."
+      "summary": "Make beats with 32 steps and your own sounds.",
+      "listing": {
+        "tagline": "Make beats with 32 steps and your own sounds.",
+        "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
+        "screenshots": [
+          {
+            "src": "beat-machine-screen.png",
+            "alt": "Standalone Beat Machine app screen",
+            "label": "Shape rhythms on a tactile 32-step grid."
+          }
+        ],
+        "hero": "beat-machine-hero.png"
+      }
     },
     {
       "id": "atlas",
@@ -718,7 +854,18 @@
       },
       "audience": "general",
       "collection": "explore",
-      "summary": "Learn languages through made-for-you stories."
+      "summary": "Learn languages through made-for-you stories.",
+      "listing": {
+        "tagline": "Learn languages through made-for-you stories.",
+        "description": "Split-pane bilingual reader for language learning. Top and bottom panes show each language independently with sync-scroll; drag the slim divider to resize. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one (the generation agent loads the relevant stories itself). Pick the generation agent (Claude or OpenAI Codex) in settings; tap any word to highlight it, its sentence, and its translation inline in both panes.",
+        "screenshots": [
+          {
+            "src": "tandem-screen.png",
+            "alt": "Standalone Tandem app screen",
+            "label": "Choose your languages and reading level before a story."
+          }
+        ]
+      }
     },
     {
       "id": "cuberun",
@@ -743,7 +890,18 @@
       ],
       "audience": "general",
       "collection": "play",
-      "summary": "Chase a high score in a neon 3D world."
+      "summary": "Chase a high score in a neon 3D world.",
+      "listing": {
+        "tagline": "Chase a high score in a neon 3D world.",
+        "description": "Neon 3D runner game packaged for Mobius as a durable static app.",
+        "screenshots": [
+          {
+            "src": "cuberun-screen.png",
+            "alt": "Standalone CubeRun app screen",
+            "label": "Launch straight into an immersive neon run."
+          }
+        ]
+      }
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { CatalogCard } from './CatalogCard.jsx'
 import { catalogCollection } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
-import { StoreImage } from './StoreImage.jsx'
+import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
 const CATALOG_COLLECTIONS = [
   {
@@ -113,11 +113,17 @@ export function CatalogList({
       layout={layout}
     />
   )
+  const listingFor = (item) => item.community
+    ? item.manifest?.store
+    : item.listing || item.manifest?.store
   const feature = editorial
-    ? items.find((item) => item.manifest?.store?.featured && item.manifest?.store?.hero)
-      || items.find((item) => item.manifest?.store?.hero)
+    ? items.find((item) => listingFor(item)?.featured && listingFor(item)?.hero)
+      || items.find((item) => listingFor(item)?.hero)
     : null
-  const featureHero = feature?.manifest?.store?.hero
+  const featureListing = feature ? listingFor(feature) : null
+  const featureHero = typeof featureListing?.hero === 'string'
+    ? featureListing.hero
+    : featureListing?.hero?.path
   const picks = editorial
     ? items.filter((item) => item.id !== feature?.id).slice(0, 6)
     : []
@@ -145,7 +151,11 @@ export function CatalogList({
       {feature ? (
         <section className="st-editorial-hero" aria-labelledby="st-featured-app-title">
           {featureHero ? (
-            <StoreImage item={feature} path={featureHero} token={token} alt="" className="st-editorial-hero-image" loading="eager" />
+            feature.community ? (
+              <StoreImage item={feature} path={featureHero} token={token} alt="" className="st-editorial-hero-image" loading="eager" />
+            ) : (
+              <CatalogStoreImage storeAppId={appId} path={featureHero} alt="" className="st-editorial-hero-image" loading="eager" />
+            )
           ) : null}
           <div className="st-editorial-hero-shade" />
           <div className="st-editorial-hero-copy">
@@ -154,7 +164,7 @@ export function CatalogList({
               <IconBox item={feature} token={token} />
               <div>
                 <h2 id="st-featured-app-title">{feature.manifest?.name || feature.name}</h2>
-                <p>{feature.manifest?.store?.tagline || feature.summary || feature.description}</p>
+                <p>{featureListing?.tagline || feature.summary || feature.description}</p>
               </div>
             </div>
             <button type="button" className="st-btn st-btn-primary" onClick={() => onPick(feature)}>View app</button>
