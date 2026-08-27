@@ -71,7 +71,7 @@ export const CSS = `
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
-/* Single header row: the brand icon sits left, the Browse / From URL
+/* Single header row: the brand icon sits left, the Official / Community
    segmented control fills the rest of the same row (no second row). */
 .st-title-row {
   display: flex; align-items: center; gap: 12px;
@@ -663,7 +663,7 @@ export const CSS = `
   .st-card-retry:active { opacity: 0.75; }
 }
 
-/* App-specific "From URL" tab. */
+/* App-specific "Community" tab: paste-a-URL install form + publish teaser. */
 .st-url-form {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 16px;
@@ -738,6 +738,83 @@ export const CSS = `
   border-radius: 8px; font-size: 14px;
   margin-top: 12px; line-height: 1.5;
   border: 1px solid color-mix(in srgb, var(--danger, #e5484d) 40%, transparent);
+}
+
+/* Optional manifest-link help. */
+.st-url-help { margin-bottom: 12px; }
+.st-url-help-summary {
+  cursor: pointer; list-style: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  padding: 6px 0; min-height: 44px;
+  user-select: none; touch-action: manipulation;
+  border-radius: 6px;
+}
+.st-url-help-summary::-webkit-details-marker { display: none; }
+.st-url-help-summary::before {
+  content: ''; width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 150ms;
+  flex-shrink: 0;
+}
+.st-url-help[open] > .st-url-help-summary::before { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .st-url-help-summary::before { transition: none; }
+}
+.st-url-help-body {
+  margin-top: 6px; padding: 12px 14px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--border); border-radius: 10px;
+  font-size: 13px; line-height: 1.55; color: var(--muted);
+}
+.st-url-help-lead { margin: 0 0 10px; }
+.st-url-help-steps {
+  margin: 0; padding-left: 20px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.st-url-help-body code {
+  font-family: var(--mono, monospace); font-size: 12px;
+  padding: 1px 4px; border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.st-url-help-body strong { color: var(--text); font-weight: 600; }
+
+/* Community tab. */
+.st-community { display: flex; flex-direction: column; gap: 16px; }
+.st-publish-card {
+  display: flex; align-items: flex-start; gap: 14px;
+  background: color-mix(in srgb, var(--text) 3%, var(--surface));
+  border: 1px dashed var(--border);
+  border-radius: 12px; padding: 16px;
+}
+.st-publish-icon {
+  flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.st-publish-icon svg { width: 20px; height: 20px; }
+.st-publish-body { flex: 1; min-width: 0; }
+.st-publish-heading {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 6px;
+}
+.st-publish-title { font-size: 15px; font-weight: 600; margin: 0; }
+.st-publish-badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  white-space: nowrap;
+}
+.st-publish-text {
+  margin: 0; font-size: 13px; line-height: 1.55; color: var(--muted);
 }
 
 /* App-specific detail view. */
@@ -1426,4 +1503,10 @@ export const CSS = `
     transform: translateX(-50%);
   }
 }
+
+/* mobius-ui:CenteredRail v1 */
+@media (min-width: 900px) {
+  .st-header { width: min(100%, 760px); margin-inline: auto; }
+}
+/* /mobius-ui:CenteredRail */
 `

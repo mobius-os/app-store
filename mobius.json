@@ -44,6 +44,7 @@
     "ui/CatalogList.jsx",
     "ui/CatalogSkeleton.jsx",
     "ui/FromUrlTab.jsx",
+    "ui/CommunityTab.jsx",
     "ui/DetailView.jsx",
     "ui/UpdateReviewModal.jsx",
     "ui/UpdateAllModal.jsx",

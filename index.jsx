@@ -10,7 +10,7 @@
 //   ui/*.jsx      — one React component per file
 //
 // Only App lives here: it owns top-level catalog/install/navigation state and
-// mounts the browse grid, From URL tab, detail view, modal, banner, and toast.
+// mounts the Official catalog grid, Community tab, detail view, modal, banner, and toast.
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
@@ -63,7 +63,7 @@ import { CatalogList } from './ui/CatalogList.jsx'
 import { CatalogFilters } from './ui/CatalogFilters.jsx'
 import { CatalogSkeleton } from './ui/CatalogSkeleton.jsx'
 import { DetailView } from './ui/DetailView.jsx'
-import { FromUrlTab } from './ui/FromUrlTab.jsx'
+import { CommunityTab } from './ui/CommunityTab.jsx'
 import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
@@ -252,7 +252,7 @@ function itemIdsSettledByChecks(items, apps, checks) {
 }
 
 export default function App({ appId, token }) {
-  const [tab, setTab] = useState('browse')
+  const [tab, setTab] = useState('official')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [catalog, setCatalog] = useState(() =>
@@ -405,7 +405,7 @@ export default function App({ appId, token }) {
         // Resolve the catalog SOURCE by MERGING the web registry (catalog.json,
         // fetched via the proxy) OVER the baked CATALOG — never replacing it.
         // Baked is the floor: an app in the baked list can never vanish because
-        // the registry is stale/partial (which would drop it from Browse + its
+        // the registry is stale/partial (which would drop it from the Official grid + its
         // update/rehydrate flows). The registry overrides a known app's URL
         // fields and can ADD new apps. This is what lets a newly-published app
         // appear without a store-app redeploy — appending it to catalog.json on
@@ -1237,13 +1237,13 @@ export default function App({ appId, token }) {
   const onTabsKeyDown = (e) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
     e.preventDefault()
-    const order = ['browse', 'url']
+    const order = ['official', 'community']
     const i = order.indexOf(tab)
     const next = e.key === 'ArrowRight'
       ? order[(i + 1) % order.length]
       : order[(i - 1 + order.length) % order.length]
     setTab(next)
-    document.getElementById(next === 'browse' ? 'st-tab-browse' : 'st-tab-url')?.focus()
+    document.getElementById(next === 'official' ? 'st-tab-official' : 'st-tab-community')?.focus()
   }
 
   const displayCatalog = useMemo(
@@ -1407,7 +1407,7 @@ export default function App({ appId, token }) {
       setToast(resolution.toast)
       return
     }
-    setTab('browse')
+    setTab('official')
     setCategory('all')
     if (resolution.action === 'needs-connection') {
       setQuery(resolution.query)
@@ -1496,23 +1496,23 @@ export default function App({ appId, token }) {
             }}
           />
           <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
-          <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
+          <div className="st-seg is-accent st-tabs" role="tablist" aria-label="App source"
                onKeyDown={onTabsKeyDown}>
-            <button role="tab" id="st-tab-browse"
-                    aria-selected={tab === 'browse'}
+            <button role="tab" id="st-tab-official"
+                    aria-selected={tab === 'official'}
                     aria-controls="st-tabpanel"
-                    tabIndex={tab === 'browse' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'browse' ? ' is-active' : ''}`}
-                    onClick={() => setTab('browse')}>
-              Browse
+                    tabIndex={tab === 'official' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'official' ? ' is-active' : ''}`}
+                    onClick={() => setTab('official')}>
+              Official
             </button>
-            <button role="tab" id="st-tab-url"
-                    aria-selected={tab === 'url'}
+            <button role="tab" id="st-tab-community"
+                    aria-selected={tab === 'community'}
                     aria-controls="st-tabpanel"
-                    tabIndex={tab === 'url' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'url' ? ' is-active' : ''}`}
-                    onClick={() => setTab('url')}>
-              From URL
+                    tabIndex={tab === 'community' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'community' ? ' is-active' : ''}`}
+                    onClick={() => setTab('community')}>
+              Community
             </button>
           </div>
         </div>
@@ -1520,8 +1520,8 @@ export default function App({ appId, token }) {
 
       <div className="st-scroll" ref={gridScrollRef}
            id="st-tabpanel" role="tabpanel"
-           aria-labelledby={tab === 'browse' ? 'st-tab-browse' : 'st-tab-url'}>
-        {tab === 'browse' && (
+           aria-labelledby={tab === 'official' ? 'st-tab-official' : 'st-tab-community'}>
+        {tab === 'official' && (
           <>
             <SelfUpdateBanner appId={appId} token={token} />
             {loadingCatalog
@@ -1585,8 +1585,8 @@ export default function App({ appId, token }) {
                 </>}
           </>
         )}
-        {tab === 'url' && (
-          <FromUrlTab onPreview={openDetail} token={token} />
+        {tab === 'community' && (
+          <CommunityTab onPreview={openDetail} token={token} />
         )}
       </div>
 

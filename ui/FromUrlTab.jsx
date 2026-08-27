@@ -53,6 +53,22 @@ export function FromUrlTab({ onPreview, token }) {
         will fetch the manifest, show you what it declares, and let you
         review before installing.
       </div>
+      <details className="st-url-help">
+        <summary className="st-url-help-summary">How do I get an app’s link?</summary>
+        <div className="st-url-help-body">
+          <p className="st-url-help-lead">
+            Every app is published as a public link to its <code>mobius.json</code>
+            file — the small manifest that describes it. To copy that link from
+            a code host like GitHub, GitLab, Codeberg, or sourcehut:
+          </p>
+          <ol className="st-url-help-steps">
+            <li>Open the app’s repository.</li>
+            <li>Click into its <code>mobius.json</code> file.</li>
+            <li>Press the <strong>Raw</strong> button to show the plain file.</li>
+            <li>Copy the address from your browser’s bar and paste it below.</li>
+          </ol>
+        </div>
+      </details>
       <input
         id="app-store-manifest-url"
         type="url"
