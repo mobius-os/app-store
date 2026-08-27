@@ -1,5 +1,7 @@
 import { CatalogCard } from './CatalogCard.jsx'
 import { catalogCollection } from '../domain.js'
+import { IconBox } from './IconBox.jsx'
+import { StoreImage } from './StoreImage.jsx'
 
 const CATALOG_COLLECTIONS = [
   {
@@ -69,6 +71,8 @@ export function CatalogList({
   searchLoading = false,
   hasMore = false,
   onLoadMore,
+  editorial = false,
+  layout = 'grid',
 }) {
   if (items.length === 0) {
     return (
@@ -106,27 +110,63 @@ export function CatalogList({
       installedUnavailable={installedUnavailable}
       setupCompletions={setupCompletions}
       systemSetupReady={systemSetupReady}
+      layout={layout}
     />
   )
+  const feature = editorial
+    ? items.find((item) => item.manifest?.store?.featured && item.manifest?.store?.hero)
+      || items.find((item) => item.manifest?.store?.hero)
+    : null
+  const featureHero = feature?.manifest?.store?.hero
+  const picks = editorial
+    ? items.filter((item) => item.id !== feature?.id).slice(0, 6)
+    : []
+  const editorialIds = new Set([feature?.id, ...picks.map((item) => item.id)].filter(Boolean))
+  const groupedItems = editorial ? items.filter((item) => !editorialIds.has(item.id)) : items
   const groups = CATALOG_COLLECTIONS
     .map((group) => ({
       ...group,
-      items: items.filter((item) => catalogCollection(item) === group.id),
+      items: groupedItems.filter((item) => catalogCollection(item) === group.id),
     }))
     .filter((group) => group.items.length > 0)
   const renderGroup = (group) => (
     <section className="st-catalog-section" key={group.id} aria-labelledby={`st-group-${group.id}`}>
       <div className="st-catalog-section-head">
         <h2 id={`st-group-${group.id}`} className="st-catalog-section-title">{group.title}</h2>
-        <p className="st-catalog-section-desc">{group.description}</p>
+        {!editorial && layout !== 'list' ? <p className="st-catalog-section-desc">{group.description}</p> : null}
       </div>
       <div className="st-catalog-grid">{group.items.map(renderCard)}</div>
     </section>
   )
 
   return (
-    <div className="st-catalog-sections">
+    <div className={`st-catalog-sections${layout === 'list' ? ' is-list' : ''}`}>
       {searchLoading ? <div className="st-registry-progress" role="status">Searching shared listings…</div> : null}
+      {feature ? (
+        <section className="st-editorial-hero" aria-labelledby="st-featured-app-title">
+          {featureHero ? (
+            <StoreImage item={feature} path={featureHero} token={token} alt="" className="st-editorial-hero-image" loading="eager" />
+          ) : null}
+          <div className="st-editorial-hero-shade" />
+          <div className="st-editorial-hero-copy">
+            <span className="st-eyebrow">Featured</span>
+            <div className="st-editorial-title-row">
+              <IconBox item={feature} token={token} />
+              <div>
+                <h2 id="st-featured-app-title">{feature.manifest?.name || feature.name}</h2>
+                <p>{feature.manifest?.store?.tagline || feature.summary || feature.description}</p>
+              </div>
+            </div>
+            <button type="button" className="st-btn st-btn-primary" onClick={() => onPick(feature)}>View app</button>
+          </div>
+        </section>
+      ) : null}
+      {picks.length ? (
+        <section className="st-picks" aria-labelledby="st-picks-title">
+          <div className="st-catalog-section-head"><h2 id="st-picks-title" className="st-catalog-section-title">Our picks</h2></div>
+          <div className="st-picks-grid">{picks.map(renderCard)}</div>
+        </section>
+      ) : null}
       {groups.map(renderGroup)}
       {hasMore && onLoadMore ? (
         <div className="st-catalog-more">

@@ -18,8 +18,7 @@
   "permissions": {
     "cross_app_access": "none",
     "share_with_apps": "none",
-    "manage_apps": true,
-    "github_access": true
+    "manage_apps": true
   },
   "runtime": {
     "imports": [
@@ -42,6 +41,7 @@
     "api.js",
     "manifest-snapshots.js",
     "ui/IconBox.jsx",
+    "ui/StoreImage.jsx",
     "ui/PermissionRow.jsx",
     "ui/CapabilityContract.jsx",
     "ui/UninstallConfirmModal.jsx",

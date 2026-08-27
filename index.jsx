@@ -58,6 +58,7 @@ import {
   loadCommunityIdentity,
   loadLocalGithubIdentity,
   loadCommunityPublications,
+  loadLocalPublicationPreview,
   loadInstalledApps,
   loadProviderStatus,
   loadUpdateCandidatePreview,
@@ -142,6 +143,7 @@ export {
   loadCommunityIdentity,
   loadLocalGithubIdentity,
   loadCommunityPublications,
+  loadLocalPublicationPreview,
   loadInstalledApps,
   publishLocalAppToGithub,
   registerCommunityRevision,
@@ -154,6 +156,7 @@ export {
 } from './api.js'
 export { capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
 export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
+export { storeAssetSource, storeAssetUrl } from './ui/StoreImage.jsx'
 
 // Snapshot-less catalogs (catalog.json is now a pure discovery index) hydrate
 // every entry's manifest from its repo on open — ~16 fetches — so a 3-wide pool
@@ -1961,6 +1964,7 @@ export default function App({ appId, token }) {
                     updateAllProgress={batchProgress}
                     updateAllDisabled={busy || !!checkingUpdateItemId || !!installedLoadError}
                     onUpdateAll={handleUpdateAll}
+                    mode={tab}
                   />
                   {tab === 'library' && (
                     <LibraryHealth
@@ -2021,6 +2025,8 @@ export default function App({ appId, token }) {
                     searchLoading={tab === 'browse' && communityLoading && communityOffset === 0}
                     hasMore={tab === 'browse' && communityHasMore}
                     onLoadMore={() => refreshCommunity({ append: true })}
+                    editorial={tab === 'browse' && !query && category === 'all'}
+                    layout={tab === 'library' ? 'list' : 'grid'}
                   />
                 </>}
           </>
@@ -2033,6 +2039,7 @@ export default function App({ appId, token }) {
             viewer={{ github: githubIdentity, error: githubIdentityError }}
             onRefreshViewer={refreshGithubIdentity}
             onPublishLocal={handlePublishLocal}
+            onPreviewLocal={(localAppId) => loadLocalPublicationPreview(token, localAppId)}
             onRegisterRepository={handleRegisterCommunity}
             publishingId={publishingId}
             publication={publication}
@@ -2040,6 +2047,9 @@ export default function App({ appId, token }) {
             publicationStates={publicationStates}
             publicationStatesError={publicationStatesError}
             onRefreshPublicationStates={refreshPublicationStates}
+            onNavigate={() => {
+              if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+            }}
             contributeAvailable={!!contributeApp}
             onOpenContributions={(localAppId) => openInstalledApp(
               contributeApp.id,

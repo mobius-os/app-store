@@ -56,6 +56,30 @@ test('canonicalIdentityKey matches backend-style manifest identities', async () 
   )
 })
 
+test('store artwork resolves only through the accepted manifest mapping', async () => {
+  const { storeAssetSource, storeAssetUrl } = await bundle()
+  const imageSource = await readFile(join(root, '..', 'ui', 'StoreImage.jsx'), 'utf8')
+  const manifest = {
+    static_assets: {
+      'listing/hero.png': 'listing-assets/hero.immutable.png',
+    },
+  }
+  assert.equal(
+    storeAssetSource(manifest, 'listing/hero.png'),
+    'listing-assets/hero.immutable.png',
+  )
+  assert.equal(
+    storeAssetUrl({ manifest, raw_base: 'https://raw.example/revision/' }, 'listing/hero.png'),
+    'https://raw.example/revision/listing-assets/hero.immutable.png',
+  )
+  assert.equal(
+    storeAssetUrl({ manifest, local_asset_base: '/app-assets/by-id/7/static/' }, 'listing/hero.png'),
+    '/app-assets/by-id/7/static/listing/hero.png',
+  )
+  assert.match(imageSource, /URL\.revokeObjectURL\(objectUrl\)/)
+  assert.doesNotMatch(imageSource, /const resolvedImages = new Map/)
+})
+
 test('community listings join the ordinary install path with social provenance', async () => {
   const { communityCatalogItems } = await bundle()
   const [item] = communityCatalogItems({ items: [{
@@ -231,6 +255,11 @@ test('local publishing is one reviewed action through the inherited GitHub accou
   assert.match(publisherSource, /I want this accepted source revision to become public/)
   assert.match(publisherSource, /onPublishLocal/)
   assert.doesNotMatch(publisherSource, /Return here with the repository and exact commit/)
+  assert.equal(
+    publisherSource.match(/onClick=\{\(\) => onOpenContributions\?\.\(\)\}/g)?.length,
+    2,
+    'Contribute buttons must not forward click events as local app ids',
+  )
 })
 
 test('a Host-created remix returns to the ordinary reviewed install path', async () => {

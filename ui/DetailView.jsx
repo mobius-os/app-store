@@ -4,6 +4,7 @@ import { appLifecycleFor, busyLabelForAction, distributionStatus, isTrustedHost,
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
+import { StoreImage } from './StoreImage.jsx'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -106,6 +107,11 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const previewUrl = item.preview && storeAppId
     ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`
     : ''
+  const listing = m.store && typeof m.store === 'object' ? m.store : null
+  const listingHero = typeof listing?.hero === 'string' ? listing.hero : listing?.hero?.path
+  const listingScreenshots = Array.isArray(listing?.screenshots) ? listing.screenshots : []
+  const listingTagline = listing?.tagline || m.description
+  const listingDescription = listing?.description || m.description
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
@@ -120,25 +126,51 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
         </button>
       </div>
       <div className="st-scroll">
-        <div className="st-hero">
-          <IconBox item={heroItemWithIcon} size="hero" token={token} />
-          <div className="st-hero-text">
-            <h2 className="st-hero-name">{m.name}</h2>
-            {(m.author || m.license) && (
-              <div className="st-hero-meta">
-                {[m.author, m.license].filter(Boolean).join(' · ')}
-              </div>
-            )}
+        {listingHero ? (
+          <section className="st-detail-editorial" aria-labelledby="st-detail-name">
+            <StoreImage item={reviewedItem} path={listingHero} token={token} alt="" className="st-detail-editorial-image" loading="eager" />
+            <div className="st-detail-editorial-shade" />
+            <div className="st-detail-editorial-copy">
+              <IconBox item={heroItemWithIcon} token={token} />
+              <span className="st-eyebrow">{item.community ? 'Community app' : 'Möbius app'}</span>
+              <h2 id="st-detail-name">{m.name}</h2>
+              <p>{listingTagline}</p>
+            </div>
+          </section>
+        ) : (
+          <div className="st-hero">
+            <IconBox item={heroItemWithIcon} size="hero" token={token} />
+            <div className="st-hero-text">
+              <h2 className="st-hero-name">{m.name}</h2>
+              <p className="st-detail-tagline">{listingTagline}</p>
+            </div>
           </div>
-        </div>
+        )}
 
-        <p className="st-detail-desc">{m.description}</p>
-
-        {previewUrl ? (
+        {listingScreenshots.length ? (
+          <div className="st-detail-gallery" aria-label={`${m.name} screenshots`}>
+            {listingScreenshots.map((shot, index) => {
+              const path = typeof shot === 'string' ? shot : shot.src
+              const alt = typeof shot === 'string' ? `${m.name} screenshot ${index + 1}` : shot.alt
+              return (
+                <figure key={`${path}-${index}`}>
+                  <StoreImage item={reviewedItem} path={path} token={token} alt={alt} className="st-detail-gallery-image" />
+                  {typeof shot === 'object' && shot.label ? <figcaption>{shot.label}</figcaption> : null}
+                </figure>
+              )
+            })}
+          </div>
+        ) : previewUrl ? (
           <figure className="st-detail-preview">
             <img src={previewUrl} alt={`${m.name} app preview`} />
             <figcaption>A look inside {m.name}</figcaption>
           </figure>
+        ) : null}
+
+        <p className="st-detail-desc">{listingDescription}</p>
+
+        {(m.author || m.license) ? (
+          <div className="st-detail-byline">{[m.author, m.license].filter(Boolean).join(' · ')}</div>
         ) : null}
 
         {item.community && (

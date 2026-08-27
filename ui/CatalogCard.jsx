@@ -18,7 +18,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
   const m = item.manifest
 
   if (!m) {
@@ -139,7 +139,7 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
   // z-index layer above that overlay so it stays independently clickable.
   // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div className={`${cardVariantClass(cardVariant)}${previewUrl ? ' has-preview' : ''}`}>
+    <div className={`${cardVariantClass(cardVariant)}${previewUrl ? ' has-preview' : ''}${layout === 'list' ? ' is-list' : ''}`}>
       {previewUrl ? (
         <div className="st-card-preview" aria-hidden="true">
           <img src={previewUrl} alt="" loading="lazy" />

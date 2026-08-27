@@ -62,6 +62,14 @@ export async function loadCommunityPublications(token, { limit = 100, offset = 0
   return communityResponse(response, 'Publication status could not be loaded.')
 }
 
+export async function loadLocalPublicationPreview(token, appId) {
+  const params = new URLSearchParams({ app_id: String(appId) })
+  const response = await fetch(`/api/community/publications/github/preview?${params}`, {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'This app listing could not be prepared.')
+}
+
 export async function registerCommunityRevision(
   token,
   { repository, commitSha, manifestPath = 'mobius.json', publicIdentity = 'github' },

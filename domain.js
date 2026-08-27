@@ -673,15 +673,18 @@ export function communityCatalogItems(payload) {
     if (!id || !manifestUrl || !rawBase) return []
     const latest = row.latest_revision || row.revision || {}
     const distribution = row.distribution || latest.distribution || null
+    const store = manifest?.store && typeof manifest.store === 'object' ? manifest.store : {}
     return [{
       id: `community:${id}`,
       manifest_url: manifestUrl,
       raw_base: rawBase,
       name: row.name || manifest?.name || id,
-      description: row.summary || row.description || manifest?.description || '',
-      summary: row.summary || row.description || manifest?.description || '',
+      description: store.description || row.description || manifest?.description || '',
+      summary: store.tagline || row.summary || row.description || manifest?.description || '',
       collection: row.collection || 'community',
-      categories: Array.isArray(row.categories) ? row.categories : ['Community'],
+      categories: Array.isArray(row.categories)
+        ? row.categories
+        : Array.isArray(manifest?.categories) ? manifest.categories : ['Community'],
       manifest,
       error: null,
       community: {
