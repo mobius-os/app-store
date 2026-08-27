@@ -28,6 +28,11 @@ const CATALOG_COLLECTIONS = [
     description: 'Shape how Möbius thinks, works, and evolves.',
   },
   {
+    id: 'community',
+    title: 'From the community',
+    description: 'Open-source apps you can install, review, remix, and improve together.',
+  },
+  {
     id: 'other-installed',
     title: 'Other installed apps',
     description: 'Published apps outside the main catalog, with updates checked at their source.',
@@ -35,6 +40,7 @@ const CATALOG_COLLECTIONS = [
 ]
 
 export function CatalogList({
+  appId,
   items,
   installed,
   updateChecks,
@@ -59,6 +65,10 @@ export function CatalogList({
   systemSetupReady = false,
   emptyTitle = 'No apps',
   emptyText = 'No apps in the catalog yet.',
+  loadingMore = false,
+  searchLoading = false,
+  hasMore = false,
+  onLoadMore,
 }) {
   if (items.length === 0) {
     return (
@@ -72,6 +82,7 @@ export function CatalogList({
     <CatalogCard
       key={item.id}
       item={item}
+      appId={appId}
       installed={installed}
       updateChecks={updateChecks}
       onPick={onPick}
@@ -115,7 +126,15 @@ export function CatalogList({
 
   return (
     <div className="st-catalog-sections">
+      {searchLoading ? <div className="st-registry-progress" role="status">Searching shared listings…</div> : null}
       {groups.map(renderGroup)}
+      {hasMore && onLoadMore ? (
+        <div className="st-catalog-more">
+          <button type="button" className="st-btn st-btn-secondary" onClick={onLoadMore} disabled={loadingMore}>
+            {loadingMore ? 'Loading more…' : 'Load more community apps'}
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -12,6 +12,19 @@ export function catalogItemIdFromMessage(event, expectedOrigin, expectedSource) 
   return catalogItemIdFromIntent(event.data.intent)
 }
 
+export function storeDestinationFromIntent(intent) {
+  if (typeof intent !== 'string') return null
+  if (intent.trim().toLowerCase() === 'updates') return { kind: 'updates' }
+  const itemId = catalogItemIdFromIntent(intent)
+  return itemId ? { kind: 'app', itemId } : null
+}
+
+export function storeDestinationFromMessage(event, expectedOrigin, expectedSource) {
+  if (event?.origin !== expectedOrigin || event?.source !== expectedSource) return null
+  if (event?.data?.type !== 'moebius:app-intent') return null
+  return storeDestinationFromIntent(event.data.intent)
+}
+
 export function resolveCatalogItemIntent(catalog, itemId) {
   const item = Array.isArray(catalog)
     ? catalog.find(candidate => candidate.id === itemId)
@@ -313,7 +326,7 @@ export function capabilityDiffNeedsReview(diff) {
 // verified and the app asks for no new or unrecorded access. Anything else
 // stays on the individual review path rather than being silently approved by
 // the batch action.
-export function updateBatchDisposition(prepared) {
+export function updateBatchDisposition(prepared, { trusted = false } = {}) {
   if (!prepared || prepared.error) return { kind: 'review', reason: 'check_failed' }
   if (!prepared.preview?.source_digest) return { kind: 'review', reason: 'source_unverified' }
   const diff = prepared.capabilityReview?.preview?.capability_diff
@@ -323,7 +336,12 @@ export function updateBatchDisposition(prepared) {
   if (capabilityDiffNeedsReview(diff)) {
     return { kind: 'review', reason: 'access_changed' }
   }
+  if (!trusted) return { kind: 'review', reason: 'trust_required' }
   return { kind: 'ready', reason: null }
+}
+
+export function trustedUpdateKey(item, installedApp = null) {
+  return installedApp?.manifest_url || item?.manifest_url || item?.id || ''
 }
 
 export function appLifecycleFor(item, {
@@ -608,6 +626,228 @@ export function filterCatalog(items, { query = '', category = 'all' } = {}) {
     const text = catalogSearchText(item)
     return terms.every(term => text.includes(term))
   })
+}
+
+function communityAuthor(row) {
+  const author = row?.author || row?.publisher || null
+  if (typeof author === 'string') return { handle: author }
+  if (!author || typeof author !== 'object') return null
+  const handle = String(author.handle || author.login || author.name || '')
+  return handle ? { ...author, handle } : null
+}
+
+export function communityRepositoryUrl(value) {
+  try {
+    const url = new URL(String(value || ''))
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com') return ''
+    const parts = url.pathname.split('/').filter(Boolean)
+    if (parts.length !== 2) return ''
+    const owner = parts[0]
+    const repository = parts[1].replace(/\.git$/i, '')
+    if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repository)) return ''
+    return `https://github.com/${owner}/${repository}`
+  } catch {
+    return ''
+  }
+}
+
+export function communityPublicationStatus(publication) {
+  return String(publication?.status || publication?.review_status || 'pending').trim().toLowerCase() || 'pending'
+}
+
+// The Host registry is intentionally release-independent. Convert its public
+// listing shape into the same narrow catalog item contract used by curated
+// GitHub apps so discovery, installation, and update review stay one path.
+export function communityCatalogItems(payload) {
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.apps) ? payload.apps
+    : Array.isArray(payload?.items) ? payload.items
+    : []
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== 'object') return []
+    const id = String(row.id || row.app_id || '')
+    const manifestUrl = row.manifest_url || row.latest_revision?.manifest_url
+    const rawBase = row.raw_base || row.latest_revision?.raw_base
+    const manifest = row.manifest || row.latest_revision?.manifest || null
+    if (!id || !manifestUrl || !rawBase) return []
+    const latest = row.latest_revision || row.revision || {}
+    const distribution = row.distribution || latest.distribution || null
+    return [{
+      id: `community:${id}`,
+      manifest_url: manifestUrl,
+      raw_base: rawBase,
+      name: row.name || manifest?.name || id,
+      description: row.summary || row.description || manifest?.description || '',
+      summary: row.summary || row.description || manifest?.description || '',
+      collection: row.collection || 'community',
+      categories: Array.isArray(row.categories) ? row.categories : ['Community'],
+      manifest,
+      error: null,
+      community: {
+        id,
+        revision_id: String(latest.id || latest.revision_id || row.revision_id || ''),
+        author: communityAuthor(row),
+        rating_average: Number(row.rating_average ?? row.rating?.average ?? 0) || 0,
+        rating_count: Number(row.rating_count ?? row.rating?.count ?? 0) || 0,
+        user_rating: Number(row.user_rating || 0) || 0,
+        review_eligible: Boolean(row.review_eligible ?? latest.review_eligible ?? false),
+        comments: Array.isArray(latest.comments) ? latest.comments : Array.isArray(row.comments) ? row.comments : [],
+        repository_url: communityRepositoryUrl(
+          row.repository_url || row.github?.url || row.homepage || manifest?.homepage,
+        ),
+        remix_of: row.remix_of || latest.remix_of || null,
+        installs: Number(row.installs || 0) || 0,
+        publication_status: row.publication_status || row.review_status || latest.status || 'live',
+        repository_update: row.repository_update && typeof row.repository_update === 'object' ? {
+          commit_sha: String(row.repository_update.commit_sha || ''),
+          ref: String(row.repository_update.ref || ''),
+          received_at: String(row.repository_update.received_at || ''),
+          status: String(row.repository_update.status || 'available_for_review'),
+        } : null,
+        distribution: distribution && typeof distribution === 'object' ? {
+          format: String(distribution.format || ''),
+          sha256: String(distribution.sha256 || distribution.digest || ''),
+          source_commit: String(distribution.source_commit || ''),
+          compatible: distribution.compatible === true,
+          bytes: Number(distribution.bytes || distribution.size || 0) || 0,
+          download_url: String(distribution.download_url || ''),
+        } : null,
+        cache: latest.cache && typeof latest.cache === 'object' ? {
+          kind: String(latest.cache.kind || ''),
+          revision_id: String(latest.cache.revision_id || ''),
+        } : null,
+      },
+    }]
+  })
+}
+
+export function communityCatalogPage(payload, requestedLimit = 50) {
+  const items = communityCatalogItems(payload)
+  const rawRows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.apps) ? payload.apps
+    : Array.isArray(payload?.items) ? payload.items
+    : []
+  const explicitMore = payload && typeof payload === 'object'
+    ? payload.has_more ?? payload.hasMore
+    : undefined
+  const nextCursor = payload && typeof payload === 'object'
+    ? String(payload.next_cursor || payload.nextCursor || '')
+    : ''
+  return {
+    items,
+    rowCount: rawRows.length,
+    viewer: payload && typeof payload === 'object' && !Array.isArray(payload) ? {
+      github: {
+        connected: payload.viewer?.github?.connected === true,
+        login: String(payload.viewer?.github?.login || ''),
+      },
+    } : null,
+    hasMore: typeof explicitMore === 'boolean'
+      ? explicitMore
+      : Boolean(nextCursor) || rawRows.length >= requestedLimit,
+    nextCursor,
+  }
+}
+
+export function mergeCommunityCatalog(current, incoming) {
+  const byId = new Map((current || []).map((item) => [item.id, item]))
+  for (const item of incoming || []) byId.set(item.id, item)
+  return [...byId.values()]
+}
+
+export function distributionStatus(distribution, cache = null) {
+  if (!distribution?.sha256) {
+    if (cache?.kind === 'content_addressed') {
+      return {
+        key: 'preserved-source',
+        label: 'Preserved source',
+        description: 'The Host retained this exact release by file digest, so rewritten Git history cannot change it.',
+      }
+    }
+    return {
+      key: 'source',
+      label: 'Source install',
+      description: 'This release is installed from its reviewed source package.',
+    }
+  }
+  if (distribution.compatible !== true) {
+    return {
+      key: 'incompatible',
+      label: 'Source fallback',
+      description: 'A cached build exists, but it does not match this Möbius runtime.',
+    }
+  }
+  return {
+    key: 'verified',
+    label: 'Verified build',
+    description: 'The Host has a digest-verified build tied to this exact source revision.',
+  }
+}
+
+export function remixCatalogItem(payload, parent) {
+  const row = payload?.app || payload?.remix || payload
+  if (!row || typeof row !== 'object') return null
+  const manifestUrl = row.manifest_url || row.latest_revision?.manifest_url
+  const rawBase = row.raw_base || row.latest_revision?.raw_base
+  const manifest = row.manifest || row.latest_revision?.manifest || null
+  if (!manifestUrl || !rawBase) return null
+  const publicId = String(row.id || row.app_id || manifest?.id || '')
+  if (!publicId) return null
+  return {
+    id: `remix:${publicId}`,
+    manifest_url: manifestUrl,
+    raw_base: rawBase,
+    manifest,
+    name: row.name || manifest?.name || 'Remix',
+    description: row.summary || row.description || manifest?.description || '',
+    summary: row.summary || row.description || manifest?.description || '',
+    collection: 'community',
+    categories: Array.isArray(row.categories) ? row.categories : ['Community'],
+    error: null,
+    community: {
+      id: publicId,
+      revision_id: String(row.revision_id || row.latest_revision?.id || ''),
+      author: communityAuthor(row),
+      rating_average: 0,
+      rating_count: 0,
+      user_rating: 0,
+      review_eligible: false,
+      comments: [],
+      repository_url: communityRepositoryUrl(row.repository_url || row.github?.url),
+      remix_of: row.remix_of || parent?.community?.id || null,
+      installs: 0,
+      publication_status: row.publication_status || row.review_status || 'pending',
+      distribution: row.distribution || null,
+    },
+  }
+}
+
+export function communityPublicationsByLocalApp(payload) {
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.publications) ? payload.publications
+    : Array.isArray(payload?.items) ? payload.items
+    : []
+  const result = {}
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    const rawLocalId = String(row.local_app_id || row.local_id || '')
+    const match = /^app:(\d+)(?::|$)/.exec(rawLocalId)
+    const localAppId = Number(row.local_app_numeric_id || row.app_local_id || match?.[1])
+    if (!Number.isInteger(localAppId) || localAppId <= 0) continue
+    result[localAppId] = {
+      id: String(row.id || row.publication_id || ''),
+      status: String(row.status || row.review_status || 'pending'),
+      message: String(row.message || row.failure_message || ''),
+      repository_url: communityRepositoryUrl(row.repository_url || row.github?.url),
+      updated_at: row.updated_at || row.created_at || '',
+      checks: Array.isArray(row.checks) ? row.checks : [],
+      distribution: row.distribution || null,
+    }
+  }
+  return result
 }
 
 // Heart of the install flow. One call to POST /api/apps/install — the

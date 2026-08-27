@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, distributionStatus, isTrustedHost, scheduleSummary } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
+import { CommunityFeedback } from './CommunityFeedback.jsx'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -28,7 +29,13 @@ function checkedAtText(value) {
   })
 }
 
-export function DetailView({ item, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+function communityAuthorName(author) {
+  if (typeof author === 'string') return author
+  if (!author || typeof author !== 'object') return 'Möbius creator'
+  return String(author.handle || author.login || author.name || 'Möbius creator')
+}
+
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityRate, onCommunityComment, onRemix, trustedUpdate = false, onToggleTrustedUpdate, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const lifecycle = appLifecycleFor(reviewedItem, {
@@ -93,6 +100,12 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
   const releaseSummary = storeInstalled && installedVer && installedVer !== m.version
     ? `Installed label v${installedVer} · catalog label v${m.version}`
     : `Version label v${m.version}`
+  const delivery = item.community
+    ? distributionStatus(item.community.distribution, item.community.cache)
+    : null
+  const previewUrl = item.preview && storeAppId
+    ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`
+    : ''
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
@@ -120,6 +133,51 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
         </div>
 
         <p className="st-detail-desc">{m.description}</p>
+
+        {previewUrl ? (
+          <figure className="st-detail-preview">
+            <img src={previewUrl} alt={`${m.name} app preview`} />
+            <figcaption>A look inside {m.name}</figcaption>
+          </figure>
+        ) : null}
+
+        {item.community && (
+          <>
+          <div className="st-community-provenance">
+            <div>
+              <strong>Open source from the community</strong>
+              <span>
+                {communityAuthorName(item.community.author)}
+                {item.community.remix_of ? ' · Remixed from another app' : ''}
+                {delivery?.key === 'verified' ? ' · Verified build' : ''}
+              </span>
+            </div>
+            <div className="st-community-actions">
+              {item.community.repository_url && (
+                <>
+                  <a href={item.community.repository_url} target="_blank" rel="noopener noreferrer">Source</a>
+                  <a href={`${item.community.repository_url.replace(/\/$/, '')}/issues`} target="_blank" rel="noopener noreferrer">Contribute</a>
+                </>
+              )}
+              <button type="button" className="st-btn st-btn-secondary"
+                      onClick={onRemix} disabled={!communityIdentityLinked || busy}>
+                Remix
+              </button>
+            </div>
+          </div>
+          {item.community.repository_update && (
+            <div className="st-repository-update" role="status">
+              <div>
+                <strong>A newer repository change is waiting</strong>
+                <span>The current Store release stays unchanged until its owner verifies and lists that exact revision.</span>
+              </div>
+              <span className="st-repository-update-sha">
+                {item.community.repository_update.commit_sha.slice(0, 10)}
+              </span>
+            </div>
+          )}
+          </>
+        )}
 
         {installedUnavailable && (
           <div className="st-notice is-warning st-notice-row" role="status">
@@ -234,6 +292,22 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
             </span>
           </summary>
           <div className="st-technical-body">
+            {delivery && (
+              <div className="st-technical-section">
+                <div className="st-section-label">Delivery</div>
+                <div className={`st-delivery-status is-${delivery.key}`}>
+                  <div>
+                    <strong>{delivery.label}</strong>
+                    <span>{delivery.description}</span>
+                  </div>
+                  {item.community.distribution?.bytes > 0 ? (
+                    <span className="st-delivery-size">
+                      {(item.community.distribution.bytes / 1024).toFixed(0)} KB
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )}
             <div className="st-technical-section">
               <div className="st-section-label">Privacy & access</div>
               <CapabilityContract
@@ -288,6 +362,35 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
             )}
           </div>
         </details>
+
+        {storeInstalled && (
+          <section className="st-update-trust" aria-label="Update review preference">
+            <div>
+              <strong>{trustedUpdate ? 'Routine updates are trusted' : 'Review every update'}</strong>
+              <span>
+                {trustedUpdate
+                  ? 'Möbius may batch updates only while source verification succeeds and access stays unchanged.'
+                  : 'Every release opens for review before it can be applied.'}
+              </span>
+            </div>
+            <button type="button" className="st-btn st-btn-secondary" disabled={busy}
+                    onClick={() => onToggleTrustedUpdate?.(storeInstalled)}>
+              {trustedUpdate ? 'Require review' : 'Trust routine updates'}
+            </button>
+          </section>
+        )}
+
+        {item.community && (
+          <CommunityFeedback
+            key={item.community.revision_id}
+            community={item.community}
+            canReview={!!storeInstalled && communityIdentityLinked && item.community.review_eligible}
+            onRate={onCommunityRate}
+            onComment={onCommunityComment}
+            busy={communityBusy}
+            error={communityError}
+          />
+        )}
 
       </div>
 

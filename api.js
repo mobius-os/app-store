@@ -3,6 +3,161 @@ import { validateManifestUrl } from './domain.js'
 export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
 export const SYSTEM_SETUP_READY_KEY = 'mobius:system-setup-ready:v1'
 
+function communityHeaders(token, idempotencyKey = '') {
+  return {
+    Authorization: `Bearer ${token}`,
+    ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+  }
+}
+
+function communityRequestKey(action) {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `store:${action}:${random}`.slice(0, 127)
+}
+
+async function communityResponse(response, fallback) {
+  if (response.ok) return response.status === 204 ? {} : response.json()
+  const detail = await readErrorDetail(response, fallback)
+  throw new Error(detail)
+}
+
+export async function loadCommunityIdentity(token) {
+  const response = await fetch('/api/community/identity', {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'Community identity could not be loaded.')
+}
+
+// App Store inherits the platform-owned GitHub connection through the same
+// read-only capability used by Contribute. The stored credential never enters
+// the iframe; this endpoint returns only GitHub's public user profile.
+export async function loadLocalGithubIdentity(token) {
+  const response = await fetch('/api/community/github-status', {
+    headers: communityHeaders(token),
+  })
+  if (!response.ok) {
+    const detail = await readErrorDetail(response, 'GitHub connection could not be checked.')
+    throw new Error(detail)
+  }
+  const profile = await response.json()
+  return {
+    connected: profile?.connected === true && !!profile?.login,
+    login: String(profile?.login || ''),
+  }
+}
+
+export async function loadCommunityApps(token, { query = '', limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset) })
+  const response = await fetch(`/api/community/apps?${params}`, {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'Community apps could not be loaded.')
+}
+
+export async function loadCommunityPublications(token, { limit = 100, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  const response = await fetch(`/api/community/publications?${params}`, {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'Publication status could not be loaded.')
+}
+
+export async function registerCommunityRevision(
+  token,
+  { repository, commitSha, manifestPath = 'mobius.json', publicIdentity = 'github' },
+) {
+  const response = await fetch('/api/community/apps', {
+    method: 'POST',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('register')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      repository,
+      commit_sha: commitSha,
+      manifest_path: manifestPath,
+      public_identity: publicIdentity,
+    }),
+  })
+  return communityResponse(response, 'This GitHub release could not be listed.')
+}
+
+export async function publishLocalAppToGithub(token, appId, repositoryName) {
+  const response = await fetch('/api/community/publications/github', {
+    method: 'POST',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('publish-local')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      app_id: appId,
+      repository_name: repositoryName,
+      confirm_source_public: true,
+      public_identity: 'github',
+    }),
+  })
+  return communityResponse(response, 'This local app could not be published.')
+}
+
+export async function remixCommunityApp(token, appId, revisionId, name) {
+  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/remixes`, {
+    method: 'POST',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('remix')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      revision_id: revisionId,
+      name,
+      confirm_source_public: true,
+      public_identity: 'github',
+    }),
+  })
+  return communityResponse(response, 'This remix could not be created.')
+}
+
+export async function rateCommunityApp(token, appId, revisionId, value) {
+  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/rating`, {
+    method: 'PUT',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('rating')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ revision_id: revisionId, value }),
+  })
+  return communityResponse(response, 'Your rating could not be saved.')
+}
+
+export async function recordCommunityInstall(token, appId, revisionId, localAppId) {
+  const response = await fetch(
+    `/api/community/apps/${encodeURIComponent(appId)}/revisions/${encodeURIComponent(revisionId)}/installs`,
+    {
+      method: 'POST',
+      headers: {
+        ...communityHeaders(token, communityRequestKey('install')),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ local_app_id: localAppId }),
+    },
+  )
+  return communityResponse(response, 'This install could not be verified for reviews.')
+}
+
+export async function commentOnCommunityRevision(token, appId, revisionId, body, publicIdentity = 'github') {
+  const response = await fetch(
+    `/api/community/apps/${encodeURIComponent(appId)}/revisions/${encodeURIComponent(revisionId)}/comments`,
+    {
+      method: 'POST',
+      headers: {
+        ...communityHeaders(token, communityRequestKey('comment')),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ body, public_identity: publicIdentity }),
+    },
+  )
+  return communityResponse(response, 'Your review could not be posted.')
+}
+
 export function openInstalledApp(id, { intent, onUnembedded } = {}) {
   if (window.parent === window) {
     if (onUnembedded) onUnembedded()
@@ -319,11 +474,15 @@ export async function fetchCatalog(url, token, opts = {}) {
       'everyday', 'create', 'explore', 'play', 'developer',
     ].includes(e.collection) ? e.collection : null
     const summary = cleanString(e.summary, 96)
+    const preview = typeof e.preview === 'string' && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(e.preview)
+      ? e.preview
+      : undefined
     entries.push({
       id: e.id,
       name: cleanString(e.name),
       description: cleanString(e.description),
       ...(summary ? { summary } : {}),
+      ...(preview ? { preview } : {}),
       repo: typeof e.repo === 'string' ? e.repo : undefined,
       manifest_url: e.manifest_url,
       raw_base: e.raw_base,

@@ -10,7 +10,7 @@
 //   ui/*.jsx      — one React component per file
 //
 // Only App lives here: it owns top-level catalog/install/navigation state and
-// mounts the Official catalog grid, Community tab, detail view, modal, banner, and toast.
+// mounts marketplace browsing, publishing, app details, update review, and toast.
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
@@ -20,21 +20,30 @@ import {
   buildUpdateReviewMessage,
   appLifecycleFor,
   busyLabelForAction,
-  catalogItemIdFromMessage,
+  storeDestinationFromMessage,
   capabilityDiffNeedsReview,
   clearResolvedBlockedReview,
   clearSettledBlockedReview,
   collectCategories,
+  distributionStatus,
+  communityCatalogPage,
+  communityCatalogItems,
+  communityPublicationStatus,
+  communityPublicationsByLocalApp,
+  communityRepositoryUrl,
   filterCatalog,
   findInstalled,
   isSystemCatalogItem,
   mergeCatalogEntries,
+  mergeCommunityCatalog,
   otherInstalledCatalogItems,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
+  remixCatalogItem,
   sourceBackedInstalledApps,
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
+  trustedUpdateKey,
   updateBatchDisposition,
 } from './domain.js'
 import {
@@ -45,10 +54,20 @@ import {
   fetchUpdateCheck,
   hasConnectedProvider,
   installApp,
+  loadCommunityApps,
+  loadCommunityIdentity,
+  loadLocalGithubIdentity,
+  loadCommunityPublications,
   loadInstalledApps,
   loadProviderStatus,
   loadUpdateCandidatePreview,
   loadUpdatePreview,
+  publishLocalAppToGithub,
+  registerCommunityRevision,
+  remixCommunityApp,
+  rateCommunityApp,
+  recordCommunityInstall,
+  commentOnCommunityRevision,
   openChat,
   openInstalledApp,
   openSystemSettings,
@@ -63,7 +82,9 @@ import { CatalogList } from './ui/CatalogList.jsx'
 import { CatalogFilters } from './ui/CatalogFilters.jsx'
 import { CatalogSkeleton } from './ui/CatalogSkeleton.jsx'
 import { DetailView } from './ui/DetailView.jsx'
-import { CommunityTab } from './ui/CommunityTab.jsx'
+import { LibraryHealth } from './ui/LibraryHealth.jsx'
+import { PublisherTab } from './ui/PublisherTab.jsx'
+import { RemixConfirmModal } from './ui/RemixConfirmModal.jsx'
 import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
@@ -74,6 +95,8 @@ export {
   busyLabelForAction,
   catalogItemIdFromIntent,
   catalogItemIdFromMessage,
+  storeDestinationFromIntent,
+  storeDestinationFromMessage,
   capabilityDiffNeedsReview,
   canonicalIdentityKey,
   clearResolvedBlockedReview,
@@ -83,11 +106,19 @@ export {
   catalogCardDescription,
   catalogCollection,
   collectCategories,
+  distributionStatus,
+  communityCatalogPage,
+  communityCatalogItems,
+  communityPublicationStatus,
+  communityPublicationsByLocalApp,
+  communityRepositoryUrl,
+  remixCatalogItem,
   filterCatalog,
   findInstalled,
   focusBlockedUpdateResult,
   isSystemCatalogItem,
   mergeCatalogEntries,
+  mergeCommunityCatalog,
   otherInstalledCatalogItems,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
@@ -97,6 +128,7 @@ export {
   sourceBackedInstalledApps,
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
+  trustedUpdateKey,
   updateBatchDisposition,
   validateManifestUrl,
 } from './domain.js'
@@ -106,7 +138,16 @@ export {
   fetchManifest,
   fetchUpdateCheck,
   installApp,
+  loadCommunityApps,
+  loadCommunityIdentity,
+  loadLocalGithubIdentity,
+  loadCommunityPublications,
   loadInstalledApps,
+  publishLocalAppToGithub,
+  registerCommunityRevision,
+  remixCommunityApp,
+  rateCommunityApp,
+  commentOnCommunityRevision,
   previewApp,
   proxyUrl,
   readErrorDetail,
@@ -119,6 +160,11 @@ export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
 // left first paint needlessly slow. 6 keeps concurrency modest against the raw
 // CDN while roughly halving the hydrate wall time.
 const MANIFEST_FETCH_CONCURRENCY = 6
+const TRUSTED_UPDATES_PATH = 'trusted-updates.json'
+
+function trustedUpdatesValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
 
 function Toast({ toast, onDismiss }) {
   if (!toast) return null
@@ -252,12 +298,31 @@ function itemIdsSettledByChecks(items, apps, checks) {
 }
 
 export default function App({ appId, token }) {
-  const [tab, setTab] = useState('official')
+  const [tab, setTab] = useState('browse')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [catalog, setCatalog] = useState(() =>
     CATALOG.map(c => ({ ...c, manifest: c.manifest || null, error: null }))
   )
+  const [communityCatalog, setCommunityCatalog] = useState([])
+  const [communityError, setCommunityError] = useState('')
+  const [communityLoading, setCommunityLoading] = useState(false)
+  const [communityHasMore, setCommunityHasMore] = useState(false)
+  const [communityOffset, setCommunityOffset] = useState(0)
+  const [communityIdentity, setCommunityIdentity] = useState(null)
+  const [communityIdentityError, setCommunityIdentityError] = useState('')
+  const [githubIdentity, setGithubIdentity] = useState(null)
+  const [githubIdentityError, setGithubIdentityError] = useState('')
+  const [publishingId, setPublishingId] = useState(null)
+  const [publication, setPublication] = useState(null)
+  const [publicationError, setPublicationError] = useState('')
+  const [publicationStates, setPublicationStates] = useState({})
+  const [publicationStatesError, setPublicationStatesError] = useState('')
+  const [communityActionBusy, setCommunityActionBusy] = useState(false)
+  const [communityActionError, setCommunityActionError] = useState('')
+  const [pendingRemix, setPendingRemix] = useState(null)
+  const [remixBusy, setRemixBusy] = useState(false)
+  const [remixError, setRemixError] = useState('')
   const [otherInstalledCatalog, setOtherInstalledCatalog] = useState([])
   const otherInstalledCatalogRef = useRef(otherInstalledCatalog)
   useEffect(() => { otherInstalledCatalogRef.current = otherInstalledCatalog }, [otherInstalledCatalog])
@@ -267,16 +332,32 @@ export default function App({ appId, token }) {
   const catalogRef = useRef(catalog)
   useEffect(() => { catalogRef.current = catalog }, [catalog])
   const [installed, setInstalled] = useState([])
+  const contributeApp = useMemo(
+    () => installed.find((app) => app?.slug === 'contribute') || null,
+    [installed],
+  )
   // Git-native update state per installed app, keyed by numeric app id. Each
   // answered check carries availability and the pending resolution/replay
   // phase; a missing/null answer is unknown and never becomes a version-based
   // update guess.
   const [updateChecks, setUpdateChecks] = useState({})
+  const [trustedUpdates, setTrustedUpdates] = useState({})
+  const trustedUpdatesRef = useRef(trustedUpdates)
+  const trustedUpdatesWriteRef = useRef(Promise.resolve())
+  useEffect(() => {
+    const storage = window.mobius?.storage
+    if (!storage?.subscribe) return undefined
+    return storage.subscribe(TRUSTED_UPDATES_PATH, (value) => {
+      const next = trustedUpdatesValue(value)
+      trustedUpdatesRef.current = next
+      setTrustedUpdates(next)
+    })
+  }, [])
   const [setupCompletions, setSetupCompletions] = useState(() => readSetupCompletions())
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
-  const [intentItemId, setIntentItemId] = useState(null)
+  const [intentDestination, setIntentDestination] = useState(null)
   const [capabilityReviews, setCapabilityReviews] = useState({})
   const navDetailRef = useRef(null)  // pending detail item during nav-push ack
   // B1: preserve the catalog grid's scroll across opening a detail and coming
@@ -284,6 +365,12 @@ export default function App({ appId, token }) {
   // re-mount scrolled to the top.
   const gridScrollRef = useRef(null)
   const savedGridScrollRef = useRef(0)
+  const selectTab = useCallback((next) => {
+    if (next === tab) return
+    savedGridScrollRef.current = 0
+    if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+    setTab(next)
+  }, [tab])
   const [pendingUninstall, setPendingUninstall] = useState(null)
   // pendingUninstall: the installed app row from /api/apps/.
   // Browser modal dialogs are silently no-op'd inside the AppCanvas
@@ -341,12 +428,12 @@ export default function App({ appId, token }) {
 
   useEffect(() => {
     function onIntent(event) {
-      const itemId = catalogItemIdFromMessage(
+      const destination = storeDestinationFromMessage(
         event,
         window.location.origin,
         window.parent,
       )
-      if (itemId) setIntentItemId(itemId)
+      if (destination) setIntentDestination(destination)
     }
     window.addEventListener('message', onIntent)
     return () => window.removeEventListener('message', onIntent)
@@ -405,7 +492,7 @@ export default function App({ appId, token }) {
         // Resolve the catalog SOURCE by MERGING the web registry (catalog.json,
         // fetched via the proxy) OVER the baked CATALOG — never replacing it.
         // Baked is the floor: an app in the baked list can never vanish because
-        // the registry is stale/partial (which would drop it from the Official grid + its
+        // the registry is stale/partial (which would drop it from Browse + its
         // update/rehydrate flows). The registry overrides a known app's URL
         // fields and can ADD new apps. This is what lets a newly-published app
         // appear without a store-app redeploy — appending it to catalog.json on
@@ -456,6 +543,211 @@ export default function App({ appId, token }) {
     load()
     return () => { cancelled = true }
   }, [appId, token, clearSettledUpdateArtifacts])
+
+  const communityRequestRef = useRef(0)
+  const refreshCommunity = useCallback(async ({ append = false } = {}) => {
+    const requestId = communityRequestRef.current + 1
+    communityRequestRef.current = requestId
+    const limit = 24
+    const offset = append ? communityOffset : 0
+    setCommunityLoading(true)
+    try {
+      const payload = await loadCommunityApps(token, { query: query.trim(), limit, offset })
+      if (communityRequestRef.current !== requestId) return
+      const page = communityCatalogPage(payload, limit)
+      setCommunityCatalog((current) => append
+        ? mergeCommunityCatalog(current, page.items)
+        : page.items)
+      setCommunityOffset(offset + page.rowCount)
+      setCommunityHasMore(page.hasMore)
+      setCommunityError('')
+    } catch (error) {
+      if (communityRequestRef.current !== requestId) return
+      setCommunityError(error?.message || 'Community apps are unavailable right now.')
+    } finally {
+      if (communityRequestRef.current === requestId) setCommunityLoading(false)
+    }
+  }, [token, query, communityOffset])
+
+  const refreshPublicationStates = useCallback(async () => {
+    try {
+      const payload = await loadCommunityPublications(token)
+      setPublicationStates(communityPublicationsByLocalApp(payload))
+      setPublicationStatesError('')
+    } catch (error) {
+      setPublicationStatesError(error?.message || 'Publication status is unavailable right now.')
+    }
+  }, [token])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.allSettled([
+      loadCommunityIdentity(token),
+      loadCommunityPublications(token),
+      loadLocalGithubIdentity(token),
+    ]).then(([identityResult, publicationsResult, githubResult]) => {
+      if (cancelled) return
+      if (identityResult.status === 'fulfilled') {
+        setCommunityIdentity(identityResult.value)
+        setCommunityIdentityError('')
+      } else {
+        setCommunityIdentityError(identityResult.reason?.message || 'Identity is unavailable right now.')
+      }
+      if (publicationsResult.status === 'fulfilled') {
+        setPublicationStates(communityPublicationsByLocalApp(publicationsResult.value))
+        setPublicationStatesError('')
+      } else {
+        setPublicationStatesError(publicationsResult.reason?.message || 'Publication status is unavailable right now.')
+      }
+      if (githubResult.status === 'fulfilled') {
+        setGithubIdentity(githubResult.value)
+        setGithubIdentityError('')
+      } else {
+        setGithubIdentity({ connected: false, login: '' })
+        setGithubIdentityError(githubResult.reason?.message || 'GitHub connection is unavailable right now.')
+      }
+    })
+    return () => { cancelled = true }
+  }, [token])
+
+  useEffect(() => {
+    if (tab !== 'browse') return undefined
+    const timer = window.setTimeout(() => {
+      setCommunityOffset(0)
+      refreshCommunity({ append: false })
+    }, query ? 250 : 0)
+    return () => window.clearTimeout(timer)
+  // Pagination state changes after a page arrives; only query/tab changes or
+  // an explicit Load more action should issue another request.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, token, query])
+
+  const refreshGithubIdentity = useCallback(async () => {
+    try {
+      setGithubIdentity(await loadLocalGithubIdentity(token))
+      setGithubIdentityError('')
+    } catch (error) {
+      setGithubIdentityError(error?.message || 'GitHub connection is unavailable right now.')
+    }
+  }, [token])
+
+  // Contribute owns connection setup. Refresh the inherited status when the
+  // owner comes back from it; App Store never starts a second OAuth flow.
+  useEffect(() => {
+    if (tab !== 'publish' || githubIdentity?.connected) return undefined
+    const onFocus = () => { void refreshGithubIdentity() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [githubIdentity, refreshGithubIdentity, tab])
+
+  const handleRegisterCommunity = useCallback(async (release) => {
+    if (publishingId) return false
+    setPublishingId('github-release')
+    setPublication(null)
+    setPublicationError('')
+    try {
+      const result = await registerCommunityRevision(token, release)
+      const listed = result?.app || result
+      setPublication({
+        ...listed,
+        name: listed?.manifest?.name || release.repository,
+        status: communityPublicationStatus(listed),
+        repository_url: communityRepositoryUrl(
+          listed?.repository_url || `https://github.com/${release.repository}`,
+        ),
+      })
+      await Promise.allSettled([refreshCommunity(), refreshPublicationStates()])
+      return true
+    } catch (error) {
+      setPublicationError(error?.message || 'This GitHub release could not be listed.')
+      return false
+    } finally {
+      setPublishingId(null)
+    }
+  }, [publishingId, refreshCommunity, refreshPublicationStates, token])
+
+  const handlePublishLocal = useCallback(async (localAppId, repositoryName) => {
+    if (publishingId) return false
+    setPublishingId(localAppId)
+    setPublication(null)
+    setPublicationError('')
+    try {
+      const result = await publishLocalAppToGithub(token, localAppId, repositoryName)
+      const listed = result?.app || result
+      setPublication({
+        ...listed,
+        name: listed?.manifest?.name || repositoryName,
+        status: communityPublicationStatus(listed),
+        repository_url: communityRepositoryUrl(listed?.repository_url || (
+          githubIdentity?.login ? `https://github.com/${githubIdentity.login}/${repositoryName}` : ''
+        )),
+      })
+      await Promise.allSettled([refreshCommunity(), refreshPublicationStates()])
+      return true
+    } catch (error) {
+      setPublicationError(error?.message || 'This local app could not be published.')
+      return false
+    } finally {
+      setPublishingId(null)
+    }
+  }, [githubIdentity, publishingId, refreshCommunity, refreshPublicationStates, token])
+
+  const updateCommunityItem = useCallback((communityId, updater) => {
+    setCommunityCatalog((items) => items.map((item) => (
+      item.community?.id === communityId
+        ? { ...item, community: updater(item.community) }
+        : item
+    )))
+    setDetail((item) => item?.community?.id === communityId
+      ? { ...item, community: updater(item.community) }
+      : item)
+  }, [])
+
+  const handleCommunityRate = useCallback(async (value) => {
+    const community = detail?.community
+    if (!community || communityActionBusy || !communityIdentity?.linked || !community.review_eligible) return false
+    setCommunityActionBusy(true)
+    setCommunityActionError('')
+    try {
+      const result = await rateCommunityApp(token, community.id, community.revision_id, value)
+      updateCommunityItem(community.id, (current) => ({
+        ...current,
+        user_rating: value,
+        rating_average: Number(result.rating_average ?? result.rating?.average ?? current.rating_average) || value,
+        rating_count: Number(result.rating_count ?? result.rating?.count ?? current.rating_count) || Math.max(1, current.rating_count),
+      }))
+      return true
+    } catch (error) {
+      setCommunityActionError(error?.message || 'Your rating could not be saved.')
+      return false
+    } finally {
+      setCommunityActionBusy(false)
+    }
+  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityItem])
+
+  const handleCommunityComment = useCallback(async (body) => {
+    const community = detail?.community
+    if (!community || communityActionBusy || !communityIdentity?.linked || !community.review_eligible) return false
+    setCommunityActionBusy(true)
+    setCommunityActionError('')
+    try {
+      const result = await commentOnCommunityRevision(
+        token, community.id, community.revision_id, body,
+        'github',
+      )
+      const comment = result.comment || result
+      updateCommunityItem(community.id, (current) => ({
+        ...current,
+        comments: [comment, ...current.comments],
+      }))
+      return true
+    } catch (error) {
+      setCommunityActionError(error?.message || 'Your review could not be posted.')
+      return false
+    } finally {
+      setCommunityActionBusy(false)
+    }
+  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityItem])
 
   // Published apps may exist outside the curated registry. Hydrate them from
   // the same canonical source the backend updates, while excluding this Store's
@@ -679,6 +971,33 @@ export default function App({ appId, token }) {
     }
   }, [token])
 
+  const handleCreateRemix = useCallback(async (name) => {
+    const source = pendingRemix
+    const community = source?.community
+    if (!community || remixBusy || !communityIdentity?.linked) return
+    setRemixBusy(true)
+    setRemixError('')
+    try {
+      const payload = await remixCommunityApp(
+        token, community.id, community.revision_id, name,
+      )
+      const remixed = remixCatalogItem(payload, source)
+      if (!remixed) throw new Error('Host did not return an installable remix.')
+      setPendingRemix(null)
+      setDetail(remixed)
+      await reviewCapabilities(remixed)
+      setToast({
+        kind: 'success',
+        message: `${name} now has its own GitHub source. Review access to install it.`,
+      })
+      void refreshCommunity()
+    } catch (error) {
+      setRemixError(error?.message || 'This remix could not be created.')
+    } finally {
+      setRemixBusy(false)
+    }
+  }, [communityIdentity, pendingRemix, refreshCommunity, remixBusy, reviewCapabilities, token])
+
   // Installs run inline from DetailView; updates reach this only after the
   // candidate-diff review's explicit Apply action. `busy` keeps the initiating
   // surface dimensionally stable while the transaction is in flight.
@@ -761,6 +1080,22 @@ export default function App({ appId, token }) {
             upstreamVersion: result.version || null,
           },
         }))
+      }
+      if (item.community?.id && item.community?.revision_id && result.id) {
+        // Installation is already complete; receipt failure must never roll it
+        // back. A later successful install/update retries with a fresh,
+        // idempotent receipt and unlocks feedback for this exact revision.
+        void recordCommunityInstall(
+          token,
+          item.community.id,
+          item.community.revision_id,
+          `app:${result.id}:${result.slug || item.manifest?.id || 'community'}`,
+        ).then(() => {
+          updateCommunityItem(item.community.id, (current) => ({
+            ...current,
+            review_eligible: true,
+          }))
+        }).catch(() => {})
       }
       setCardErrors(prev => withoutKey(prev, item.id))
       setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
@@ -1232,23 +1567,23 @@ export default function App({ appId, token }) {
   }, [detail])
 
   // Roving tab navigation: ArrowLeft/ArrowRight move selection between the
-  // two tabs with wrap, and move DOM focus to the newly-selected tab (the
+  // tabs with wrap, and move DOM focus to the newly-selected tab (the
   // tablist's roving tabIndex keeps only the active tab in the Tab order).
   const onTabsKeyDown = (e) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
     e.preventDefault()
-    const order = ['official', 'community']
+    const order = ['browse', 'library', 'publish']
     const i = order.indexOf(tab)
     const next = e.key === 'ArrowRight'
       ? order[(i + 1) % order.length]
       : order[(i - 1 + order.length) % order.length]
-    setTab(next)
-    document.getElementById(next === 'official' ? 'st-tab-official' : 'st-tab-community')?.focus()
+    selectTab(next)
+    document.getElementById(`st-tab-${next}`)?.focus()
   }
 
   const displayCatalog = useMemo(
-    () => sortCatalogForDisplay([...catalog, ...otherInstalledCatalog]),
-    [catalog, otherInstalledCatalog],
+    () => sortCatalogForDisplay([...catalog, ...communityCatalog, ...otherInstalledCatalog]),
+    [catalog, communityCatalog, otherInstalledCatalog],
   )
   const systemSetupReady = useMemo(
     () => systemSetupComplete || hasConnectedProvider(providerStatus),
@@ -1292,6 +1627,33 @@ export default function App({ appId, token }) {
     [displayCatalog, lifecycleById],
   )
 
+  const toggleTrustedUpdates = useCallback((item, installedApp) => {
+    const key = trustedUpdateKey(item, installedApp)
+    if (!key) return
+    const previous = trustedUpdatesRef.current
+    const next = { ...previous }
+    if (next[key]) delete next[key]
+    else next[key] = { trustedAt: new Date().toISOString() }
+    trustedUpdatesRef.current = next
+    setTrustedUpdates(next)
+    const storage = window.mobius?.storage
+    if (!storage?.set) {
+      trustedUpdatesRef.current = previous
+      setTrustedUpdates(previous)
+      setToast({ kind: 'error', message: 'This update preference could not be saved.' })
+      return
+    }
+    trustedUpdatesWriteRef.current = trustedUpdatesWriteRef.current
+      .then(() => storage.set(TRUSTED_UPDATES_PATH, next))
+      .catch(() => {
+        if (trustedUpdatesRef.current === next) {
+          trustedUpdatesRef.current = previous
+          setTrustedUpdates(previous)
+        }
+        setToast({ kind: 'error', message: 'This update preference could not be saved.' })
+      })
+  }, [])
+
   const handleUpdateAll = async () => {
     if (
       !updateItems.length || busy || checkingUpdateRef.current ||
@@ -1304,7 +1666,9 @@ export default function App({ appId, token }) {
       const checked = await mapWithConcurrency(updateItems, 4, async (item) => {
         try {
           const prepared = await prepareCatalogUpdate(item)
-          return { item, prepared, disposition: updateBatchDisposition(prepared), error: '' }
+          const installedApp = findInstalled(installed, item)
+          const trusted = Boolean(trustedUpdates[trustedUpdateKey(item, installedApp)])
+          return { item, prepared, disposition: updateBatchDisposition(prepared, { trusted }), error: '' }
         } catch (error) {
           const message = error.message || 'This update could not be checked.'
           return {
@@ -1399,23 +1763,44 @@ export default function App({ appId, token }) {
     return matches
   }, [displayCatalog, query, category, lifecycleById])
 
+  const libraryCatalog = useMemo(
+    () => visibleCatalog.filter((item) => !!lifecycleById.get(item.id)?.installedApp),
+    [visibleCatalog, lifecycleById],
+  )
+
+  const attentionCount = useMemo(
+    () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'conflict').length,
+    [displayCatalog, lifecycleById],
+  )
+
   useEffect(() => {
-    if (!intentItemId || loadingCatalog) return
-    const resolution = resolveCatalogItemIntent(displayCatalog, intentItemId)
-    setIntentItemId(null)
+    if (!intentDestination || loadingCatalog) return
+    if (intentDestination.kind === 'updates') {
+      setIntentDestination(null)
+      selectTab('library')
+      setCategory('update')
+      setQuery('')
+      setDetail(null)
+      navDetailRef.current = null
+      return
+    }
+    const resolution = resolveCatalogItemIntent(displayCatalog, intentDestination.itemId)
+    setIntentDestination(null)
     if (resolution.action === 'unavailable') {
       setToast(resolution.toast)
       return
     }
-    setTab('official')
+    selectTab('browse')
     setCategory('all')
     if (resolution.action === 'needs-connection') {
-      setQuery(resolution.query)
+      const item = resolution.item
+      setQuery(item.name || intentDestination.itemId)
       setToast(resolution.toast)
       return
     }
-    void openDetail(resolution.item)
-  }, [displayCatalog, intentItemId, loadingCatalog, openDetail])
+    const item = resolution.item
+    void openDetail(item)
+  }, [displayCatalog, intentDestination, loadingCatalog, openDetail])
 
   // Detail view replaces the main layout when set.
   if (detail) {
@@ -1423,6 +1808,7 @@ export default function App({ appId, token }) {
       <div className="st-root">
         <style>{CSS}</style>
         <DetailView
+          storeAppId={appId}
           item={detail}
           capabilityReview={capabilityReviews[detail.id]}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
@@ -1443,6 +1829,14 @@ export default function App({ appId, token }) {
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
           onDismissNotice={handleDismissNotice}
+          onCommunityRate={handleCommunityRate}
+          onCommunityComment={handleCommunityComment}
+          communityBusy={communityActionBusy}
+          communityError={communityActionError}
+          communityIdentityLinked={!!communityIdentity?.linked}
+          onRemix={() => { setPendingRemix(detail); setRemixError('') }}
+          trustedUpdate={Boolean(trustedUpdates[trustedUpdateKey(detail, findInstalled(installed, detail))])}
+          onToggleTrustedUpdate={(installedApp) => toggleTrustedUpdates(detail, installedApp)}
           token={token}
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}
@@ -1454,6 +1848,15 @@ export default function App({ appId, token }) {
             busy={busy}
             onConfirm={confirmUninstall}
             onCancel={() => !busy && setPendingUninstall(null)}
+          />
+        )}
+        {pendingRemix && (
+          <RemixConfirmModal
+            item={pendingRemix}
+            busy={remixBusy}
+            error={remixError}
+            onConfirm={handleCreateRemix}
+            onCancel={() => { if (!remixBusy) { setPendingRemix(null); setRemixError('') } }}
           />
         )}
         {updateReview && (
@@ -1496,23 +1899,39 @@ export default function App({ appId, token }) {
             }}
           />
           <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
-          <div className="st-seg is-accent st-tabs" role="tablist" aria-label="App source"
+          <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
                onKeyDown={onTabsKeyDown}>
-            <button role="tab" id="st-tab-official"
-                    aria-selected={tab === 'official'}
+            <button role="tab" id="st-tab-browse"
+                    aria-selected={tab === 'browse'}
                     aria-controls="st-tabpanel"
-                    tabIndex={tab === 'official' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'official' ? ' is-active' : ''}`}
-                    onClick={() => setTab('official')}>
-              Official
+                    tabIndex={tab === 'browse' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'browse' ? ' is-active' : ''}`}
+                    onClick={() => selectTab('browse')}>
+              Browse
             </button>
-            <button role="tab" id="st-tab-community"
-                    aria-selected={tab === 'community'}
+            <button role="tab" id="st-tab-library"
+                    aria-selected={tab === 'library'}
                     aria-controls="st-tabpanel"
-                    tabIndex={tab === 'community' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'community' ? ' is-active' : ''}`}
-                    onClick={() => setTab('community')}>
-              Community
+                    tabIndex={tab === 'library' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'library' ? ' is-active' : ''}`}
+                    onClick={() => { selectTab('library'); setCategory('all') }}>
+              Library
+              {filterCounts.update > 0 && (
+                <span
+                  className="st-tab-count"
+                  aria-label={`${filterCounts.update} updates available`}
+                >
+                  {filterCounts.update}
+                </span>
+              )}
+            </button>
+            <button role="tab" id="st-tab-publish"
+                    aria-selected={tab === 'publish'}
+                    aria-controls="st-tabpanel"
+                    tabIndex={tab === 'publish' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'publish' ? ' is-active' : ''}`}
+                    onClick={() => selectTab('publish')}>
+              Publish
             </button>
           </div>
         </div>
@@ -1520,8 +1939,8 @@ export default function App({ appId, token }) {
 
       <div className="st-scroll" ref={gridScrollRef}
            id="st-tabpanel" role="tabpanel"
-           aria-labelledby={tab === 'official' ? 'st-tab-official' : 'st-tab-community'}>
-        {tab === 'official' && (
+           aria-labelledby={`st-tab-${tab}`}>
+        {(tab === 'browse' || tab === 'library') && (
           <>
             <SelfUpdateBanner appId={appId} token={token} />
             {loadingCatalog
@@ -1532,7 +1951,7 @@ export default function App({ appId, token }) {
                     category={category}
                     filterCounts={filterCounts}
                     totalCount={displayCatalog.length}
-                    resultCount={visibleCatalog.length}
+                    resultCount={tab === 'library' ? libraryCatalog.length : visibleCatalog.length}
                     onQueryChange={setQuery}
                     onCategoryChange={setCategory}
                     updateAllCount={updateItems.length}
@@ -1543,6 +1962,16 @@ export default function App({ appId, token }) {
                     updateAllDisabled={busy || !!checkingUpdateItemId || !!installedLoadError}
                     onUpdateAll={handleUpdateAll}
                   />
+                  {tab === 'library' && (
+                    <LibraryHealth
+                      installedCount={filterCounts.installed}
+                      updateCount={updateItems.length}
+                      attentionCount={attentionCount}
+                      updateChecks={updateChecks}
+                      onReviewUpdates={handleUpdateAll}
+                      busy={busy || checkingAllUpdates || !!checkingUpdateItemId}
+                    />
+                  )}
                   {installedLoadError && (
                     <div className="st-notice is-warning st-notice-row" role="status">
                       <span>{installedLoadError} Install and update actions are paused until this refreshes.</span>
@@ -1556,8 +1985,15 @@ export default function App({ appId, token }) {
                       </button>
                     </div>
                   )}
+                  {tab === 'browse' && communityError && (
+                    <div className="st-registry-offline" role="status">
+                      <span><strong>Built-in selection</strong> · Shared listings are offline.</span>
+                      <button type="button" onClick={() => refreshCommunity({ append: false })}>Retry</button>
+                    </div>
+                  )}
                   <CatalogList
-                    items={visibleCatalog}
+                    appId={appId}
+                    items={tab === 'library' ? libraryCatalog : visibleCatalog}
                     installed={installed}
                     updateChecks={updateChecks}
                     onPick={(item) => item.manifest && openDetail(item)}
@@ -1577,16 +2013,39 @@ export default function App({ appId, token }) {
                     onReviewUpdate={handleReviewUpdate}
                     onDismissNotice={handleDismissNotice}
                     token={token}
-                    emptyTitle="No matches"
-                    emptyText="Try a different search or filter."
+                    emptyTitle={tab === 'library' ? 'No installed apps match' : 'No matches'}
+                    emptyText={tab === 'library' ? 'Try another search, or browse the Store for something new.' : 'Try a different search or filter.'}
                     setupCompletions={setupCompletions}
                     systemSetupReady={systemSetupReady}
+                    loadingMore={tab === 'browse' && communityLoading && communityOffset > 0}
+                    searchLoading={tab === 'browse' && communityLoading && communityOffset === 0}
+                    hasMore={tab === 'browse' && communityHasMore}
+                    onLoadMore={() => refreshCommunity({ append: true })}
                   />
                 </>}
           </>
         )}
-        {tab === 'community' && (
-          <CommunityTab onPreview={openDetail} token={token} />
+        {tab === 'publish' && (
+          <PublisherTab
+            installed={installed}
+            identity={communityIdentity}
+            identityError={communityIdentityError}
+            viewer={{ github: githubIdentity, error: githubIdentityError }}
+            onRefreshViewer={refreshGithubIdentity}
+            onPublishLocal={handlePublishLocal}
+            onRegisterRepository={handleRegisterCommunity}
+            publishingId={publishingId}
+            publication={publication}
+            publicationError={publicationError}
+            publicationStates={publicationStates}
+            publicationStatesError={publicationStatesError}
+            onRefreshPublicationStates={refreshPublicationStates}
+            contributeAvailable={!!contributeApp}
+            onOpenContributions={(localAppId) => openInstalledApp(
+              contributeApp.id,
+              localAppId ? {} : { intent: 'reviews:queue' },
+            )}
+          />
         )}
       </div>
 

@@ -11,6 +11,9 @@ function itemVersion(entry) {
 }
 
 function reviewReason(entry) {
+  if (entry.disposition?.reason === 'trust_required') {
+    return 'Review required by your preference'
+  }
   if (entry.disposition?.reason === 'access_unrecorded') {
     return 'Confirm access once'
   }
@@ -133,8 +136,8 @@ export function UpdateAllModal({
         <div className="st-update-review-body">
           <div className="st-update-all-intro" role="status">
             {attention.length
-              ? 'Routine updates can be applied together. Apps requesting new or unrecorded access stay out of the batch.'
-              : 'These updates ask for no new access. Möbius will verify each release again as it is applied.'}
+              ? 'Only explicitly trusted routine updates can be applied together. Everything else stays on the individual review path.'
+              : 'You explicitly trusted these routine updates. Möbius will still verify each release and stop on any access change.'}
           </div>
 
           {ready.length ? (

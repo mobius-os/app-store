@@ -1,8 +1,8 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.15.12",
-  "description": "Discover, install, and update M\u00f6bius apps.",
+  "version": "1.18.0",
+  "description": "Discover, install, and update Möbius apps.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-store",
@@ -13,12 +13,13 @@
     "reads": true,
     "writes": "none",
     "execution": "partial",
-    "reads_detail": "The bundled catalog and validated manifest snapshots remain browsable offline. Installed-state refresh, installs, updates, and URL imports require a connection and stay disabled when installed state cannot be verified."
+    "reads_detail": "The bundled catalog and validated manifest snapshots remain browsable offline. Shared listings, installs, updates, publishing, and reviews require a connection and stay disabled when installed state cannot be verified."
   },
   "permissions": {
     "cross_app_access": "none",
     "share_with_apps": "none",
-    "manage_apps": true
+    "manage_apps": true,
+    "github_access": true
   },
   "runtime": {
     "imports": [
@@ -27,6 +28,11 @@
       "@openai/apps-sdk-ui/components/Icon"
     ],
     "esm_deps": []
+  },
+  "schedule": {
+    "default": "0 9 * * *",
+    "user_configurable": true,
+    "job": "notify-updates.py"
   },
   "source_files": [
     "constants.js",
@@ -43,9 +49,11 @@
     "ui/CatalogFilters.jsx",
     "ui/CatalogList.jsx",
     "ui/CatalogSkeleton.jsx",
-    "ui/FromUrlTab.jsx",
-    "ui/CommunityTab.jsx",
     "ui/DetailView.jsx",
+    "ui/LibraryHealth.jsx",
+    "ui/PublisherTab.jsx",
+    "ui/CommunityFeedback.jsx",
+    "ui/RemixConfirmModal.jsx",
     "ui/UpdateReviewModal.jsx",
     "ui/UpdateAllModal.jsx",
     "ui/SelfUpdateBanner.jsx",

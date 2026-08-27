@@ -56,7 +56,215 @@ test('canonicalIdentityKey matches backend-style manifest identities', async () 
   )
 })
 
-test('catalog app intents resolve one safe catalog identity and action', async () => {
+test('community listings join the ordinary install path with social provenance', async () => {
+  const { communityCatalogItems } = await bundle()
+  const [item] = communityCatalogItems({ items: [{
+    id: 'app_public_1234',
+    name: 'Shared Notes',
+    summary: 'Notes made together.',
+    manifest_url: 'https://raw.githubusercontent.com/example/shared-notes/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/example/shared-notes/main/',
+    latest_revision: { id: 'rev_public_1234', review_eligible: true },
+    distribution: {
+      format: 'mobius-module-v1', sha256: 'b'.repeat(64),
+      source_commit: 'c'.repeat(40), compatible: true,
+    },
+    rating: { average: 4.5, count: 8 },
+    publisher: { kind: 'github', login: 'octo-owner' },
+    repository_url: 'https://github.com/example/shared-notes',
+    repository_update: {
+      commit_sha: 'd'.repeat(40),
+      ref: 'refs/heads/main',
+      status: 'available_for_review',
+    },
+  }] })
+  assert.equal(item.id, 'community:app_public_1234')
+  assert.equal(item.collection, 'community')
+  assert.equal(item.community.revision_id, 'rev_public_1234')
+  assert.equal(item.community.rating_average, 4.5)
+  assert.equal(item.community.rating_count, 8)
+  assert.equal(item.community.author.handle, 'octo-owner')
+  assert.equal(item.community.review_eligible, true)
+  assert.equal(item.community.repository_update.commit_sha, 'd'.repeat(40))
+  assert.equal(item.community.repository_update.status, 'available_for_review')
+  assert.equal(item.community.distribution.format, 'mobius-module-v1')
+  assert.equal(item.community.distribution.compatible, true)
+  const [unverified] = communityCatalogItems({ items: [{
+    id: 'app_public_5678',
+    manifest_url: 'https://raw.githubusercontent.com/example/other/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/example/other/main/',
+    latest_revision: { id: 'rev_public_5678' },
+  }] })
+  assert.equal(unverified.community.review_eligible, false)
+})
+
+test('community catalog pages preserve source offsets and deduplicate appended apps', async () => {
+  const { communityCatalogPage, mergeCommunityCatalog } = await bundle()
+  const listing = (id) => ({
+    id,
+    manifest_url: `https://example.test/${id}/mobius.json`,
+    raw_base: `https://example.test/${id}/`,
+  })
+  const first = communityCatalogPage({
+    items: [listing('one')],
+    has_more: true,
+    viewer: { github: { connected: true, login: 'octo-owner' } },
+  }, 24)
+  const second = communityCatalogPage({ items: [listing('one'), listing('two')], has_more: false }, 24)
+  assert.equal(first.hasMore, true)
+  assert.equal(first.rowCount, 1)
+  assert.deepEqual(first.viewer, {
+    github: { connected: true, login: 'octo-owner' },
+  })
+  assert.equal(second.hasMore, false)
+  assert.deepEqual(
+    mergeCommunityCatalog(first.items, second.items).map((item) => item.id),
+    ['community:one', 'community:two'],
+  )
+  const partial = communityCatalogPage({
+    items: [listing('valid'), { id: 'invalid' }],
+    has_more: true,
+  }, 24)
+  assert.equal(partial.items.length, 1)
+  assert.equal(partial.rowCount, 2)
+})
+
+test('community publication state and source links stay truthful', async () => {
+  const { communityPublicationStatus, communityRepositoryUrl } = await bundle()
+  assert.equal(communityPublicationStatus({ status: 'checking' }), 'checking')
+  assert.equal(communityPublicationStatus({ review_status: 'LIVE' }), 'live')
+  assert.equal(communityPublicationStatus({}), 'pending')
+  assert.equal(
+    communityRepositoryUrl('https://github.com/example/shared-notes.git'),
+    'https://github.com/example/shared-notes',
+  )
+  assert.equal(communityRepositoryUrl('javascript:alert(1)'), '')
+  assert.equal(communityRepositoryUrl('https://example.test/example/shared-notes'), '')
+})
+
+test('distribution status never calls an incompatible cached build verified', async () => {
+  const { distributionStatus } = await bundle()
+  assert.equal(distributionStatus(null).key, 'source')
+  assert.equal(distributionStatus(null, { kind: 'content_addressed' }).key, 'preserved-source')
+  assert.equal(distributionStatus({ sha256: 'a'.repeat(64), compatible: false }).key, 'incompatible')
+  assert.equal(distributionStatus({ sha256: 'a'.repeat(64), compatible: true }).key, 'verified')
+})
+
+test('switching Store journeys resets the shared scroll surface', async () => {
+  const source = await readFile(new URL('../index.jsx', import.meta.url), 'utf8')
+  assert.match(source, /const selectTab = useCallback\(\(next\) => \{[\s\S]*gridScrollRef\.current\.scrollTop = 0[\s\S]*setTab\(next\)/)
+  assert.match(source, /onClick=\{\(\) => selectTab\('publish'\)\}/)
+  assert.match(source, /onClick=\{\(\) => \{ selectTab\('library'\)/)
+})
+
+test('the Store uses shared listings rather than a raw link-install tab', async () => {
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.match(source, /Publish/)
+  assert.doesNotMatch(source, />Install from link</)
+  assert.match(source, /loadCommunityApps/)
+  assert.match(source, /registerCommunityRevision/)
+  assert.match(source, /rateCommunityApp/)
+  assert.match(source, /commentOnCommunityRevision/)
+  assert.match(source, /remixCommunityApp/)
+})
+
+test('distributed publishing submits one immutable GitHub revision', async () => {
+  const { registerCommunityRevision } = await bundle()
+  const oldFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    return new Response(JSON.stringify({ id: 'app_public_notes' }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    await registerCommunityRevision('owner-token', {
+      repository: 'example/notes',
+      commitSha: 'a'.repeat(40),
+      manifestPath: 'apps/notes/mobius.json',
+      publicIdentity: 'github',
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, '/api/community/apps')
+  assert.equal(calls[0].options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    repository: 'example/notes',
+    commit_sha: 'a'.repeat(40),
+    manifest_path: 'apps/notes/mobius.json',
+    public_identity: 'github',
+  })
+  assert.match(calls[0].options.headers['Idempotency-Key'], /^store:register:/)
+})
+
+test('local publishing is one reviewed action through the inherited GitHub account', async () => {
+  const { publishLocalAppToGithub } = await bundle()
+  const publisherSource = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const oldFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    return new Response(JSON.stringify({ id: 'app_public_notes' }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    await publishLocalAppToGithub('owner-token', 42, 'pocket-list')
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, '/api/community/publications/github')
+  assert.equal(calls[0].options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    app_id: 42,
+    repository_name: 'pocket-list',
+    confirm_source_public: true,
+    public_identity: 'github',
+  })
+  assert.match(calls[0].options.headers['Idempotency-Key'], /^store:publish-local:/)
+  assert.match(publisherSource, /I want this accepted source revision to become public/)
+  assert.match(publisherSource, /onPublishLocal/)
+  assert.doesNotMatch(publisherSource, /Return here with the repository and exact commit/)
+})
+
+test('a Host-created remix returns to the ordinary reviewed install path', async () => {
+  const { remixCatalogItem } = await bundle()
+  const parent = { community: { id: 'app_public_parent' } }
+  const item = remixCatalogItem({
+    id: 'app_public_remix',
+    name: 'Shared Notes Remix',
+    manifest_url: 'https://raw.githubusercontent.com/example/remix/abc123/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/example/remix/abc123/',
+    repository_url: 'https://github.com/example/remix',
+    latest_revision: { id: 'rev_public_remix' },
+  }, parent)
+  assert.equal(item.id, 'remix:app_public_remix')
+  assert.equal(item.community.remix_of, 'app_public_parent')
+  assert.equal(item.community.repository_url, 'https://github.com/example/remix')
+  assert.equal(item.community.review_eligible, false)
+})
+
+test('publisher lifecycle records bind back to their local app', async () => {
+  const { communityPublicationsByLocalApp } = await bundle()
+  const states = communityPublicationsByLocalApp({ publications: [{
+    id: 'publication_public_1',
+    local_app_id: 'app:41:shared-notes',
+    status: 'checking',
+    repository_url: 'https://github.com/example/shared-notes',
+    checks: [{ name: 'secrets', status: 'passed' }],
+  }] })
+  assert.equal(states[41].status, 'checking')
+  assert.equal(states[41].checks[0].status, 'passed')
+  assert.equal(states[41].repository_url, 'https://github.com/example/shared-notes')
+})
+
+test('catalog app intents preserve origin checks and resolve one safe action', async () => {
   const {
     catalogItemIdFromIntent,
     catalogItemIdFromMessage,
@@ -112,6 +320,15 @@ test('catalog app intents resolve one safe catalog identity and action', async (
     action: 'unavailable',
     toast: { kind: 'error', message: 'That app is not available in this catalog.' },
   })
+
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.match(source, /setQuery\(item\.name \|\| intentDestination\.itemId\)/)
+  assert.match(source, /void openDetail\(item\)/)
+})
+
+test('community feedback state resets when detail moves to another revision', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  assert.match(source, /<CommunityFeedback\s+key=\{item\.community\.revision_id\}/)
 })
 
 test('live catalog metadata preserves baked snapshots and appends new entries', async () => {
@@ -1079,7 +1296,7 @@ test('a conflicting apply remains visible as an explicit unchanged result', asyn
   assert.match(themeSource, /\.st-update-review\.is-result\s*\{[^}]*height: auto/)
 })
 
-test('one-tap updates stop for changed or unknown capabilities', async () => {
+test('one-tap updates require explicit trust and stop for changed or unknown capabilities', async () => {
   const { capabilityDiffNeedsReview, updateBatchDisposition } = await bundle()
   assert.equal(capabilityDiffNeedsReview(null), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: true, added: [], removed: [], changed: [] }), true)
@@ -1095,7 +1312,8 @@ test('one-tap updates stop for changed or unknown capabilities', async () => {
       },
     },
   }
-  assert.deepEqual(updateBatchDisposition(verified), { kind: 'ready', reason: null })
+  assert.deepEqual(updateBatchDisposition(verified), { kind: 'review', reason: 'trust_required' })
+  assert.deepEqual(updateBatchDisposition(verified, { trusted: true }), { kind: 'ready', reason: null })
   assert.deepEqual(
     updateBatchDisposition({ ...verified, preview: {} }),
     { kind: 'review', reason: 'source_unverified' },
@@ -1122,6 +1340,14 @@ test('one-tap updates stop for changed or unknown capabilities', async () => {
     }),
     { kind: 'review', reason: 'access_changed' },
   )
+})
+
+test('trusted update preferences use app storage rather than unavailable frame localStorage', async () => {
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.match(source, /TRUSTED_UPDATES_PATH = 'trusted-updates\.json'/)
+  assert.match(source, /storage\.subscribe\(TRUSTED_UPDATES_PATH/)
+  assert.match(source, /storage\.set\(TRUSTED_UPDATES_PATH, next\)/)
+  assert.doesNotMatch(source, /window\.localStorage/)
 })
 
 test('filterCatalog matches categories, descriptions, and setup metadata', async () => {

@@ -1,4 +1,4 @@
-import { appLifecycleFor, busyLabelForAction, catalogCardDescription } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, catalogCardDescription, distributionStatus } from '../domain.js'
 import { Check } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 
@@ -18,7 +18,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -126,6 +126,12 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     ? { ...item, installed_icon_url: installedIconUrl(storeInstalled) }
     : item
   const description = catalogCardDescription(item)
+  const delivery = item.community
+    ? distributionStatus(item.community.distribution, item.community.cache)
+    : null
+  const previewUrl = item.preview && appId
+    ? `/app-assets/by-id/${encodeURIComponent(appId)}/previews/${encodeURIComponent(item.preview)}`
+    : ''
   // The card is a non-interactive container. Two cleanly-separated AT
   // targets sit inside it: the app name is a real <button> whose ::after
   // overlay stretches across the whole card to open details (so the icon /
@@ -133,7 +139,12 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   // z-index layer above that overlay so it stays independently clickable.
   // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div className={cardVariantClass(cardVariant)}>
+    <div className={`${cardVariantClass(cardVariant)}${previewUrl ? ' has-preview' : ''}`}>
+      {previewUrl ? (
+        <div className="st-card-preview" aria-hidden="true">
+          <img src={previewUrl} alt="" loading="lazy" />
+        </div>
+      ) : null}
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
         {(cardVariant === 'installed' || cardVariant === 'update') && (
@@ -158,6 +169,14 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
         </div>
         {m.embeds_agent ? (
           <span className="st-card-agent" title="This app includes an in-app agent">Agent</span>
+        ) : null}
+        {delivery?.key === 'verified' ? (
+          <span className="st-card-build" title={delivery.description}>Verified build</span>
+        ) : null}
+        {item.community?.repository_update ? (
+          <span className="st-card-source-update" title="The repository changed. Its next release has not been admitted yet.">
+            Source changed
+          </span>
         ) : null}
       </div>
       {description ? (
