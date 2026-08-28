@@ -66,15 +66,22 @@ export const CSS = `
 /* App-specific header — title + a segmented tab bar, not the canonical
    brand-cluster header. Kept on the store's own values. */
 .st-header {
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+  padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
-/* Single header row: the brand icon sits left, the Browse / From URL
-   segmented control fills the rest of the same row (no second row). */
 .st-title-row {
-  display: flex; align-items: center; gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(320px, 560px) minmax(130px, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+.st-store-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 .st-brand-icon {
   width: 34px; height: 34px; border-radius: 8px;
@@ -86,6 +93,16 @@ export const CSS = `
   background: var(--accent); color: var(--accent-fg);
   font-size: 22px; font-weight: 700; line-height: 1;
 }
+.st-brand-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-header-balance { display: block; }
 
 /* mobius-ui:Segmented v1 — keep in sync; library candidate. Diverge below the marker only. */
 .st-seg {
@@ -138,6 +155,14 @@ export const CSS = `
 .st-seg.is-accent .st-seg-btn.is-active .st-tab-count {
   color: var(--accent-hover, var(--accent));
   background: var(--accent-fg);
+}
+
+@media (max-width: 620px) {
+  .st-title-row { grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
+  .st-brand-name,
+  .st-header-balance { display: none; }
+  .st-brand-icon,
+  .st-brand-fallback { width: 32px; height: 32px; }
 }
 
 /* Discovery controls: compact search + category chips. This is an
@@ -685,6 +710,7 @@ export const CSS = `
   object-position: top center;
   transition: transform 260ms cubic-bezier(.2,.8,.2,1);
 }
+.st-card-preview > .st-store-image-placeholder { width: 100%; height: 100%; }
 @media (hover: hover) {
   .st-card.has-preview:has(.st-card-open:hover) .st-card-preview img { transform: scale(1.025); }
 }
@@ -1739,25 +1765,19 @@ export const CSS = `
    bumps so cards don't get over-dense. */
 @media (min-width: 720px) {
   .st-title-row {
-    position: relative;
-    max-width: 840px;
+    max-width: 1180px;
     margin-inline: auto;
   }
-  .st-brand-icon,
-  .st-brand-fallback {
-    position: absolute;
-    left: -46px;
-    top: 50%;
-    transform: translateY(-50%);
-  }
   .st-tabs {
-    flex: 0 0 auto;
+    justify-self: center;
     width: 100%;
   }
   .st-scroll > * {
     max-width: 840px;
     margin-inline: auto;
   }
+  .st-scroll.is-browse > * { max-width: 1180px; }
+  .st-scroll.is-library > * { max-width: 960px; }
   .st-catalog-grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
@@ -1888,11 +1908,26 @@ export const CSS = `
   .st-listing-hero-shade { background: linear-gradient(0deg, rgba(4, 6, 8, .9) 0%, rgba(4, 6, 8, .15) 88%); }
 }
 
-/* Editorial discovery follows the approved proof-first Store concept. */
+/* Editorial discovery follows the approved proof-first Store concept while
+   using the wide Browse canvas for several real app stories at once. */
+.st-spotlights { min-width: 0; }
+.st-spotlights-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+}
+.st-spotlights-head .st-catalog-section-desc { margin: 0; text-align: right; }
+.st-spotlight-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, .85fr);
+  gap: 12px;
+}
+.st-spotlight-grid.is-single { grid-template-columns: 1fr; }
+.st-spotlight-stack { display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .st-editorial-hero {
-  position: relative; min-height: clamp(330px, 55vw, 510px); overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--text) 14%, var(--border)); border-radius: 24px;
-  background: var(--surface); box-shadow: 0 24px 70px rgba(0, 0, 0, .16);
+  position: relative; min-height: clamp(300px, 34vw, 390px); overflow: hidden;
+  border-radius: 16px; background: var(--surface); box-shadow: 0 18px 48px rgba(0, 0, 0, .18);
 }
 .st-editorial-hero-image,
 .st-editorial-hero > .st-store-image-placeholder {
@@ -1906,17 +1941,51 @@ export const CSS = `
   background: linear-gradient(90deg, rgba(4, 6, 8, .93) 0%, rgba(4, 6, 8, .67) 43%, rgba(4, 6, 8, .08) 82%);
 }
 .st-editorial-hero-copy {
-  position: absolute; z-index: 1; left: clamp(22px, 6vw, 58px); bottom: clamp(24px, 6vw, 58px);
-  display: grid; justify-items: start; gap: 16px; width: min(470px, calc(100% - 44px)); color: white;
+  position: absolute; z-index: 1; left: clamp(20px, 4vw, 44px); bottom: clamp(22px, 4vw, 42px);
+  display: grid; justify-items: start; gap: 14px; width: min(470px, calc(100% - 40px)); color: white;
 }
 .st-editorial-title-row { display: flex; align-items: center; gap: 15px; }
 .st-editorial-title-row .st-icon-wrap { width: 60px; height: 60px; border-radius: 15px; box-shadow: 0 12px 32px #0008; }
-.st-editorial-title-row h2 { margin: 0 0 6px; font-size: clamp(32px, 6vw, 62px); line-height: .92; letter-spacing: -.055em; }
+.st-editorial-title-row h3 { margin: 0 0 6px; font-size: clamp(30px, 4.6vw, 52px); line-height: .94; letter-spacing: -.04em; }
 .st-editorial-title-row p { margin: 0; max-width: 34ch; color: rgba(255,255,255,.8); font-size: clamp(14px, 2vw, 18px); line-height: 1.38; }
 .st-editorial-hero .st-btn-primary { min-width: 116px; background: white; border-color: white; color: #111; }
+.st-spotlight-card {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface);
+}
+.st-spotlight-card-image,
+.st-spotlight-card > .st-store-image-placeholder {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+}
+.st-spotlight-card-shade {
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(4,6,8,.92) 0%, rgba(4,6,8,.52) 58%, rgba(4,6,8,.08) 100%);
+}
+.st-spotlight-card-copy {
+  position: absolute; z-index: 1; inset: 0;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px;
+  padding: 18px; color: white;
+}
+.st-spotlight-card-copy .st-icon-wrap { width: 46px; height: 46px; border-radius: 12px; box-shadow: 0 8px 22px #0008; }
+.st-spotlight-card-copy h3 { margin: 0 0 4px; font-size: 19px; line-height: 1.08; letter-spacing: -.025em; }
+.st-spotlight-card-copy p {
+  display: -webkit-box; margin: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  color: rgba(255,255,255,.76); font-size: 11px; line-height: 1.35;
+}
+.st-spotlight-open {
+  min-width: 52px; min-height: 44px; padding: 0 11px; border: 1px solid rgba(255,255,255,.22); border-radius: 11px;
+  color: white; background: rgba(8,8,10,.5); font: 700 11px/1 var(--font); cursor: pointer;
+}
+@media (hover: hover) {
+  .st-spotlight-open:hover { background: rgba(255,255,255,.14); }
+}
 .st-picks { min-width: 0; }
-.st-picks-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.st-picks-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .st-picks-grid .st-card { min-height: 178px; padding: 16px; align-items: flex-start; text-align: left; }
+.st-picks-grid .st-card.has-preview { padding-top: 0; }
 .st-picks-grid .st-card-open,
 .st-picks-grid .st-card-desc { text-align: left; }
 .st-picks-grid .st-card-state-row { justify-content: flex-start; }
@@ -1972,10 +2041,25 @@ export const CSS = `
 .st-detail-byline { margin: -14px 0 26px; color: var(--muted); font: 11px/1.4 var(--mono, monospace); }
 .st-detail-tagline { margin: 5px 0 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
 
-@media (max-width: 620px) {
+@media (max-width: 720px) {
+  .st-spotlights-head { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .st-spotlights-head .st-catalog-section-desc { text-align: left; }
+  .st-spotlight-grid { grid-template-columns: 1fr; }
+  .st-spotlight-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; }
+  .st-spotlight-card { min-height: 176px; }
+  .st-spotlight-card-copy { grid-template-columns: auto minmax(0, 1fr); align-content: end; padding: 14px; }
+  .st-spotlight-card-copy .st-spotlight-open { grid-column: 1 / -1; width: 100%; }
   .st-picks-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .st-editorial-hero-shade { background: linear-gradient(0deg, rgba(4,6,8,.94) 0%, rgba(4,6,8,.26) 78%); }
-  .st-editorial-title-row h2 { font-size: clamp(32px, 11vw, 48px); }
+  .st-editorial-title-row h3 { font-size: clamp(32px, 11vw, 46px); }
+}
+@media (max-width: 460px) {
+  .st-spotlight-stack {
+    grid-auto-flow: column; grid-auto-columns: 84%; grid-template-columns: none;
+    overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  }
+  .st-spotlight-stack::-webkit-scrollbar { display: none; }
+  .st-spotlight-card { scroll-snap-align: start; }
 }
 /* mobius-ui:CenteredRail v1 */
 @media (min-width: 900px) {

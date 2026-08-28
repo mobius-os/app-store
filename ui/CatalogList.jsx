@@ -41,6 +41,31 @@ const CATALOG_COLLECTIONS = [
   },
 ]
 
+const CURATED_PICK_IDS = [
+  'artifacts',
+  'news',
+  'notes',
+  'tasks',
+  'reflection',
+  'connections',
+]
+
+function listingFor(item) {
+  return item.community
+    ? item.manifest?.store
+    : item.listing || item.manifest?.store
+}
+
+function listingHero(item) {
+  const hero = listingFor(item)?.hero
+  return typeof hero === 'string' ? hero : hero?.path
+}
+
+function listingScreenshot(item) {
+  const screenshot = listingFor(item)?.screenshots?.[0]
+  return typeof screenshot === 'string' ? screenshot : screenshot?.src || screenshot?.path
+}
+
 export function CatalogList({
   appId,
   items,
@@ -113,21 +138,25 @@ export function CatalogList({
       layout={layout}
     />
   )
-  const listingFor = (item) => item.community
-    ? item.manifest?.store
-    : item.listing || item.manifest?.store
-  const feature = editorial
-    ? items.find((item) => listingFor(item)?.featured && listingFor(item)?.hero)
-      || items.find((item) => listingFor(item)?.hero)
-    : null
-  const featureListing = feature ? listingFor(feature) : null
-  const featureHero = typeof featureListing?.hero === 'string'
-    ? featureListing.hero
-    : featureListing?.hero?.path
-  const picks = editorial
-    ? items.filter((item) => item.id !== feature?.id).slice(0, 6)
+  const spotlights = editorial
+    ? items.filter((item) => listingHero(item)).slice(0, 3)
     : []
-  const editorialIds = new Set([feature?.id, ...picks.map((item) => item.id)].filter(Boolean))
+  const feature = spotlights[0] || null
+  const supportingSpotlights = spotlights.slice(1)
+  const spotlightIds = new Set(spotlights.map((item) => item.id))
+  const pickPool = editorial ? items.filter((item) => !spotlightIds.has(item.id)) : []
+  const pickRank = new Map(CURATED_PICK_IDS.map((id, index) => [id, index]))
+  const picks = editorial
+    ? [...pickPool].sort((a, b) => {
+        const aRank = pickRank.has(a.id) ? pickRank.get(a.id) : CURATED_PICK_IDS.length
+        const bRank = pickRank.has(b.id) ? pickRank.get(b.id) : CURATED_PICK_IDS.length
+        if (aRank !== bRank) return aRank - bRank
+        const screenshotDelta = Number(!!listingScreenshot(b)) - Number(!!listingScreenshot(a))
+        if (screenshotDelta !== 0) return screenshotDelta
+        return items.indexOf(a) - items.indexOf(b)
+      }).slice(0, 6)
+    : []
+  const editorialIds = new Set([...spotlightIds, ...picks.map((item) => item.id)])
   const groupedItems = editorial ? items.filter((item) => !editorialIds.has(item.id)) : items
   const groups = CATALOG_COLLECTIONS
     .map((group) => ({
@@ -144,30 +173,54 @@ export function CatalogList({
       <div className="st-catalog-grid">{group.items.map(renderCard)}</div>
     </section>
   )
+  const spotlightImage = (item, path, className, loading = 'lazy') => item.community ? (
+    <StoreImage item={item} path={path} token={token} alt="" className={className} loading={loading} />
+  ) : (
+    <CatalogStoreImage storeAppId={appId} path={path} alt="" className={className} loading={loading} />
+  )
 
   return (
     <div className={`st-catalog-sections${layout === 'list' ? ' is-list' : ''}`}>
       {searchLoading ? <div className="st-registry-progress" role="status">Searching shared listings…</div> : null}
       {feature ? (
-        <section className="st-editorial-hero" aria-labelledby="st-featured-app-title">
-          {featureHero ? (
-            feature.community ? (
-              <StoreImage item={feature} path={featureHero} token={token} alt="" className="st-editorial-hero-image" loading="eager" />
-            ) : (
-              <CatalogStoreImage storeAppId={appId} path={featureHero} alt="" className="st-editorial-hero-image" loading="eager" />
-            )
-          ) : null}
-          <div className="st-editorial-hero-shade" />
-          <div className="st-editorial-hero-copy">
-            <span className="st-eyebrow">Featured</span>
-            <div className="st-editorial-title-row">
-              <IconBox item={feature} token={token} />
-              <div>
-                <h2 id="st-featured-app-title">{feature.manifest?.name || feature.name}</h2>
-                <p>{featureListing?.tagline || feature.summary || feature.description}</p>
+        <section className="st-spotlights" aria-labelledby="st-spotlights-title">
+          <div className="st-catalog-section-head st-spotlights-head">
+            <h2 id="st-spotlights-title" className="st-catalog-section-title">Spotlight</h2>
+            <p className="st-catalog-section-desc">A closer look at apps that change what Möbius can do.</p>
+          </div>
+          <div className={`st-spotlight-grid${supportingSpotlights.length ? '' : ' is-single'}`}>
+            <article className="st-editorial-hero" aria-labelledby={`st-spotlight-${feature.id}`}>
+              {spotlightImage(feature, listingHero(feature), 'st-editorial-hero-image', 'eager')}
+              <div className="st-editorial-hero-shade" />
+              <div className="st-editorial-hero-copy">
+                <div className="st-editorial-title-row">
+                  <IconBox item={feature} token={token} />
+                  <div>
+                    <h3 id={`st-spotlight-${feature.id}`}>{feature.manifest?.name || feature.name}</h3>
+                    <p>{listingFor(feature)?.tagline || feature.summary || feature.description}</p>
+                  </div>
+                </div>
+                <button type="button" className="st-btn st-btn-primary" onClick={() => onPick(feature)}>View app</button>
               </div>
-            </div>
-            <button type="button" className="st-btn st-btn-primary" onClick={() => onPick(feature)}>View app</button>
+            </article>
+            {supportingSpotlights.length ? (
+              <div className="st-spotlight-stack">
+                {supportingSpotlights.map((item) => (
+                  <article className="st-spotlight-card" key={item.id} aria-labelledby={`st-spotlight-${item.id}`}>
+                    {spotlightImage(item, listingHero(item), 'st-spotlight-card-image')}
+                    <div className="st-spotlight-card-shade" />
+                    <div className="st-spotlight-card-copy">
+                      <IconBox item={item} token={token} />
+                      <div>
+                        <h3 id={`st-spotlight-${item.id}`}>{item.manifest?.name || item.name}</h3>
+                        <p>{listingFor(item)?.tagline || item.summary || item.description}</p>
+                      </div>
+                      <button type="button" className="st-spotlight-open" onClick={() => onPick(item)}>View</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}

@@ -1886,22 +1886,22 @@ export default function App({ appId, token }) {
       <h1 className="st-sr-only">App Store</h1>
       <div className="st-header">
         <div className="st-title-row">
-          {/* Brand mark: the app's real glossy icon (downscaled + cached),
-              no name text. Falls back to an accent dot when this install
-              has no custom icon and the route 404s. */}
-          <img
-            src={`/api/apps/${appId}/icon?size=64`}
-            alt=""
-            width={40}
-            height={40}
-            className="st-brand-icon" ref={(el) => el && window.mobius.immersive && window.mobius.immersive.holdToToggle(el)}
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-              const f = e.currentTarget.nextElementSibling
-              if (f) f.style.display = 'flex'
-            }}
-          />
-          <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
+          <div className="st-store-brand">
+            <img
+              src={`/api/apps/${appId}/icon?size=64`}
+              alt=""
+              width={40}
+              height={40}
+              className="st-brand-icon" ref={(el) => el && window.mobius.immersive && window.mobius.immersive.holdToToggle(el)}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none'
+                const f = e.currentTarget.nextElementSibling
+                if (f) f.style.display = 'flex'
+              }}
+            />
+            <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
+            <span className="st-brand-name">App Store</span>
+          </div>
           <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
                onKeyDown={onTabsKeyDown}>
             <button role="tab" id="st-tab-browse"
@@ -1937,10 +1937,11 @@ export default function App({ appId, token }) {
               Publish
             </button>
           </div>
+          <span className="st-header-balance" aria-hidden="true" />
         </div>
       </div>
 
-      <div className="st-scroll" ref={gridScrollRef}
+      <div className={`st-scroll is-${tab}`} ref={gridScrollRef}
            id="st-tabpanel" role="tabpanel"
            aria-labelledby={`st-tab-${tab}`}>
         {(tab === 'browse' || tab === 'library') && (

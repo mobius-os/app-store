@@ -538,10 +538,12 @@ const CATALOG_COLLECTIONS = new Set([
   'explore',
   'play',
   'developer',
+  'community',
   'other-installed',
 ])
 
 export function catalogCollection(item) {
+  if (item?.community) return 'community'
   const curated = String(item?.collection || '').trim().toLowerCase()
   if (CATALOG_COLLECTIONS.has(curated)) return curated
 

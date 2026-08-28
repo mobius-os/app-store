@@ -1,6 +1,7 @@
 import { appLifecycleFor, busyLabelForAction, catalogCardDescription, distributionStatus } from '../domain.js'
 import { Check } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
+import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
 function cardVariantClass(variant) {
   if (variant === 'update') return 'st-card is-update'
@@ -129,9 +130,17 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
   const delivery = item.community
     ? distributionStatus(item.community.distribution, item.community.cache)
     : null
-  const previewUrl = item.preview && appId
+  const listing = item.community
+    ? item.manifest?.store
+    : item.listing || item.manifest?.store
+  const listingScreenshot = listing?.screenshots?.[0]
+  const listingPreview = typeof listingScreenshot === 'string'
+    ? listingScreenshot
+    : listingScreenshot?.src || listingScreenshot?.path
+  const legacyPreviewUrl = item.preview && appId
     ? `/app-assets/by-id/${encodeURIComponent(appId)}/previews/${encodeURIComponent(item.preview)}`
     : ''
+  const hasPreview = !!(listingPreview || legacyPreviewUrl)
   // The card is a non-interactive container. Two cleanly-separated AT
   // targets sit inside it: the app name is a real <button> whose ::after
   // overlay stretches across the whole card to open details (so the icon /
@@ -139,10 +148,18 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
   // z-index layer above that overlay so it stays independently clickable.
   // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div className={`${cardVariantClass(cardVariant)}${previewUrl ? ' has-preview' : ''}${layout === 'list' ? ' is-list' : ''}`}>
-      {previewUrl ? (
+    <div className={`${cardVariantClass(cardVariant)}${hasPreview ? ' has-preview' : ''}${layout === 'list' ? ' is-list' : ''}`}>
+      {listingPreview ? (
         <div className="st-card-preview" aria-hidden="true">
-          <img src={previewUrl} alt="" loading="lazy" />
+          {item.community ? (
+            <StoreImage item={item} path={listingPreview} token={token} alt="" loading="lazy" />
+          ) : (
+            <CatalogStoreImage storeAppId={appId} path={listingPreview} alt="" loading="lazy" />
+          )}
+        </div>
+      ) : legacyPreviewUrl ? (
+        <div className="st-card-preview" aria-hidden="true">
+          <img src={legacyPreviewUrl} alt="" loading="lazy" />
         </div>
       ) : null}
       <div className="st-icon-slot">

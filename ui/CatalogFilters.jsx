@@ -56,8 +56,9 @@ export function CatalogFilters({
           {resultCount === totalCount ? `${totalCount} apps` : `${resultCount} of ${totalCount}`}
         </div>
       </div>
-      <div className="st-category-strip" aria-label="Catalog filters">
-        {FILTERS.filter((filter) => mode === 'library' || filter.id === 'all').map((filter) => {
+      {mode === 'library' ? (
+        <div className="st-category-strip" aria-label="Library filters">
+        {FILTERS.map((filter) => {
           const count = filterCounts[filter.id]
           return (
             <button
@@ -86,7 +87,8 @@ export function CatalogFilters({
             {updateAllState === 'idle' ? <span className="st-update-all-count">{updateAllCount}</span> : null}
           </button>
         ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -1488,6 +1488,7 @@ test('catalog cards prefer concise discovery copy and use stable browse collecti
   assert.equal(catalogAudience({ categories: ['system', 'agents'] }), 'developer')
   assert.equal(catalogAudience({ categories: ['writing'] }), 'general')
   assert.equal(catalogCollection({ collection: 'play' }), 'play')
+  assert.equal(catalogCollection({ community: { source_url: 'https://example.test/app' }, collection: 'everyday' }), 'community')
   assert.equal(catalogCollection({ categories: ['reference'] }), 'explore')
   assert.equal(catalogCollection({
     audience: 'general',
