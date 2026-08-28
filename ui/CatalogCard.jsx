@@ -1,4 +1,4 @@
-import { appLifecycleFor, busyLabelForAction, catalogCardDescription, distributionStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, catalogCardDescription } from '../domain.js'
 import { Check } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
@@ -127,9 +127,6 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
     ? { ...item, installed_icon_url: installedIconUrl(storeInstalled) }
     : item
   const description = catalogCardDescription(item)
-  const delivery = item.community
-    ? distributionStatus(item.community.distribution, item.community.cache)
-    : null
   const listing = item.community
     ? item.manifest?.store
     : item.listing || item.manifest?.store
@@ -186,9 +183,6 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
         </div>
         {m.embeds_agent ? (
           <span className="st-card-agent" title="This app includes an in-app agent">Agent</span>
-        ) : null}
-        {delivery?.key === 'verified' ? (
-          <span className="st-card-build" title={delivery.description}>Verified build</span>
         ) : null}
         {item.community?.repository_update ? (
           <span className="st-card-source-update" title="The repository changed. Its next release has not been admitted yet.">

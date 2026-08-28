@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, distributionStatus, isTrustedHost, scheduleSummary } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
-import { CommunityFeedback } from './CommunityFeedback.jsx'
 import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
 function setupMetaText(setup, storeInstalled) {
@@ -36,7 +35,7 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityRate, onCommunityComment, onRemix, trustedUpdate = false, onToggleTrustedUpdate, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, trustedUpdate = false, onToggleTrustedUpdate, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const lifecycle = appLifecycleFor(reviewedItem, {
@@ -101,8 +100,8 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const releaseSummary = storeInstalled && installedVer && installedVer !== m.version
     ? `Installed label v${installedVer} · catalog label v${m.version}`
     : `Version label v${m.version}`
-  const delivery = item.community
-    ? distributionStatus(item.community.distribution, item.community.cache)
+  const sourceAvailability = item.community
+    ? sourceAvailabilityStatus(item.community.cache)
     : null
   const previewUrl = item.preview && storeAppId
     ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`
@@ -187,8 +186,6 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
               <strong>Open source from the community</strong>
               <span>
                 {communityAuthorName(item.community.author)}
-                {item.community.remix_of ? ' · Remixed from another app' : ''}
-                {delivery?.key === 'verified' ? ' · Verified build' : ''}
               </span>
             </div>
             <div className="st-community-actions">
@@ -198,10 +195,6 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
                   <a href={`${item.community.repository_url.replace(/\/$/, '')}/issues`} target="_blank" rel="noopener noreferrer">Contribute</a>
                 </>
               )}
-              <button type="button" className="st-btn st-btn-secondary"
-                      onClick={onRemix} disabled={!communityIdentityLinked || busy}>
-                Remix
-              </button>
             </div>
           </div>
           {item.community.repository_update && (
@@ -331,19 +324,14 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             </span>
           </summary>
           <div className="st-technical-body">
-            {delivery && (
+            {sourceAvailability && (
               <div className="st-technical-section">
-                <div className="st-section-label">Delivery</div>
-                <div className={`st-delivery-status is-${delivery.key}`}>
+                <div className="st-section-label">Release source</div>
+                <div className={`st-source-status is-${sourceAvailability.key}`}>
                   <div>
-                    <strong>{delivery.label}</strong>
-                    <span>{delivery.description}</span>
+                    <strong>{sourceAvailability.label}</strong>
+                    <span>{sourceAvailability.description}</span>
                   </div>
-                  {item.community.distribution?.bytes > 0 ? (
-                    <span className="st-delivery-size">
-                      {(item.community.distribution.bytes / 1024).toFixed(0)} KB
-                    </span>
-                  ) : null}
                 </div>
               </div>
             )}
@@ -417,18 +405,6 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
               {trustedUpdate ? 'Require review' : 'Trust routine updates'}
             </button>
           </section>
-        )}
-
-        {item.community && (
-          <CommunityFeedback
-            key={item.community.revision_id}
-            community={item.community}
-            canReview={!!storeInstalled && communityIdentityLinked && item.community.review_eligible}
-            onRate={onCommunityRate}
-            onComment={onCommunityComment}
-            busy={communityBusy}
-            error={communityError}
-          />
         )}
 
       </div>

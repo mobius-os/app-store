@@ -141,20 +141,22 @@ test('every curated listing asset is packaged by the App Store', async () => {
   }
 })
 
-test('community listings join the ordinary install path with social provenance', async () => {
+test('community listings join the ordinary install path with source provenance', async () => {
   const { communityCatalogItems } = await bundle()
   const [item] = communityCatalogItems({ items: [{
     id: 'app_public_1234',
-    name: 'Shared Notes',
-    summary: 'Notes made together.',
-    manifest_url: 'https://raw.githubusercontent.com/example/shared-notes/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/example/shared-notes/main/',
-    latest_revision: { id: 'rev_public_1234', review_eligible: true },
-    distribution: {
-      format: 'mobius-module-v1', sha256: 'b'.repeat(64),
-      source_commit: 'c'.repeat(40), compatible: true,
+    manifest: {
+      id: 'shared-notes',
+      name: 'Shared Notes',
+      description: 'Notes made together.',
+      store: { tagline: 'Notes made together.', description: 'Shared notes.' },
     },
-    rating: { average: 4.5, count: 8 },
+    latest_revision: {
+      id: 'rev_public_1234',
+      manifest_url: 'https://raw.githubusercontent.com/example/shared-notes/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/example/shared-notes/main/',
+      cache: { kind: 'content_addressed', revision_id: 'rev_public_1234' },
+    },
     publisher: { kind: 'github', login: 'octo-owner' },
     repository_url: 'https://github.com/example/shared-notes',
     repository_update: {
@@ -166,36 +168,30 @@ test('community listings join the ordinary install path with social provenance',
   assert.equal(item.id, 'community:app_public_1234')
   assert.equal(item.collection, 'community')
   assert.equal(item.community.revision_id, 'rev_public_1234')
-  assert.equal(item.community.rating_average, 4.5)
-  assert.equal(item.community.rating_count, 8)
   assert.equal(item.community.author.handle, 'octo-owner')
-  assert.equal(item.community.review_eligible, true)
   assert.equal(item.community.repository_update.commit_sha, 'd'.repeat(40))
   assert.equal(item.community.repository_update.status, 'available_for_review')
-  assert.equal(item.community.distribution.format, 'mobius-module-v1')
-  assert.equal(item.community.distribution.compatible, true)
-  const [unverified] = communityCatalogItems({ items: [{
-    id: 'app_public_5678',
-    manifest_url: 'https://raw.githubusercontent.com/example/other/main/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/example/other/main/',
-    latest_revision: { id: 'rev_public_5678' },
-  }] })
-  assert.equal(unverified.community.review_eligible, false)
+  assert.equal(item.community.cache.kind, 'content_addressed')
+  assert.equal(item.community.publication_status, 'live')
 })
 
 test('community catalog pages preserve source offsets and deduplicate appended apps', async () => {
   const { communityCatalogPage, mergeCommunityCatalog } = await bundle()
   const listing = (id) => ({
     id,
-    manifest_url: `https://example.test/${id}/mobius.json`,
-    raw_base: `https://example.test/${id}/`,
+    manifest: { id, name: id, description: id },
+    latest_revision: {
+      id: `revision-${id}`,
+      manifest_url: `https://example.test/${id}/mobius.json`,
+      raw_base: `https://example.test/${id}/`,
+    },
   })
   const first = communityCatalogPage({
     items: [listing('one')],
-    has_more: true,
+    next_offset: 1,
     viewer: { github: { connected: true, login: 'octo-owner' } },
   }, 24)
-  const second = communityCatalogPage({ items: [listing('one'), listing('two')], has_more: false }, 24)
+  const second = communityCatalogPage({ items: [listing('one'), listing('two')], next_offset: null }, 24)
   assert.equal(first.hasMore, true)
   assert.equal(first.rowCount, 1)
   assert.deepEqual(first.viewer, {
@@ -208,7 +204,7 @@ test('community catalog pages preserve source offsets and deduplicate appended a
   )
   const partial = communityCatalogPage({
     items: [listing('valid'), { id: 'invalid' }],
-    has_more: true,
+    next_offset: 2,
   }, 24)
   assert.equal(partial.items.length, 1)
   assert.equal(partial.rowCount, 2)
@@ -217,7 +213,7 @@ test('community catalog pages preserve source offsets and deduplicate appended a
 test('community publication state and source links stay truthful', async () => {
   const { communityPublicationStatus, communityRepositoryUrl } = await bundle()
   assert.equal(communityPublicationStatus({ status: 'checking' }), 'checking')
-  assert.equal(communityPublicationStatus({ review_status: 'LIVE' }), 'live')
+  assert.equal(communityPublicationStatus({ latest_revision: { id: 'rev_1' } }), 'live')
   assert.equal(communityPublicationStatus({}), 'pending')
   assert.equal(
     communityRepositoryUrl('https://github.com/example/shared-notes.git'),
@@ -227,12 +223,10 @@ test('community publication state and source links stay truthful', async () => {
   assert.equal(communityRepositoryUrl('https://example.test/example/shared-notes'), '')
 })
 
-test('distribution status never calls an incompatible cached build verified', async () => {
-  const { distributionStatus } = await bundle()
-  assert.equal(distributionStatus(null).key, 'source')
-  assert.equal(distributionStatus(null, { kind: 'content_addressed' }).key, 'preserved-source')
-  assert.equal(distributionStatus({ sha256: 'a'.repeat(64), compatible: false }).key, 'incompatible')
-  assert.equal(distributionStatus({ sha256: 'a'.repeat(64), compatible: true }).key, 'verified')
+test('source availability distinguishes the immutable Host cache from a repository revision', async () => {
+  const { sourceAvailabilityStatus } = await bundle()
+  assert.equal(sourceAvailabilityStatus().key, 'repository')
+  assert.equal(sourceAvailabilityStatus({ kind: 'content_addressed' }).key, 'preserved')
 })
 
 test('switching Store journeys resets the shared scroll surface', async () => {
@@ -248,9 +242,9 @@ test('the Store uses shared listings rather than a raw link-install tab', async 
   assert.doesNotMatch(source, />Install from link</)
   assert.match(source, /loadCommunityApps/)
   assert.match(source, /registerCommunityRevision/)
-  assert.match(source, /rateCommunityApp/)
-  assert.match(source, /commentOnCommunityRevision/)
-  assert.match(source, /remixCommunityApp/)
+  assert.doesNotMatch(source, /rateCommunityApp/)
+  assert.doesNotMatch(source, /commentOnCommunityRevision/)
+  assert.doesNotMatch(source, /remixCommunityApp/)
 })
 
 test('distributed publishing submits one immutable GitHub revision', async () => {
@@ -323,34 +317,15 @@ test('local publishing is one reviewed action through the inherited GitHub accou
   )
 })
 
-test('a Host-created remix returns to the ordinary reviewed install path', async () => {
-  const { remixCatalogItem } = await bundle()
-  const parent = { community: { id: 'app_public_parent' } }
-  const item = remixCatalogItem({
-    id: 'app_public_remix',
-    name: 'Shared Notes Remix',
-    manifest_url: 'https://raw.githubusercontent.com/example/remix/abc123/mobius.json',
-    raw_base: 'https://raw.githubusercontent.com/example/remix/abc123/',
-    repository_url: 'https://github.com/example/remix',
-    latest_revision: { id: 'rev_public_remix' },
-  }, parent)
-  assert.equal(item.id, 'remix:app_public_remix')
-  assert.equal(item.community.remix_of, 'app_public_parent')
-  assert.equal(item.community.repository_url, 'https://github.com/example/remix')
-  assert.equal(item.community.review_eligible, false)
-})
-
 test('publisher lifecycle records bind back to their local app', async () => {
   const { communityPublicationsByLocalApp } = await bundle()
-  const states = communityPublicationsByLocalApp({ publications: [{
+  const states = communityPublicationsByLocalApp({ items: [{
     id: 'publication_public_1',
     local_app_id: 'app:41:shared-notes',
     status: 'checking',
     repository_url: 'https://github.com/example/shared-notes',
-    checks: [{ name: 'secrets', status: 'passed' }],
   }] })
   assert.equal(states[41].status, 'checking')
-  assert.equal(states[41].checks[0].status, 'passed')
   assert.equal(states[41].repository_url, 'https://github.com/example/shared-notes')
 })
 
@@ -414,11 +389,6 @@ test('catalog app intents preserve origin checks and resolve one safe action', a
   const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   assert.match(source, /setQuery\(item\.name \|\| intentDestination\.itemId\)/)
   assert.match(source, /void openDetail\(item\)/)
-})
-
-test('community feedback state resets when detail moves to another revision', async () => {
-  const source = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
-  assert.match(source, /<CommunityFeedback\s+key=\{item\.community\.revision_id\}/)
 })
 
 test('live catalog metadata preserves baked snapshots and appends new entries', async () => {

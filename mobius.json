@@ -13,7 +13,7 @@
     "reads": true,
     "writes": "none",
     "execution": "partial",
-    "reads_detail": "The bundled catalog and validated manifest snapshots remain browsable offline. Shared listings, installs, updates, publishing, and reviews require a connection and stay disabled when installed state cannot be verified."
+    "reads_detail": "The bundled catalog and validated manifest snapshots remain browsable offline. Shared listings, installs, updates, publishing, and source checks require a connection and stay disabled when installed state cannot be verified."
   },
   "permissions": {
     "cross_app_access": "none",
@@ -52,8 +52,6 @@
     "ui/DetailView.jsx",
     "ui/LibraryHealth.jsx",
     "ui/PublisherTab.jsx",
-    "ui/CommunityFeedback.jsx",
-    "ui/RemixConfirmModal.jsx",
     "ui/UpdateReviewModal.jsx",
     "ui/UpdateAllModal.jsx",
     "ui/SelfUpdateBanner.jsx",

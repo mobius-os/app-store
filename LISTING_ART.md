@@ -1,6 +1,6 @@
 # Listing artwork
 
-Curated artwork in this package is discovery media only. It never changes the depicted app’s install or capability manifest. Community artwork remains bound to the exact app revision under review.
+Curated artwork in this package is discovery media only. It never changes the depicted app’s install or capability manifest. Community artwork remains bound to the exact listed revision.
 
 ## Included
 

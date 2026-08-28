@@ -32,7 +32,7 @@ const CATALOG_COLLECTIONS = [
   {
     id: 'community',
     title: 'From the community',
-    description: 'Open-source apps you can install, review, remix, and improve together.',
+    description: 'Open-source apps you can inspect, install, and improve together.',
   },
   {
     id: 'other-installed',

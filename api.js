@@ -107,35 +107,6 @@ export async function publishLocalAppToGithub(token, appId, repositoryName) {
   return communityResponse(response, 'This local app could not be published.')
 }
 
-export async function remixCommunityApp(token, appId, revisionId, name) {
-  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/remixes`, {
-    method: 'POST',
-    headers: {
-      ...communityHeaders(token, communityRequestKey('remix')),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      revision_id: revisionId,
-      name,
-      confirm_source_public: true,
-      public_identity: 'github',
-    }),
-  })
-  return communityResponse(response, 'This remix could not be created.')
-}
-
-export async function rateCommunityApp(token, appId, revisionId, value) {
-  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/rating`, {
-    method: 'PUT',
-    headers: {
-      ...communityHeaders(token, communityRequestKey('rating')),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ revision_id: revisionId, value }),
-  })
-  return communityResponse(response, 'Your rating could not be saved.')
-}
-
 export async function recordCommunityInstall(token, appId, revisionId, localAppId) {
   const response = await fetch(
     `/api/community/apps/${encodeURIComponent(appId)}/revisions/${encodeURIComponent(revisionId)}/installs`,
@@ -148,22 +119,7 @@ export async function recordCommunityInstall(token, appId, revisionId, localAppI
       body: JSON.stringify({ local_app_id: localAppId }),
     },
   )
-  return communityResponse(response, 'This install could not be verified for reviews.')
-}
-
-export async function commentOnCommunityRevision(token, appId, revisionId, body, publicIdentity = 'github') {
-  const response = await fetch(
-    `/api/community/apps/${encodeURIComponent(appId)}/revisions/${encodeURIComponent(revisionId)}/comments`,
-    {
-      method: 'POST',
-      headers: {
-        ...communityHeaders(token, communityRequestKey('comment')),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ body, public_identity: publicIdentity }),
-    },
-  )
-  return communityResponse(response, 'Your review could not be posted.')
+  return communityResponse(response, 'This exact release could not be preserved.')
 }
 
 export function openInstalledApp(id, { intent, onUnembedded } = {}) {

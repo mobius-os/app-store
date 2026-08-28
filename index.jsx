@@ -25,7 +25,7 @@ import {
   clearResolvedBlockedReview,
   clearSettledBlockedReview,
   collectCategories,
-  distributionStatus,
+  sourceAvailabilityStatus,
   communityCatalogPage,
   communityCatalogItems,
   communityPublicationStatus,
@@ -39,7 +39,6 @@ import {
   otherInstalledCatalogItems,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
-  remixCatalogItem,
   sourceBackedInstalledApps,
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
@@ -65,10 +64,7 @@ import {
   loadUpdatePreview,
   publishLocalAppToGithub,
   registerCommunityRevision,
-  remixCommunityApp,
-  rateCommunityApp,
   recordCommunityInstall,
-  commentOnCommunityRevision,
   openChat,
   openInstalledApp,
   openSystemSettings,
@@ -85,7 +81,6 @@ import { CatalogSkeleton } from './ui/CatalogSkeleton.jsx'
 import { DetailView } from './ui/DetailView.jsx'
 import { LibraryHealth } from './ui/LibraryHealth.jsx'
 import { PublisherTab } from './ui/PublisherTab.jsx'
-import { RemixConfirmModal } from './ui/RemixConfirmModal.jsx'
 import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
@@ -107,13 +102,12 @@ export {
   catalogCardDescription,
   catalogCollection,
   collectCategories,
-  distributionStatus,
+  sourceAvailabilityStatus,
   communityCatalogPage,
   communityCatalogItems,
   communityPublicationStatus,
   communityPublicationsByLocalApp,
   communityRepositoryUrl,
-  remixCatalogItem,
   filterCatalog,
   findInstalled,
   focusBlockedUpdateResult,
@@ -147,9 +141,6 @@ export {
   loadInstalledApps,
   publishLocalAppToGithub,
   registerCommunityRevision,
-  remixCommunityApp,
-  rateCommunityApp,
-  commentOnCommunityRevision,
   previewApp,
   proxyUrl,
   readErrorDetail,
@@ -321,11 +312,6 @@ export default function App({ appId, token }) {
   const [publicationError, setPublicationError] = useState('')
   const [publicationStates, setPublicationStates] = useState({})
   const [publicationStatesError, setPublicationStatesError] = useState('')
-  const [communityActionBusy, setCommunityActionBusy] = useState(false)
-  const [communityActionError, setCommunityActionError] = useState('')
-  const [pendingRemix, setPendingRemix] = useState(null)
-  const [remixBusy, setRemixBusy] = useState(false)
-  const [remixError, setRemixError] = useState('')
   const [otherInstalledCatalog, setOtherInstalledCatalog] = useState([])
   const otherInstalledCatalogRef = useRef(otherInstalledCatalog)
   useEffect(() => { otherInstalledCatalogRef.current = otherInstalledCatalog }, [otherInstalledCatalog])
@@ -695,63 +681,6 @@ export default function App({ appId, token }) {
     }
   }, [githubIdentity, publishingId, refreshCommunity, refreshPublicationStates, token])
 
-  const updateCommunityItem = useCallback((communityId, updater) => {
-    setCommunityCatalog((items) => items.map((item) => (
-      item.community?.id === communityId
-        ? { ...item, community: updater(item.community) }
-        : item
-    )))
-    setDetail((item) => item?.community?.id === communityId
-      ? { ...item, community: updater(item.community) }
-      : item)
-  }, [])
-
-  const handleCommunityRate = useCallback(async (value) => {
-    const community = detail?.community
-    if (!community || communityActionBusy || !communityIdentity?.linked || !community.review_eligible) return false
-    setCommunityActionBusy(true)
-    setCommunityActionError('')
-    try {
-      const result = await rateCommunityApp(token, community.id, community.revision_id, value)
-      updateCommunityItem(community.id, (current) => ({
-        ...current,
-        user_rating: value,
-        rating_average: Number(result.rating_average ?? result.rating?.average ?? current.rating_average) || value,
-        rating_count: Number(result.rating_count ?? result.rating?.count ?? current.rating_count) || Math.max(1, current.rating_count),
-      }))
-      return true
-    } catch (error) {
-      setCommunityActionError(error?.message || 'Your rating could not be saved.')
-      return false
-    } finally {
-      setCommunityActionBusy(false)
-    }
-  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityItem])
-
-  const handleCommunityComment = useCallback(async (body) => {
-    const community = detail?.community
-    if (!community || communityActionBusy || !communityIdentity?.linked || !community.review_eligible) return false
-    setCommunityActionBusy(true)
-    setCommunityActionError('')
-    try {
-      const result = await commentOnCommunityRevision(
-        token, community.id, community.revision_id, body,
-        'github',
-      )
-      const comment = result.comment || result
-      updateCommunityItem(community.id, (current) => ({
-        ...current,
-        comments: [comment, ...current.comments],
-      }))
-      return true
-    } catch (error) {
-      setCommunityActionError(error?.message || 'Your review could not be posted.')
-      return false
-    } finally {
-      setCommunityActionBusy(false)
-    }
-  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityItem])
-
   // Published apps may exist outside the curated registry. Hydrate them from
   // the same canonical source the backend updates, while excluding this Store's
   // own row. A cancelled effect cannot replace a newer installed-state result
@@ -974,33 +903,6 @@ export default function App({ appId, token }) {
     }
   }, [token])
 
-  const handleCreateRemix = useCallback(async (name) => {
-    const source = pendingRemix
-    const community = source?.community
-    if (!community || remixBusy || !communityIdentity?.linked) return
-    setRemixBusy(true)
-    setRemixError('')
-    try {
-      const payload = await remixCommunityApp(
-        token, community.id, community.revision_id, name,
-      )
-      const remixed = remixCatalogItem(payload, source)
-      if (!remixed) throw new Error('Host did not return an installable remix.')
-      setPendingRemix(null)
-      setDetail(remixed)
-      await reviewCapabilities(remixed)
-      setToast({
-        kind: 'success',
-        message: `${name} now has its own GitHub source. Review access to install it.`,
-      })
-      void refreshCommunity()
-    } catch (error) {
-      setRemixError(error?.message || 'This remix could not be created.')
-    } finally {
-      setRemixBusy(false)
-    }
-  }, [communityIdentity, pendingRemix, refreshCommunity, remixBusy, reviewCapabilities, token])
-
   // Installs run inline from DetailView; updates reach this only after the
   // candidate-diff review's explicit Apply action. `busy` keeps the initiating
   // surface dimensionally stable while the transaction is in flight.
@@ -1087,18 +989,13 @@ export default function App({ appId, token }) {
       if (item.community?.id && item.community?.revision_id && result.id) {
         // Installation is already complete; receipt failure must never roll it
         // back. A later successful install/update retries with a fresh,
-        // idempotent receipt and unlocks feedback for this exact revision.
+        // idempotent receipt so Host can keep this exact release available.
         void recordCommunityInstall(
           token,
           item.community.id,
           item.community.revision_id,
           `app:${result.id}:${result.slug || item.manifest?.id || 'community'}`,
-        ).then(() => {
-          updateCommunityItem(item.community.id, (current) => ({
-            ...current,
-            review_eligible: true,
-          }))
-        }).catch(() => {})
+        ).catch(() => {})
       }
       setCardErrors(prev => withoutKey(prev, item.id))
       setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
@@ -1832,12 +1729,6 @@ export default function App({ appId, token }) {
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
           onDismissNotice={handleDismissNotice}
-          onCommunityRate={handleCommunityRate}
-          onCommunityComment={handleCommunityComment}
-          communityBusy={communityActionBusy}
-          communityError={communityActionError}
-          communityIdentityLinked={!!communityIdentity?.linked}
-          onRemix={() => { setPendingRemix(detail); setRemixError('') }}
           trustedUpdate={Boolean(trustedUpdates[trustedUpdateKey(detail, findInstalled(installed, detail))])}
           onToggleTrustedUpdate={(installedApp) => toggleTrustedUpdates(detail, installedApp)}
           token={token}
@@ -1851,15 +1742,6 @@ export default function App({ appId, token }) {
             busy={busy}
             onConfirm={confirmUninstall}
             onCancel={() => !busy && setPendingUninstall(null)}
-          />
-        )}
-        {pendingRemix && (
-          <RemixConfirmModal
-            item={pendingRemix}
-            busy={remixBusy}
-            error={remixError}
-            onConfirm={handleCreateRemix}
-            onCancel={() => { if (!remixBusy) { setPendingRemix(null); setRemixError('') } }}
           />
         )}
         {updateReview && (
