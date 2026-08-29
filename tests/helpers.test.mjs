@@ -317,6 +317,55 @@ test('local publishing is one reviewed action through the inherited GitHub accou
   )
 })
 
+test('publisher preview accepts only the latest app after back navigation', async () => {
+  const { createPublicationPreviewGate } = await bundle()
+  const publisherSource = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const gate = createPublicationPreviewGate()
+  const accepted = []
+  let finishFirst
+  let finishSecond
+  const first = new Promise((resolve) => { finishFirst = resolve })
+  const second = new Promise((resolve) => { finishSecond = resolve })
+
+  async function prepare(label, result) {
+    const requestId = gate.begin()
+    const preview = await result
+    if (gate.isCurrent(requestId)) accepted.push({ label, preview })
+  }
+
+  const firstRun = prepare('first app', first)
+  gate.invalidate() // The owner navigates back while the first preview is pending.
+  const secondRun = prepare('second app', second)
+  finishSecond({ name: 'Second listing' })
+  await secondRun
+  finishFirst({ name: 'First listing' })
+  await firstRun
+
+  assert.deepEqual(accepted, [{
+    label: 'second app',
+    preview: { name: 'Second listing' },
+  }])
+  assert.match(publisherSource, /const requestId = previewGateRef\.current\.begin\(\)/)
+  assert.equal(
+    publisherSource.match(/if \(!previewGateRef\.current\.isCurrent\(requestId\)\) return/g)?.length,
+    2,
+    'both fulfilled and rejected stale previews must be ignored',
+  )
+  assert.match(publisherSource, /function closePreview[\s\S]*previewGateRef\.current\.invalidate\(\)/)
+})
+
+test('the centered Store header can shrink before its mobile collapse breakpoint', async () => {
+  const source = await readFile(join(root, '..', 'theme.js'), 'utf8')
+  assert.match(
+    source,
+    /grid-template-columns: minmax\(44px, 1fr\) minmax\(320px, 560px\) minmax\(44px, 1fr\)/,
+  )
+  assert.doesNotMatch(
+    source,
+    /grid-template-columns: minmax\(130px, 1fr\) minmax\(320px, 560px\) minmax\(130px, 1fr\)/,
+  )
+})
+
 test('publisher lifecycle records bind back to their local app', async () => {
   const { communityPublicationsByLocalApp } = await bundle()
   const states = communityPublicationsByLocalApp({ items: [{

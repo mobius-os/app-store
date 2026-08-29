@@ -138,6 +138,7 @@ export {
 export { capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
 export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
 export { catalogAssetFilename, catalogAssetUrl, storeAssetSource, storeAssetUrl } from './ui/StoreImage.jsx'
+export { createPublicationPreviewGate } from './ui/PublisherTab.jsx'
 
 // Snapshot-less catalogs (catalog.json is now a pure discovery index) hydrate
 // every entry's manifest from its repo on open — ~16 fetches — so a 3-wide pool

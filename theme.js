@@ -73,7 +73,7 @@ export const CSS = `
 }
 .st-title-row {
   display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(320px, 560px) minmax(130px, 1fr);
+  grid-template-columns: minmax(44px, 1fr) minmax(320px, 560px) minmax(44px, 1fr);
   align-items: center;
   gap: 16px;
 }

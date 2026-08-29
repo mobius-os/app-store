@@ -1,6 +1,26 @@
 /* PublisherTab turns an accepted local app revision into one reviewable public listing. */
 import { FileUpload } from '@openai/apps-sdk-ui/components/Icon'
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
+
+// Preview preparation crosses an async boundary while the owner can navigate
+// back and choose another app. Keep result acceptance explicit so a late
+// response can never pair one app's accepted source with another app's
+// publication action.
+export function createPublicationPreviewGate() {
+  let current = 0
+  return {
+    begin() {
+      current += 1
+      return current
+    },
+    invalidate() {
+      current += 1
+    },
+    isCurrent(requestId) {
+      return requestId === current
+    },
+  }
+}
 
 function publishableApps(installed) {
   return (installed || []).filter((app) => (
@@ -63,11 +83,14 @@ export function PublisherTab({
   const [repository, setRepository] = useState('')
   const [commitSha, setCommitSha] = useState('')
   const [manifestPath, setManifestPath] = useState('mobius.json')
+  const previewGateRef = useRef(null)
+  if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
   const commitValid = /^[0-9a-fA-F]{40,64}$/.test(commitSha.trim())
   const localRepositoryValid = /^[A-Za-z0-9_.-]{1,100}$/.test(localRepositoryName.trim())
 
   async function prepare(app) {
+    const requestId = previewGateRef.current.begin()
     onNavigate?.()
     setCandidate(app)
     setConfirmed(false)
@@ -77,15 +100,18 @@ export function PublisherTab({
       .toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100))
     try {
       const result = await onPreviewLocal?.(app.id)
+      if (!previewGateRef.current.isCurrent(requestId)) return
       setPreview(result || null)
       if (result?.repository_name) setLocalRepositoryName(result.repository_name)
     } catch (error) {
+      if (!previewGateRef.current.isCurrent(requestId)) return
       setPreviewError(error instanceof Error ? error.message : 'This listing could not be prepared.')
     }
   }
 
   function closePreview({ force = false } = {}) {
     if (publishingId && !force) return
+    previewGateRef.current.invalidate()
     onNavigate?.()
     setCandidate(null)
     setPreview(null)
