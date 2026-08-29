@@ -35,7 +35,7 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, trustedUpdate = false, onToggleTrustedUpdate, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const lifecycle = appLifecycleFor(reviewedItem, {
@@ -153,6 +153,12 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           </div>
         )}
 
+        <p className="st-detail-desc">{listingDescription}</p>
+
+        {(m.author || m.license) ? (
+          <div className="st-detail-byline">{[m.author, m.license].filter(Boolean).join(' · ')}</div>
+        ) : null}
+
         {listingScreenshots.length ? (
           <div className={`st-detail-gallery${listingScreenshots.length === 1 ? ' is-single' : ''}`} aria-label={`${m.name} screenshots`}>
             {listingScreenshots.map((shot, index) => {
@@ -171,12 +177,6 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             <img src={previewUrl} alt={`${m.name} app preview`} />
             <figcaption>A look inside {m.name}</figcaption>
           </figure>
-        ) : null}
-
-        <p className="st-detail-desc">{listingDescription}</p>
-
-        {(m.author || m.license) ? (
-          <div className="st-detail-byline">{[m.author, m.license].filter(Boolean).join(' · ')}</div>
         ) : null}
 
         {item.community && (
@@ -389,23 +389,6 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             )}
           </div>
         </details>
-
-        {storeInstalled && (
-          <section className="st-update-trust" aria-label="Update review preference">
-            <div>
-              <strong>{trustedUpdate ? 'Routine updates are trusted' : 'Review every update'}</strong>
-              <span>
-                {trustedUpdate
-                  ? 'Möbius may batch updates only while source verification succeeds and access stays unchanged.'
-                  : 'Every release opens for review before it can be applied.'}
-              </span>
-            </div>
-            <button type="button" className="st-btn st-btn-secondary" disabled={busy}
-                    onClick={() => onToggleTrustedUpdate?.(storeInstalled)}>
-              {trustedUpdate ? 'Require review' : 'Trust routine updates'}
-            </button>
-          </section>
-        )}
 
       </div>
 

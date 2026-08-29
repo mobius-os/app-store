@@ -6,7 +6,7 @@ Curated artwork in this package is discovery media only. It never changes the de
 
 Fourteen official apps have standalone, shell-free screenshots. Voice, Maps, and Beat Machine also have generated feature heroes. Every catalog filename is restricted to a flat image name and served from this App Store package.
 
-Browse uses the first accepted screenshot as visual proof on each eligible official or community card. The three official hero artworks form the Spotlight mosaic; detail pages keep the full screenshot gallery and captions.
+Browse keeps app cards compact and reserves accepted screenshots for each app's detail description. The three official hero artworks still form the Spotlight mosaic; detail pages keep the full screenshot gallery and captions below the descriptive copy.
 
 Included screenshots: artifacts, beat-machine, connections, cuberun, habits, maps, news, notes, reflection, skills, tandem, tasks, voice, workflows.
 

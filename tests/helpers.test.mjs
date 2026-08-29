@@ -1216,7 +1216,7 @@ test('capability rows fail visibly for a future data grant', async () => {
   assert.equal(future.tone, 'write')
 })
 
-test('catalog updates open a read-only review before applying, binding reviewed digests', async () => {
+test('individual catalog updates keep a read-only review with bound digests', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
@@ -1227,9 +1227,9 @@ test('catalog updates open a read-only review before applying, binding reviewed 
     'loadUpdateCandidatePreview(installedApp.id, item.manifest_url, token)',
   ))
   assert.ok(indexSource.includes('capabilityDiffNeedsReview('))
-  // Every update now opens a read-only review instead of applying on first tap;
-  // the inline one-tap apply path and its access-blocked toast are both gone.
-  assert.ok(indexSource.includes('setUpdateReview({'))
+  // An individual update still opens a review. Update all intentionally uses
+  // the same prepared contract without duplicating this modal flow.
+  assert.ok(indexSource.includes('setUpdateReview(prepared)'))
   assert.equal(indexSource.includes('This update changes app access. Open it to review'), false)
   // Applying is a separate, explicit step that binds exactly the digests shown
   // in the review the owner just approved.
@@ -1302,61 +1302,19 @@ test('resolver chat request binds the selected whole-tree policy', async () => {
   }
 })
 
-test('a conflicting apply remains visible as an explicit unchanged result', async () => {
-  const {
-    clearResolvedBlockedReview,
-    clearSettledBlockedReview,
-    focusBlockedUpdateResult,
-  } = await bundle()
+test('a conflicting apply starts a preserving resolver agent automatically', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
-  const themeSource = await readFile(join(root, '..', 'theme.js'), 'utf8')
 
-  assert.ok(indexSource.includes('blockedNotice: outcome.notice'))
-  assert.ok(indexSource.includes('handleReviewUpdate(updateReview.blockedNotice, policy)'))
-  assert.ok(indexSource.includes("notice.kind === 'conflict' && !resolutionPolicy"))
-  assert.ok(indexSource.includes('setUpdateReview({'))
-  assert.ok(modalSource.includes('Update not applied'))
-  assert.ok(modalSource.includes('Your app was left unchanged'))
-  assert.ok(modalSource.includes("onResolve('preserve_local')"))
-  assert.ok(modalSource.includes("onResolve('accept_reviewed_upstream_exact')"))
-  assert.ok(modalSource.includes('Replace all tracked local source'))
-  // A resolver-chat failure must stay visible inside the blocked result while
-  // leaving the same Resolve action enabled for a retry.
-  assert.match(modalSource, /blockedNotice[\s\S]*\{error \? \([\s\S]*role="alert"/)
-  assert.ok(modalSource.includes('Nothing changed. Try opening the resolver again.'))
-  // Applying replaces the focused button. Exercise the focus transition and
-  // its fallback, then verify that the component wires it to the result state.
-  const focused = []
-  const resolveButton = { focus: () => focused.push('resolve') }
-  const dialog = { focus: () => focused.push('dialog') }
-  assert.equal(focusBlockedUpdateResult(resolveButton, dialog), resolveButton)
-  assert.equal(focusBlockedUpdateResult(null, dialog), dialog)
-  assert.deepEqual(focused, ['resolve', 'dialog'])
-  assert.ok(modalSource.includes('focusBlockedUpdateResult(resolveRef.current, dialogRef.current)'))
-  assert.ok(modalSource.includes('ref={resolveRef}'))
-
-  // A successful resolver or a settled update probe must retire the matching
-  // cached result instead of resurrecting stale conflict text from the iframe.
-  const review = { item: { id: 'news' }, blockedNotice: { itemId: 'news' } }
-  assert.equal(clearSettledBlockedReview(review, new Set(['news'])), null)
-  assert.equal(clearSettledBlockedReview(review, new Set(['atlas'])), review)
-  assert.equal(clearSettledBlockedReview({ item: { id: 'news' } }, new Set(['news'])).item.id, 'news')
-  assert.ok(indexSource.includes('setUpdateReview(prev => clearSettledBlockedReview(prev, itemIds))'))
-
-  // Opening a resolver retires the exact blocked result before navigation,
-  // while a late response for another app cannot close the current modal.
-  assert.equal(clearResolvedBlockedReview(review, { itemId: 'news' }), null)
-  assert.equal(clearResolvedBlockedReview(review, { itemId: 'atlas' }), review)
-  const clearBeforeOpen = indexSource.indexOf(
-    'setUpdateReview(current => clearResolvedBlockedReview(current, notice))',
-  )
-  const openResolver = indexSource.indexOf('openChat(resolver.chat_id)', clearBeforeOpen)
-  assert.ok(clearBeforeOpen >= 0 && openResolver > clearBeforeOpen)
-  assert.match(themeSource, /\.st-update-review\.is-result\s*\{[^}]*height: auto/)
+  assert.match(indexSource, /if \(isConflict\)[\s\S]*createConflictResolverChat\(result\.id, 'preserve_local', token\)/)
+  assert.match(indexSource, /if \(!isBatch && resolver\?\.chat_id\) openChat\(resolver\.chat_id\)/)
+  assert.match(indexSource, /return \{ ok: false, conflict: true, result, notice, resolver, resolverError \}/)
+  assert.match(indexSource, /if \(outcome\?\.conflict\)[\s\S]*setUpdateReview\(null\)/)
+  assert.match(indexSource, /const handleReviewUpdate[\s\S]*'preserve_local'[\s\S]*openChat\(resolver\.chat_id\)/)
+  assert.doesNotMatch(modalSource, /blockedNotice|onResolve|accept_reviewed_upstream_exact/)
 })
 
-test('one-tap updates require explicit trust and stop for changed or unknown capabilities', async () => {
+test('Update all applies verified stable-access releases and stops for access changes', async () => {
   const { capabilityDiffNeedsReview, updateBatchDisposition } = await bundle()
   assert.equal(capabilityDiffNeedsReview(null), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: true, added: [], removed: [], changed: [] }), true)
@@ -1372,8 +1330,7 @@ test('one-tap updates require explicit trust and stop for changed or unknown cap
       },
     },
   }
-  assert.deepEqual(updateBatchDisposition(verified), { kind: 'review', reason: 'trust_required' })
-  assert.deepEqual(updateBatchDisposition(verified, { trusted: true }), { kind: 'ready', reason: null })
+  assert.deepEqual(updateBatchDisposition(verified), { kind: 'ready', reason: null })
   assert.deepEqual(
     updateBatchDisposition({ ...verified, preview: {} }),
     { kind: 'review', reason: 'source_unverified' },
@@ -1402,12 +1359,12 @@ test('one-tap updates require explicit trust and stop for changed or unknown cap
   )
 })
 
-test('trusted update preferences use app storage rather than unavailable frame localStorage', async () => {
+test('automatic updates have no duplicate trust preference path', async () => {
   const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
-  assert.match(source, /TRUSTED_UPDATES_PATH = 'trusted-updates\.json'/)
-  assert.match(source, /storage\.subscribe\(TRUSTED_UPDATES_PATH/)
-  assert.match(source, /storage\.set\(TRUSTED_UPDATES_PATH, next\)/)
-  assert.doesNotMatch(source, /window\.localStorage/)
+  const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  assert.doesNotMatch(source, /trusted-updates\.json|trustedUpdate|toggleTrusted/)
+  assert.doesNotMatch(detail, /Trust routine updates|Require review|Review every update/)
+  assert.match(source, /updateBatchDisposition\(prepared\)/)
 })
 
 test('filterCatalog matches categories, descriptions, and setup metadata', async () => {
@@ -1923,9 +1880,9 @@ test('app publication requires a complete source_files import tree', async () =>
   await assert.rejects(
     () => assertCompleteSourceManifest(join(root, '..'), {
       ...manifest,
-      source_files: manifest.source_files.filter((path) => path !== 'ui/UpdateAllModal.jsx'),
+      source_files: manifest.source_files.filter((path) => path !== 'ui/UpdateReviewModal.jsx'),
     }),
-    /index\.jsx: relative import \.\/ui\/UpdateAllModal\.jsx is not declared in source_files/,
+    /index\.jsx: relative import \.\/ui\/UpdateReviewModal\.jsx is not declared in source_files/,
   )
 })
 

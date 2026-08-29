@@ -91,13 +91,13 @@ def main() -> int:
     names += f" and {count - 3} more"
   payload = {
     "title": f"{count} app {'update' if count == 1 else 'updates'} available",
-    "body": f"Review changes or update routine apps together: {names}",
+    "body": f"Safe updates can be applied together: {names}",
     "source_id": str(APP_ID),
     "target": f"/shell/?app={APP_ID}&intent=updates",
     "actions": [
       {
-        "action": "review_updates",
-        "title": "Review updates",
+        "action": "update_all",
+        "title": "Update all",
         "target": f"/shell/?app={APP_ID}&intent=updates",
       },
       {

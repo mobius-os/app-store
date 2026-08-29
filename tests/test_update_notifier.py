@@ -44,5 +44,5 @@ def test_unchanged_update_set_does_not_repeat_notification(tmp_path):
   payload = notifications[0][2]
   assert payload["title"] == "1 app update available"
   assert payload["target"] == "/shell/?app=39&intent=updates"
-  assert payload["actions"][0]["title"] == "Review updates"
+  assert payload["actions"][0]["title"] == "Update all"
   assert all(action["target"] == payload["target"] for action in payload["actions"])

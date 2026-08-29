@@ -111,7 +111,6 @@ export function CatalogList({
     <CatalogCard
       key={item.id}
       item={item}
-      appId={appId}
       installed={installed}
       updateChecks={updateChecks}
       onPick={onPick}

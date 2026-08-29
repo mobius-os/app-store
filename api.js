@@ -618,17 +618,8 @@ export async function readJsonOrThrow(res, fallback) {
   throw new Error(await readErrorDetail(res, fallback || `HTTP ${res.status}`))
 }
 
-export async function loadUpdatePreview(appId, token) {
-  const res = await fetch(`/api/apps/${appId}/update-preview`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return await readJsonOrThrow(res, 'Update preview failed')
-}
-
-// Read-only preview of the currently published candidate. This differs from
-// loadUpdatePreview above: that endpoint describes an upstream commit already
-// recorded by an attempted update (used for conflict resolution), while this
-// one fetches the incoming release before anything is applied.
+// Read-only preview of the currently published candidate. This fetches the
+// incoming release before anything is applied.
 export async function loadUpdateCandidatePreview(appId, manifestUrl, token) {
   const query = manifestUrl
     ? `?manifest_url=${encodeURIComponent(manifestUrl)}`

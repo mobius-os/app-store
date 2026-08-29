@@ -3,10 +3,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const updateReview = readFileSync(new URL('../ui/UpdateReviewModal.jsx', import.meta.url), 'utf8')
-const updateAll = readFileSync(new URL('../ui/UpdateAllModal.jsx', import.meta.url), 'utf8')
 const catalogList = readFileSync(new URL('../ui/CatalogList.jsx', import.meta.url), 'utf8')
 const catalogCard = readFileSync(new URL('../ui/CatalogCard.jsx', import.meta.url), 'utf8')
 const catalogFilters = readFileSync(new URL('../ui/CatalogFilters.jsx', import.meta.url), 'utf8')
+const libraryHealth = readFileSync(new URL('../ui/LibraryHealth.jsx', import.meta.url), 'utf8')
+const detailView = readFileSync(new URL('../ui/DetailView.jsx', import.meta.url), 'utf8')
 
 const app = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
 
@@ -14,13 +15,6 @@ test('update review restores its opener independently of busy-state effects', ()
   assert.match(updateReview, /openerRef\.current = document\.activeElement/)
   assert.match(updateReview, /document\.contains\(opener\)/)
   assert.match(updateReview, /\}, \[\]\)\n\n  useEffect\(\(\) => \{/)
-})
-
-test('update all traps focus and restores its opener', () => {
-  assert.match(updateAll, /aria-modal="true"/)
-  assert.match(updateAll, /openerRef\.current = document\.activeElement/)
-  assert.match(updateAll, /document\.contains\(opener\)/)
-  assert.match(updateAll, /event\.key === 'Escape'/)
 })
 
 test('Browse, Library, and Publish form one keyboard-navigable tab set', () => {
@@ -41,13 +35,20 @@ test('Browse presents several explicit spotlight actions without turning cards i
   assert.doesNotMatch(catalogList, /role="button"/)
 })
 
-test('official and community cards render their accepted listing screenshots', () => {
-  assert.match(catalogCard, /listing\?\.screenshots\?\.\[0\]/)
-  assert.match(catalogCard, /<CatalogStoreImage storeAppId=\{appId\}/)
-  assert.match(catalogCard, /<StoreImage item=\{item\}/)
+test('browse cards reserve accepted screenshots for the app description', () => {
+  assert.doesNotMatch(catalogCard, /StoreImage|st-card-preview|listingScreenshot/)
+  assert.match(detailView, /<p className="st-detail-desc">\{listingDescription\}<\/p>[\s\S]*st-detail-gallery/)
+  assert.match(detailView, /listingScreenshots\.map/)
 })
 
 test('Browse keeps update controls in Library instead of spending discovery space', () => {
   assert.match(catalogFilters, /mode === 'library' \? \(/)
   assert.match(catalogFilters, /aria-label="Library filters"/)
+})
+
+test('Library exposes one Update all action instead of duplicate review controls', () => {
+  assert.match(catalogFilters, /: 'Update all'/)
+  assert.match(catalogFilters, /aria-label=\{`Update all/)
+  assert.doesNotMatch(libraryHealth, /<button/)
+  assert.doesNotMatch(libraryHealth, /Review updates/)
 })

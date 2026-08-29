@@ -1,7 +1,6 @@
 import { appLifecycleFor, busyLabelForAction, catalogCardDescription } from '../domain.js'
 import { Check } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
-import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
 function cardVariantClass(variant) {
   if (variant === 'update') return 'st-card is-update'
@@ -19,7 +18,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
   const m = item.manifest
 
   if (!m) {
@@ -29,7 +28,7 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
     //    this branch only runs after the load resolved with no manifest)
     if (item.error) {
       return (
-        <div className={cardVariantClass('error')}>
+        <div className={`${cardVariantClass('error')} is-loading-card`}>
           <div className="st-icon-wrap st-icon-wrap--letter" style={{ marginBottom: '12px' }}>
             <span className="st-icon-letter">{item.id.charAt(0).toUpperCase()}</span>
           </div>
@@ -51,7 +50,7 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
     // Defensive — shouldn't render once skeletons land. Keep the slug
     // visible so a stuck card is still recognizable.
     return (
-      <div className={cardVariantClass('default')}>
+      <div className={`${cardVariantClass('default')} is-loading-card`}>
         <div className="st-icon-wrap st-icon-wrap--letter">
           <span className="st-icon-letter">{item.id.charAt(0).toUpperCase()}</span>
         </div>
@@ -127,17 +126,6 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
     ? { ...item, installed_icon_url: installedIconUrl(storeInstalled) }
     : item
   const description = catalogCardDescription(item)
-  const listing = item.community
-    ? item.manifest?.store
-    : item.listing || item.manifest?.store
-  const listingScreenshot = listing?.screenshots?.[0]
-  const listingPreview = typeof listingScreenshot === 'string'
-    ? listingScreenshot
-    : listingScreenshot?.src || listingScreenshot?.path
-  const legacyPreviewUrl = item.preview && appId
-    ? `/app-assets/by-id/${encodeURIComponent(appId)}/previews/${encodeURIComponent(item.preview)}`
-    : ''
-  const hasPreview = !!(listingPreview || legacyPreviewUrl)
   // The card is a non-interactive container. Two cleanly-separated AT
   // targets sit inside it: the app name is a real <button> whose ::after
   // overlay stretches across the whole card to open details (so the icon /
@@ -145,20 +133,7 @@ export function CatalogCard({ item, appId, installed, updateChecks = {}, onPick,
   // z-index layer above that overlay so it stays independently clickable.
   // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div className={`${cardVariantClass(cardVariant)}${hasPreview ? ' has-preview' : ''}${layout === 'list' ? ' is-list' : ''}`}>
-      {listingPreview ? (
-        <div className="st-card-preview" aria-hidden="true">
-          {item.community ? (
-            <StoreImage item={item} path={listingPreview} token={token} alt="" loading="lazy" />
-          ) : (
-            <CatalogStoreImage storeAppId={appId} path={listingPreview} alt="" loading="lazy" />
-          )}
-        </div>
-      ) : legacyPreviewUrl ? (
-        <div className="st-card-preview" aria-hidden="true">
-          <img src={legacyPreviewUrl} alt="" loading="lazy" />
-        </div>
-      ) : null}
+    <div className={`${cardVariantClass(cardVariant)}${layout === 'list' ? ' is-list' : ' is-catalog'}`}>
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
         {(cardVariant === 'installed' || cardVariant === 'update') && (

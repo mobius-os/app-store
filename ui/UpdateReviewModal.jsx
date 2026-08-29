@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { X } from '@openai/apps-sdk-ui/components/Icon'
-import { capabilityDiffNeedsReview, focusBlockedUpdateResult } from '../domain.js'
+import { capabilityDiffNeedsReview } from '../domain.js'
 import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
 import FileDiffList from './diff/FileDiffList.jsx'
 import { CapabilityContract } from './CapabilityContract.jsx'
@@ -12,17 +12,14 @@ function fileCountLabel(count) {
 export function UpdateReviewModal({
   review,
   applying = false,
-  resolving = false,
   agentReviewing = false,
   error = '',
   onClose,
   onApply,
-  onResolve,
   onReviewWithAgent,
 }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
-  const resolveRef = useRef(null)
   const openerRef = useRef(null)
   const item = review.item
   const preview = review.preview || {}
@@ -34,8 +31,7 @@ export function UpdateReviewModal({
     review.capabilityReview?.preview?.capability_diff,
   )
   const unknownPrevious = review.capabilityReview?.preview?.capability_diff?.unknown_previous === true
-  const blockedNotice = review.blockedNotice || null
-  const busy = applying || resolving || agentReviewing
+  const busy = applying || agentReviewing
   const sourceVerified = !!preview.source_digest
   const hasFailure = !!(error || review.previewError)
   const name = item.manifest?.name || item.id
@@ -83,17 +79,11 @@ export function UpdateReviewModal({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [requestClose])
 
-  // Applying swaps the focused Apply button for the blocked-result actions.
-  // Focus the replacement after that render so it remains inside aria-modal.
-  useEffect(() => {
-    if (blockedNotice) focusBlockedUpdateResult(resolveRef.current, dialogRef.current)
-  }, [blockedNotice])
-
   return (
     <div className="st-update-review-scrim" role="presentation" onClick={requestClose}>
       <div
         ref={dialogRef}
-        className={`st-update-review${blockedNotice ? ' is-result' : ''}`}
+        className="st-update-review"
         role="dialog"
         tabIndex={-1}
         aria-modal="true"
@@ -103,12 +93,10 @@ export function UpdateReviewModal({
         <div className="st-update-review-head">
           <div>
             <h2 id="st-update-review-title" className="st-update-review-title">
-              {blockedNotice ? 'Update not applied' : 'Review update'}
+              Review update
             </h2>
             <p className="st-update-review-subtitle">
-              {blockedNotice
-                ? `${name} is still on its current version.`
-                : <>{name} to v{version}{files.length > 0 ? ` · ${fileCountLabel(files.length)}` : ''}</>}
+              {name} to v{version}{files.length > 0 ? ` · ${fileCountLabel(files.length)}` : ''}
             </p>
           </div>
           <button
@@ -122,24 +110,7 @@ export function UpdateReviewModal({
         </div>
 
         <div className="st-update-review-body">
-          {blockedNotice ? (
-            <>
-              <div className="st-update-review-notice is-blocked" role="status">
-                <div className="st-update-review-result-title">Your app was left unchanged</div>
-                <div>Local changes overlap the new version. Choose the complete-source policy before the resolver opens.</div>
-                <div className="st-update-resolution-options">
-                  <div><strong>Keep my changes</strong><span>Reconcile the overlap, then review every local difference before updating.</span></div>
-                  <div><strong>Use update exactly</strong><span>Replace all tracked local source with the reviewed update.</span></div>
-                </div>
-              </div>
-              {error ? (
-                <div className="st-error-box st-selectable-error" role="alert">
-                  <div>{error}</div>
-                  <div>Nothing changed. Try opening the resolver again.</div>
-                </div>
-              ) : null}
-            </>
-          ) : review.previewError ? (
+          {review.previewError ? (
             <div className="st-update-review-notice is-error" role="alert">
               <div className="st-update-review-error-text">{review.previewError}</div>
               <div>Nothing will be changed until the source can be verified. You can close and try again, or ask the agent to investigate.</div>
@@ -161,44 +132,31 @@ export function UpdateReviewModal({
             </section>
           )}
 
-          {!blockedNotice && capabilitiesChanged ? (
+          {capabilitiesChanged ? (
             <section className="st-update-review-section">
               <h3>{unknownPrevious ? 'Access review' : 'Access changes'}</h3>
               <CapabilityContract review={review.capabilityReview} isInstalled />
             </section>
           ) : null}
 
-          {!blockedNotice && error ? <div className="st-error-box st-selectable-error" role="alert">{error}</div> : null}
+          {error ? <div className="st-error-box st-selectable-error" role="alert">{error}</div> : null}
         </div>
 
         <div className="st-update-review-actions">
           <button type="button" className="st-btn st-btn-ghost" onClick={requestClose} disabled={busy}>
             Not now
           </button>
-          {blockedNotice ? (
-            <>
-              <button ref={resolveRef} type="button" className="st-btn st-btn-primary" onClick={() => onResolve('preserve_local')} disabled={busy}>
-                {resolving ? 'Opening…' : 'Keep my changes'}
-              </button>
-              <button type="button" className="st-btn st-btn-secondary st-update-exact" onClick={() => onResolve('accept_reviewed_upstream_exact')} disabled={busy}>
-                {resolving ? 'Opening…' : 'Use update exactly'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="st-btn st-btn-secondary"
-                onClick={onReviewWithAgent}
-                disabled={busy}
-              >
-                {agentReviewing ? 'Opening agent…' : hasFailure ? 'Ask agent about error' : 'Review with agent'}
-              </button>
-              <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={busy || !sourceVerified}>
-                {applying ? 'Updating…' : sourceVerified ? 'Apply update' : 'Update unavailable'}
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            className="st-btn st-btn-secondary"
+            onClick={onReviewWithAgent}
+            disabled={busy}
+          >
+            {agentReviewing ? 'Opening agent…' : hasFailure ? 'Ask agent about error' : 'Review with agent'}
+          </button>
+          <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={busy || !sourceVerified}>
+            {applying ? 'Updating…' : sourceVerified ? 'Apply update' : 'Update unavailable'}
+          </button>
         </div>
       </div>
     </div>

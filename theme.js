@@ -309,7 +309,7 @@ export const CSS = `
 .st-update-all-trigger:disabled { opacity: 0.52; cursor: default; }
 .st-library-health {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   margin: 18px 0 26px;
@@ -467,18 +467,8 @@ export const CSS = `
   .st-publish-repository-grid { grid-template-columns: 1fr; }
   .st-publish-repository-grid .st-publish-field:last-child { grid-column: auto; }
 }
-.st-update-trust {
-  display: flex; align-items: center; justify-content: space-between; gap: 18px;
-  margin: 18px 0; padding: 14px 16px; border-radius: 14px;
-  background: var(--surface); border: 1px solid var(--border);
-}
-.st-update-trust strong, .st-update-trust span { display: block; }
-.st-update-trust strong { margin-bottom: 4px; font-size: 13px; }
-.st-update-trust span { max-width: 62ch; color: var(--muted); font-size: 11px; line-height: 1.45; }
 @media (max-width: 620px) {
-  .st-library-health { grid-template-columns: auto minmax(0, 1fr); }
-  .st-library-health .st-btn { grid-column: 1 / -1; width: 100%; }
-  .st-community-unavailable, .st-publisher-intro, .st-community-provenance, .st-update-trust { align-items: stretch; flex-direction: column; }
+  .st-community-unavailable, .st-publisher-intro, .st-community-provenance { align-items: stretch; flex-direction: column; }
   .st-publisher-intro { padding: 20px; }
   .st-publisher-identities { justify-items: start; }
   .st-publisher-identity { align-self: flex-start; }
@@ -500,9 +490,6 @@ export const CSS = `
 }
 @media (prefers-reduced-motion: no-preference) {
   .st-update-all-trigger:not(:disabled):active { transform: scale(0.97); }
-}
-@media (max-width: 520px) {
-  .st-update-all-trigger { margin-left: 0; }
 }
 @media (hover: hover) {
   .st-chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
@@ -543,13 +530,30 @@ export const CSS = `
   }
 }
 
+@media (max-width: 520px) {
+  .st-category-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    margin-right: 0;
+    padding-right: 0;
+  }
+  .st-chip { width: 100%; justify-content: center; }
+  .st-update-all-trigger {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-left: 0;
+    border-radius: 12px;
+  }
+}
+
 /* Curated collections keep very different kinds of apps discoverable without
    turning each category into a separate catalog. Search and lifecycle filters
    preserve the same shelves and simply hide empty ones. */
 .st-catalog-sections {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 22px;
 }
 .st-registry-progress {
   color: var(--muted);
@@ -563,7 +567,7 @@ export const CSS = `
   padding: 8px 0 20px;
 }
 .st-catalog-section { min-width: 0; }
-.st-catalog-section-head { margin: 0 0 12px; }
+.st-catalog-section-head { margin: 0 0 8px; }
 .st-catalog-section-title {
   margin: 0;
   color: var(--text);
@@ -580,13 +584,13 @@ export const CSS = `
   line-height: 1.45;
 }
 
-/* App-specific catalog grid + tiles. The vertical-tile card diverges
-   structurally from the canonical horizontal list Card, so it keeps the
-   store's own values + class names. State rides is-* modifier classes. */
+/* App-specific catalog grid + tiles. Browse cards keep visual proof in the
+   detail description and spend their footprint on identity, value, and the
+   current action. State rides is-* modifier classes. */
 .st-catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
 }
 /* The card is a non-interactive container (not role=button). The open
    affordance is a real <button class="st-card-open"> whose ::after overlay
@@ -597,7 +601,7 @@ export const CSS = `
   position: relative;
   display: flex; flex-direction: column;
   align-items: center; text-align: center;
-  padding: 16px 12px;
+  padding: 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -624,55 +628,58 @@ export const CSS = `
 .st-card.is-error {
   border: 1px dashed var(--border);
 }
-.st-card.has-preview {
-  align-items: stretch;
-  overflow: hidden;
-  padding-top: 0;
+.st-card.is-catalog {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 2px;
   text-align: left;
 }
-.st-card-preview {
-  position: relative;
-  margin: 0 -12px 12px;
-  aspect-ratio: 4 / 3;
+.st-card.is-loading-card { align-items: center; text-align: center; }
+.st-card.is-catalog .st-icon-slot {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+  margin: 0;
+}
+.st-card.is-catalog .st-icon-wrap { width: 52px; height: 52px; border-radius: 13px; }
+.st-card.is-catalog .st-icon-letter { font-size: 24px; }
+.st-card.is-catalog .st-card-open {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  min-height: 0;
+  margin: 0;
+  text-align: left;
+}
+.st-card.is-catalog .st-card-state-row {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 18px;
+  margin: 0;
+  justify-content: flex-start;
+}
+.st-card.is-catalog .st-card-desc {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: -webkit-box;
+  min-height: 32px;
+  margin: 8px 0 0;
   overflow: hidden;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
-.st-card-preview::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  height: 34%;
-  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--surface) 38%, transparent));
-  pointer-events: none;
+.st-card.is-catalog .st-card-status-row {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin-top: 8px;
+  padding-top: 10px;
 }
-.st-card-preview img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top center;
-  transition: transform 260ms cubic-bezier(.2,.8,.2,1);
-}
-.st-card-preview > .st-store-image-placeholder { width: 100%; height: 100%; }
-@media (hover: hover) {
-  .st-card.has-preview:has(.st-card-open:hover) .st-card-preview img { transform: scale(1.025); }
-}
-.st-card.has-preview .st-icon-slot {
-  z-index: 2;
-  align-self: flex-start;
-  margin: -38px 0 8px 8px;
-  padding: 3px;
-  border: 1px solid color-mix(in srgb, var(--text) 18%, var(--border));
-  border-radius: 14px;
-  background: var(--surface);
-  box-shadow: 0 5px 14px rgba(0, 0, 0, .24);
-}
-.st-card.has-preview .st-icon-wrap { width: 48px; height: 48px; border-radius: 11px; }
-.st-card.has-preview .st-installed-dot { right: -5px; bottom: -5px; }
-.st-card.has-preview .st-card-open { align-self: flex-start; text-align: left; }
-.st-card.has-preview .st-card-state-row { justify-content: flex-start; }
-.st-card.has-preview .st-card-desc { text-align: left; }
+.st-card.is-catalog .st-card-notice,
+.st-card.is-catalog .st-card-inline-error { grid-column: 1 / -1; }
 /* The app name is the card's open affordance. Its ::after overlay covers
    the whole card so the icon / name / description all open details. */
 .st-card-open {
@@ -947,8 +954,8 @@ export const CSS = `
 /* Skeleton placeholder — same shape as a card so the grid doesn't reflow
    when the real manifests arrive. Per-block width/height stay inline. */
 .st-skeleton-card {
-  display: flex; flex-direction: column; align-items: center;
-  padding: 16px 12px;
+  display: flex; flex-direction: column; align-items: stretch;
+  padding: 12px;
   background: var(--surface);
   border: 1px solid var(--border); border-radius: 12px;
   min-height: 44px;
@@ -1396,15 +1403,6 @@ export const CSS = `
   background: var(--surface); color: var(--text);
   overflow: hidden;
 }
-.st-update-review.is-result {
-  height: auto;
-  max-width: 560px;
-  grid-template-rows: auto auto auto;
-}
-.st-update-all-review {
-  height: auto;
-  max-height: min(720px, calc(100% - 16px));
-}
 .st-update-review-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
 }
@@ -1454,110 +1452,12 @@ export const CSS = `
 .st-update-review-notice.is-error {
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
-.st-update-review-notice.is-blocked {
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
-  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
-}
-.st-update-review-result-title {
-  margin-bottom: 7px; color: var(--text); font-size: 16px; font-weight: 700;
-}
-.st-update-resolution-options { display: grid; gap: 9px; margin-top: 14px; }
-.st-update-resolution-options > div {
-  display: grid; gap: 2px; padding-left: 11px;
-  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--border));
-}
-.st-update-resolution-options strong { color: var(--text); font-size: 13px; }
-.st-update-resolution-options span { color: var(--muted); font-size: 12px; line-height: 1.4; }
-.st-update-exact {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
-}
 .st-update-review-error-text,
 .st-selectable-error {
   user-select: text;
   cursor: text;
 }
 .st-update-review-error-text { margin-bottom: 6px; color: var(--danger); }
-.st-update-all-intro {
-  padding: 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 9%, var(--surface2));
-  color: var(--text);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.st-update-all-list {
-  border-block: 1px solid var(--border);
-}
-.st-update-all-item,
-.st-update-all-attention {
-  border-bottom: 1px solid var(--border);
-}
-.st-update-all-item:last-child,
-.st-update-all-attention:last-child { border-bottom: 0; }
-.st-update-all-item > summary {
-  min-height: 56px;
-  padding: 10px 2px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  cursor: pointer;
-  list-style: none;
-}
-.st-update-all-item > summary::-webkit-details-marker { display: none; }
-.st-update-all-item > summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-.st-update-all-item-main {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-.st-update-all-item-main strong {
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.35;
-}
-.st-update-all-item-main > span {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.st-update-all-state {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
-}
-.st-update-all-state.is-ready { color: var(--green); }
-.st-update-all-files {
-  margin: -2px 0 10px;
-  padding: 10px 12px;
-  display: grid;
-  gap: 5px;
-  border-radius: 8px;
-  background: var(--surface2);
-  color: var(--muted);
-  font: 11px/1.45 var(--mono, monospace);
-  overflow-wrap: anywhere;
-}
-.st-update-all-attention {
-  min-height: 64px;
-  padding: 10px 2px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.st-update-all-attention .st-btn { flex: 0 0 auto; min-height: 40px; }
-.st-update-all-progress {
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
 .st-banner-access-review { margin-top: 10px; }
 .st-banner-access-note {
   max-width: 65ch;
@@ -1575,14 +1475,10 @@ export const CSS = `
 @media (max-width: 520px) {
   .st-update-review-scrim { align-items: stretch; padding: 8px; }
   .st-update-review { height: calc(100% - 16px); padding: 16px; border-radius: 12px; }
-  .st-update-review.is-result { height: auto; align-self: center; }
   .st-update-review-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .st-update-review-actions .st-btn { width: 100%; margin: 0; }
   .st-update-review-actions .st-btn-primary { grid-column: 1 / -1; order: -2; }
   .st-update-review-actions .st-btn-secondary { order: -1; }
-  .st-update-review.is-result .st-update-review-actions .st-btn-primary {
-    grid-column: auto; order: initial;
-  }
 }
 
 @media (max-width: 360px) {
@@ -1916,13 +1812,7 @@ export const CSS = `
   .st-spotlight-open:hover { background: rgba(255,255,255,.14); }
 }
 .st-picks { min-width: 0; }
-.st-picks-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-.st-picks-grid .st-card { min-height: 178px; padding: 16px; align-items: flex-start; text-align: left; }
-.st-picks-grid .st-card.has-preview { padding-top: 0; }
-.st-picks-grid .st-card-open,
-.st-picks-grid .st-card-desc { text-align: left; }
-.st-picks-grid .st-card-state-row { justify-content: flex-start; }
-.st-picks-grid .st-card-status-row { width: 100%; justify-content: flex-start; }
+.st-picks-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; }
 
 /* Library rows scan like a system update centre rather than a second Store grid. */
 .st-card.is-list {
@@ -1932,17 +1822,14 @@ export const CSS = `
 .st-catalog-sections.is-list { gap: 22px; }
 .st-catalog-sections.is-list .st-catalog-grid { grid-template-columns: 1fr; gap: 8px; }
 .st-card.is-list .st-icon-slot { grid-column: 1; grid-row: 1 / span 2; margin: 0; }
+.st-card.is-list .st-icon-wrap { width: 52px; height: 52px; border-radius: 13px; }
 .st-card.is-list .st-card-open { grid-column: 2; grid-row: 1; align-self: end; margin: 0; text-align: left; }
 .st-card.is-list .st-card-state-row { grid-column: 2; grid-row: 2; justify-content: flex-start; min-height: 18px; margin: 0; }
-.st-card.is-list .st-card-desc,
-.st-card.is-list .st-card-preview { display: none; }
+.st-card.is-list .st-card-desc { display: none; }
 .st-card.is-list .st-card-status-row { grid-column: 3; grid-row: 1 / span 2; align-self: center; margin: 0; }
 .st-card.is-list .st-card-action { min-width: 92px; }
 .st-card.is-list .st-card-notice,
 .st-card.is-list .st-card-inline-error { grid-column: 1 / -1; grid-row: 3; }
-.st-card.is-list.has-preview { padding-top: 11px; }
-.st-card.is-list.has-preview .st-icon-slot { align-self: center; padding: 0; border: 0; background: transparent; box-shadow: none; }
-.st-card.is-list.has-preview .st-icon-wrap { width: 52px; height: 52px; border-radius: 13px; }
 
 /* Listing-led detail pages put imagery and product value before prose. */
 .st-detail-editorial {

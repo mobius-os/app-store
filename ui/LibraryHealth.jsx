@@ -22,18 +22,20 @@ function checkedLabel(updateChecks) {
   return 'Checked earlier today'
 }
 
-export function LibraryHealth({ installedCount, updateCount, attentionCount, updateChecks, onReviewUpdates, busy }) {
+export function LibraryHealth({ installedCount, updateCount, attentionCount, updateChecks }) {
   const healthy = updateCount === 0 && attentionCount === 0
   const title = healthy
     ? `${installedCount} ${installedCount === 1 ? 'app' : 'apps'} up to date`
     : updateCount > 0
-      ? `${updateCount} ${updateCount === 1 ? 'update' : 'updates'} ready to review`
-      : `${attentionCount} ${attentionCount === 1 ? 'app needs' : 'apps need'} attention`
+      ? `${updateCount} ${updateCount === 1 ? 'update' : 'updates'} ready`
+      : `${attentionCount} ${attentionCount === 1 ? 'conflict is' : 'conflicts are'} with agents`
   const detail = healthy
     ? checkedLabel(updateChecks)
-    : attentionCount > 0
-      ? `${attentionCount} ${attentionCount === 1 ? 'update needs' : 'updates need'} an individual look before anything changes.`
-      : 'You will see every change before choosing what to apply.'
+    : updateCount > 0
+      ? attentionCount > 0
+        ? `Safe updates apply automatically. ${attentionCount} ${attentionCount === 1 ? 'conflict is' : 'conflicts are'} being reconciled by agents.`
+        : 'Safe updates apply automatically. Access changes still ask first.'
+      : 'Your current apps stay live while agents reconcile local changes.'
 
   return (
     <section className={`st-library-health${healthy ? ' is-healthy' : ''}`} aria-labelledby="st-library-health-title">
@@ -44,11 +46,6 @@ export function LibraryHealth({ installedCount, updateCount, attentionCount, upd
         <h2 id="st-library-health-title">{title}</h2>
         <p>{detail}</p>
       </div>
-      {updateCount > 0 && (
-        <button type="button" className="st-btn st-btn-primary" onClick={onReviewUpdates} disabled={busy}>
-          Review updates
-        </button>
-      )}
     </section>
   )
 }
