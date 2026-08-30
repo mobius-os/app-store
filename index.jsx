@@ -375,19 +375,18 @@ export default function App({ appId, token }) {
       try {
         // Start the dynamic registry immediately, but do not put it on the
         // first-paint critical path. The baked snapshot catalog is already a
-        // complete, usable floor; same-origin installed/setup state should be
-        // the only work that can delay the initial cards.
+        // complete, usable floor; only the installed-app list may delay the
+        // initial cards. Provider setup status decorates actions after paint
+        // and must not hold the whole catalog behind its retry path.
         const remoteCatalogPromise = fetchCatalog(CATALOG_URL, token)
           .catch(() => null)
-        const [installedResult, nextProviderStatus] = await Promise.all([
-          loadInstalledApps(token)
-            .then((apps) => ({ apps, error: '' }))
-            .catch((err) => ({
-              apps: null,
-              error: err?.message || 'Installed apps could not be loaded.',
-            })),
-          loadProviderStatus(token),
-        ])
+        const providerStatusPromise = loadProviderStatus(token)
+        const installedResult = await loadInstalledApps(token)
+          .then((apps) => ({ apps, error: '' }))
+          .catch((err) => ({
+            apps: null,
+            error: err?.message || 'Installed apps could not be loaded.',
+          }))
         if (cancelled) return
         const apps = installedResult.apps || []
         if (installedResult.apps) {
@@ -398,10 +397,12 @@ export default function App({ appId, token }) {
         }
         setSetupCompletions(readSetupCompletions())
         setSystemSetupComplete(readSystemSetupReady())
-        if (nextProviderStatus) setProviderStatus(nextProviderStatus)
         if (CATALOG.every((entry) => entry.manifest)) {
           setLoadingCatalog(false)
         }
+        providerStatusPromise.then((nextProviderStatus) => {
+          if (!cancelled && nextProviderStatus) setProviderStatus(nextProviderStatus)
+        })
         // Resolve the catalog SOURCE by MERGING the web registry (catalog.json,
         // fetched via the proxy) OVER the baked CATALOG — never replacing it.
         // Baked is the floor: an app in the baked list can never vanish because

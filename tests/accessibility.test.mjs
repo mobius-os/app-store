@@ -27,6 +27,17 @@ test('Official and Community form one keyboard-navigable tab set', () => {
   assert.match(app, /role="tabpanel"/)
 })
 
+test('provider setup status never gates the baked catalog first paint', () => {
+  const initialLoadStart = app.indexOf('const remoteCatalogPromise = fetchCatalog')
+  const catalogMergeStart = app.indexOf('// Resolve the catalog SOURCE', initialLoadStart)
+  const initialPaint = app.slice(initialLoadStart, catalogMergeStart)
+
+  assert.ok(initialLoadStart >= 0 && catalogMergeStart > initialLoadStart)
+  assert.match(initialPaint, /const providerStatusPromise = loadProviderStatus\(token\)/)
+  assert.doesNotMatch(initialPaint, /await providerStatusPromise/)
+  assert.match(initialPaint, /setLoadingCatalog\(false\)[\s\S]*providerStatusPromise\.then/)
+})
+
 test('App Store preserves its reviewed immersive hold gesture', () => {
   assert.match(app, /window\.mobius\.immersive\.holdToToggle/)
 })
