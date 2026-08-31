@@ -10,25 +10,29 @@
 //   ui/*.jsx      — one React component per file
 //
 // Only App lives here: it owns top-level catalog/install/navigation state and
-// mounts the Official catalog grid, Community tab, detail view, modal, banner, and toast.
+// mounts marketplace browsing, publishing, app details, update review, and toast.
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
 import {
-  buildCleanMergeReviewMessage,
   buildUpdateFailureMessage,
   buildUpdateReviewMessage,
   appLifecycleFor,
   busyLabelForAction,
-  catalogItemIdFromMessage,
+  storeDestinationFromMessage,
   capabilityDiffNeedsReview,
-  clearResolvedBlockedReview,
-  clearSettledBlockedReview,
   collectCategories,
+  sourceAvailabilityStatus,
+  communityCatalogPage,
+  communityCatalogItems,
+  communityPublicationStatus,
+  communityPublicationsByLocalApp,
+  communityRepositoryUrl,
   filterCatalog,
   findInstalled,
   isSystemCatalogItem,
   mergeCatalogEntries,
+  mergeCommunityCatalog,
   otherInstalledCatalogItems,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
@@ -45,10 +49,17 @@ import {
   fetchUpdateCheck,
   hasConnectedProvider,
   installApp,
+  loadCommunityApps,
+  loadCommunityIdentity,
+  loadLocalGithubIdentity,
+  loadCommunityPublications,
+  loadLocalPublicationPreview,
   loadInstalledApps,
   loadProviderStatus,
   loadUpdateCandidatePreview,
-  loadUpdatePreview,
+  publishLocalAppToGithub,
+  registerCommunityRevision,
+  recordCommunityInstall,
   openChat,
   openInstalledApp,
   openSystemSettings,
@@ -63,31 +74,37 @@ import { CatalogList } from './ui/CatalogList.jsx'
 import { CatalogFilters } from './ui/CatalogFilters.jsx'
 import { CatalogSkeleton } from './ui/CatalogSkeleton.jsx'
 import { DetailView } from './ui/DetailView.jsx'
-import { CommunityTab } from './ui/CommunityTab.jsx'
+import { LibraryHealth } from './ui/LibraryHealth.jsx'
+import { PublisherTab } from './ui/PublisherTab.jsx'
 import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
-import { UpdateAllModal } from './ui/UpdateAllModal.jsx'
 
 export {
   appLifecycleFor,
   busyLabelForAction,
   catalogItemIdFromIntent,
   catalogItemIdFromMessage,
+  storeDestinationFromIntent,
+  storeDestinationFromMessage,
   capabilityDiffNeedsReview,
   canonicalIdentityKey,
-  clearResolvedBlockedReview,
-  clearSettledBlockedReview,
   CARD_DESCRIPTION_LIMIT,
   catalogAudience,
   catalogCardDescription,
   catalogCollection,
   collectCategories,
+  sourceAvailabilityStatus,
+  communityCatalogPage,
+  communityCatalogItems,
+  communityPublicationStatus,
+  communityPublicationsByLocalApp,
+  communityRepositoryUrl,
   filterCatalog,
   findInstalled,
-  focusBlockedUpdateResult,
   isSystemCatalogItem,
   mergeCatalogEntries,
+  mergeCommunityCatalog,
   otherInstalledCatalogItems,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
@@ -106,13 +123,22 @@ export {
   fetchManifest,
   fetchUpdateCheck,
   installApp,
+  loadCommunityApps,
+  loadCommunityIdentity,
+  loadLocalGithubIdentity,
+  loadCommunityPublications,
+  loadLocalPublicationPreview,
   loadInstalledApps,
+  publishLocalAppToGithub,
+  registerCommunityRevision,
   previewApp,
   proxyUrl,
   readErrorDetail,
 } from './api.js'
 export { capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
 export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
+export { catalogAssetFilename, catalogAssetUrl, storeAssetSource, storeAssetUrl } from './ui/StoreImage.jsx'
+export { createPublicationPreviewGate } from './ui/PublisherTab.jsx'
 
 // Snapshot-less catalogs (catalog.json is now a pure discovery index) hydrate
 // every entry's manifest from its repo on open — ~16 fetches — so a 3-wide pool
@@ -252,12 +278,26 @@ function itemIdsSettledByChecks(items, apps, checks) {
 }
 
 export default function App({ appId, token }) {
-  const [tab, setTab] = useState('official')
+  const [tab, setTab] = useState('browse')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [catalog, setCatalog] = useState(() =>
     CATALOG.map(c => ({ ...c, manifest: c.manifest || null, error: null }))
   )
+  const [communityCatalog, setCommunityCatalog] = useState([])
+  const [communityError, setCommunityError] = useState('')
+  const [communityLoading, setCommunityLoading] = useState(false)
+  const [communityHasMore, setCommunityHasMore] = useState(false)
+  const [communityOffset, setCommunityOffset] = useState(0)
+  const [communityIdentity, setCommunityIdentity] = useState(null)
+  const [communityIdentityError, setCommunityIdentityError] = useState('')
+  const [githubIdentity, setGithubIdentity] = useState(null)
+  const [githubIdentityError, setGithubIdentityError] = useState('')
+  const [publishingId, setPublishingId] = useState(null)
+  const [publication, setPublication] = useState(null)
+  const [publicationError, setPublicationError] = useState('')
+  const [publicationStates, setPublicationStates] = useState({})
+  const [publicationStatesError, setPublicationStatesError] = useState('')
   const [otherInstalledCatalog, setOtherInstalledCatalog] = useState([])
   const otherInstalledCatalogRef = useRef(otherInstalledCatalog)
   useEffect(() => { otherInstalledCatalogRef.current = otherInstalledCatalog }, [otherInstalledCatalog])
@@ -267,6 +307,10 @@ export default function App({ appId, token }) {
   const catalogRef = useRef(catalog)
   useEffect(() => { catalogRef.current = catalog }, [catalog])
   const [installed, setInstalled] = useState([])
+  const contributeApp = useMemo(
+    () => installed.find((app) => app?.slug === 'contribute') || null,
+    [installed],
+  )
   // Git-native update state per installed app, keyed by numeric app id. Each
   // answered check carries availability and the pending resolution/replay
   // phase; a missing/null answer is unknown and never becomes a version-based
@@ -276,7 +320,7 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
-  const [intentItemId, setIntentItemId] = useState(null)
+  const [intentDestination, setIntentDestination] = useState(null)
   const [capabilityReviews, setCapabilityReviews] = useState({})
   const navDetailRef = useRef(null)  // pending detail item during nav-push ack
   // B1: preserve the catalog grid's scroll across opening a detail and coming
@@ -284,6 +328,12 @@ export default function App({ appId, token }) {
   // re-mount scrolled to the top.
   const gridScrollRef = useRef(null)
   const savedGridScrollRef = useRef(0)
+  const selectTab = useCallback((next) => {
+    if (next === tab) return
+    savedGridScrollRef.current = 0
+    if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+    setTab(next)
+  }, [tab])
   const [pendingUninstall, setPendingUninstall] = useState(null)
   // pendingUninstall: the installed app row from /api/apps/.
   // Browser modal dialogs are silently no-op'd inside the AppCanvas
@@ -300,11 +350,9 @@ export default function App({ appId, token }) {
   const checkingAllUpdatesRef = useRef(false)
   const [toast, setToast] = useState(null)
   const [updateNotice, setUpdateNotice] = useState(null)
-  // The pre-apply review is distinct from updateNotice: it is a read-only
-  // candidate diff opened before every update, while updateNotice describes a
-  // conflict discovered after an apply attempt.
+  // Individual updates still offer a read-only candidate diff. "Update all"
+  // bypasses this state for exact, access-stable candidates.
   const [updateReview, setUpdateReview] = useState(null)
-  const [batchReview, setBatchReview] = useState(null)
   const [batchProgress, setBatchProgress] = useState(null)
   const [agentReviewingUpdate, setAgentReviewingUpdate] = useState(false)
   const [agentErrorItemId, setAgentErrorItemId] = useState(null)
@@ -341,12 +389,12 @@ export default function App({ appId, token }) {
 
   useEffect(() => {
     function onIntent(event) {
-      const itemId = catalogItemIdFromMessage(
+      const destination = storeDestinationFromMessage(
         event,
         window.location.origin,
         window.parent,
       )
-      if (itemId) setIntentItemId(itemId)
+      if (destination) setIntentDestination(destination)
     }
     window.addEventListener('message', onIntent)
     return () => window.removeEventListener('message', onIntent)
@@ -360,7 +408,6 @@ export default function App({ appId, token }) {
       return next
     })
     setUpdateNotice(prev => (prev && itemIds.has(prev.itemId) ? null : prev))
-    setUpdateReview(prev => clearSettledBlockedReview(prev, itemIds))
   }, [])
 
   // Initial fetch: catalog manifests + installed apps.
@@ -406,7 +453,7 @@ export default function App({ appId, token }) {
         // Resolve the catalog SOURCE by MERGING the web registry (catalog.json,
         // fetched via the proxy) OVER the baked CATALOG — never replacing it.
         // Baked is the floor: an app in the baked list can never vanish because
-        // the registry is stale/partial (which would drop it from the Official grid + its
+        // the registry is stale/partial (which would drop it from Browse + its
         // update/rehydrate flows). The registry overrides a known app's URL
         // fields and can ADD new apps. This is what lets a newly-published app
         // appear without a store-app redeploy — appending it to catalog.json on
@@ -457,6 +504,154 @@ export default function App({ appId, token }) {
     load()
     return () => { cancelled = true }
   }, [appId, token, clearSettledUpdateArtifacts])
+
+  const communityRequestRef = useRef(0)
+  const refreshCommunity = useCallback(async ({ append = false } = {}) => {
+    const requestId = communityRequestRef.current + 1
+    communityRequestRef.current = requestId
+    const limit = 24
+    const offset = append ? communityOffset : 0
+    setCommunityLoading(true)
+    try {
+      const payload = await loadCommunityApps(token, { query: query.trim(), limit, offset })
+      if (communityRequestRef.current !== requestId) return
+      const page = communityCatalogPage(payload, limit)
+      setCommunityCatalog((current) => append
+        ? mergeCommunityCatalog(current, page.items)
+        : page.items)
+      setCommunityOffset(offset + page.rowCount)
+      setCommunityHasMore(page.hasMore)
+      setCommunityError('')
+    } catch (error) {
+      if (communityRequestRef.current !== requestId) return
+      setCommunityError(error?.message || 'Community apps are unavailable right now.')
+    } finally {
+      if (communityRequestRef.current === requestId) setCommunityLoading(false)
+    }
+  }, [token, query, communityOffset])
+
+  const refreshPublicationStates = useCallback(async () => {
+    try {
+      const payload = await loadCommunityPublications(token)
+      setPublicationStates(communityPublicationsByLocalApp(payload))
+      setPublicationStatesError('')
+    } catch (error) {
+      setPublicationStatesError(error?.message || 'Publication status is unavailable right now.')
+    }
+  }, [token])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.allSettled([
+      loadCommunityIdentity(token),
+      loadCommunityPublications(token),
+      loadLocalGithubIdentity(token),
+    ]).then(([identityResult, publicationsResult, githubResult]) => {
+      if (cancelled) return
+      if (identityResult.status === 'fulfilled') {
+        setCommunityIdentity(identityResult.value)
+        setCommunityIdentityError('')
+      } else {
+        setCommunityIdentityError(identityResult.reason?.message || 'Identity is unavailable right now.')
+      }
+      if (publicationsResult.status === 'fulfilled') {
+        setPublicationStates(communityPublicationsByLocalApp(publicationsResult.value))
+        setPublicationStatesError('')
+      } else {
+        setPublicationStatesError(publicationsResult.reason?.message || 'Publication status is unavailable right now.')
+      }
+      if (githubResult.status === 'fulfilled') {
+        setGithubIdentity(githubResult.value)
+        setGithubIdentityError('')
+      } else {
+        setGithubIdentity({ connected: false, login: '' })
+        setGithubIdentityError(githubResult.reason?.message || 'GitHub connection is unavailable right now.')
+      }
+    })
+    return () => { cancelled = true }
+  }, [token])
+
+  useEffect(() => {
+    if (tab !== 'browse') return undefined
+    const timer = window.setTimeout(() => {
+      setCommunityOffset(0)
+      refreshCommunity({ append: false })
+    }, query ? 250 : 0)
+    return () => window.clearTimeout(timer)
+  // Pagination state changes after a page arrives; only query/tab changes or
+  // an explicit Load more action should issue another request.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, token, query])
+
+  const refreshGithubIdentity = useCallback(async () => {
+    try {
+      setGithubIdentity(await loadLocalGithubIdentity(token))
+      setGithubIdentityError('')
+    } catch (error) {
+      setGithubIdentityError(error?.message || 'GitHub connection is unavailable right now.')
+    }
+  }, [token])
+
+  // Contribute owns connection setup. Refresh the inherited status when the
+  // owner comes back from it; App Store never starts a second OAuth flow.
+  useEffect(() => {
+    if (tab !== 'publish' || githubIdentity?.connected) return undefined
+    const onFocus = () => { void refreshGithubIdentity() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [githubIdentity, refreshGithubIdentity, tab])
+
+  const handleRegisterCommunity = useCallback(async (release) => {
+    if (publishingId) return false
+    setPublishingId('github-release')
+    setPublication(null)
+    setPublicationError('')
+    try {
+      const result = await registerCommunityRevision(token, release)
+      const listed = result?.app || result
+      setPublication({
+        ...listed,
+        name: listed?.manifest?.name || release.repository,
+        status: communityPublicationStatus(listed),
+        repository_url: communityRepositoryUrl(
+          listed?.repository_url || `https://github.com/${release.repository}`,
+        ),
+      })
+      await Promise.allSettled([refreshCommunity(), refreshPublicationStates()])
+      return true
+    } catch (error) {
+      setPublicationError(error?.message || 'This GitHub release could not be listed.')
+      return false
+    } finally {
+      setPublishingId(null)
+    }
+  }, [publishingId, refreshCommunity, refreshPublicationStates, token])
+
+  const handlePublishLocal = useCallback(async (localAppId, repositoryName) => {
+    if (publishingId) return false
+    setPublishingId(localAppId)
+    setPublication(null)
+    setPublicationError('')
+    try {
+      const result = await publishLocalAppToGithub(token, localAppId, repositoryName)
+      const listed = result?.app || result
+      setPublication({
+        ...listed,
+        name: listed?.manifest?.name || repositoryName,
+        status: communityPublicationStatus(listed),
+        repository_url: communityRepositoryUrl(listed?.repository_url || (
+          githubIdentity?.login ? `https://github.com/${githubIdentity.login}/${repositoryName}` : ''
+        )),
+      })
+      await Promise.allSettled([refreshCommunity(), refreshPublicationStates()])
+      return true
+    } catch (error) {
+      setPublicationError(error?.message || 'This local app could not be published.')
+      return false
+    } finally {
+      setPublishingId(null)
+    }
+  }, [githubIdentity, publishingId, refreshCommunity, refreshPublicationStates, token])
 
   // Published apps may exist outside the curated registry. Hydrate them from
   // the same canonical source the backend updates, while excluding this Store's
@@ -719,18 +914,26 @@ export default function App({ appId, token }) {
       const isCleanMerge = result.mode === 'update' && result.divergence === 'clean_merge'
 
       if (isConflict) {
-        // Friendly, non-alarming framing: the owner edited the app, and those
-        // edits overlap the new release so they can't be combined
-        // automatically. Offer the agent's help rather than surfacing raw
-        // conflict files (the resolver chat carries the file-level detail).
-        const message = 'This copy has local changes, so updating needs a quick reconcile.'
+        // Keep the current app live, select the preserving policy, and start
+        // the durable resolver agent immediately. The exact-upstream path is
+        // still available by an explicit owner instruction inside that chat.
+        let resolver = null
+        let resolverError = ''
+        try {
+          resolver = await createConflictResolverChat(result.id, 'preserve_local', token)
+        } catch (error) {
+          resolverError = error.message || 'The resolver agent could not be started.'
+        }
         const notice = {
           kind: 'conflict',
           itemId: item.id,
           appId: result.id,
-          message,
+          message: resolver
+            ? 'Local changes overlap this update. An agent is reconciling them while your current app stays live.'
+            : 'Local changes overlap this update. Your current app stayed live, but the resolver agent could not start.',
           result,
           item,
+          resolverChatId: resolver?.chat_id || null,
         }
         if (result.id) {
           setUpdateChecks(prev => mergeUpdateChecks(prev, {
@@ -742,11 +945,12 @@ export default function App({ appId, token }) {
           }))
         }
         setUpdateNotice(notice)
+        if (resolverError) {
+          setCardErrors(prev => ({ ...prev, [item.id]: resolverError }))
+        }
         if (!isBatch) await refreshInstalled()
-        // A conflict needs review, but don't yank the user to the detail
-        // view — the persisted updateNotice drives the reconcile affordance
-        // in place on whichever surface the owner is using.
-        return { ok: false, conflict: true, result, notice }
+        if (!isBatch && resolver?.chat_id) openChat(resolver.chat_id)
+        return { ok: false, conflict: true, result, notice, resolver, resolverError }
       }
 
       if (result.id) {
@@ -762,6 +966,17 @@ export default function App({ appId, token }) {
             upstreamVersion: result.version || null,
           },
         }))
+      }
+      if (item.community?.id && item.community?.revision_id && result.id) {
+        // Installation is already complete; receipt failure must never roll it
+        // back. A later successful install/update retries with a fresh,
+        // idempotent receipt so Host can keep this exact release available.
+        void recordCommunityInstall(
+          token,
+          item.community.id,
+          item.community.revision_id,
+          `app:${result.id}:${result.slug || item.manifest?.id || 'community'}`,
+        ).catch(() => {})
       }
       setCardErrors(prev => withoutKey(prev, item.id))
       setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
@@ -883,21 +1098,10 @@ export default function App({ appId, token }) {
     }
   }
 
-  const handleReviewUpdate = async (notice, resolutionPolicy = null) => {
+  const handleReviewUpdate = async (notice) => {
     if (busy || !notice) return
-    if (notice.kind === 'conflict' && !resolutionPolicy) {
-      const item = notice.item || catalog.find(candidate => candidate.id === notice.itemId)
-      if (!item) {
-        setToast({ kind: 'error', message: 'This blocked update is no longer in the catalog.' })
-        return
-      }
-      setUpdateReview({
-        item,
-        installedApp: findInstalled(installed, item),
-        preview: null,
-        capabilityReview: null,
-        blockedNotice: { ...notice, item },
-      })
+    if (notice.resolverChatId) {
+      openChat(notice.resolverChatId)
       return
     }
     setBusy(true)
@@ -905,34 +1109,21 @@ export default function App({ appId, token }) {
     setBusyActionKind('resolve')
     setCardErrors(prev => withoutKey(prev, notice.itemId))
     try {
-      if (notice.kind === 'conflict') {
-        const resolver = await createConflictResolverChat(
-          notice.appId,
-          resolutionPolicy,
-          token,
-        )
-        // Retire only the result that opened this resolver. The global conflict
-        // notice remains until a later update probe confirms durable state.
-        setUpdateReview(current => clearResolvedBlockedReview(current, notice))
-        openChat(resolver.chat_id)
-        return
-      }
-      const preview = await loadUpdatePreview(notice.appId, token)
-      const title = `Review ${notice.result.name || notice.item.manifest?.name || notice.item.id} update`
-      const chat = await createAppChat(title, token, { ownerVisible: true })
-      const content = buildCleanMergeReviewMessage({
-        item: notice.item, result: notice.result, preview,
-      })
-      await seedChatMessage(chat.id, content, token)
-      openChat(chat.id)
+      const resolver = await createConflictResolverChat(
+        notice.appId,
+        'preserve_local',
+        token,
+      )
+      setUpdateNotice(current => current?.itemId === notice.itemId
+        ? {
+            ...current,
+            resolverChatId: resolver.chat_id,
+            message: 'Local changes overlap this update. An agent is reconciling them while your current app stays live.',
+          }
+        : current)
+      openChat(resolver.chat_id)
     } catch (e) {
       const message = e.message || String(e)
-      // The reviewed result modal may still own the conflict notice after a
-      // blocked Apply. Keep that result visible and render this error inside
-      // it so the owner can retry Resolve in chat without losing context. The
-      // separate card notice is cleared so it cannot mask the same failure if
-      // the modal is dismissed.
-      setUpdateNotice(prev => (prev?.itemId === notice.itemId ? null : prev))
       setCardErrors(prev => ({ ...prev, [notice.itemId]: message }))
       setToast({ kind: 'error', message })
     } finally {
@@ -1107,9 +1298,8 @@ export default function App({ appId, token }) {
     setUpdateReview(prepared)
   }, [])
 
-  // Every individual update opens one read-only review. Update all reuses the
-  // same prepared contract but batches only candidates with verified source
-  // and unchanged access; everything else comes back here for a separate look.
+  // Individual updates keep their read-only review. The one Update all action
+  // uses the same verification contract but applies safe candidates directly.
   const handleCatalogUpdate = useCallback(async (item, opts = {}) => {
     if (!opts.isUpdate) {
       openDetail(item)
@@ -1152,12 +1342,10 @@ export default function App({ appId, token }) {
       return
     }
     if (outcome?.conflict) {
-      // The request completed, but the update did not. Keep the reviewed
-      // surface open as an explicit result instead of making a blocked apply
-      // look like a successful completion followed by an unrelated card state.
-      setUpdateReview(current => current
-        ? { ...current, blockedNotice: outcome.notice }
-        : current)
+      // The current app stayed live and handleInstall already started the
+      // preserving resolver agent. Retire the pre-apply review instead of
+      // asking the owner to choose a second path for the same update.
+      setUpdateReview(null)
       return
     }
     if (outcome?.reason === 'capability_changed' || outcome?.reason === 'update_changed') {
@@ -1233,23 +1421,23 @@ export default function App({ appId, token }) {
   }, [detail])
 
   // Roving tab navigation: ArrowLeft/ArrowRight move selection between the
-  // two tabs with wrap, and move DOM focus to the newly-selected tab (the
+  // tabs with wrap, and move DOM focus to the newly-selected tab (the
   // tablist's roving tabIndex keeps only the active tab in the Tab order).
   const onTabsKeyDown = (e) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
     e.preventDefault()
-    const order = ['official', 'community']
+    const order = ['browse', 'library', 'publish']
     const i = order.indexOf(tab)
     const next = e.key === 'ArrowRight'
       ? order[(i + 1) % order.length]
       : order[(i - 1 + order.length) % order.length]
-    setTab(next)
-    document.getElementById(next === 'official' ? 'st-tab-official' : 'st-tab-community')?.focus()
+    selectTab(next)
+    document.getElementById(`st-tab-${next}`)?.focus()
   }
 
   const displayCatalog = useMemo(
-    () => sortCatalogForDisplay([...catalog, ...otherInstalledCatalog]),
-    [catalog, otherInstalledCatalog],
+    () => sortCatalogForDisplay([...catalog, ...communityCatalog, ...otherInstalledCatalog]),
+    [catalog, communityCatalog, otherInstalledCatalog],
   )
   const systemSetupReady = useMemo(
     () => systemSetupComplete || hasConnectedProvider(providerStatus),
@@ -1301,8 +1489,9 @@ export default function App({ appId, token }) {
     checkingAllUpdatesRef.current = true
     setCheckingAllUpdates(true)
     setCategory('update')
+    let checked = []
     try {
-      const checked = await mapWithConcurrency(updateItems, 4, async (item) => {
+      checked = await mapWithConcurrency(updateItems, 4, async (item) => {
         try {
           const prepared = await prepareCatalogUpdate(item)
           return { item, prepared, disposition: updateBatchDisposition(prepared), error: '' }
@@ -1316,69 +1505,61 @@ export default function App({ appId, token }) {
           }
         }
       })
-      setBatchReview({
-        ready: checked.filter((entry) => entry.disposition.kind === 'ready'),
-        attention: checked.filter((entry) => entry.disposition.kind !== 'ready'),
-      })
     } finally {
       checkingAllUpdatesRef.current = false
       setCheckingAllUpdates(false)
     }
-  }
 
-  const handleReviewBatchItem = (entry) => {
-    setBatchReview(null)
-    if (entry.prepared) {
-      openPreparedUpdateReview(entry.prepared)
-      return
-    }
-    void handleCatalogUpdate(entry.item, { isUpdate: true })
-  }
-
-  const handleApplyAllUpdates = async () => {
-    if (!batchReview?.ready?.length || busy || checkingAllUpdatesRef.current) return
-    const ready = [...batchReview.ready]
-    const failed = []
+    const ready = checked.filter((entry) => entry.disposition.kind === 'ready')
+    const attention = checked.filter((entry) => entry.disposition.kind !== 'ready')
     let completed = 0
-    setBusy(true)
-    setBusyActionKind('batch_update')
-    try {
-      for (let index = 0; index < ready.length; index += 1) {
-        const entry = ready[index]
-        const name = entry.item.manifest?.name || entry.item.id
-        setBusyItemId(entry.item.id)
-        setBatchProgress({ current: index + 1, total: ready.length, name })
-        const outcome = await handleInstall(entry.item, {
-          isUpdate: true,
-          batch: true,
-          capabilityDigest: entry.prepared.capabilityReview.preview.capability_digest,
-          sourceDigest: entry.prepared.preview.source_digest,
-        })
-        if (outcome?.ok) completed += 1
-        else failed.push({ entry, outcome })
+    let failed = 0
+    const resolverChats = []
+    if (ready.length) {
+      setBusy(true)
+      setBusyActionKind('batch_update')
+      try {
+        for (let index = 0; index < ready.length; index += 1) {
+          const entry = ready[index]
+          const name = entry.item.manifest?.name || entry.item.id
+          setBusyItemId(entry.item.id)
+          setBatchProgress({ current: index + 1, total: ready.length, name })
+          const outcome = await handleInstall(entry.item, {
+            isUpdate: true,
+            batch: true,
+            capabilityDigest: entry.prepared.capabilityReview.preview.capability_digest,
+            sourceDigest: entry.prepared.preview.source_digest,
+          })
+          if (outcome?.ok) completed += 1
+          else if (outcome?.conflict && outcome.resolver?.chat_id) {
+            resolverChats.push(outcome.resolver.chat_id)
+          } else {
+            failed += 1
+          }
+        }
+        await refreshInstalled()
+      } finally {
+        setBusy(false)
+        setBusyItemId(null)
+        setBusyActionKind(null)
+        setBatchProgress(null)
       }
-      await refreshInstalled()
-    } finally {
-      setBusy(false)
-      setBusyItemId(null)
-      setBusyActionKind(null)
-      setBatchProgress(null)
-      setBatchReview(null)
     }
 
-    const appNoun = completed === 1 ? 'app' : 'apps'
-    if (failed.length) {
-      setCategory('update')
-      setToast({
-        kind: 'error',
-        message: `${completed} ${appNoun} updated; ${failed.length} still need attention.`,
-      })
-    } else {
-      setToast({
-        kind: 'success',
-        message: `${completed} ${appNoun} updated.`,
-      })
+    const reviewCount = attention.length + failed
+    const parts = []
+    if (completed) parts.push(`${completed} ${completed === 1 ? 'app' : 'apps'} updated`)
+    if (resolverChats.length) {
+      parts.push(`${resolverChats.length} ${resolverChats.length === 1 ? 'conflict has' : 'conflicts have'} an agent review`)
     }
+    if (reviewCount) parts.push(`${reviewCount} ${reviewCount === 1 ? 'update needs' : 'updates need'} your review`)
+    setToast({
+      kind: reviewCount ? 'error' : 'success',
+      message: `${parts.join('; ') || 'Everything is already up to date'}.`,
+      action: resolverChats.length === 1
+        ? { label: 'Open agent', onClick: () => openChat(resolverChats[0]) }
+        : null,
+    })
   }
 
   const visibleCatalog = useMemo(() => {
@@ -1400,23 +1581,44 @@ export default function App({ appId, token }) {
     return matches
   }, [displayCatalog, query, category, lifecycleById])
 
+  const libraryCatalog = useMemo(
+    () => visibleCatalog.filter((item) => !!lifecycleById.get(item.id)?.installedApp),
+    [visibleCatalog, lifecycleById],
+  )
+
+  const attentionCount = useMemo(
+    () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'conflict').length,
+    [displayCatalog, lifecycleById],
+  )
+
   useEffect(() => {
-    if (!intentItemId || loadingCatalog) return
-    const resolution = resolveCatalogItemIntent(displayCatalog, intentItemId)
-    setIntentItemId(null)
+    if (!intentDestination || loadingCatalog) return
+    if (intentDestination.kind === 'updates') {
+      setIntentDestination(null)
+      selectTab('library')
+      setCategory('update')
+      setQuery('')
+      setDetail(null)
+      navDetailRef.current = null
+      return
+    }
+    const resolution = resolveCatalogItemIntent(displayCatalog, intentDestination.itemId)
+    setIntentDestination(null)
     if (resolution.action === 'unavailable') {
       setToast(resolution.toast)
       return
     }
-    setTab('official')
+    selectTab('browse')
     setCategory('all')
     if (resolution.action === 'needs-connection') {
-      setQuery(resolution.query)
+      const item = resolution.item
+      setQuery(item.name || intentDestination.itemId)
       setToast(resolution.toast)
       return
     }
-    void openDetail(resolution.item)
-  }, [displayCatalog, intentItemId, loadingCatalog, openDetail])
+    const item = resolution.item
+    void openDetail(item)
+  }, [displayCatalog, intentDestination, loadingCatalog, openDetail])
 
   // Detail view replaces the main layout when set.
   if (detail) {
@@ -1424,6 +1626,7 @@ export default function App({ appId, token }) {
       <div className="st-root">
         <style>{CSS}</style>
         <DetailView
+          storeAppId={appId}
           item={detail}
           capabilityReview={capabilityReviews[detail.id]}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
@@ -1461,12 +1664,10 @@ export default function App({ appId, token }) {
           <UpdateReviewModal
             review={updateReview}
             applying={busy && busyActionKind === 'update'}
-            resolving={busy && busyActionKind === 'resolve'}
             agentReviewing={agentReviewingUpdate}
             error={cardErrors[updateReview.item.id] || ''}
             onClose={() => setUpdateReview(null)}
             onApply={handleApplyReviewedUpdate}
-            onResolve={(policy) => handleReviewUpdate(updateReview.blockedNotice, policy)}
             onReviewWithAgent={handleAgentUpdateReview}
           />
         )}
@@ -1481,48 +1682,65 @@ export default function App({ appId, token }) {
       <h1 className="st-sr-only">App Store</h1>
       <div className="st-header">
         <div className="st-title-row">
-          {/* Brand mark: the app's real glossy icon (downscaled + cached),
-              no name text. Falls back to an accent dot when this install
-              has no custom icon and the route 404s. */}
-          <img
-            src={`/api/apps/${appId}/icon?size=64`}
-            alt=""
-            width={40}
-            height={40}
-            className="st-brand-icon" ref={(el) => el && window.mobius.immersive && window.mobius.immersive.holdToToggle(el)}
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-              const f = e.currentTarget.nextElementSibling
-              if (f) f.style.display = 'flex'
-            }}
-          />
-          <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
-          <div className="st-seg is-accent st-tabs" role="tablist" aria-label="App source"
+          <div className="st-store-brand">
+            <img
+              src={`/api/apps/${appId}/icon?size=64`}
+              alt=""
+              width={40}
+              height={40}
+              className="st-brand-icon" ref={(el) => el && window.mobius.immersive && window.mobius.immersive.holdToToggle(el)}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none'
+                const f = e.currentTarget.nextElementSibling
+                if (f) f.style.display = 'flex'
+              }}
+            />
+            <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
+            <span className="st-brand-name">App Store</span>
+          </div>
+          <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
                onKeyDown={onTabsKeyDown}>
-            <button role="tab" id="st-tab-official"
-                    aria-selected={tab === 'official'}
+            <button role="tab" id="st-tab-browse"
+                    aria-selected={tab === 'browse'}
                     aria-controls="st-tabpanel"
-                    tabIndex={tab === 'official' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'official' ? ' is-active' : ''}`}
-                    onClick={() => setTab('official')}>
-              Official
+                    tabIndex={tab === 'browse' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'browse' ? ' is-active' : ''}`}
+                    onClick={() => selectTab('browse')}>
+              Browse
             </button>
-            <button role="tab" id="st-tab-community"
-                    aria-selected={tab === 'community'}
+            <button role="tab" id="st-tab-library"
+                    aria-selected={tab === 'library'}
                     aria-controls="st-tabpanel"
-                    tabIndex={tab === 'community' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'community' ? ' is-active' : ''}`}
-                    onClick={() => setTab('community')}>
-              Community
+                    tabIndex={tab === 'library' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'library' ? ' is-active' : ''}`}
+                    onClick={() => { selectTab('library'); setCategory('all') }}>
+              Library
+              {filterCounts.update > 0 && (
+                <span
+                  className="st-tab-count"
+                  aria-label={`${filterCounts.update} updates available`}
+                >
+                  {filterCounts.update}
+                </span>
+              )}
+            </button>
+            <button role="tab" id="st-tab-publish"
+                    aria-selected={tab === 'publish'}
+                    aria-controls="st-tabpanel"
+                    tabIndex={tab === 'publish' ? 0 : -1}
+                    className={`st-seg-btn${tab === 'publish' ? ' is-active' : ''}`}
+                    onClick={() => selectTab('publish')}>
+              Publish
             </button>
           </div>
+          <span className="st-header-balance" aria-hidden="true" />
         </div>
       </div>
 
-      <div className="st-scroll" ref={gridScrollRef}
+      <div className={`st-scroll is-${tab}`} ref={gridScrollRef}
            id="st-tabpanel" role="tabpanel"
-           aria-labelledby={tab === 'official' ? 'st-tab-official' : 'st-tab-community'}>
-        {tab === 'official' && (
+           aria-labelledby={`st-tab-${tab}`}>
+        {(tab === 'browse' || tab === 'library') && (
           <>
             <SelfUpdateBanner appId={appId} token={token} />
             {loadingCatalog
@@ -1533,7 +1751,7 @@ export default function App({ appId, token }) {
                     category={category}
                     filterCounts={filterCounts}
                     totalCount={displayCatalog.length}
-                    resultCount={visibleCatalog.length}
+                    resultCount={tab === 'library' ? libraryCatalog.length : visibleCatalog.length}
                     onQueryChange={setQuery}
                     onCategoryChange={setCategory}
                     updateAllCount={updateItems.length}
@@ -1543,7 +1761,16 @@ export default function App({ appId, token }) {
                     updateAllProgress={batchProgress}
                     updateAllDisabled={busy || !!checkingUpdateItemId || !!installedLoadError}
                     onUpdateAll={handleUpdateAll}
+                    mode={tab}
                   />
+                  {tab === 'library' && (
+                    <LibraryHealth
+                      installedCount={filterCounts.installed}
+                      updateCount={updateItems.length}
+                      attentionCount={attentionCount}
+                      updateChecks={updateChecks}
+                    />
+                  )}
                   {installedLoadError && (
                     <div className="st-notice is-warning st-notice-row" role="status">
                       <span>{installedLoadError} Install and update actions are paused until this refreshes.</span>
@@ -1557,8 +1784,15 @@ export default function App({ appId, token }) {
                       </button>
                     </div>
                   )}
+                  {tab === 'browse' && communityError && (
+                    <div className="st-registry-offline" role="status">
+                      <span><strong>Built-in selection</strong> · Shared listings are offline.</span>
+                      <button type="button" onClick={() => refreshCommunity({ append: false })}>Retry</button>
+                    </div>
+                  )}
                   <CatalogList
-                    items={visibleCatalog}
+                    appId={appId}
+                    items={tab === 'library' ? libraryCatalog : visibleCatalog}
                     installed={installed}
                     updateChecks={updateChecks}
                     onPick={(item) => item.manifest && openDetail(item)}
@@ -1578,16 +1812,45 @@ export default function App({ appId, token }) {
                     onReviewUpdate={handleReviewUpdate}
                     onDismissNotice={handleDismissNotice}
                     token={token}
-                    emptyTitle="No matches"
-                    emptyText="Try a different search or filter."
+                    emptyTitle={tab === 'library' ? 'No installed apps match' : 'No matches'}
+                    emptyText={tab === 'library' ? 'Try another search, or browse the Store for something new.' : 'Try a different search or filter.'}
                     setupCompletions={setupCompletions}
                     systemSetupReady={systemSetupReady}
+                    loadingMore={tab === 'browse' && communityLoading && communityOffset > 0}
+                    searchLoading={tab === 'browse' && communityLoading && communityOffset === 0}
+                    hasMore={tab === 'browse' && communityHasMore}
+                    onLoadMore={() => refreshCommunity({ append: true })}
+                    editorial={tab === 'browse' && !query && category === 'all'}
+                    layout={tab === 'library' ? 'list' : 'grid'}
                   />
                 </>}
           </>
         )}
-        {tab === 'community' && (
-          <CommunityTab onPreview={openDetail} token={token} />
+        {tab === 'publish' && (
+          <PublisherTab
+            installed={installed}
+            identity={communityIdentity}
+            identityError={communityIdentityError}
+            viewer={{ github: githubIdentity, error: githubIdentityError }}
+            onRefreshViewer={refreshGithubIdentity}
+            onPublishLocal={handlePublishLocal}
+            onPreviewLocal={(localAppId) => loadLocalPublicationPreview(token, localAppId)}
+            onRegisterRepository={handleRegisterCommunity}
+            publishingId={publishingId}
+            publication={publication}
+            publicationError={publicationError}
+            publicationStates={publicationStates}
+            publicationStatesError={publicationStatesError}
+            onRefreshPublicationStates={refreshPublicationStates}
+            onNavigate={() => {
+              if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+            }}
+            contributeAvailable={!!contributeApp}
+            onOpenContributions={(localAppId) => openInstalledApp(
+              contributeApp.id,
+              localAppId ? {} : { intent: 'reviews:queue' },
+            )}
+          />
         )}
       </div>
 
@@ -1603,24 +1866,11 @@ export default function App({ appId, token }) {
         <UpdateReviewModal
           review={updateReview}
           applying={busy && busyActionKind === 'update'}
-          resolving={busy && busyActionKind === 'resolve'}
           agentReviewing={agentReviewingUpdate}
           error={cardErrors[updateReview.item.id] || ''}
           onClose={() => setUpdateReview(null)}
           onApply={handleApplyReviewedUpdate}
-          onResolve={(policy) => handleReviewUpdate(updateReview.blockedNotice, policy)}
           onReviewWithAgent={handleAgentUpdateReview}
-        />
-      )}
-
-      {batchReview && (
-        <UpdateAllModal
-          review={batchReview}
-          applying={busy && busyActionKind === 'batch_update'}
-          progress={batchProgress}
-          onClose={() => setBatchReview(null)}
-          onApply={handleApplyAllUpdates}
-          onReview={handleReviewBatchItem}
         />
       )}
 

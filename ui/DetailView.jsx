@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
+import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -28,7 +29,13 @@ function checkedAtText(value) {
   })
 }
 
-export function DetailView({ item, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+function communityAuthorName(author) {
+  if (typeof author === 'string') return author
+  if (!author || typeof author !== 'object') return 'Möbius creator'
+  return String(author.handle || author.login || author.name || 'Möbius creator')
+}
+
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const lifecycle = appLifecycleFor(reviewedItem, {
@@ -93,6 +100,24 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
   const releaseSummary = storeInstalled && installedVer && installedVer !== m.version
     ? `Installed label v${installedVer} · catalog label v${m.version}`
     : `Version label v${m.version}`
+  const sourceAvailability = item.community
+    ? sourceAvailabilityStatus(item.community.cache)
+    : null
+  const previewUrl = item.preview && storeAppId
+    ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`
+    : ''
+  const catalogListing = !item.community && item.listing && typeof item.listing === 'object'
+    ? item.listing
+    : null
+  const manifestListing = m.store && typeof m.store === 'object' ? m.store : null
+  const listing = catalogListing || manifestListing
+  const listingHero = typeof listing?.hero === 'string' ? listing.hero : listing?.hero?.path
+  const listingScreenshots = Array.isArray(listing?.screenshots) ? listing.screenshots : []
+  const listingTagline = catalogListing?.tagline || manifestListing?.tagline || item.summary || m.description
+  const listingDescription = catalogListing?.description || manifestListing?.description || m.description
+  const listingImage = (path, alt, className, loading = 'lazy') => catalogListing
+    ? <CatalogStoreImage storeAppId={storeAppId} path={path} alt={alt} className={className} loading={loading} />
+    : <StoreImage item={reviewedItem} path={path} token={token} alt={alt} className={className} loading={loading} />
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
@@ -107,19 +132,84 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
         </button>
       </div>
       <div className="st-scroll">
-        <div className="st-hero">
-          <IconBox item={heroItemWithIcon} size="hero" token={token} />
-          <div className="st-hero-text">
-            <h2 className="st-hero-name">{m.name}</h2>
-            {(m.author || m.license) && (
-              <div className="st-hero-meta">
-                {[m.author, m.license].filter(Boolean).join(' · ')}
-              </div>
-            )}
+        {listingHero ? (
+          <section className="st-detail-editorial" aria-labelledby="st-detail-name">
+            {listingImage(listingHero, '', 'st-detail-editorial-image', 'eager')}
+            <div className="st-detail-editorial-shade" />
+            <div className="st-detail-editorial-copy">
+              <IconBox item={heroItemWithIcon} token={token} />
+              <span className="st-eyebrow">{item.community ? 'Community app' : 'Möbius app'}</span>
+              <h2 id="st-detail-name">{m.name}</h2>
+              <p>{listingTagline}</p>
+            </div>
+          </section>
+        ) : (
+          <div className="st-hero">
+            <IconBox item={heroItemWithIcon} size="hero" token={token} />
+            <div className="st-hero-text">
+              <h2 className="st-hero-name">{m.name}</h2>
+              <p className="st-detail-tagline">{listingTagline}</p>
+            </div>
           </div>
-        </div>
+        )}
 
-        <p className="st-detail-desc">{m.description}</p>
+        <p className="st-detail-desc">{listingDescription}</p>
+
+        {(m.author || m.license) ? (
+          <div className="st-detail-byline">{[m.author, m.license].filter(Boolean).join(' · ')}</div>
+        ) : null}
+
+        {listingScreenshots.length ? (
+          <div className={`st-detail-gallery${listingScreenshots.length === 1 ? ' is-single' : ''}`} aria-label={`${m.name} screenshots`}>
+            {listingScreenshots.map((shot, index) => {
+              const path = typeof shot === 'string' ? shot : shot.src
+              const alt = typeof shot === 'string' ? `${m.name} screenshot ${index + 1}` : shot.alt
+              return (
+                <figure key={`${path}-${index}`}>
+                  {listingImage(path, alt, 'st-detail-gallery-image')}
+                  {typeof shot === 'object' && shot.label ? <figcaption>{shot.label}</figcaption> : null}
+                </figure>
+              )
+            })}
+          </div>
+        ) : previewUrl ? (
+          <figure className="st-detail-preview">
+            <img src={previewUrl} alt={`${m.name} app preview`} />
+            <figcaption>A look inside {m.name}</figcaption>
+          </figure>
+        ) : null}
+
+        {item.community && (
+          <>
+          <div className="st-community-provenance">
+            <div>
+              <strong>Open source from the community</strong>
+              <span>
+                {communityAuthorName(item.community.author)}
+              </span>
+            </div>
+            <div className="st-community-actions">
+              {item.community.repository_url && (
+                <>
+                  <a href={item.community.repository_url} target="_blank" rel="noopener noreferrer">Source</a>
+                  <a href={`${item.community.repository_url.replace(/\/$/, '')}/issues`} target="_blank" rel="noopener noreferrer">Contribute</a>
+                </>
+              )}
+            </div>
+          </div>
+          {item.community.repository_update && (
+            <div className="st-repository-update" role="status">
+              <div>
+                <strong>A newer repository change is waiting</strong>
+                <span>The current Store release stays unchanged until its owner verifies and lists that exact revision.</span>
+              </div>
+              <span className="st-repository-update-sha">
+                {item.community.repository_update.commit_sha.slice(0, 10)}
+              </span>
+            </div>
+          )}
+          </>
+        )}
 
         {installedUnavailable && (
           <div className="st-notice is-warning st-notice-row" role="status">
@@ -234,6 +324,17 @@ export function DetailView({ item, capabilityReview, onRetryCapabilityReview, in
             </span>
           </summary>
           <div className="st-technical-body">
+            {sourceAvailability && (
+              <div className="st-technical-section">
+                <div className="st-section-label">Release source</div>
+                <div className={`st-source-status is-${sourceAvailability.key}`}>
+                  <div>
+                    <strong>{sourceAvailability.label}</strong>
+                    <span>{sourceAvailability.description}</span>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="st-technical-section">
               <div className="st-section-label">Privacy & access</div>
               <CapabilityContract

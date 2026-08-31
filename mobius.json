@@ -1,8 +1,8 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.15.12",
-  "description": "Discover, install, and update M\u00f6bius apps.",
+  "version": "1.18.0",
+  "description": "Discover, install, and update Möbius apps.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-store",
@@ -13,7 +13,7 @@
     "reads": true,
     "writes": "none",
     "execution": "partial",
-    "reads_detail": "The bundled catalog and validated manifest snapshots remain browsable offline. Installed-state refresh, installs, updates, and URL imports require a connection and stay disabled when installed state cannot be verified."
+    "reads_detail": "The bundled catalog and validated manifest snapshots remain browsable offline. Shared listings, installs, updates, publishing, and source checks require a connection and stay disabled when installed state cannot be verified."
   },
   "permissions": {
     "cross_app_access": "none",
@@ -28,6 +28,11 @@
     ],
     "esm_deps": []
   },
+  "schedule": {
+    "default": "0 9 * * *",
+    "user_configurable": true,
+    "job": "notify-updates.py"
+  },
   "source_files": [
     "constants.js",
     "catalog.json",
@@ -36,6 +41,7 @@
     "api.js",
     "manifest-snapshots.js",
     "ui/IconBox.jsx",
+    "ui/StoreImage.jsx",
     "ui/PermissionRow.jsx",
     "ui/CapabilityContract.jsx",
     "ui/UninstallConfirmModal.jsx",
@@ -43,15 +49,34 @@
     "ui/CatalogFilters.jsx",
     "ui/CatalogList.jsx",
     "ui/CatalogSkeleton.jsx",
-    "ui/FromUrlTab.jsx",
-    "ui/CommunityTab.jsx",
     "ui/DetailView.jsx",
+    "ui/LibraryHealth.jsx",
+    "ui/PublisherTab.jsx",
     "ui/UpdateReviewModal.jsx",
-    "ui/UpdateAllModal.jsx",
     "ui/SelfUpdateBanner.jsx",
     "ui/diff/parseUnifiedDiff.js",
     "ui/diff/DiffView.jsx",
     "ui/diff/FileDiffList.jsx",
-    "ui/diff/styles.js"
-  ]
+    "ui/diff/styles.js",
+    "LISTING_ART.md"
+  ],
+  "static_assets": {
+    "previews/artifacts-screen.png": "listing-assets/artifacts-screen.png",
+    "previews/beat-machine-hero.png": "listing-assets/beat-machine-hero.png",
+    "previews/beat-machine-screen.png": "listing-assets/beat-machine-screen.png",
+    "previews/connections-screen.png": "listing-assets/connections-screen.png",
+    "previews/cuberun-screen.png": "listing-assets/cuberun-screen.png",
+    "previews/habits-screen.png": "listing-assets/habits-screen.png",
+    "previews/maps-hero.png": "listing-assets/maps-hero.png",
+    "previews/maps-screen.png": "listing-assets/maps-screen.png",
+    "previews/news-screen.png": "listing-assets/news-screen.png",
+    "previews/notes-screen.png": "listing-assets/notes-screen.png",
+    "previews/reflection-screen.png": "listing-assets/reflection-screen.png",
+    "previews/skills-screen.png": "listing-assets/skills-screen.png",
+    "previews/tandem-screen.png": "listing-assets/tandem-screen.png",
+    "previews/tasks-screen.png": "listing-assets/tasks-screen.png",
+    "previews/voice-hero.png": "listing-assets/voice-hero.png",
+    "previews/voice-screen.png": "listing-assets/voice-screen.png",
+    "previews/workflows-screen.png": "listing-assets/workflows-screen.png"
+  }
 }

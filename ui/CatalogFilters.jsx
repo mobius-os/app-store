@@ -20,6 +20,7 @@ export function CatalogFilters({
   updateAllProgress = null,
   updateAllDisabled = false,
   onUpdateAll,
+  mode = 'browse',
 }) {
   const selected = category || 'all'
   const updateAllLabel = updateAllState === 'checking'
@@ -30,16 +31,14 @@ export function CatalogFilters({
   return (
     <div className="st-discovery">
       <div className="st-search-row">
-        <label className="st-search-label" htmlFor="st-catalog-search">
-          Search
-        </label>
+        <label className="st-search-label" htmlFor="st-catalog-search">Search</label>
         <input
           id="st-catalog-search"
           className="st-search-input"
           type="search"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="Find apps, tools, agents..."
+          placeholder="Search apps"
           autoComplete="off"
           spellCheck={false}
         />
@@ -54,10 +53,11 @@ export function CatalogFilters({
           </button>
         )}
         <div className="st-result-count" aria-live="polite">
-          {resultCount}/{totalCount}
+          {resultCount === totalCount ? `${totalCount} apps` : `${resultCount} of ${totalCount}`}
         </div>
       </div>
-      <div className="st-category-strip" aria-label="Catalog filters">
+      {mode === 'library' ? (
+        <div className="st-category-strip" aria-label="Library filters">
         {FILTERS.map((filter) => {
           const count = filterCounts[filter.id]
           return (
@@ -87,7 +87,8 @@ export function CatalogFilters({
             {updateAllState === 'idle' ? <span className="st-update-all-count">{updateAllCount}</span> : null}
           </button>
         ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -56,7 +56,329 @@ test('canonicalIdentityKey matches backend-style manifest identities', async () 
   )
 })
 
-test('catalog app intents resolve one safe catalog identity and action', async () => {
+test('store artwork resolves only through the accepted manifest mapping', async () => {
+  const { catalogAssetFilename, catalogAssetUrl, storeAssetSource, storeAssetUrl } = await bundle()
+  const imageSource = await readFile(join(root, '..', 'ui', 'StoreImage.jsx'), 'utf8')
+  const manifest = {
+    static_assets: {
+      'listing/hero.png': 'listing-assets/hero.immutable.png',
+    },
+  }
+  assert.equal(
+    storeAssetSource(manifest, 'listing/hero.png'),
+    'listing-assets/hero.immutable.png',
+  )
+  assert.equal(
+    storeAssetUrl({ manifest, raw_base: 'https://raw.example/revision/' }, 'listing/hero.png'),
+    'https://raw.example/revision/listing-assets/hero.immutable.png',
+  )
+  assert.equal(
+    storeAssetUrl({ manifest, local_asset_base: '/app-assets/by-id/7/static/' }, 'listing/hero.png'),
+    '/app-assets/by-id/7/static/listing/hero.png',
+  )
+  assert.equal(catalogAssetFilename('voice-screen.png'), 'voice-screen.png')
+  assert.equal(catalogAssetFilename('../identity-screen.png'), '')
+  assert.equal(catalogAssetFilename('https://attacker.test/hero.png'), '')
+  assert.equal(catalogAssetUrl(39, 'voice-screen.png'), '/app-assets/by-id/39/previews/voice-screen.png')
+  assert.equal(catalogAssetUrl(39, '../identity-screen.png'), '')
+  assert.equal(catalogAssetUrl('not-an-app', 'voice-screen.png'), '')
+  assert.match(imageSource, /URL\.revokeObjectURL\(objectUrl\)/)
+  assert.doesNotMatch(imageSource, /const resolvedImages = new Map/)
+})
+
+test('catalog listing artwork is bounded and sanitized before it reaches the UI', async () => {
+  const { fetchCatalog } = await bundle()
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    schema: 1,
+    apps: [{
+      id: 'voice',
+      manifest_url: 'https://raw.example/apps/voice/mobius.json',
+      raw_base: 'https://raw.example/apps/voice/',
+      listing: {
+        hero: '../private.png',
+        tagline: '  A private voice   for your agent.  ',
+        screenshots: [
+          { src: 'voice-screen.png', alt: ' Voice screen ', label: ' Choose a voice ' },
+          { src: 'https://attacker.test/tracker.png', alt: 'Remote tracker' },
+          { src: '../identity-screen.png', alt: 'Private data' },
+        ],
+        featured: true,
+      },
+    }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const [item] = await fetchCatalog('https://raw.example/catalog.json', 'owner-token')
+    assert.deepEqual(item.listing, {
+      screenshots: [{
+        src: 'voice-screen.png',
+        alt: 'Voice screen',
+        label: 'Choose a voice',
+      }],
+      tagline: 'A private voice for your agent.',
+      featured: true,
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('every curated listing asset is packaged by the App Store', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../mobius.json', import.meta.url), 'utf8'))
+  const catalog = JSON.parse(await readFile(new URL('../catalog.json', import.meta.url), 'utf8'))
+  const referenced = new Set()
+  for (const item of catalog.apps) {
+    if (item.listing?.hero) referenced.add(item.listing.hero)
+    for (const shot of item.listing?.screenshots || []) referenced.add(shot.src)
+  }
+  assert.equal(referenced.size, 17)
+  for (const filename of referenced) {
+    assert.equal(
+      manifest.static_assets[`previews/${filename}`],
+      `listing-assets/${filename}`,
+      `${filename} is missing from static_assets`,
+    )
+  }
+})
+
+test('community listings join the ordinary install path with source provenance', async () => {
+  const { communityCatalogItems } = await bundle()
+  const [item] = communityCatalogItems({ items: [{
+    id: 'app_public_1234',
+    manifest: {
+      id: 'shared-notes',
+      name: 'Shared Notes',
+      description: 'Notes made together.',
+      store: { tagline: 'Notes made together.', description: 'Shared notes.' },
+    },
+    latest_revision: {
+      id: 'rev_public_1234',
+      manifest_url: 'https://raw.githubusercontent.com/example/shared-notes/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/example/shared-notes/main/',
+      cache: { kind: 'content_addressed', revision_id: 'rev_public_1234' },
+    },
+    publisher: { kind: 'github', login: 'octo-owner' },
+    repository_url: 'https://github.com/example/shared-notes',
+    repository_update: {
+      commit_sha: 'd'.repeat(40),
+      ref: 'refs/heads/main',
+      status: 'available_for_review',
+    },
+  }] })
+  assert.equal(item.id, 'community:app_public_1234')
+  assert.equal(item.collection, 'community')
+  assert.equal(item.community.revision_id, 'rev_public_1234')
+  assert.equal(item.community.author.handle, 'octo-owner')
+  assert.equal(item.community.repository_update.commit_sha, 'd'.repeat(40))
+  assert.equal(item.community.repository_update.status, 'available_for_review')
+  assert.equal(item.community.cache.kind, 'content_addressed')
+  assert.equal(item.community.publication_status, 'live')
+})
+
+test('community catalog pages preserve source offsets and deduplicate appended apps', async () => {
+  const { communityCatalogPage, mergeCommunityCatalog } = await bundle()
+  const listing = (id) => ({
+    id,
+    manifest: { id, name: id, description: id },
+    latest_revision: {
+      id: `revision-${id}`,
+      manifest_url: `https://example.test/${id}/mobius.json`,
+      raw_base: `https://example.test/${id}/`,
+    },
+  })
+  const first = communityCatalogPage({
+    items: [listing('one')],
+    next_offset: 1,
+    viewer: { github: { connected: true, login: 'octo-owner' } },
+  }, 24)
+  const second = communityCatalogPage({ items: [listing('one'), listing('two')], next_offset: null }, 24)
+  assert.equal(first.hasMore, true)
+  assert.equal(first.rowCount, 1)
+  assert.deepEqual(first.viewer, {
+    github: { connected: true, login: 'octo-owner' },
+  })
+  assert.equal(second.hasMore, false)
+  assert.deepEqual(
+    mergeCommunityCatalog(first.items, second.items).map((item) => item.id),
+    ['community:one', 'community:two'],
+  )
+  const partial = communityCatalogPage({
+    items: [listing('valid'), { id: 'invalid' }],
+    next_offset: 2,
+  }, 24)
+  assert.equal(partial.items.length, 1)
+  assert.equal(partial.rowCount, 2)
+})
+
+test('community publication state and source links stay truthful', async () => {
+  const { communityPublicationStatus, communityRepositoryUrl } = await bundle()
+  assert.equal(communityPublicationStatus({ status: 'checking' }), 'checking')
+  assert.equal(communityPublicationStatus({ latest_revision: { id: 'rev_1' } }), 'live')
+  assert.equal(communityPublicationStatus({}), 'pending')
+  assert.equal(
+    communityRepositoryUrl('https://github.com/example/shared-notes.git'),
+    'https://github.com/example/shared-notes',
+  )
+  assert.equal(communityRepositoryUrl('javascript:alert(1)'), '')
+  assert.equal(communityRepositoryUrl('https://example.test/example/shared-notes'), '')
+})
+
+test('source availability distinguishes the immutable Host cache from a repository revision', async () => {
+  const { sourceAvailabilityStatus } = await bundle()
+  assert.equal(sourceAvailabilityStatus().key, 'repository')
+  assert.equal(sourceAvailabilityStatus({ kind: 'content_addressed' }).key, 'preserved')
+})
+
+test('switching Store journeys resets the shared scroll surface', async () => {
+  const source = await readFile(new URL('../index.jsx', import.meta.url), 'utf8')
+  assert.match(source, /const selectTab = useCallback\(\(next\) => \{[\s\S]*gridScrollRef\.current\.scrollTop = 0[\s\S]*setTab\(next\)/)
+  assert.match(source, /onClick=\{\(\) => selectTab\('publish'\)\}/)
+  assert.match(source, /onClick=\{\(\) => \{ selectTab\('library'\)/)
+})
+
+test('the Store uses shared listings rather than a raw link-install tab', async () => {
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.match(source, /Publish/)
+  assert.doesNotMatch(source, />Install from link</)
+  assert.match(source, /loadCommunityApps/)
+  assert.match(source, /registerCommunityRevision/)
+  assert.doesNotMatch(source, /rateCommunityApp/)
+  assert.doesNotMatch(source, /commentOnCommunityRevision/)
+  assert.doesNotMatch(source, /remixCommunityApp/)
+})
+
+test('distributed publishing submits one immutable GitHub revision', async () => {
+  const { registerCommunityRevision } = await bundle()
+  const oldFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    return new Response(JSON.stringify({ id: 'app_public_notes' }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    await registerCommunityRevision('owner-token', {
+      repository: 'example/notes',
+      commitSha: 'a'.repeat(40),
+      manifestPath: 'apps/notes/mobius.json',
+      publicIdentity: 'github',
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, '/api/community/apps')
+  assert.equal(calls[0].options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    repository: 'example/notes',
+    commit_sha: 'a'.repeat(40),
+    manifest_path: 'apps/notes/mobius.json',
+    public_identity: 'github',
+  })
+  assert.match(calls[0].options.headers['Idempotency-Key'], /^store:register:/)
+})
+
+test('local publishing is one reviewed action through the inherited GitHub account', async () => {
+  const { publishLocalAppToGithub } = await bundle()
+  const publisherSource = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const oldFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    return new Response(JSON.stringify({ id: 'app_public_notes' }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    await publishLocalAppToGithub('owner-token', 42, 'pocket-list')
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, '/api/community/publications/github')
+  assert.equal(calls[0].options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    app_id: 42,
+    repository_name: 'pocket-list',
+    confirm_source_public: true,
+    public_identity: 'github',
+  })
+  assert.match(calls[0].options.headers['Idempotency-Key'], /^store:publish-local:/)
+  assert.match(publisherSource, /I want this accepted source revision to become public/)
+  assert.match(publisherSource, /onPublishLocal/)
+  assert.doesNotMatch(publisherSource, /Return here with the repository and exact commit/)
+  assert.equal(
+    publisherSource.match(/onClick=\{\(\) => onOpenContributions\?\.\(\)\}/g)?.length,
+    2,
+    'Contribute buttons must not forward click events as local app ids',
+  )
+})
+
+test('publisher preview accepts only the latest app after back navigation', async () => {
+  const { createPublicationPreviewGate } = await bundle()
+  const publisherSource = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const gate = createPublicationPreviewGate()
+  const accepted = []
+  let finishFirst
+  let finishSecond
+  const first = new Promise((resolve) => { finishFirst = resolve })
+  const second = new Promise((resolve) => { finishSecond = resolve })
+
+  async function prepare(label, result) {
+    const requestId = gate.begin()
+    const preview = await result
+    if (gate.isCurrent(requestId)) accepted.push({ label, preview })
+  }
+
+  const firstRun = prepare('first app', first)
+  gate.invalidate() // The owner navigates back while the first preview is pending.
+  const secondRun = prepare('second app', second)
+  finishSecond({ name: 'Second listing' })
+  await secondRun
+  finishFirst({ name: 'First listing' })
+  await firstRun
+
+  assert.deepEqual(accepted, [{
+    label: 'second app',
+    preview: { name: 'Second listing' },
+  }])
+  assert.match(publisherSource, /const requestId = previewGateRef\.current\.begin\(\)/)
+  assert.equal(
+    publisherSource.match(/if \(!previewGateRef\.current\.isCurrent\(requestId\)\) return/g)?.length,
+    2,
+    'both fulfilled and rejected stale previews must be ignored',
+  )
+  assert.match(publisherSource, /function closePreview[\s\S]*previewGateRef\.current\.invalidate\(\)/)
+})
+
+test('the centered Store header can shrink before its mobile collapse breakpoint', async () => {
+  const source = await readFile(join(root, '..', 'theme.js'), 'utf8')
+  assert.match(
+    source,
+    /grid-template-columns: minmax\(44px, 1fr\) minmax\(320px, 560px\) minmax\(44px, 1fr\)/,
+  )
+  assert.doesNotMatch(
+    source,
+    /grid-template-columns: minmax\(130px, 1fr\) minmax\(320px, 560px\) minmax\(130px, 1fr\)/,
+  )
+})
+
+test('publisher lifecycle records bind back to their local app', async () => {
+  const { communityPublicationsByLocalApp } = await bundle()
+  const states = communityPublicationsByLocalApp({ items: [{
+    id: 'publication_public_1',
+    local_app_id: 'app:41:shared-notes',
+    status: 'checking',
+    repository_url: 'https://github.com/example/shared-notes',
+  }] })
+  assert.equal(states[41].status, 'checking')
+  assert.equal(states[41].repository_url, 'https://github.com/example/shared-notes')
+})
+
+test('catalog app intents preserve origin checks and resolve one safe action', async () => {
   const {
     catalogItemIdFromIntent,
     catalogItemIdFromMessage,
@@ -112,6 +434,10 @@ test('catalog app intents resolve one safe catalog identity and action', async (
     action: 'unavailable',
     toast: { kind: 'error', message: 'That app is not available in this catalog.' },
   })
+
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.match(source, /setQuery\(item\.name \|\| intentDestination\.itemId\)/)
+  assert.match(source, /void openDetail\(item\)/)
 })
 
 test('live catalog metadata preserves baked snapshots and appends new entries', async () => {
@@ -939,7 +1265,7 @@ test('capability rows fail visibly for a future data grant', async () => {
   assert.equal(future.tone, 'write')
 })
 
-test('catalog updates open a read-only review before applying, binding reviewed digests', async () => {
+test('individual catalog updates keep a read-only review with bound digests', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
@@ -950,9 +1276,9 @@ test('catalog updates open a read-only review before applying, binding reviewed 
     'loadUpdateCandidatePreview(installedApp.id, item.manifest_url, token)',
   ))
   assert.ok(indexSource.includes('capabilityDiffNeedsReview('))
-  // Every update now opens a read-only review instead of applying on first tap;
-  // the inline one-tap apply path and its access-blocked toast are both gone.
-  assert.ok(indexSource.includes('setUpdateReview({'))
+  // An individual update still opens a review. Update all intentionally uses
+  // the same prepared contract without duplicating this modal flow.
+  assert.ok(indexSource.includes('setUpdateReview(prepared)'))
   assert.equal(indexSource.includes('This update changes app access. Open it to review'), false)
   // Applying is a separate, explicit step that binds exactly the digests shown
   // in the review the owner just approved.
@@ -1025,61 +1351,19 @@ test('resolver chat request binds the selected whole-tree policy', async () => {
   }
 })
 
-test('a conflicting apply remains visible as an explicit unchanged result', async () => {
-  const {
-    clearResolvedBlockedReview,
-    clearSettledBlockedReview,
-    focusBlockedUpdateResult,
-  } = await bundle()
+test('a conflicting apply starts a preserving resolver agent automatically', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
-  const themeSource = await readFile(join(root, '..', 'theme.js'), 'utf8')
 
-  assert.ok(indexSource.includes('blockedNotice: outcome.notice'))
-  assert.ok(indexSource.includes('handleReviewUpdate(updateReview.blockedNotice, policy)'))
-  assert.ok(indexSource.includes("notice.kind === 'conflict' && !resolutionPolicy"))
-  assert.ok(indexSource.includes('setUpdateReview({'))
-  assert.ok(modalSource.includes('Update not applied'))
-  assert.ok(modalSource.includes('Your app was left unchanged'))
-  assert.ok(modalSource.includes("onResolve('preserve_local')"))
-  assert.ok(modalSource.includes("onResolve('accept_reviewed_upstream_exact')"))
-  assert.ok(modalSource.includes('Replace all tracked local source'))
-  // A resolver-chat failure must stay visible inside the blocked result while
-  // leaving the same Resolve action enabled for a retry.
-  assert.match(modalSource, /blockedNotice[\s\S]*\{error \? \([\s\S]*role="alert"/)
-  assert.ok(modalSource.includes('Nothing changed. Try opening the resolver again.'))
-  // Applying replaces the focused button. Exercise the focus transition and
-  // its fallback, then verify that the component wires it to the result state.
-  const focused = []
-  const resolveButton = { focus: () => focused.push('resolve') }
-  const dialog = { focus: () => focused.push('dialog') }
-  assert.equal(focusBlockedUpdateResult(resolveButton, dialog), resolveButton)
-  assert.equal(focusBlockedUpdateResult(null, dialog), dialog)
-  assert.deepEqual(focused, ['resolve', 'dialog'])
-  assert.ok(modalSource.includes('focusBlockedUpdateResult(resolveRef.current, dialogRef.current)'))
-  assert.ok(modalSource.includes('ref={resolveRef}'))
-
-  // A successful resolver or a settled update probe must retire the matching
-  // cached result instead of resurrecting stale conflict text from the iframe.
-  const review = { item: { id: 'news' }, blockedNotice: { itemId: 'news' } }
-  assert.equal(clearSettledBlockedReview(review, new Set(['news'])), null)
-  assert.equal(clearSettledBlockedReview(review, new Set(['atlas'])), review)
-  assert.equal(clearSettledBlockedReview({ item: { id: 'news' } }, new Set(['news'])).item.id, 'news')
-  assert.ok(indexSource.includes('setUpdateReview(prev => clearSettledBlockedReview(prev, itemIds))'))
-
-  // Opening a resolver retires the exact blocked result before navigation,
-  // while a late response for another app cannot close the current modal.
-  assert.equal(clearResolvedBlockedReview(review, { itemId: 'news' }), null)
-  assert.equal(clearResolvedBlockedReview(review, { itemId: 'atlas' }), review)
-  const clearBeforeOpen = indexSource.indexOf(
-    'setUpdateReview(current => clearResolvedBlockedReview(current, notice))',
-  )
-  const openResolver = indexSource.indexOf('openChat(resolver.chat_id)', clearBeforeOpen)
-  assert.ok(clearBeforeOpen >= 0 && openResolver > clearBeforeOpen)
-  assert.match(themeSource, /\.st-update-review\.is-result\s*\{[^}]*height: auto/)
+  assert.match(indexSource, /if \(isConflict\)[\s\S]*createConflictResolverChat\(result\.id, 'preserve_local', token\)/)
+  assert.match(indexSource, /if \(!isBatch && resolver\?\.chat_id\) openChat\(resolver\.chat_id\)/)
+  assert.match(indexSource, /return \{ ok: false, conflict: true, result, notice, resolver, resolverError \}/)
+  assert.match(indexSource, /if \(outcome\?\.conflict\)[\s\S]*setUpdateReview\(null\)/)
+  assert.match(indexSource, /const handleReviewUpdate[\s\S]*'preserve_local'[\s\S]*openChat\(resolver\.chat_id\)/)
+  assert.doesNotMatch(modalSource, /blockedNotice|onResolve|accept_reviewed_upstream_exact/)
 })
 
-test('one-tap updates stop for changed or unknown capabilities', async () => {
+test('Update all applies verified stable-access releases and stops for access changes', async () => {
   const { capabilityDiffNeedsReview, updateBatchDisposition } = await bundle()
   assert.equal(capabilityDiffNeedsReview(null), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: true, added: [], removed: [], changed: [] }), true)
@@ -1122,6 +1406,14 @@ test('one-tap updates stop for changed or unknown capabilities', async () => {
     }),
     { kind: 'review', reason: 'access_changed' },
   )
+})
+
+test('automatic updates have no duplicate trust preference path', async () => {
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  assert.doesNotMatch(source, /trusted-updates\.json|trustedUpdate|toggleTrusted/)
+  assert.doesNotMatch(detail, /Trust routine updates|Require review|Review every update/)
+  assert.match(source, /updateBatchDisposition\(prepared\)/)
 })
 
 test('filterCatalog matches categories, descriptions, and setup metadata', async () => {
@@ -1172,6 +1464,7 @@ test('catalog cards prefer concise discovery copy and use stable browse collecti
   assert.equal(catalogAudience({ categories: ['system', 'agents'] }), 'developer')
   assert.equal(catalogAudience({ categories: ['writing'] }), 'general')
   assert.equal(catalogCollection({ collection: 'play' }), 'play')
+  assert.equal(catalogCollection({ community: { source_url: 'https://example.test/app' }, collection: 'everyday' }), 'community')
   assert.equal(catalogCollection({ categories: ['reference'] }), 'explore')
   assert.equal(catalogCollection({
     audience: 'general',
@@ -1636,9 +1929,9 @@ test('app publication requires a complete source_files import tree', async () =>
   await assert.rejects(
     () => assertCompleteSourceManifest(join(root, '..'), {
       ...manifest,
-      source_files: manifest.source_files.filter((path) => path !== 'ui/UpdateAllModal.jsx'),
+      source_files: manifest.source_files.filter((path) => path !== 'ui/UpdateReviewModal.jsx'),
     }),
-    /index\.jsx: relative import \.\/ui\/UpdateAllModal\.jsx is not declared in source_files/,
+    /index\.jsx: relative import \.\/ui\/UpdateReviewModal\.jsx is not declared in source_files/,
   )
 })
 

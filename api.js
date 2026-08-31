@@ -3,6 +3,125 @@ import { validateManifestUrl } from './domain.js'
 export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
 export const SYSTEM_SETUP_READY_KEY = 'mobius:system-setup-ready:v1'
 
+function communityHeaders(token, idempotencyKey = '') {
+  return {
+    Authorization: `Bearer ${token}`,
+    ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+  }
+}
+
+function communityRequestKey(action) {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `store:${action}:${random}`.slice(0, 127)
+}
+
+async function communityResponse(response, fallback) {
+  if (response.ok) return response.status === 204 ? {} : response.json()
+  const detail = await readErrorDetail(response, fallback)
+  throw new Error(detail)
+}
+
+export async function loadCommunityIdentity(token) {
+  const response = await fetch('/api/community/identity', {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'Community identity could not be loaded.')
+}
+
+// App Store inherits the platform-owned GitHub connection through the same
+// read-only capability used by Contribute. The stored credential never enters
+// the iframe; this endpoint returns only GitHub's public user profile.
+export async function loadLocalGithubIdentity(token) {
+  const response = await fetch('/api/community/github-status', {
+    headers: communityHeaders(token),
+  })
+  if (!response.ok) {
+    const detail = await readErrorDetail(response, 'GitHub connection could not be checked.')
+    throw new Error(detail)
+  }
+  const profile = await response.json()
+  return {
+    connected: profile?.connected === true && !!profile?.login,
+    login: String(profile?.login || ''),
+  }
+}
+
+export async function loadCommunityApps(token, { query = '', limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset) })
+  const response = await fetch(`/api/community/apps?${params}`, {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'Community apps could not be loaded.')
+}
+
+export async function loadCommunityPublications(token, { limit = 100, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  const response = await fetch(`/api/community/publications?${params}`, {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'Publication status could not be loaded.')
+}
+
+export async function loadLocalPublicationPreview(token, appId) {
+  const params = new URLSearchParams({ app_id: String(appId) })
+  const response = await fetch(`/api/community/publications/github/preview?${params}`, {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'This app listing could not be prepared.')
+}
+
+export async function registerCommunityRevision(
+  token,
+  { repository, commitSha, manifestPath = 'mobius.json', publicIdentity = 'github' },
+) {
+  const response = await fetch('/api/community/apps', {
+    method: 'POST',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('register')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      repository,
+      commit_sha: commitSha,
+      manifest_path: manifestPath,
+      public_identity: publicIdentity,
+    }),
+  })
+  return communityResponse(response, 'This GitHub release could not be listed.')
+}
+
+export async function publishLocalAppToGithub(token, appId, repositoryName) {
+  const response = await fetch('/api/community/publications/github', {
+    method: 'POST',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('publish-local')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      app_id: appId,
+      repository_name: repositoryName,
+      confirm_source_public: true,
+      public_identity: 'github',
+    }),
+  })
+  return communityResponse(response, 'This local app could not be published.')
+}
+
+export async function recordCommunityInstall(token, appId, revisionId, localAppId) {
+  const response = await fetch(
+    `/api/community/apps/${encodeURIComponent(appId)}/revisions/${encodeURIComponent(revisionId)}/installs`,
+    {
+      method: 'POST',
+      headers: {
+        ...communityHeaders(token, communityRequestKey('install')),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ local_app_id: localAppId }),
+    },
+  )
+  return communityResponse(response, 'This exact release could not be preserved.')
+}
+
 export function openInstalledApp(id, { intent, onUnembedded } = {}) {
   if (window.parent === window) {
     if (onUnembedded) onUnembedded()
@@ -297,6 +416,36 @@ export async function fetchCatalog(url, token, opts = {}) {
       fields,
     }
   }
+  const cleanAsset = (value) => typeof value === 'string'
+    && /^[a-z0-9][a-z0-9._-]*\.(?:png|webp|jpe?g)$/i.test(value.trim())
+    ? value.trim()
+    : undefined
+  const normalizeListing = (listing) => {
+    if (!listing || typeof listing !== 'object' || Array.isArray(listing)) return null
+    const hero = cleanAsset(typeof listing.hero === 'string' ? listing.hero : listing.hero?.path)
+    const screenshots = []
+    if (Array.isArray(listing.screenshots)) {
+      for (const rawShot of listing.screenshots.slice(0, 6)) {
+        const src = cleanAsset(typeof rawShot === 'string' ? rawShot : rawShot?.src)
+        if (!src) continue
+        screenshots.push({
+          src,
+          alt: cleanString(rawShot?.alt, 140) || '',
+          label: cleanString(rawShot?.label, 72) || '',
+        })
+      }
+    }
+    const tagline = cleanString(listing.tagline, 96)
+    const description = cleanString(listing.description, 480)
+    if (!hero && screenshots.length === 0 && !tagline && !description) return null
+    return {
+      ...(hero ? { hero } : {}),
+      ...(screenshots.length ? { screenshots } : {}),
+      ...(tagline ? { tagline } : {}),
+      ...(description ? { description } : {}),
+      featured: listing.featured === true,
+    }
+  }
   const seen = new Set()
   const entries = []
   for (const e of raw) {
@@ -319,11 +468,17 @@ export async function fetchCatalog(url, token, opts = {}) {
       'everyday', 'create', 'explore', 'play', 'developer',
     ].includes(e.collection) ? e.collection : null
     const summary = cleanString(e.summary, 96)
+    const preview = typeof e.preview === 'string' && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(e.preview)
+      ? e.preview
+      : undefined
+    const listing = normalizeListing(e.listing)
     entries.push({
       id: e.id,
       name: cleanString(e.name),
       description: cleanString(e.description),
       ...(summary ? { summary } : {}),
+      ...(preview ? { preview } : {}),
+      ...(listing ? { listing } : {}),
       repo: typeof e.repo === 'string' ? e.repo : undefined,
       manifest_url: e.manifest_url,
       raw_base: e.raw_base,
@@ -463,17 +618,8 @@ export async function readJsonOrThrow(res, fallback) {
   throw new Error(await readErrorDetail(res, fallback || `HTTP ${res.status}`))
 }
 
-export async function loadUpdatePreview(appId, token) {
-  const res = await fetch(`/api/apps/${appId}/update-preview`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return await readJsonOrThrow(res, 'Update preview failed')
-}
-
-// Read-only preview of the currently published candidate. This differs from
-// loadUpdatePreview above: that endpoint describes an upstream commit already
-// recorded by an attempted update (used for conflict resolution), while this
-// one fetches the incoming release before anything is applied.
+// Read-only preview of the currently published candidate. This fetches the
+// incoming release before anything is applied.
 export async function loadUpdateCandidatePreview(appId, manifestUrl, token) {
   const query = manifestUrl
     ? `?manifest_url=${encodeURIComponent(manifestUrl)}`
