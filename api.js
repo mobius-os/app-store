@@ -54,6 +54,57 @@ export async function loadCommunityApps(token, { query = '', limit = 50, offset 
   return communityResponse(response, 'Community apps could not be loaded.')
 }
 
+export async function loadEditorialSpotlight(token) {
+  const response = await fetch('/api/community/editorial/spotlight', {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'Spotlight could not be refreshed.')
+}
+
+function fileDataBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('That artwork file could not be read.'))
+    reader.onload = () => {
+      const encoded = String(reader.result || '').split(',', 2)[1]
+      if (!encoded) reject(new Error('That artwork file is empty.'))
+      else resolve(encoded)
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function uploadEditorialArtwork(token, file) {
+  if (!file || file.size <= 0) throw new Error('Choose an artwork image.')
+  if (file.size > 1_350_000) throw new Error('Artwork must be 1.35 MB or smaller.')
+  const supported = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/avif'])
+  if (!supported.has(file.type)) throw new Error('Use PNG, JPEG, WebP, or AVIF artwork.')
+  const response = await fetch('/api/community/editorial/assets', {
+    method: 'POST',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('editorial-artwork')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      mime_type: file.type,
+      data_base64: await fileDataBase64(file),
+    }),
+  })
+  return communityResponse(response, 'Spotlight artwork could not be uploaded.')
+}
+
+export async function publishEditorialSpotlight(token, items) {
+  const response = await fetch('/api/community/editorial/spotlight', {
+    method: 'PUT',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('editorial-feed')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ items }),
+  })
+  return communityResponse(response, 'Spotlight could not be published.')
+}
+
 export async function loadCommunityPublications(token, { limit = 100, offset = 0 } = {}) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   const response = await fetch(`/api/community/publications?${params}`, {
@@ -105,6 +156,33 @@ export async function publishLocalAppToGithub(token, appId, repositoryName) {
     }),
   })
   return communityResponse(response, 'This local app could not be published.')
+}
+
+export async function rateCommunityApp(token, appId, revisionId, value) {
+  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/rating`, {
+    method: 'PUT',
+    headers: {
+      ...communityHeaders(token, communityRequestKey('rating')),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ revision_id: revisionId, value }),
+  })
+  return communityResponse(response, 'Your rating could not be saved.')
+}
+
+export async function commentOnCommunityRevision(token, appId, revisionId, body) {
+  const response = await fetch(
+    `/api/community/apps/${encodeURIComponent(appId)}/revisions/${encodeURIComponent(revisionId)}/comments`,
+    {
+      method: 'POST',
+      headers: {
+        ...communityHeaders(token, communityRequestKey('comment')),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ body, public_identity: 'github' }),
+    },
+  )
+  return communityResponse(response, 'Your review could not be posted.')
 }
 
 export async function recordCommunityInstall(token, appId, revisionId, localAppId) {
@@ -465,7 +543,7 @@ export async function fetchCatalog(url, token, opts = {}) {
       ? e.audience
       : null
     const collection = [
-      'everyday', 'create', 'explore', 'play', 'developer',
+      'productivity', 'everyday', 'create', 'explore', 'play', 'developer',
     ].includes(e.collection) ? e.collection : null
     const summary = cleanString(e.summary, 96)
     const preview = typeof e.preview === 'string' && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(e.preview)

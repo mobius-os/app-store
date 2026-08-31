@@ -17,7 +17,7 @@ export const CATALOG_URL =
 
 // Human-facing release label for diagnostics. The Store's self-update banner
 // uses verified source provenance, not this value, to decide availability.
-export const STORE_VERSION = '1.18.0'
+export const STORE_VERSION = '1.19.0'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',

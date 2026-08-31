@@ -1,9 +1,15 @@
+import { useState } from 'react'
 import { CatalogCard } from './CatalogCard.jsx'
 import { catalogCollection } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
 const CATALOG_COLLECTIONS = [
+  {
+    id: 'productivity',
+    title: 'Productivity',
+    description: 'Understand how your agent works and keep work organized.',
+  },
   {
     id: 'everyday',
     title: 'Everyday',
@@ -66,6 +72,21 @@ function listingScreenshot(item) {
   return typeof screenshot === 'string' ? screenshot : screenshot?.src || screenshot?.path
 }
 
+function editorialArtworkUrl(value) {
+  try {
+    const url = new URL(String(value || ''))
+    return url.protocol === 'https:' && url.hostname === 'www.mobius.you'
+      ? url.toString()
+      : ''
+  } catch {
+    return ''
+  }
+}
+
+function itemManifestId(item) {
+  return String(item?.manifest?.id || item?.id || '').toLowerCase()
+}
+
 export function CatalogList({
   appId,
   items,
@@ -97,8 +118,28 @@ export function CatalogList({
   hasMore = false,
   onLoadMore,
   editorial = false,
+  spotlightFeed = null,
   layout = 'grid',
 }) {
+  const hostedSpotlights = editorial && Array.isArray(spotlightFeed?.items)
+    ? spotlightFeed.items.flatMap((entry) => {
+        const item = items.find((candidate) => itemManifestId(candidate) === String(entry?.app_id || '').toLowerCase())
+        if (!item) return []
+        return [{
+          ...item,
+          editorial_artwork_url: editorialArtworkUrl(entry?.artwork_url),
+        }]
+      })
+    : []
+  const spotlights = hostedSpotlights.length
+    ? hostedSpotlights
+    : editorial ? items.filter((item) => listingHero(item)).slice(0, 3) : []
+  const [spotlightIndex, setSpotlightIndex] = useState(0)
+  const activeSpotlightIndex = spotlights.length
+    ? Math.min(spotlightIndex, spotlights.length - 1)
+    : 0
+  const activeSpotlight = spotlights[activeSpotlightIndex]
+
   if (items.length === 0) {
     return (
       <div className="st-empty">
@@ -107,7 +148,7 @@ export function CatalogList({
       </div>
     )
   }
-  const renderCard = (item) => (
+  const renderCard = (item, cardLayout = layout) => (
     <CatalogCard
       key={item.id}
       item={item}
@@ -134,14 +175,9 @@ export function CatalogList({
       installedUnavailable={installedUnavailable}
       setupCompletions={setupCompletions}
       systemSetupReady={systemSetupReady}
-      layout={layout}
+      layout={cardLayout}
     />
   )
-  const spotlights = editorial
-    ? items.filter((item) => listingHero(item)).slice(0, 3)
-    : []
-  const feature = spotlights[0] || null
-  const supportingSpotlights = spotlights.slice(1)
   const spotlightIds = new Set(spotlights.map((item) => item.id))
   const pickPool = editorial ? items.filter((item) => !spotlightIds.has(item.id)) : []
   const pickRank = new Map(CURATED_PICK_IDS.map((id, index) => [id, index]))
@@ -155,8 +191,9 @@ export function CatalogList({
         return items.indexOf(a) - items.indexOf(b)
       }).slice(0, 6)
     : []
-  const editorialIds = new Set([...spotlightIds, ...picks.map((item) => item.id)])
-  const groupedItems = editorial ? items.filter((item) => !editorialIds.has(item.id)) : items
+  // Editorial placements are discovery lenses, not separate catalogs. Every
+  // highlighted app remains an ordinary card in its stable category below.
+  const groupedItems = items
   const groups = CATALOG_COLLECTIONS
     .map((group) => ({
       ...group,
@@ -169,64 +206,79 @@ export function CatalogList({
         <h2 id={`st-group-${group.id}`} className="st-catalog-section-title">{group.title}</h2>
         {!editorial && layout !== 'list' ? <p className="st-catalog-section-desc">{group.description}</p> : null}
       </div>
-      <div className="st-catalog-grid">{group.items.map(renderCard)}</div>
+      <div className="st-catalog-grid">
+        {group.items.map((item) => renderCard(item, editorial ? 'editorial' : layout))}
+      </div>
     </section>
   )
-  const spotlightImage = (item, path, className, loading = 'lazy') => item.community ? (
+  const spotlightImage = (item, path, className, loading = 'lazy') => (item.community || item.editorial_artwork_url) ? (
     <StoreImage item={item} path={path} token={token} alt="" className={className} loading={loading} />
   ) : (
     <CatalogStoreImage storeAppId={appId} path={path} alt="" className={className} loading={loading} />
   )
 
   return (
-    <div className={`st-catalog-sections${layout === 'list' ? ' is-list' : ''}`}>
-      {searchLoading ? <div className="st-registry-progress" role="status">Searching shared listings…</div> : null}
-      {feature ? (
+    <div
+      className={`st-catalog-sections${layout === 'list' ? ' is-list' : ''}${editorial ? ' is-editorial' : ''}`}
+      aria-busy={searchLoading || undefined}
+    >
+      <span className="st-sr-only" role="status" aria-live="polite">
+        {searchLoading ? 'Refreshing shared listings.' : ''}
+      </span>
+      {activeSpotlight ? (
         <section className="st-spotlights" aria-labelledby="st-spotlights-title">
           <div className="st-catalog-section-head st-spotlights-head">
-            <h2 id="st-spotlights-title" className="st-catalog-section-title">Spotlight</h2>
-            <p className="st-catalog-section-desc">A closer look at apps that change what Möbius can do.</p>
-          </div>
-          <div className={`st-spotlight-grid${supportingSpotlights.length ? '' : ' is-single'}`}>
-            <article className="st-editorial-hero" aria-labelledby={`st-spotlight-${feature.id}`}>
-              {spotlightImage(feature, listingHero(feature), 'st-editorial-hero-image', 'eager')}
-              <div className="st-editorial-hero-shade" />
-              <div className="st-editorial-hero-copy">
-                <div className="st-editorial-title-row">
-                  <IconBox item={feature} token={token} />
-                  <div>
-                    <h3 id={`st-spotlight-${feature.id}`}>{feature.manifest?.name || feature.name}</h3>
-                    <p>{listingFor(feature)?.tagline || feature.summary || feature.description}</p>
-                  </div>
-                </div>
-                <button type="button" className="st-btn st-btn-primary" onClick={() => onPick(feature)}>View app</button>
-              </div>
-            </article>
-            {supportingSpotlights.length ? (
-              <div className="st-spotlight-stack">
-                {supportingSpotlights.map((item) => (
-                  <article className="st-spotlight-card" key={item.id} aria-labelledby={`st-spotlight-${item.id}`}>
-                    {spotlightImage(item, listingHero(item), 'st-spotlight-card-image')}
-                    <div className="st-spotlight-card-shade" />
-                    <div className="st-spotlight-card-copy">
-                      <IconBox item={item} token={token} />
-                      <div>
-                        <h3 id={`st-spotlight-${item.id}`}>{item.manifest?.name || item.name}</h3>
-                        <p>{listingFor(item)?.tagline || item.summary || item.description}</p>
-                      </div>
-                      <button type="button" className="st-spotlight-open" onClick={() => onPick(item)}>View</button>
-                    </div>
-                  </article>
+            <div>
+              <h2 id="st-spotlights-title" className="st-catalog-section-title">Spotlight</h2>
+              <p className="st-catalog-section-desc">A closer look at apps that change what Möbius can do.</p>
+            </div>
+            {spotlights.length > 1 ? (
+              <div className="st-spotlight-pagination" role="group" aria-label="Choose a spotlight app">
+                {spotlights.map((item, index) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={index === activeSpotlightIndex ? 'is-active' : ''}
+                    aria-label={`Show ${item.manifest?.name || item.name}`}
+                    aria-current={index === activeSpotlightIndex ? 'true' : undefined}
+                    onClick={() => setSpotlightIndex(index)}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
                 ))}
               </div>
             ) : null}
+          </div>
+          <div className="st-spotlight-stage" aria-label={`Spotlight app ${activeSpotlightIndex + 1} of ${spotlights.length}`}>
+              <article className="st-spotlight-slide" key={activeSpotlight.id} aria-labelledby={`st-spotlight-${activeSpotlight.id}`}>
+                {spotlightImage(
+                  activeSpotlight,
+                  activeSpotlight.editorial_artwork_url || listingHero(activeSpotlight),
+                  'st-spotlight-slide-image',
+                  'eager',
+                )}
+                <div className="st-spotlight-slide-shade" />
+                <div className="st-spotlight-slide-copy">
+                  <IconBox item={activeSpotlight} token={token} />
+                  <div>
+                    <span className="st-spotlight-kicker">Featured story</span>
+                    <h3 id={`st-spotlight-${activeSpotlight.id}`}>
+                      {activeSpotlight.manifest?.name || activeSpotlight.name}
+                    </h3>
+                    <p>{listingFor(activeSpotlight)?.tagline || activeSpotlight.summary || activeSpotlight.description}</p>
+                  </div>
+                  <button type="button" className="st-spotlight-open" onClick={() => onPick(activeSpotlight)}>
+                    Explore app
+                  </button>
+                </div>
+              </article>
           </div>
         </section>
       ) : null}
       {picks.length ? (
         <section className="st-picks" aria-labelledby="st-picks-title">
           <div className="st-catalog-section-head"><h2 id="st-picks-title" className="st-catalog-section-title">Our picks</h2></div>
-          <div className="st-picks-grid">{picks.map(renderCard)}</div>
+          <div className="st-picks-grid">{picks.map((item) => renderCard(item, 'editorial'))}</div>
         </section>
       ) : null}
       {groups.map(renderGroup)}

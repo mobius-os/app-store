@@ -54,7 +54,8 @@
       "raw_base": "https://raw.githubusercontent.com/mobius-os/app-memory/main/",
       "categories": [
         "system",
-        "agents"
+        "agents",
+        "productivity"
       ],
       "keywords": [
         "memory graph",
@@ -83,7 +84,7 @@
         ]
       },
       "audience": "developer",
-      "collection": "developer",
+      "collection": "productivity",
       "summary": "A private knowledge graph for your agent."
     },
     {
@@ -317,7 +318,8 @@
       "raw_base": "https://raw.githubusercontent.com/mobius-os/app-skills/main/",
       "categories": [
         "system",
-        "agents"
+        "agents",
+        "productivity"
       ],
       "keywords": [
         "skills",
@@ -332,7 +334,7 @@
         "search instructions"
       ],
       "audience": "developer",
-      "collection": "developer",
+      "collection": "productivity",
       "summary": "Browse the playbooks behind your agent.",
       "listing": {
         "tagline": "Browse the playbooks behind your agent.",
@@ -452,7 +454,7 @@
         "track status"
       ],
       "audience": "general",
-      "collection": "everyday",
+      "collection": "productivity",
       "summary": "See every scheduled agent check-in.",
       "listing": {
         "tagline": "See every scheduled agent check-in.",

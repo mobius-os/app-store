@@ -133,7 +133,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   // z-index layer above that overlay so it stays independently clickable.
   // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div className={`${cardVariantClass(cardVariant)}${layout === 'list' ? ' is-list' : ' is-catalog'}`}>
+    <div className={`${cardVariantClass(cardVariant)}${layout === 'list' ? ' is-list' : layout === 'editorial' ? ' is-editorial-row' : ' is-catalog'}`}>
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
         {(cardVariant === 'installed' || cardVariant === 'update') && (

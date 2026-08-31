@@ -28,13 +28,6 @@ test('Browse, Library, and Publish form one keyboard-navigable tab set', () => {
   assert.match(app, /aria-labelledby=\{`st-tab-\$\{tab\}`\}/)
 })
 
-test('Browse presents several explicit spotlight actions without turning cards into buttons', () => {
-  assert.match(catalogList, /filter\(\(item\) => listingHero\(item\)\)\.slice\(0, 3\)/)
-  assert.match(catalogList, /className="st-spotlight-open"/)
-  assert.match(catalogList, /className="st-btn st-btn-primary"/)
-  assert.doesNotMatch(catalogList, /role="button"/)
-})
-
 test('provider setup status never gates the baked catalog first paint', () => {
   const initialLoadStart = app.indexOf('const remoteCatalogPromise = fetchCatalog')
   const catalogMergeStart = app.indexOf('// Resolve the catalog SOURCE', initialLoadStart)
@@ -48,6 +41,28 @@ test('provider setup status never gates the baked catalog first paint', () => {
 
 test('App Store preserves its reviewed immersive hold gesture', () => {
   assert.match(app, /window\.mobius\.immersive\.holdToToggle/)
+})
+
+test('Browse presents a user-controlled spotlight while keeping ordinary category rows', () => {
+  assert.match(catalogList, /filter\(\(item\) => listingHero\(item\)\)\.slice\(0, 3\)/)
+  assert.match(catalogList, /Array\.isArray\(spotlightFeed\?\.items\)/)
+  assert.match(catalogList, /hostedSpotlights\.length/)
+  assert.match(catalogList, /className="st-spotlight-stage"/)
+  assert.match(catalogList, /className="st-spotlight-pagination"/)
+  assert.match(catalogList, /aria-current=\{index === activeSpotlightIndex/)
+  assert.doesNotMatch(catalogList, /setInterval|autoPlay|autoplay/)
+  assert.match(catalogList, /className="st-spotlight-open"/)
+  assert.match(catalogList, /const groupedItems = items/)
+  assert.match(catalogList, /editorial \? 'editorial' : layout/)
+  assert.doesNotMatch(catalogList, /items\.filter\(\(item\) => !editorialIds\.has/)
+  assert.doesNotMatch(catalogList, /role="button"/)
+})
+
+test('shared-listing refresh stays accessible without inserting a visible progress row', () => {
+  assert.match(catalogList, /aria-busy=\{searchLoading \|\| undefined\}/)
+  assert.match(catalogList, /className="st-sr-only" role="status" aria-live="polite"/)
+  assert.doesNotMatch(catalogList, /st-registry-progress/)
+  assert.doesNotMatch(catalogList, />Searching shared listings…</)
 })
 
 test('browse cards reserve accepted screenshots for the app description', () => {

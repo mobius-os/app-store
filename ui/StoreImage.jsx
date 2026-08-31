@@ -4,6 +4,22 @@ import { proxyUrl } from '../api.js'
 
 const remoteImages = new Map()
 const CATALOG_ASSET_RE = /^[a-z0-9][a-z0-9._-]*\.(?:png|webp|jpe?g)$/i
+const EDITORIAL_ASSET_PATH_RE = /^\/v1\/community\/editorial\/assets\/[0-9a-f]{64}\.(?:png|webp|jpe?g|avif)$/
+
+function hostedEditorialAssetUrl(value) {
+  try {
+    const url = new URL(String(value || ''))
+    return url.protocol === 'https:'
+      && url.hostname === 'www.mobius.you'
+      && !url.search
+      && !url.hash
+      && EDITORIAL_ASSET_PATH_RE.test(url.pathname)
+      ? url.toString()
+      : ''
+  } catch {
+    return ''
+  }
+}
 
 function remoteImage(url, token) {
   if (remoteImages.has(url)) return remoteImages.get(url)
@@ -31,6 +47,7 @@ export function storeAssetSource(manifest, logicalPath) {
 export function storeAssetUrl(item, logicalPath) {
   const source = storeAssetSource(item?.manifest, logicalPath)
   if (!source) return ''
+  if (/^https:\/\//i.test(source)) return hostedEditorialAssetUrl(source)
   if (item?.local_asset_base) return `${item.local_asset_base}${logicalPath}`
   return item?.raw_base ? `${item.raw_base}${source}` : ''
 }
