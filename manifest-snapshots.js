@@ -4,7 +4,7 @@ export const MANIFEST_SNAPSHOTS = {
   "voice": {
     "id": "voice",
     "name": "Voice",
-    "version": "1.12.8",
+    "version": "1.12.9",
     "description": "Give your agent a voice in chat or any compatible app.",
     "author": "mobius-os",
     "license": "MIT",
@@ -78,7 +78,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.3.6",
+    "version": "2.4.0",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -109,10 +109,7 @@ export const MANIFEST_SNAPSHOTS = {
         "model": null,
         "secondary_agent_mode": "system",
         "fallback_provider": null,
-        "fallback_model": null,
-        "live_depth": 4,
-        "night_breadth": 6,
-        "night_depth": 6
+        "fallback_model": null
       }
     },
     "schedule": {
@@ -147,16 +144,15 @@ export const MANIFEST_SNAPSHOTS = {
       "graph/render.jsx",
       "graph/viewport.mjs",
       "ui/Th.jsx",
-      "ui/ImportanceDots.jsx",
+      "ui/MemoryList.jsx",
       "ui/EmptyConstellation.jsx",
       "ui/GraphGlyph.jsx",
       "ui/ListGlyph.jsx",
       "ui/ChatGlyph.jsx",
       "ui/TextGlyph.jsx",
       "ui/NetworkGlyph.jsx",
-      "ui/EffortStepper.jsx",
       "ui/BackgroundAgentList.jsx",
-      "ui/SourceContext.jsx",
+      "ui/SupportingChats.jsx",
       "ui/backgroundAgentOrder.js",
       "ui/ModelPicker.jsx",
       "seed-memory/index.md",
@@ -170,9 +166,9 @@ export const MANIFEST_SNAPSHOTS = {
   },
   "connections": {
     "id": "connections",
-    "name": "Connections",
-    "version": "0.3.0",
-    "description": "Add remote MCP services once and both agent runtimes can use them — with live health, honest per-message cost, and curated suggestions.",
+    "name": "Integrations",
+    "version": "0.4.1",
+    "description": "Give your agents new tools through MCP integrations — with live health, honest per-message cost, and curated suggestions.",
     "author": "mobius-os",
     "license": "MIT",
     "icon": "icon.png",
@@ -186,7 +182,8 @@ export const MANIFEST_SNAPSHOTS = {
     "runtime": {
       "imports": [
         "react",
-        "react-dom"
+        "react-dom",
+        "@openai/apps-sdk-ui/components/Icon"
       ],
       "esm_deps": []
     },
@@ -204,7 +201,7 @@ export const MANIFEST_SNAPSHOTS = {
   "connect": {
     "id": "connect",
     "name": "Connect",
-    "version": "0.2.0",
+    "version": "0.3.7",
     "description": "Pair your laptop, workstation, or cluster and let Möbius run things on it.",
     "author": "mobius-os",
     "license": "MIT",
@@ -222,14 +219,20 @@ export const MANIFEST_SNAPSHOTS = {
       ],
       "esm_deps": []
     },
+    "skills": [
+      "connect.md"
+    ],
     "source_files": [
-      "icon.png"
+      "icon.png",
+      "connect.md",
+      "mach",
+      "connect-state.mjs"
     ]
   },
   "identity": {
     "id": "identity",
     "name": "Möbius · You",
-    "version": "0.3.0",
+    "version": "0.3.3",
     "description": "Your Möbius account, profile and active deployments.",
     "author": "mobius-os",
     "license": "MIT",
@@ -241,6 +244,10 @@ export const MANIFEST_SNAPSHOTS = {
       "identity_manage": true,
       "railway_manage": true
     },
+    "requires": [
+      "identity_manage",
+      "railway_manage"
+    ],
     "runtime": {
       "imports": [
         "react",
@@ -257,7 +264,7 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "2.8.19",
+    "version": "2.9.1",
     "description": "While you sleep, Möbius learns from recent work, improves its own approach, anticipates what may help next, and leaves a one-page morning brief.",
     "author": "mobius-os",
     "license": "MIT",
@@ -312,8 +319,12 @@ export const MANIFEST_SNAPSHOTS = {
       "housekeeping.py",
       "resource_monitor.py",
       "memory_health.py",
+      "experiment_status.py",
       "personalization_profile.py",
       "tool_friction.py",
+      "effort_summary.py",
+      "interview_outcomes.py",
+      "learning_loop.py",
       "constants.js",
       "theme.js",
       "domain.js",
@@ -326,8 +337,6 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ReportDetail.jsx",
       "ui/StreakBar.jsx",
       "ui/ReportsList.jsx",
-      "ui/LastNightStatus.jsx",
-      "ui/EffortStepper.jsx",
       "ui/ModelPicker.jsx",
       "ui/BackgroundAgentList.jsx",
       "ui/backgroundAgentOrder.js",
@@ -338,7 +347,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "subagents",
     "previous_id": "codex",
     "name": "Subagents",
-    "version": "0.4.4",
+    "version": "0.4.8",
     "description": "Connect Claude or Codex, choose provider defaults, and run guarded delegated tasks that survive planned platform restarts.",
     "author": "mobius-os",
     "license": "MIT",
@@ -362,8 +371,8 @@ export const MANIFEST_SNAPSHOTS = {
   "workflows": {
     "id": "workflows",
     "name": "Workflows",
-    "version": "2.3.3",
-    "description": "An outcome journal for background work: skim completed outcomes, items that need attention, and each helper's assignment.",
+    "version": "2.3.5",
+    "description": "A timeline of background work: see what ran, which helpers were created, and how each attempt ended.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-workflows",
@@ -397,7 +406,7 @@ export const MANIFEST_SNAPSHOTS = {
   "skills": {
     "id": "skills",
     "name": "Skills",
-    "version": "2.2.1",
+    "version": "2.2.3",
     "description": "Browse and read your agent's skills, and grow them: install from public skill catalogs, or ask the agent to find the right one for you.",
     "author": "mobius-os",
     "license": "MIT",
@@ -434,7 +443,7 @@ export const MANIFEST_SNAPSHOTS = {
   "artifacts": {
     "id": "artifacts",
     "name": "Artifacts",
-    "version": "0.6.2",
+    "version": "0.6.3",
     "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
     "author": "mobius-os",
     "license": "MIT",
@@ -488,7 +497,7 @@ export const MANIFEST_SNAPSHOTS = {
     "id": "maps",
     "previous_id": "mapbook",
     "name": "Maps",
-    "version": "0.2.1",
+    "version": "0.2.3",
     "description": "Visualise and keep maps created in Möbius, with a location skill and links back to their source conversations.",
     "author": "mobius-os",
     "license": "MIT",
@@ -537,7 +546,7 @@ export const MANIFEST_SNAPSHOTS = {
   "tasks": {
     "id": "tasks",
     "name": "Tasks",
-    "version": "1.0.10",
+    "version": "1.0.12",
     "description": "See your agent's scheduled check-ins at a glance — status, due times, and what needs attention. Reschedule or cancel through the agent.",
     "author": "mobius-os",
     "license": "MIT",
@@ -617,7 +626,6 @@ export const MANIFEST_SNAPSHOTS = {
       "source-map.js",
       "autopilot.js",
       "diff.js",
-      "parse-unified-diff.js",
       "api.js",
       "github-connection.js",
       "storage.js",
@@ -629,24 +637,62 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/BatchAction.jsx",
       "ui/ConnectionCard.jsx",
       "ui/MarkdownView.jsx",
-      "ui/DiffView.jsx",
       "ui/FileDiffList.jsx",
       "ui/ContributionCard.jsx",
       "ui/ContributionStack.jsx",
       "ui/Feed.jsx",
       "ui/SourceMap.jsx",
-      "ui/SourceOverview.jsx"
+      "ui/SourceOverview.jsx",
+      "contribution-policy.js",
+      "ui/ProjectIcon.jsx",
+      "ui/diff/DiffView.jsx",
+      "ui/diff/FileDiffList.jsx",
+      "ui/diff/UnifiedDiff.jsx",
+      "ui/diff/parseUnifiedDiff.js",
+      "ui/diff/styles.js"
     ]
   },
   "notes": {
     "id": "notes",
     "name": "Notes",
-    "version": "1.2.35",
+    "version": "1.2.36",
     "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-notes",
     "entry": "index.jsx",
+    "source_files": [
+      "src/app.jsx",
+      "src/editor/Editor.jsx",
+      "src/editor/extensions.js",
+      "src/editor/livePreview.js",
+      "src/editor/widgets.js",
+      "src/lib/attachment-leases.js",
+      "src/lib/attachments.js",
+      "src/lib/collection.js",
+      "src/lib/frontmatter.js",
+      "src/lib/hash.js",
+      "src/lib/index-cache.js",
+      "src/lib/math-scan.js",
+      "src/lib/migrate.js",
+      "src/lib/note-doc.js",
+      "src/lib/note-label.js",
+      "src/lib/note.js",
+      "src/lib/preview.js",
+      "src/lib/runtime-compat.js",
+      "src/lib/sdr-image.js",
+      "src/lib/store.js",
+      "src/lib/visible.js",
+      "src/ui/Card.jsx",
+      "src/ui/ColorPicker.jsx",
+      "src/ui/ConfirmModal.jsx",
+      "src/ui/EditorPanel.jsx",
+      "src/ui/Grid.jsx",
+      "src/ui/colors.js",
+      "src/ui/css.js",
+      "src/ui/icons.jsx",
+      "src/ui/theme.js"
+    ],
     "icon": "icon.png",
     "offline_capable": true,
     "permissions": {
@@ -686,17 +732,12 @@ export const MANIFEST_SNAPSHOTS = {
       "reads": true,
       "writes": "queued",
       "execution": "full"
-    },
-    "schedule": {
-      "default": "*/10 * * * *",
-      "user_configurable": false,
-      "job": "job.sh"
     }
   },
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.26.3",
+    "version": "1.29.7",
     "description": "A personal daily news digest shaped by your interests, source mix, and listening preferences.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -720,39 +761,30 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/ReportReader.jsx",
       "ui/ReportsTab.jsx",
       "ui/ListenControls.jsx",
+      "speech-capability.js",
       "speech-audio.js",
       "speech-media.js",
       "shell-playback.js",
       "speech-timeline.js",
-      "browser-tts.js",
-      "browser-tts-xn-module.js",
-      "browser-tts-xn-wasm-1.js",
-      "browser-tts-xn-wasm-2.js",
-      "browser-tts-worker-source.js",
-      "browser-tts-worker-entry.js",
-      "tts-model-pack.js",
-      "THIRD_PARTY_NOTICES.md",
-      "licenses/XN-RUNTIME-LICENSES.md",
+      "voice-icon.js",
       "ui/PreferenceFields.jsx",
-      "ui/TtsModelPackProgress.jsx",
       "ui/SetupFlow.jsx",
       "ui/ModelPicker.jsx",
       "ui/EffortStepper.jsx",
       "ui/BackgroundAgentList.jsx",
       "ui/backgroundAgentOrder.js",
       "ui/SettingsTab.jsx",
+      "ui/useVoiceCatalog.js",
       "codex_output.py"
     ],
     "theme_color": "#0c0f14",
     "background_color": "#0c0f14",
     "capabilities": {
-      "device.asset-cache": {
+      "media.speech": {
         "version": 1,
-        "reason": "Optionally keep the Pocket TTS model in this browser for private on-device listening.",
+        "reason": "Optionally read reports aloud with the active voice selected in Voice on this device.",
         "limits": {
-          "max_bytes": 402653184,
-          "max_asset_bytes": 268435456,
-          "max_chunk_bytes": 8388608
+          "max_text_chars": 50000
         }
       }
     },
@@ -777,7 +809,7 @@ export const MANIFEST_SNAPSHOTS = {
         "minute": 0
       },
       "preferences.json": {
-        "version": 1,
+        "version": 3,
         "onboarding_completed": false,
         "source_types": [
           "mainstream",
@@ -786,9 +818,7 @@ export const MANIFEST_SNAPSHOTS = {
         "include_sources": "",
         "exclude_sources": "",
         "tts": {
-          "enabled": false,
-          "language": "english",
-          "voice": "alba"
+          "enabled": false
         }
       }
     },
@@ -813,66 +843,35 @@ export const MANIFEST_SNAPSHOTS = {
   },
   "editor": {
     "id": "editor",
-    "name": "Editor",
-    "version": "0.6.9",
-    "description": "Browse, inspect, and edit every file on your Möbius, with focused details and an agent ready to help.",
+    "name": "Files",
+    "version": "0.7.0",
+    "description": "Browse and preview files on this Möbius.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-editor",
     "entry": "index.jsx",
     "source_files": [
       "constants.js",
-      "paths.js",
-      "theme.js",
-      "source-syntax.js",
       "domain.js",
       "storage.js",
-      "ui/Icons.jsx",
-      "ui/TabStrip.jsx",
-      "ui/Breadcrumb.jsx",
-      "ui/EntryRow.jsx",
-      "ui/Thumb.jsx",
-      "ui/StatusBar.jsx",
-      "ui/OverflowMenu.jsx",
-      "ui/BookmarksDrawer.jsx",
-      "ui/PropertiesSheet.jsx",
-      "ui/FileViewer.jsx",
-      "ui/Preview.jsx",
-      "ui/CodeEditor.jsx",
-      "ui/useModalFocus.js",
-      "ui/NameModal.jsx",
-      "ui/ConfirmModal.jsx",
-      "ui/ChatPanel.jsx",
-      "ui/ChatBubbleIcon.jsx"
+      "theme.js"
     ],
-    "icon": "icon-v2.png",
+    "icon": "icon.png",
     "offline_capable": false,
     "offline": {
       "reads": false,
       "writes": "none",
       "execution": "none"
     },
-    "embeds_agent": true,
     "permissions": {
       "cross_app_access": "none",
       "share_with_apps": "none",
       "filesystem_access": true
     },
-    "storage_seeds": {
-      "chat_id.json": null
-    },
     "runtime": {
       "imports": [
         "react",
         "react-dom",
-        "@codemirror/state",
-        "@codemirror/view",
-        "@codemirror/commands",
-        "@codemirror/language",
-        "@codemirror/lang-markdown",
-        "@lezer/highlight",
-        "katex",
-        "pdfjs-dist",
         "@openai/apps-sdk-ui/components/Icon"
       ],
       "esm_deps": []
@@ -881,8 +880,8 @@ export const MANIFEST_SNAPSHOTS = {
   "webstudio": {
     "id": "webstudio",
     "name": "Web Studio",
-    "version": "0.13.6",
-    "description": "Build a website with the agent and preview it live in an in-app browser.",
+    "version": "1.3.0",
+    "description": "Create live projects for websites, mini-apps, visualizations, documents, spreadsheets, and presentations.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-webstudio",
@@ -891,125 +890,290 @@ export const MANIFEST_SNAPSHOTS = {
     "offline_capable": true,
     "offline": {
       "reads": true,
-      "writes": "queued",
+      "writes": "none",
       "execution": "none"
     },
-    "embeds_agent": true,
+    "embeds_agent": false,
     "permissions": {
       "cross_app_access": "none",
       "share_with_apps": "none"
-    },
-    "storage_seeds": {
-      "files/index.html": "seeds/files/index.html",
-      "files/style.css": "seeds/files/style.css",
-      "files/app.js": "seeds/files/app.js",
-      "files-index.json": [
-        "files/app.js",
-        "files/index.html",
-        "files/style.css"
-      ],
-      "main.json": {
-        "path": "files/index.html"
-      }
     },
     "runtime": {
       "imports": [
         "react",
         "react-dom",
-        "@codemirror/state",
-        "@codemirror/view",
-        "@codemirror/commands",
-        "@codemirror/language",
         "@openai/apps-sdk-ui/components/Icon"
       ],
       "esm_deps": []
     },
-    "schedule": {
-      "job": "build.sh"
-    },
     "source_files": [
-      "constants.js",
-      "analytics.js",
-      "theme.js",
-      "domain.js",
-      "storage.js",
-      "source-syntax.js",
-      "preview/previewDomain.js",
-      "preview/HtmlPreview.jsx",
-      "build/useBuild.js",
-      "ui/CodeEditor.jsx",
-      "ui/ImagePreview.jsx",
-      "ui/FileGlyph.jsx",
-      "ui/ChevronIcon.jsx",
-      "ui/EyeIcon.jsx",
-      "ui/CodeIcon.jsx",
-      "ui/PlayIcon.jsx",
-      "ui/BuildingIndicator.jsx",
-      "ui/KebabIcon.jsx",
-      "ui/ChatBubbleIcon.jsx",
-      "ui/PublishIcon.jsx",
-      "ui/UnpublishIcon.jsx",
-      "ui/CheckIcon.jsx",
-      "ui/PencilIcon.jsx",
-      "ui/PlusIcon.jsx",
-      "ui/NewFileIcon.jsx",
-      "ui/NewFolderIcon.jsx",
-      "ui/UploadIcon.jsx",
-      "ui/TrashIcon.jsx",
-      "ui/CopyIcon.jsx",
-      "ui/ContextMenu.jsx",
-      "ui/useLongPress.js",
-      "ui/FileNode.jsx",
-      "ui/ProjectSelector.jsx",
-      "ui/PublishDrawerAction.jsx",
-      "ui/FileNavPanel.jsx",
-      "ui/ChatPanel.jsx",
-      "ui/useModal.jsx",
-      "ui/ModalView.jsx",
-      "ui/SyncPill.jsx"
+      "webstudio-project.md",
+      "project-builder.sh",
+      "mini-app-builder.sh",
+      "mini-app-builder.mjs",
+      "document-builder.sh",
+      "document-builder.py",
+      "spreadsheet-builder.sh",
+      "spreadsheet-builder.py",
+      "templates/index.html",
+      "templates/style.css",
+      "templates/app.js",
+      "templates/mini-app/index.jsx",
+      "templates/mini-app/mobius.json",
+      "templates/visualization/index.html",
+      "templates/visualization/visualization.css",
+      "templates/visualization/data.js",
+      "templates/visualization/visualization.js",
+      "templates/document.md",
+      "templates/sheet.csv",
+      "templates/presentation/index.html",
+      "templates/artwork/document.png",
+      "templates/artwork/spreadsheet.png",
+      "templates/artwork/presentation.png"
+    ],
+    "skills": [
+      "webstudio-project.md"
+    ],
+    "project_templates": [
+      {
+        "id": "website",
+        "name": "Website",
+        "description": "Build a local website with project chats and a previewable website artifact.",
+        "guidance": "Work directly inside the project root. Keep index.html and every local asset together, avoid external load-time dependencies, and build the HTML entry as a website artifact.",
+        "skills": [
+          "webstudio-project.md"
+        ],
+        "dependencies": [],
+        "files": {
+          "index.html": "templates/index.html",
+          "style.css": "templates/style.css",
+          "app.js": "templates/app.js"
+        },
+        "previews": [
+          {
+            "id": "website",
+            "name": "Website",
+            "kind": "html",
+            "path": "index.html"
+          }
+        ],
+        "artifact_types": [
+          {
+            "id": "website",
+            "name": "Website",
+            "extensions": [
+              "html",
+              "htm"
+            ],
+            "preview": "html",
+            "script": "project-builder.sh",
+            "output": "{source}"
+          }
+        ]
+      },
+      {
+        "id": "mini-app",
+        "name": "Mini-app",
+        "description": "Build a real React mini-app package with a live browser artifact.",
+        "guidance": "Treat index.jsx as the app entry and mobius.json as its package contract. Build one useful interaction first, keep it keyboard-accessible and self-contained, and verify the browser artifact after meaningful changes.",
+        "skills": [
+          "webstudio-project.md"
+        ],
+        "dependencies": [],
+        "files": {
+          "index.jsx": "templates/mini-app/index.jsx",
+          "mobius.json": "templates/mini-app/mobius.json"
+        },
+        "previews": [
+          {
+            "id": "app",
+            "name": "Mini-app",
+            "kind": "html",
+            "path": "index.jsx"
+          }
+        ],
+        "artifact_types": [
+          {
+            "id": "mini-app",
+            "name": "Mini-app",
+            "extensions": [
+              "jsx",
+              "tsx"
+            ],
+            "preview": "html",
+            "script": "mini-app-builder.sh",
+            "output": "index.html"
+          }
+        ]
+      },
+      {
+        "id": "visualization",
+        "name": "Interactive visualization",
+        "description": "Explore first-class data and rendering source through a presentation-ready chart.",
+        "guidance": "Keep sample data in data.js and rendering behavior in visualization.js. Prioritize legible labels, keyboard interaction, an informative empty state, and no external load-time dependencies.",
+        "skills": [
+          "webstudio-project.md"
+        ],
+        "dependencies": [],
+        "files": {
+          "index.html": "templates/visualization/index.html",
+          "visualization.css": "templates/visualization/visualization.css",
+          "data.js": "templates/visualization/data.js",
+          "visualization.js": "templates/visualization/visualization.js"
+        },
+        "previews": [
+          {
+            "id": "visualization",
+            "name": "Visualization",
+            "kind": "html",
+            "path": "index.html"
+          }
+        ],
+        "artifact_types": [
+          {
+            "id": "website",
+            "name": "Visualization",
+            "extensions": [
+              "html",
+              "htm"
+            ],
+            "preview": "html",
+            "script": "project-builder.sh",
+            "output": "{source}"
+          }
+        ]
+      },
+      {
+        "id": "document",
+        "name": "Document",
+        "description": "Draft in Markdown with a live reading view and a typeset document artifact.",
+        "guidance": "Write for the reader in document.md. Use semantic headings, concise sections, lists, emphasis, links, and blockquotes; save to rebuild the self-contained reading artifact.",
+        "skills": [
+          "webstudio-project.md"
+        ],
+        "dependencies": [],
+        "files": {
+          "document.md": "templates/document.md",
+          "assets/cover.png": "templates/artwork/document.png"
+        },
+        "previews": [
+          {
+            "id": "document",
+            "name": "Document",
+            "kind": "html",
+            "path": "document.md"
+          }
+        ],
+        "artifact_types": [
+          {
+            "id": "document",
+            "name": "Document",
+            "extensions": [
+              "md",
+              "markdown"
+            ],
+            "preview": "html",
+            "script": "document-builder.sh",
+            "output": "index.html"
+          }
+        ]
+      },
+      {
+        "id": "spreadsheet",
+        "name": "Spreadsheet",
+        "description": "Edit durable CSV cells in a live grid and publish a responsive data view.",
+        "guidance": "Treat sheet.csv as the source of truth. Keep a clear header row and one record per row; use the grid editor for routine changes and rebuild the self-contained data artifact after saving.",
+        "skills": [
+          "webstudio-project.md"
+        ],
+        "dependencies": [],
+        "files": {
+          "sheet.csv": "templates/sheet.csv",
+          "assets/cover.png": "templates/artwork/spreadsheet.png"
+        },
+        "previews": [
+          {
+            "id": "sheet",
+            "name": "Spreadsheet",
+            "kind": "html",
+            "path": "sheet.csv"
+          }
+        ],
+        "artifact_types": [
+          {
+            "id": "spreadsheet",
+            "name": "Spreadsheet",
+            "extensions": [
+              "csv"
+            ],
+            "preview": "html",
+            "script": "spreadsheet-builder.sh",
+            "output": "index.html"
+          }
+        ]
+      },
+      {
+        "id": "presentation",
+        "name": "Presentation",
+        "description": "Shape a responsive narrative deck with a live, presentation-ready preview.",
+        "guidance": "Build the story directly in index.html. Keep every slide semantic, concise, keyboard-accessible, responsive, and self-contained without external load-time dependencies.",
+        "skills": [
+          "webstudio-project.md"
+        ],
+        "dependencies": [],
+        "files": {
+          "index.html": "templates/presentation/index.html",
+          "assets/cover.png": "templates/artwork/presentation.png"
+        },
+        "previews": [
+          {
+            "id": "presentation",
+            "name": "Presentation",
+            "kind": "html",
+            "path": "index.html"
+          }
+        ],
+        "artifact_types": [
+          {
+            "id": "presentation",
+            "name": "Presentation",
+            "extensions": [
+              "html",
+              "htm"
+            ],
+            "preview": "html",
+            "script": "project-builder.sh",
+            "output": "{source}"
+          }
+        ]
+      }
     ]
   },
   "gym": {
     "id": "workout",
     "previous_id": "gym",
     "name": "Workout",
-    "version": "2.9.2",
-    "description": "Log workouts by chatting, and it tracks your PRs, trends, and streaks.",
+    "version": "3.5.4",
+    "description": "Plan routines, log every set, follow progress, and share a readable training record with other apps.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-workout",
     "entry": "index.jsx",
     "source_files": [
-      "logic.js",
-      "constants.js",
-      "storage.js",
-      "agent-prompt.js",
-      "format.js",
+      "domain.js",
+      "catalog.js",
       "theme.js",
-      "ui/SportIcon.jsx",
-      "ui/Icons.jsx",
-      "ui/SyncPill.jsx",
-      "ui/ConfirmModal.jsx",
-      "ui/ConfirmCard.jsx",
-      "ui/AgentChatPanel.jsx",
-      "ui/QuickAddStrip.jsx",
-      "ui/EntryCard.jsx",
-      "ui/SessionDraftCard.jsx",
-      "ui/CurrentSessionPanel.jsx",
-      "ui/Heatmap.jsx",
-      "ui/Sparkline.jsx",
-      "ui/ExerciseDetailSheet.jsx",
-      "ui/CategoryVolumeBars.jsx",
-      "ui/CategoryStats.jsx",
-      "ui/ExerciseLink.jsx",
-      "ui/InsightsTab.jsx",
-      "ui/AllTab.jsx"
+      "PRODUCT.md",
+      "README.md",
+      "DESIGN.md",
+      ".impeccable/design.json",
+      "LICENSE"
     ],
     "icon": "icon.png",
-    "offline_capable": true,
+    "offline_capable": false,
     "permissions": {
       "cross_app_access": "none",
-      "share_with_apps": "none"
+      "share_with_apps": "read"
     },
     "runtime": {
       "imports": [
@@ -1022,15 +1186,15 @@ export const MANIFEST_SNAPSHOTS = {
     "offline": {
       "reads": true,
       "writes": "queued",
-      "execution": "full"
+      "execution": "partial"
     },
     "storage_seeds": {},
-    "embeds_agent": true
+    "embeds_agent": false
   },
   "habits": {
     "id": "habits",
     "name": "Habits",
-    "version": "1.0.11",
+    "version": "1.0.12",
     "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
     "author": "mobius-os",
     "license": "MIT",
@@ -1077,7 +1241,7 @@ export const MANIFEST_SNAPSHOTS = {
   "beat-machine": {
     "id": "beat-machine",
     "name": "Beat Machine",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
     "author": "mobius-os",
     "license": "MIT",
@@ -1094,6 +1258,15 @@ export const MANIFEST_SNAPSHOTS = {
     "permissions": {
       "cross_app_access": "none",
       "share_with_apps": "none"
+    },
+    "capabilities": {
+      "media.microphone.capture": {
+        "version": 1,
+        "reason": "Record a custom drum pad.",
+        "limits": {
+          "max_duration_ms": 8000
+        }
+      }
     },
     "runtime": {
       "imports": [
@@ -1117,7 +1290,7 @@ export const MANIFEST_SNAPSHOTS = {
   "atlas": {
     "id": "atlas",
     "name": "Atlas",
-    "version": "1.9.16",
+    "version": "1.10.3",
     "description": "Spin the globe, tap the countries you've visited, and watch your map fill in.",
     "author": "mobius-os",
     "license": "MIT AND CC-BY-3.0-IGO",
@@ -1171,46 +1344,16 @@ export const MANIFEST_SNAPSHOTS = {
   "latex": {
     "id": "latex",
     "name": "LaTeX",
-    "version": "2.15.6",
-    "description": "Write and compile LaTeX with live PDF preview and an agent that drafts your .tex.",
+    "version": "3.0.0",
+    "description": "Create LaTeX Projects whose source, chats, PDF artifacts, and build history stay together.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-latex",
     "entry": "index.jsx",
     "source_files": [
-      "constants.js",
-      "theme.js",
-      "domain.js",
-      "storage.js",
-      "source-syntax.js",
-      "pdf/zoom.js",
-      "pdf/worker.js",
-      "build/useBuild.js",
-      "ui/CodeEditor.jsx",
-      "ui/ImagePreview.jsx",
-      "ui/PdfPreview.jsx",
-      "ui/FileGlyph.jsx",
-      "ui/ChevronIcon.jsx",
-      "ui/PencilIcon.jsx",
-      "ui/PlusIcon.jsx",
-      "ui/NewFileIcon.jsx",
-      "ui/NewFolderIcon.jsx",
-      "ui/UploadIcon.jsx",
-      "ui/TrashIcon.jsx",
-      "ui/ToolIcon.jsx",
-      "ui/KebabIcon.jsx",
-      "ui/ChatBubbleIcon.jsx",
-      "ui/PlayIcon.jsx",
-      "ui/BuildingIndicator.jsx",
-      "ui/ContextMenu.jsx",
-      "ui/useLongPress.js",
-      "ui/FileNode.jsx",
-      "ui/ProjectSelector.jsx",
-      "ui/FileNavPanel.jsx",
-      "ui/ChatPanel.jsx",
-      "ui/useModal.jsx",
-      "ui/ModalView.jsx",
-      "ui/SyncPill.jsx"
+      "latex-project.md",
+      "project-builder.sh",
+      "templates/main.tex"
     ],
     "icon": "icon.png",
     "offline_capable": true,
@@ -1218,40 +1361,65 @@ export const MANIFEST_SNAPSHOTS = {
       "cross_app_access": "none",
       "share_with_apps": "read"
     },
-    "storage_seeds": {
-      "files/welcome.tex": "files/welcome.tex",
-      "chat_id.json": null,
-      "files-index.json": [
-        "files/welcome.tex"
-      ]
-    },
     "runtime": {
       "imports": [
         "react",
         "react-dom",
-        "pdfjs-dist",
-        "@codemirror/state",
-        "@codemirror/view",
-        "@codemirror/commands",
-        "@codemirror/language",
         "@openai/apps-sdk-ui/components/Icon"
       ],
       "esm_deps": []
     },
     "offline": {
       "reads": true,
-      "writes": "queued",
+      "writes": "none",
       "execution": "none"
     },
-    "schedule": {
-      "job": "build.sh"
-    },
-    "embeds_agent": true
+    "embeds_agent": false,
+    "skills": [
+      "latex-project.md"
+    ],
+    "project_templates": [
+      {
+        "id": "document",
+        "name": "LaTeX document",
+        "description": "Write source with project chats and compile it into a PDF artifact.",
+        "guidance": "Work directly inside the project root. Keep LaTeX source and local assets together, and build the root .tex file as a PDF artifact.",
+        "skills": [
+          "latex-project.md"
+        ],
+        "dependencies": [
+          "tectonic"
+        ],
+        "files": {
+          "main.tex": "templates/main.tex"
+        },
+        "previews": [
+          {
+            "id": "document",
+            "name": "Document",
+            "kind": "pdf",
+            "path": "main.pdf"
+          }
+        ],
+        "artifact_types": [
+          {
+            "id": "latex",
+            "name": "PDF",
+            "extensions": [
+              "tex"
+            ],
+            "preview": "pdf",
+            "script": "project-builder.sh",
+            "output": "{stem}.pdf"
+          }
+        ]
+      }
+    ]
   },
   "tandem": {
     "id": "tandem",
     "name": "Tandem",
-    "version": "0.14.6",
+    "version": "0.14.8",
     "description": "Split-pane bilingual reader for language learning. Wide screens show the languages left/right; phones and narrow windows stack them top/bottom. The panes sync-scroll and the divider resizes them. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one. Pick the generation agent (Claude or OpenAI Codex) in settings; tap a word for its exact glossary match or honest aligned-sentence context.",
     "offline_capable": true,
     "offline": {
@@ -1325,7 +1493,21 @@ export const MANIFEST_SNAPSHOTS = {
       "share_with_apps": "none"
     },
     "static_assets": {
-      "asset-manifest.json": "build/asset-manifest.json",
+      "assets/Road_Rage-Cow_GjBa.otf": "build/assets/Road_Rage-Cow_GjBa.otf",
+      "assets/commando-Ct02ZC_G.ttf": "build/assets/commando-Ct02ZC_G.ttf",
+      "assets/cuberun-logo-DQy7uBD3.png": "build/assets/cuberun-logo-DQy7uBD3.png",
+      "assets/enginetextureflip-BWgoBlls.png": "build/assets/enginetextureflip-BWgoBlls.png",
+      "assets/galaxy-C3_ymqtx.jpg": "build/assets/galaxy-C3_ymqtx.jpg",
+      "assets/galaxyTextureBW-zfjMfs6Y.png": "build/assets/galaxyTextureBW-zfjMfs6Y.png",
+      "assets/grid-rainbow-NLNqsQ2s.png": "build/assets/grid-rainbow-NLNqsQ2s.png",
+      "assets/index-CFxvGjiA.js": "build/assets/index-CFxvGjiA.js",
+      "assets/index-zMxea8Gk.css": "build/assets/index-zMxea8Gk.css",
+      "assets/intro-loop-sDtpJoqj.mp3": "build/assets/intro-loop-sDtpJoqj.mp3",
+      "assets/main-nodrums-D4uCkcWB.mp3": "build/assets/main-nodrums-D4uCkcWB.mp3",
+      "assets/main-onlydrums-C9VKB5Aj.mp3": "build/assets/main-onlydrums-C9VKB5Aj.mp3",
+      "assets/noise-D5h5dan9.png": "build/assets/noise-D5h5dan9.png",
+      "assets/spaceship-D0PULSlq.gltf": "build/assets/spaceship-D0PULSlq.gltf",
+      "assets/speedup-DfjeVIc7.mp3": "build/assets/speedup-DfjeVIc7.mp3",
       "cuberun-logo.png": "build/cuberun-logo.png",
       "favicon.png": "build/favicon.png",
       "fonts.css": "build/fonts.css",
@@ -1337,28 +1519,6 @@ export const MANIFEST_SNAPSHOTS = {
       "manifest.json": "build/manifest.json",
       "regular.PNG": "build/regular.PNG",
       "robots.txt": "build/robots.txt",
-      "static/css/main.6f1b544c.chunk.css": "build/static/css/main.6f1b544c.chunk.css",
-      "static/css/main.6f1b544c.chunk.css.map": "build/static/css/main.6f1b544c.chunk.css.map",
-      "static/js/2.c8db477f.chunk.js": "build/static/js/2.c8db477f.chunk.js",
-      "static/js/2.c8db477f.chunk.js.LICENSE.txt": "build/static/js/2.c8db477f.chunk.js.LICENSE.txt",
-      "static/js/2.c8db477f.chunk.js.map": "build/static/js/2.c8db477f.chunk.js.map",
-      "static/js/main.79a28b98.chunk.js": "build/static/js/main.79a28b98.chunk.js",
-      "static/js/main.79a28b98.chunk.js.map": "build/static/js/main.79a28b98.chunk.js.map",
-      "static/js/runtime-main.543a1102.js": "build/static/js/runtime-main.543a1102.js",
-      "static/js/runtime-main.543a1102.js.map": "build/static/js/runtime-main.543a1102.js.map",
-      "static/media/Road_Rage.03e8327b.otf": "build/static/media/Road_Rage.03e8327b.otf",
-      "static/media/commando.68717231.ttf": "build/static/media/commando.68717231.ttf",
-      "static/media/cuberun-logo.2a67aff7.png": "build/static/media/cuberun-logo.2a67aff7.png",
-      "static/media/enginetextureflip.d0f77b17.png": "build/static/media/enginetextureflip.d0f77b17.png",
-      "static/media/galaxy.ef4e164b.jpg": "build/static/media/galaxy.ef4e164b.jpg",
-      "static/media/galaxyTextureBW.3bf07a9f.png": "build/static/media/galaxyTextureBW.3bf07a9f.png",
-      "static/media/grid-rainbow.1dc05ea5.png": "build/static/media/grid-rainbow.1dc05ea5.png",
-      "static/media/intro-loop.85c70e50.mp3": "build/static/media/intro-loop.85c70e50.mp3",
-      "static/media/main-nodrums.b36a5309.mp3": "build/static/media/main-nodrums.b36a5309.mp3",
-      "static/media/main-onlydrums.f5b7b0b0.mp3": "build/static/media/main-onlydrums.f5b7b0b0.mp3",
-      "static/media/noise.2793ebd0.png": "build/static/media/noise.2793ebd0.png",
-      "static/media/spaceship.52879d8f.gltf": "build/static/media/spaceship.52879d8f.gltf",
-      "static/media/speedup.d71ead93.mp3": "build/static/media/speedup.d71ead93.mp3",
       "tunnelred.PNG": "build/tunnelred.PNG"
     },
     "runtime": {
@@ -1368,5 +1528,42 @@ export const MANIFEST_SNAPSHOTS = {
       ],
       "esm_deps": []
     }
+  },
+  "kanban": {
+    "id": "kanban",
+    "name": "Kanban",
+    "version": "0.2.0",
+    "description": "Kanban boards you can share: drag-and-drop lists and cards, labels, and live collaboration with people on their own Möbius.",
+    "author": "mobius-os",
+    "license": "MIT",
+    "homepage": "https://github.com/mobius-os/app-kanban",
+    "entry": "index.jsx",
+    "icon": "icon.png",
+    "offline_capable": true,
+    "permissions": {
+      "cross_app_access": "none",
+      "share_with_apps": "none"
+    },
+    "runtime": {
+      "imports": [
+        "react",
+        "react-dom",
+        "@openai/apps-sdk-ui/components/Icon"
+      ],
+      "esm_deps": []
+    },
+    "offline": {
+      "reads": true,
+      "writes": "queued",
+      "execution": "full"
+    },
+    "source_files": [
+      "domain.js",
+      "storage.js",
+      "sync.js",
+      "theme.js",
+      "ui/Home.jsx",
+      "ui/Board.jsx"
+    ]
   }
 }
