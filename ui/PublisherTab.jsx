@@ -1,6 +1,7 @@
 /* PublisherTab turns an accepted local app revision into one reviewable public listing. */
 import { FileUpload } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useRef, useState } from 'react'
+import { SpotlightEditor } from './SpotlightEditor.jsx'
 
 // Preview preparation crosses an async boundary while the owner can navigate
 // back and choose another app. Keep result acceptance explicit so a late
@@ -64,6 +65,11 @@ export function PublisherTab({
   publicationStatesError,
   onRefreshPublicationStates,
   onNavigate,
+  catalog = [],
+  spotlightFeed = null,
+  token,
+  onUploadSpotlightArtwork,
+  onPublishSpotlight,
 }) {
   const apps = publishableApps(installed).sort((left, right) => (
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
@@ -128,8 +134,10 @@ export function PublisherTab({
       <article className="st-publish-row" key={app.id}>
         <div className="st-publish-icon" aria-hidden="true">
           <span>{String(app.name || app.slug || '?').trim().slice(0, 1).toUpperCase()}</span>
-          <img src={`/api/apps/${app.id}/icon?size=96`} alt="" width="48" height="48"
-               onError={(event) => { event.currentTarget.hidden = true }} />
+          {app.icon_url ? (
+            <img src={app.icon_url} alt="" width="48" height="48"
+                 onError={(event) => { event.currentTarget.hidden = true }} />
+          ) : null}
         </div>
         <div className="st-publish-row-copy"><h3>{app.name}</h3><span>{label}</span></div>
         <button type="button" className="st-btn st-btn-primary"
@@ -190,6 +198,16 @@ export function PublisherTab({
           <button type="button" className="st-btn st-btn-secondary" onClick={onRefreshViewer}>Check again</button>
           {contributeAvailable ? <button type="button" className="st-btn st-btn-primary" onClick={() => onOpenContributions?.()}>Open Contribute</button> : null}
         </div>
+      ) : null}
+
+      {!candidate && spotlightFeed?.viewer?.can_edit ? (
+        <SpotlightEditor
+          catalog={catalog}
+          feed={spotlightFeed}
+          token={token}
+          onUploadArtwork={onUploadSpotlightArtwork}
+          onPublish={onPublishSpotlight}
+        />
       ) : null}
 
       {candidate ? (

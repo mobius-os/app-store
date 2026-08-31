@@ -33,6 +33,7 @@ import {
   isSystemCatalogItem,
   mergeCatalogEntries,
   mergeCommunityCatalog,
+  mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
@@ -51,6 +52,7 @@ import {
   installApp,
   loadCommunityApps,
   loadCommunityIdentity,
+  loadEditorialSpotlight,
   loadLocalGithubIdentity,
   loadCommunityPublications,
   loadLocalPublicationPreview,
@@ -58,8 +60,12 @@ import {
   loadProviderStatus,
   loadUpdateCandidatePreview,
   publishLocalAppToGithub,
+  publishEditorialSpotlight,
   registerCommunityRevision,
+  rateCommunityApp,
+  commentOnCommunityRevision,
   recordCommunityInstall,
+  uploadEditorialArtwork,
   openChat,
   openInstalledApp,
   openSystemSettings,
@@ -105,6 +111,7 @@ export {
   isSystemCatalogItem,
   mergeCatalogEntries,
   mergeCommunityCatalog,
+  mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
@@ -125,12 +132,17 @@ export {
   installApp,
   loadCommunityApps,
   loadCommunityIdentity,
+  loadEditorialSpotlight,
   loadLocalGithubIdentity,
   loadCommunityPublications,
   loadLocalPublicationPreview,
   loadInstalledApps,
   publishLocalAppToGithub,
+  publishEditorialSpotlight,
   registerCommunityRevision,
+  rateCommunityApp,
+  commentOnCommunityRevision,
+  uploadEditorialArtwork,
   previewApp,
   proxyUrl,
   readErrorDetail,
@@ -291,6 +303,7 @@ export default function App({ appId, token }) {
   const [communityOffset, setCommunityOffset] = useState(0)
   const [communityIdentity, setCommunityIdentity] = useState(null)
   const [communityIdentityError, setCommunityIdentityError] = useState('')
+  const [spotlightFeed, setSpotlightFeed] = useState(null)
   const [githubIdentity, setGithubIdentity] = useState(null)
   const [githubIdentityError, setGithubIdentityError] = useState('')
   const [publishingId, setPublishingId] = useState(null)
@@ -298,6 +311,8 @@ export default function App({ appId, token }) {
   const [publicationError, setPublicationError] = useState('')
   const [publicationStates, setPublicationStates] = useState({})
   const [publicationStatesError, setPublicationStatesError] = useState('')
+  const [communityActionBusy, setCommunityActionBusy] = useState(false)
+  const [communityActionError, setCommunityActionError] = useState({ key: '', message: '' })
   const [otherInstalledCatalog, setOtherInstalledCatalog] = useState([])
   const otherInstalledCatalogRef = useRef(otherInstalledCatalog)
   useEffect(() => { otherInstalledCatalogRef.current = otherInstalledCatalog }, [otherInstalledCatalog])
@@ -546,7 +561,8 @@ export default function App({ appId, token }) {
       loadCommunityIdentity(token),
       loadCommunityPublications(token),
       loadLocalGithubIdentity(token),
-    ]).then(([identityResult, publicationsResult, githubResult]) => {
+      loadEditorialSpotlight(token),
+    ]).then(([identityResult, publicationsResult, githubResult, spotlightResult]) => {
       if (cancelled) return
       if (identityResult.status === 'fulfilled') {
         setCommunityIdentity(identityResult.value)
@@ -566,6 +582,9 @@ export default function App({ appId, token }) {
       } else {
         setGithubIdentity({ connected: false, login: '' })
         setGithubIdentityError(githubResult.reason?.message || 'GitHub connection is unavailable right now.')
+      }
+      if (spotlightResult.status === 'fulfilled') {
+        setSpotlightFeed(spotlightResult.value)
       }
     })
     return () => { cancelled = true }
@@ -652,6 +671,94 @@ export default function App({ appId, token }) {
       setPublishingId(null)
     }
   }, [githubIdentity, publishingId, refreshCommunity, refreshPublicationStates, token])
+
+  const updateCommunityFeedback = useCallback((communityId, updater) => {
+    setCommunityCatalog((items) => items.map((item) => (
+      item.community?.id === communityId
+        ? { ...item, community: updater(item.community) }
+        : item
+    )))
+    setDetail((item) => {
+      if (item?.community?.id === communityId) {
+        return { ...item, community: updater(item.community) }
+      }
+      if (item?.community_feedback?.id === communityId) {
+        return { ...item, community_feedback: updater(item.community_feedback) }
+      }
+      return item
+    })
+  }, [])
+
+  const handleCommunityRate = useCallback(async (value) => {
+    const feedback = detail?.community_feedback || detail?.community
+    if (!feedback || communityActionBusy || !communityIdentity?.linked || !feedback.review_eligible) {
+      return false
+    }
+    const feedbackKey = `${feedback.id}:${feedback.revision_id}`
+    setCommunityActionBusy(true)
+    setCommunityActionError({ key: feedbackKey, message: '' })
+    try {
+      const result = await rateCommunityApp(token, feedback.id, feedback.revision_id, value)
+      updateCommunityFeedback(feedback.id, (current) => ({
+        ...current,
+        user_rating: value,
+        rating_average: Number(result.rating_average ?? result.rating?.average ?? current.rating_average) || value,
+        rating_count: Number(result.rating_count ?? result.rating?.count ?? current.rating_count) || Math.max(1, current.rating_count),
+      }))
+      return true
+    } catch (error) {
+      setCommunityActionError({
+        key: feedbackKey,
+        message: error?.message || 'Your rating could not be saved.',
+      })
+      return false
+    } finally {
+      setCommunityActionBusy(false)
+    }
+  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityFeedback])
+
+  const handleCommunityComment = useCallback(async (body) => {
+    const feedback = detail?.community_feedback || detail?.community
+    if (!feedback
+      || communityActionBusy
+      || !communityIdentity?.linked
+      || !githubIdentity?.connected
+      || !feedback.review_eligible) {
+      return false
+    }
+    const feedbackKey = `${feedback.id}:${feedback.revision_id}`
+    setCommunityActionBusy(true)
+    setCommunityActionError({ key: feedbackKey, message: '' })
+    try {
+      const result = await commentOnCommunityRevision(token, feedback.id, feedback.revision_id, body)
+      const comment = result.comment || result
+      updateCommunityFeedback(feedback.id, (current) => ({
+        ...current,
+        comments: [comment, ...(current.comments || [])],
+      }))
+      return true
+    } catch (error) {
+      setCommunityActionError({
+        key: feedbackKey,
+        message: error?.message || 'Your review could not be posted.',
+      })
+      return false
+    } finally {
+      setCommunityActionBusy(false)
+    }
+  }, [communityActionBusy, communityIdentity, detail, githubIdentity, token, updateCommunityFeedback])
+
+  const handleUploadSpotlightArtwork = useCallback(
+    (file) => uploadEditorialArtwork(token, file),
+    [token],
+  )
+
+  const handlePublishSpotlight = useCallback(async (items) => {
+    const next = await publishEditorialSpotlight(token, items)
+    setSpotlightFeed(next)
+    setToast({ kind: 'success', message: 'The shared Spotlight lineup is live.' })
+    return next
+  }, [token])
 
   // Published apps may exist outside the curated registry. Hydrate them from
   // the same canonical source the backend updates, while excluding this Store's
@@ -1436,9 +1543,16 @@ export default function App({ appId, token }) {
   }
 
   const displayCatalog = useMemo(
-    () => sortCatalogForDisplay([...catalog, ...communityCatalog, ...otherInstalledCatalog]),
+    () => sortCatalogForDisplay([
+      ...mergeOfficialCommunityFeedback(catalog, communityCatalog),
+      ...otherInstalledCatalog,
+    ]),
     [catalog, communityCatalog, otherInstalledCatalog],
   )
+  const detailCommunityFeedback = detail?.community_feedback || detail?.community || null
+  const detailCommunityFeedbackKey = detailCommunityFeedback
+    ? `${detailCommunityFeedback.id}:${detailCommunityFeedback.revision_id}`
+    : ''
   const systemSetupReady = useMemo(
     () => systemSetupComplete || hasConnectedProvider(providerStatus),
     [systemSetupComplete, providerStatus],
@@ -1647,6 +1761,14 @@ export default function App({ appId, token }) {
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
           onDismissNotice={handleDismissNotice}
+          onCommunityRate={handleCommunityRate}
+          onCommunityComment={handleCommunityComment}
+          communityBusy={communityActionBusy}
+          communityError={communityActionError.key === detailCommunityFeedbackKey
+            ? communityActionError.message
+            : ''}
+          communityIdentityLinked={!!communityIdentity?.linked}
+          githubIdentityConnected={!!githubIdentity?.connected}
           token={token}
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}
@@ -1821,6 +1943,7 @@ export default function App({ appId, token }) {
                     hasMore={tab === 'browse' && communityHasMore}
                     onLoadMore={() => refreshCommunity({ append: true })}
                     editorial={tab === 'browse' && !query && category === 'all'}
+                    spotlightFeed={spotlightFeed}
                     layout={tab === 'library' ? 'list' : 'grid'}
                   />
                 </>}
@@ -1845,6 +1968,11 @@ export default function App({ appId, token }) {
             onNavigate={() => {
               if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
             }}
+            catalog={displayCatalog}
+            spotlightFeed={spotlightFeed}
+            token={token}
+            onUploadSpotlightArtwork={handleUploadSpotlightArtwork}
+            onPublishSpotlight={handlePublishSpotlight}
             contributeAvailable={!!contributeApp}
             onOpenContributions={(localAppId) => openInstalledApp(
               contributeApp.id,

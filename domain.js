@@ -498,6 +498,7 @@ export function catalogAudience(item) {
 }
 
 const CATALOG_COLLECTIONS = new Set([
+  'productivity',
   'everyday',
   'create',
   'explore',
@@ -507,8 +508,17 @@ const CATALOG_COLLECTIONS = new Set([
   'other-installed',
 ])
 
+// Editorial placement is a discovery lens, while these app identities have a
+// durable owner-facing job: understanding and organizing agent work. Keep the
+// classification stable even when an older published catalog temporarily
+// overlays the checked-in taxonomy during a rolling Store update.
+const AGENT_PRODUCTIVITY_IDS = new Set(['memory', 'skills', 'tasks'])
+
 export function catalogCollection(item) {
   if (item?.community) return 'community'
+  if (AGENT_PRODUCTIVITY_IDS.has(String(item?.id || '').toLowerCase())) {
+    return 'productivity'
+  }
   const curated = String(item?.collection || '').trim().toLowerCase()
   if (CATALOG_COLLECTIONS.has(curated)) return curated
 
@@ -657,9 +667,20 @@ export function communityCatalogItems(payload) {
         id,
         revision_id: String(latest.id || latest.revision_id || row.revision_id || ''),
         author: communityAuthor(row),
+        rating_average: Number(row.rating_average ?? row.rating?.average ?? 0) || 0,
+        rating_count: Number(row.rating_count ?? row.rating?.count ?? 0) || 0,
+        user_rating: Number(row.user_rating || 0) || 0,
+        review_eligible: Boolean(row.review_eligible ?? latest.review_eligible ?? false),
+        comments: Array.isArray(latest.comments)
+          ? latest.comments
+          : Array.isArray(row.comments) ? row.comments : [],
         repository_url: communityRepositoryUrl(
           row.repository_url || row.github?.url || row.homepage || manifest?.homepage,
         ),
+        // Deduplication authority must come only from the Host's repository
+        // record. The display URL above may fall back to publisher-authored
+        // metadata, which is useful as a link but never proves equivalence.
+        verified_repository_url: communityRepositoryUrl(row.repository_url),
         publication_status: 'live',
         repository_update: row.repository_update && typeof row.repository_update === 'object' ? {
           commit_sha: String(row.repository_update.commit_sha || ''),
@@ -674,6 +695,46 @@ export function communityCatalogItems(payload) {
       },
     }]
   })
+}
+
+// An official catalog package and a community publication can describe the
+// same stable manifest id. The official catalog remains the install/update
+// authority; the community row contributes only identity-bound feedback.
+// This prevents a forked publication from rendering a second "not installed"
+// card for an official app while keeping its ratings and reviews available.
+export function mergeOfficialCommunityFeedback(curated = [], community = []) {
+  const merged = [...curated]
+  const officialByManifestId = new Map()
+  for (let index = 0; index < merged.length; index += 1) {
+    const item = merged[index]
+    if (!String(item?.repo || '').toLowerCase().startsWith('mobius-os/')) continue
+    const manifestId = String(item?.manifest?.id || item?.id || '').toLowerCase()
+    const author = String(item?.manifest?.author || '').toLowerCase()
+    const repositoryUrl = communityRepositoryUrl(`https://github.com/${item.repo}`).toLowerCase()
+    if (manifestId && author && repositoryUrl) {
+      officialByManifestId.set(manifestId, { index, author, repositoryUrl })
+    }
+  }
+
+  const remainingCommunity = []
+  for (const item of community || []) {
+    const manifestId = String(item?.manifest?.id || '').toLowerCase()
+    const author = String(item?.manifest?.author || '').toLowerCase()
+    const repositoryUrl = String(item?.community?.verified_repository_url || '').toLowerCase()
+    const official = officialByManifestId.get(manifestId)
+    if (!official
+      || !author
+      || author !== official.author
+      || repositoryUrl !== official.repositoryUrl) {
+      remainingCommunity.push(item)
+      continue
+    }
+    merged[official.index] = {
+      ...merged[official.index],
+      community_feedback: item.community,
+    }
+  }
+  return [...merged, ...remainingCommunity]
 }
 
 export function communityCatalogPage(payload, requestedLimit = 50) {

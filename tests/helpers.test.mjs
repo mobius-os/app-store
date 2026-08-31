@@ -76,6 +76,34 @@ test('store artwork resolves only through the accepted manifest mapping', async 
     storeAssetUrl({ manifest, local_asset_base: '/app-assets/by-id/7/static/' }, 'listing/hero.png'),
     '/app-assets/by-id/7/static/listing/hero.png',
   )
+  assert.equal(
+    storeAssetUrl(
+      { manifest, raw_base: 'https://raw.example/revision/' },
+      'https://www.mobius.you/v1/community/editorial/assets/' + 'a'.repeat(64) + '.webp',
+    ),
+    'https://www.mobius.you/v1/community/editorial/assets/' + 'a'.repeat(64) + '.webp',
+  )
+  assert.equal(
+    storeAssetUrl(
+      { manifest, raw_base: 'https://raw.example/revision/' },
+      'https://attacker.test/v1/community/editorial/assets/' + 'a'.repeat(64) + '.webp',
+    ),
+    '',
+  )
+  assert.equal(
+    storeAssetUrl(
+      { manifest, raw_base: 'https://raw.example/revision/' },
+      'https://www.mobius.you/v1/community/editorial/assets/not-a-digest.webp',
+    ),
+    '',
+  )
+  assert.equal(
+    storeAssetUrl(
+      { manifest, raw_base: 'https://raw.example/revision/' },
+      'https://www.mobius.you/v1/community/editorial/assets/' + 'a'.repeat(64) + '.webp?mutable=1',
+    ),
+    '',
+  )
   assert.equal(catalogAssetFilename('voice-screen.png'), 'voice-screen.png')
   assert.equal(catalogAssetFilename('../identity-screen.png'), '')
   assert.equal(catalogAssetFilename('https://attacker.test/hero.png'), '')
@@ -164,15 +192,74 @@ test('community listings join the ordinary install path with source provenance',
       ref: 'refs/heads/main',
       status: 'available_for_review',
     },
+    rating: { average: 4.6, count: 12 },
+    user_rating: 5,
+    review_eligible: true,
+    comments: [{ id: 'comment_public_1', body: 'Excellent.' }],
   }] })
   assert.equal(item.id, 'community:app_public_1234')
   assert.equal(item.collection, 'community')
   assert.equal(item.community.revision_id, 'rev_public_1234')
   assert.equal(item.community.author.handle, 'octo-owner')
+  assert.equal(item.community.verified_repository_url, 'https://github.com/example/shared-notes')
   assert.equal(item.community.repository_update.commit_sha, 'd'.repeat(40))
   assert.equal(item.community.repository_update.status, 'available_for_review')
   assert.equal(item.community.cache.kind, 'content_addressed')
   assert.equal(item.community.publication_status, 'live')
+  assert.equal(item.community.rating_average, 4.6)
+  assert.equal(item.community.rating_count, 12)
+  assert.equal(item.community.user_rating, 5)
+  assert.equal(item.community.review_eligible, true)
+  assert.deepEqual(item.community.comments, [{ id: 'comment_public_1', body: 'Excellent.' }])
+})
+
+test('official catalog apps absorb only Host-verified matching feedback', async () => {
+  const { communityCatalogItems, mergeOfficialCommunityFeedback } = await bundle()
+  const official = {
+    id: 'voice',
+    repo: 'mobius-os/app-voice',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json',
+    manifest: { id: 'voice', author: 'mobius-os', name: 'Voice' },
+  }
+  const duplicate = {
+    id: 'community:app_voice',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json',
+    manifest: { id: 'voice', author: 'mobius-os', name: 'Voice' },
+    community: {
+      id: 'app_voice', revision_id: 'revision_voice', rating_average: 4.8,
+      repository_url: 'https://github.com/mobius-os/app-voice',
+      verified_repository_url: 'https://github.com/mobius-os/app-voice',
+    },
+  }
+  const [impersonatingFork] = communityCatalogItems({ items: [{
+    id: 'app_voice_fork',
+    manifest: {
+      id: 'voice', author: 'mobius-os', name: 'Voice fork',
+      homepage: 'https://github.com/mobius-os/app-voice',
+    },
+    latest_revision: {
+      id: 'revision_voice_fork',
+      manifest_url: 'https://raw.githubusercontent.com/other-publisher/app-voice/main/mobius.json',
+      raw_base: 'https://raw.githubusercontent.com/other-publisher/app-voice/main/',
+    },
+    rating: { average: 1.2, count: 1 },
+  }] })
+  assert.equal(impersonatingFork.community.repository_url, 'https://github.com/mobius-os/app-voice')
+  assert.equal(impersonatingFork.community.verified_repository_url, '')
+  const unrelated = {
+    id: 'community:app_notes',
+    manifest: { id: 'notes', author: 'octo-owner' },
+    community: { id: 'app_notes', revision_id: 'revision_notes' },
+  }
+
+  const merged = mergeOfficialCommunityFeedback([official], [duplicate, impersonatingFork, unrelated])
+  assert.deepEqual(merged.map((item) => item.id), [
+    'voice', 'community:app_voice_fork', 'community:app_notes',
+  ])
+  assert.equal(merged[0].manifest_url, official.manifest_url)
+  assert.equal(merged[0].community, undefined)
+  assert.equal(merged[0].community_feedback.rating_average, 4.8)
+  assert.equal(merged[1].community.rating_average, 1.2)
 })
 
 test('community catalog pages preserve source offsets and deduplicate appended apps', async () => {
@@ -242,9 +329,58 @@ test('the Store uses shared listings rather than a raw link-install tab', async 
   assert.doesNotMatch(source, />Install from link</)
   assert.match(source, /loadCommunityApps/)
   assert.match(source, /registerCommunityRevision/)
-  assert.doesNotMatch(source, /rateCommunityApp/)
-  assert.doesNotMatch(source, /commentOnCommunityRevision/)
+  assert.match(source, /rateCommunityApp/)
+  assert.match(source, /commentOnCommunityRevision/)
   assert.doesNotMatch(source, /remixCommunityApp/)
+})
+
+test('ratings and written reviews use exact identity-bound community mutations', async () => {
+  const { rateCommunityApp, commentOnCommunityRevision } = await bundle()
+  const oldFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    await rateCommunityApp('owner-token', 'app_public_notes', 'revision_public_notes', 5)
+    await commentOnCommunityRevision(
+      'owner-token', 'app_public_notes', 'revision_public_notes', 'Clear and useful.',
+    )
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+  assert.equal(calls[0].url, '/api/community/apps/app_public_notes/rating')
+  assert.equal(calls[0].options.method, 'PUT')
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    revision_id: 'revision_public_notes', value: 5,
+  })
+  assert.match(calls[0].options.headers['Idempotency-Key'], /^store:rating:/)
+  assert.equal(
+    calls[1].url,
+    '/api/community/apps/app_public_notes/revisions/revision_public_notes/comments',
+  )
+  assert.equal(calls[1].options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[1].options.body), {
+    body: 'Clear and useful.', public_identity: 'github',
+  })
+  assert.match(calls[1].options.headers['Idempotency-Key'], /^store:comment:/)
+})
+
+test('ratings and public reviews use distinct identity gates and scoped errors', async () => {
+  const appSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  const feedbackSource = await readFile(join(root, '..', 'ui', 'CommunityFeedback.jsx'), 'utf8')
+
+  assert.match(appSource, /!communityIdentity\?\.linked[\s\S]*!githubIdentity\?\.connected/)
+  assert.match(appSource, /communityActionError\.key === detailCommunityFeedbackKey/)
+  assert.match(detailSource, /canRate=\{!!storeInstalled && communityIdentityLinked/)
+  assert.match(detailSource, /canComment=\{!!storeInstalled[\s\S]*githubIdentityConnected/)
+  assert.match(feedbackSource, /disabled=\{busy \|\| !canRate\}/)
+  assert.match(feedbackSource, /Connect GitHub to post a public written review\./)
 })
 
 test('distributed publishing submits one immutable GitHub revision', async () => {
@@ -309,12 +445,44 @@ test('local publishing is one reviewed action through the inherited GitHub accou
   assert.match(calls[0].options.headers['Idempotency-Key'], /^store:publish-local:/)
   assert.match(publisherSource, /I want this accepted source revision to become public/)
   assert.match(publisherSource, /onPublishLocal/)
+  assert.match(publisherSource, /app\.icon_url/)
+  assert.doesNotMatch(publisherSource, /\/api\/apps\/\$\{app\.id\}\/icon/)
   assert.doesNotMatch(publisherSource, /Return here with the repository and exact commit/)
   assert.equal(
     publisherSource.match(/onClick=\{\(\) => onOpenContributions\?\.\(\)\}/g)?.length,
     2,
     'Contribute buttons must not forward click events as local app ids',
   )
+})
+
+test('hosted Spotlight reads and publishes an ordered app-and-artwork feed', async () => {
+  const { loadEditorialSpotlight, publishEditorialSpotlight } = await bundle()
+  const oldFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options })
+    return new Response(JSON.stringify({ revision: 2, items: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    await loadEditorialSpotlight('owner-token')
+    await publishEditorialSpotlight('owner-token', [
+      { app_id: 'voice', artwork_asset: 'a'.repeat(64) + '.webp' },
+      { app_id: 'maps', artwork_asset: null },
+    ])
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+  assert.equal(calls[0].url, '/api/community/editorial/spotlight')
+  assert.equal(calls[1].url, '/api/community/editorial/spotlight')
+  assert.equal(calls[1].options.method, 'PUT')
+  assert.deepEqual(JSON.parse(calls[1].options.body), { items: [
+    { app_id: 'voice', artwork_asset: 'a'.repeat(64) + '.webp' },
+    { app_id: 'maps', artwork_asset: null },
+  ] })
+  assert.match(calls[1].options.headers['Idempotency-Key'], /^store:editorial-feed:/)
 })
 
 test('publisher preview accepts only the latest app after back navigation', async () => {
@@ -354,16 +522,22 @@ test('publisher preview accepts only the latest app after back navigation', asyn
   assert.match(publisherSource, /function closePreview[\s\S]*previewGateRef\.current\.invalidate\(\)/)
 })
 
-test('the centered Store header can shrink before its mobile collapse breakpoint', async () => {
+test('the centered Store header preserves the full desktop brand rail', async () => {
   const source = await readFile(join(root, '..', 'theme.js'), 'utf8')
   assert.match(
     source,
-    /grid-template-columns: minmax\(44px, 1fr\) minmax\(320px, 560px\) minmax\(44px, 1fr\)/,
+    /grid-template-columns: minmax\(120px, 1fr\) minmax\(320px, 560px\) minmax\(120px, 1fr\)/,
   )
-  assert.doesNotMatch(
-    source,
-    /grid-template-columns: minmax\(130px, 1fr\) minmax\(320px, 560px\) minmax\(130px, 1fr\)/,
-  )
+  assert.match(source, /\.st-header \{ width: min\(100%, 1120px\); margin-inline: auto; \}/)
+})
+
+test('agent productivity apps share a dedicated discovery collection', async () => {
+  const catalog = JSON.parse(await readFile(join(root, '..', 'catalog.json'), 'utf8'))
+  for (const id of ['skills', 'tasks']) {
+    const entry = catalog.apps.find((item) => item.id === id)
+    assert.equal(entry.collection, 'productivity')
+    assert.ok(entry.categories.includes('productivity'))
+  }
 })
 
 test('publisher lifecycle records bind back to their local app', async () => {
@@ -1465,6 +1639,8 @@ test('catalog cards prefer concise discovery copy and use stable browse collecti
   assert.equal(catalogAudience({ categories: ['writing'] }), 'general')
   assert.equal(catalogCollection({ collection: 'play' }), 'play')
   assert.equal(catalogCollection({ community: { source_url: 'https://example.test/app' }, collection: 'everyday' }), 'community')
+  assert.equal(catalogCollection({ id: 'skills', collection: 'developer' }), 'productivity')
+  assert.equal(catalogCollection({ id: 'tasks', collection: 'developer' }), 'productivity')
   assert.equal(catalogCollection({ categories: ['reference'] }), 'explore')
   assert.equal(catalogCollection({
     audience: 'general',
@@ -1864,7 +2040,7 @@ test('catalog is a release-independent discovery index with a baked snapshot flo
   const constants = await readFile(join(root, '..', 'constants.js'), 'utf8')
   const snapshots = await readFile(join(root, '..', 'manifest-snapshots.js'), 'utf8')
   const refresh = await readFile(join(root, '..', 'scripts', 'refresh-manifest-snapshots.mjs'), 'utf8')
-  const collections = new Set(['everyday', 'create', 'explore', 'play', 'developer'])
+  const collections = new Set(['productivity', 'everyday', 'create', 'explore', 'play', 'developer'])
 
   assert.ok(Array.isArray(catalog.apps) && catalog.apps.length > 0)
   for (const entry of catalog.apps) {

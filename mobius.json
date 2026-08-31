@@ -1,7 +1,7 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Discover, install, and update Möbius apps.",
   "author": "mobius-os",
   "license": "MIT",
@@ -18,7 +18,8 @@
   "permissions": {
     "cross_app_access": "none",
     "share_with_apps": "none",
-    "manage_apps": true
+    "manage_apps": true,
+    "github_access": true
   },
   "runtime": {
     "imports": [
@@ -52,6 +53,8 @@
     "ui/DetailView.jsx",
     "ui/LibraryHealth.jsx",
     "ui/PublisherTab.jsx",
+    "ui/SpotlightEditor.jsx",
+    "ui/CommunityFeedback.jsx",
     "ui/UpdateReviewModal.jsx",
     "ui/SelfUpdateBanner.jsx",
     "ui/diff/parseUnifiedDiff.js",
