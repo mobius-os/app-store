@@ -213,7 +213,7 @@ test('community listings join the ordinary install path with source provenance',
   assert.deepEqual(item.community.comments, [{ id: 'comment_public_1', body: 'Excellent.' }])
 })
 
-test('official catalog apps absorb only Host-verified matching feedback', async () => {
+test('official catalog apps absorb verified feedback and omit colliding package ids', async () => {
   const { communityCatalogItems, mergeOfficialCommunityFeedback } = await bundle()
   const official = {
     id: 'voice',
@@ -254,12 +254,12 @@ test('official catalog apps absorb only Host-verified matching feedback', async 
 
   const merged = mergeOfficialCommunityFeedback([official], [duplicate, impersonatingFork, unrelated])
   assert.deepEqual(merged.map((item) => item.id), [
-    'voice', 'community:app_voice_fork', 'community:app_notes',
+    'voice', 'community:app_notes',
   ])
   assert.equal(merged[0].manifest_url, official.manifest_url)
   assert.equal(merged[0].community, undefined)
   assert.equal(merged[0].community_feedback.rating_average, 4.8)
-  assert.equal(merged[1].community.rating_average, 1.2)
+  assert.equal(merged[1].community.id, 'app_notes')
 })
 
 test('community catalog pages preserve source offsets and deduplicate appended apps', async () => {
@@ -2168,6 +2168,18 @@ test('community and curated channels merge to one row with curated placement', a
   assert.equal(merged[0].community, undefined) // never becomes a community-install item
   assert.ok(merged[0].community_feedback)
   assert.match(merged[0].manifest_url, /githubusercontent/)
+  // A different repository cannot create a second row by reusing the stable
+  // package identity, and its unverified feedback is never merged.
+  const collision = {
+    ...community[0],
+    id: 'community:app_2',
+    repository: 'someoneelse/app-kanban',
+    publisher: { login: 'someoneelse' },
+    community: { id: 'app_2', rating_average: 1.2 },
+  }
+  const withoutCollision = mergeOfficialCommunityFeedback(curated, [collision])
+  assert.equal(withoutCollision.length, 1)
+  assert.equal(withoutCollision[0].community_feedback, undefined)
   // A community-only app still lands in the community section.
   const pure = mergeOfficialCommunityFeedback([], community)
   assert.equal(pure.length, 1)

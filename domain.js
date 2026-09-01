@@ -775,15 +775,24 @@ export function communityCatalogItems(payload) {
 export function mergeOfficialCommunityFeedback(curated = [], community = []) {
   const merged = [...curated]
   const indexByRepo = new Map()
+  const curatedManifestIds = new Set()
   merged.forEach((item, index) => {
     const repo = catalogRepoIdentity(item)
     if (repo && !indexByRepo.has(repo)) indexByRepo.set(repo, index)
+    const manifestId = String(item?.manifest?.id || '').trim().toLowerCase()
+    if (manifestId) curatedManifestIds.add(manifestId)
   })
   const remainingCommunity = []
   for (const item of community || []) {
     const repo = catalogRepoIdentity(item)
     const index = repo !== '' ? indexByRepo.get(repo) : undefined
     if (index === undefined) {
+      // A manifest id is the package identity, not a display label. A
+      // publication from another repository that reuses an official id is a
+      // collision, not a second app: omit it without trusting its feedback.
+      // Legitimate remixes publish under their own fresh manifest id.
+      const manifestId = String(item?.manifest?.id || '').trim().toLowerCase()
+      if (manifestId && curatedManifestIds.has(manifestId)) continue
       remainingCommunity.push(item)
       continue
     }
