@@ -44,12 +44,47 @@ export function storeAssetSource(manifest, logicalPath) {
   return typeof mapped === 'string' && mapped ? mapped : value
 }
 
-export function storeAssetUrl(item, logicalPath) {
+const GITHUB_REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+const COMMIT_SHA_RE = /^[0-9a-f]{40}$/
+
+// The published revision's exact GitHub tree always carries the listing
+// media, so it is the honest fallback when the registry mirror serves only
+// the install closure. Pinned to the revision commit, never a moving branch.
+function githubRawAssetUrl(item, source) {
+  const repository = String(item?.repository || '').trim()
+  const commit = String(item?.latest_revision?.commit_sha || '').trim().toLowerCase()
+  if (!GITHUB_REPO_RE.test(repository) || !COMMIT_SHA_RE.test(commit)) return ''
+  return `https://raw.githubusercontent.com/${repository}/${commit}/${source}`
+}
+
+// Ordered candidates for one listing asset: local install (asset route serves
+// paths relative to static/), then the registry mirror, then the pinned
+// GitHub revision tree.
+export function storeAssetUrls(item, logicalPath) {
   const source = storeAssetSource(item?.manifest, logicalPath)
-  if (!source) return ''
-  if (/^https:\/\//i.test(source)) return hostedEditorialAssetUrl(source)
-  if (item?.local_asset_base) return `${item.local_asset_base}${logicalPath}`
-  return item?.raw_base ? `${item.raw_base}${source}` : ''
+  if (!source) return []
+  if (/^https:\/\//i.test(source)) {
+    const hosted = hostedEditorialAssetUrl(source)
+    return hosted ? [hosted] : []
+  }
+  const urls = []
+  if (item?.local_asset_base) {
+    // Two local layouts exist: installed apps materialize declared assets at
+    // their full logical path, while an authored app's static/store media is
+    // served relative to its static/ root. Try both.
+    urls.push(`${item.local_asset_base}${logicalPath}`)
+    if (source.startsWith('static/')) {
+      urls.push(`${item.local_asset_base}${source.slice('static/'.length)}`)
+    }
+  }
+  if (item?.raw_base) urls.push(`${item.raw_base}${source}`)
+  const github = githubRawAssetUrl(item, source)
+  if (github) urls.push(github)
+  return urls
+}
+
+export function storeAssetUrl(item, logicalPath) {
+  return storeAssetUrls(item, logicalPath)[0] || ''
 }
 
 export function catalogAssetFilename(value) {
@@ -78,14 +113,23 @@ export function CatalogStoreImage({ storeAppId, path, alt = '', className = '', 
 }
 
 export function StoreImage({ item, path, token, alt = '', className = '', loading = 'lazy' }) {
-  const url = storeAssetUrl(item, path)
-  const external = /^https:\/\//i.test(url)
-  const [src, setSrc] = useState(() => external ? '' : url)
+  const urls = storeAssetUrls(item, path)
+  const candidatesKey = urls.join('|')
+  const [attempt, setAttempt] = useState(0)
+  const [src, setSrc] = useState('')
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
+    setAttempt(0)
+    setSrc('')
     setFailed(false)
-    if (!url) { setSrc(''); return }
+  }, [candidatesKey])
+
+  const url = urls[attempt] || ''
+  const external = /^https:\/\//i.test(url)
+
+  useEffect(() => {
+    if (!url) { setSrc(''); setFailed(true); return }
     if (!external) { setSrc(url); return }
     let active = true
     let objectUrl = ''
@@ -95,13 +139,23 @@ export function StoreImage({ item, path, token, alt = '', className = '', loadin
         if (active) setSrc(objectUrl)
         else URL.revokeObjectURL(objectUrl)
       })
-      .catch(() => { if (active) setFailed(true) })
+      .catch(() => {
+        if (!active) return
+        if (attempt + 1 < urls.length) setAttempt((a) => a + 1)
+        else setFailed(true)
+      })
     return () => {
       active = false
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [url, external, token])
+    // candidatesKey covers urls; attempt selects within them.
+  }, [url, external, token, attempt, candidatesKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const advance = () => {
+    if (attempt + 1 < urls.length) { setSrc(''); setAttempt((a) => a + 1) }
+    else setFailed(true)
+  }
 
   if (!src || failed) return <span className={`${className} st-store-image-placeholder`} aria-hidden="true" />
-  return <img src={src} alt={alt} className={className} loading={loading} decoding="async" onError={() => setFailed(true)} />
+  return <img src={src} alt={alt} className={className} loading={loading} decoding="async" onError={advance} />
 }
