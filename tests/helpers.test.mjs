@@ -1638,7 +1638,10 @@ test('catalog cards prefer concise discovery copy and use stable browse collecti
   assert.equal(catalogAudience({ categories: ['system', 'agents'] }), 'developer')
   assert.equal(catalogAudience({ categories: ['writing'] }), 'general')
   assert.equal(catalogCollection({ collection: 'play' }), 'play')
-  assert.equal(catalogCollection({ community: { source_url: 'https://example.test/app' }, collection: 'everyday' }), 'community')
+  // A dual-channel app (curated + community) lives in its curated collection;
+  // only community-only apps land in the community section.
+  assert.equal(catalogCollection({ community: { source_url: 'https://example.test/app' }, collection: 'everyday' }), 'everyday')
+  assert.equal(catalogCollection({ community: { source_url: 'https://example.test/app' } }), 'community')
   assert.equal(catalogCollection({ id: 'skills', collection: 'developer' }), 'productivity')
   assert.equal(catalogCollection({ id: 'tasks', collection: 'developer' }), 'productivity')
   assert.equal(catalogCollection({ categories: ['reference'] }), 'explore')
@@ -2145,4 +2148,56 @@ test('Subagents discovery entry exposes guarded provider delegation', async () =
   assert.ok(entry.keywords.includes('codex'))
   assert.ok(entry.capabilities.some((capability) => /guarded subagent delegation/.test(capability)))
   assert.equal(entry.manifest, undefined)
+})
+
+test('community and curated channels merge to one row with curated placement', async () => {
+  const { mergeOfficialCommunityFeedback, catalogCollection } = await import('../domain.js')
+  const curated = [{
+    id: 'kanban', collection: 'everyday', manifest: { id: 'kanban' },
+    manifest_url: 'https://raw.githubusercontent.com/hamzamerzic/app-kanban/main/mobius.json',
+  }]
+  const community = [{
+    id: 'community:app_1', collection: 'community', manifest: { id: 'kanban' },
+    manifest_url: 'https://www.mobius.you/v1/community/source/app_1/current/mobius.json',
+    repository: 'hamzamerzic/app-kanban', publisher: { login: 'hamzamerzic' },
+    community: { id: 'app_1' },
+  }]
+  const merged = mergeOfficialCommunityFeedback(curated, community)
+  assert.equal(merged.length, 1)
+  assert.equal(catalogCollection(merged[0]), 'everyday')
+  assert.equal(merged[0].community, undefined) // never becomes a community-install item
+  assert.ok(merged[0].community_feedback)
+  assert.match(merged[0].manifest_url, /githubusercontent/)
+  // A community-only app still lands in the community section.
+  const pure = mergeOfficialCommunityFeedback([], community)
+  assert.equal(pure.length, 1)
+  assert.equal(catalogCollection(pure[0]), 'community')
+})
+
+test('installed matching recognizes repo identity and viewer-owned publications', async () => {
+  const { findInstalled, setInstalledMatchViewer } = await import('../domain.js')
+  setInstalledMatchViewer('hamzamerzic')
+  const canonicalInstall = [{
+    slug: 'voice',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main#manifest-id=voice',
+  }]
+  const communityVoice = {
+    id: 'x', manifest: { id: 'voice' },
+    manifest_url: 'https://www.mobius.you/v1/community/source/app_1/current/mobius.json',
+    repository: 'mobius-os/app-voice',
+  }
+  assert.equal(findInstalled(canonicalInstall, communityVoice)?.slug, 'voice')
+  const authored = [{ slug: 'kanban', manifest_url: '' }]
+  const curatedOwn = {
+    id: 'kanban', manifest: { id: 'kanban' },
+    manifest_url: 'https://raw.githubusercontent.com/hamzamerzic/app-kanban/main/mobius.json',
+  }
+  assert.equal(findInstalled(authored, curatedOwn)?.slug, 'kanban')
+  const foreign = {
+    id: 'k2', manifest: { id: 'kanban' },
+    manifest_url: 'https://www.mobius.you/v1/community/source/app_2/current/mobius.json',
+    repository: 'someoneelse/app-kanban', publisher: { login: 'someoneelse' },
+  }
+  assert.equal(findInstalled(authored, foreign), null)
+  setInstalledMatchViewer('')
 })

@@ -564,7 +564,15 @@ const CATALOG_COLLECTIONS = new Set([
 const AGENT_PRODUCTIVITY_IDS = new Set(['memory', 'skills', 'tasks'])
 
 export function catalogCollection(item) {
-  if (item?.community) return 'community'
+  // A merged curated+community app lives in its curated collection; only an
+  // app whose sole home is the community channel lands in that section.
+  const curatedHome = String(item?.collection || '').trim().toLowerCase()
+  if (item?.community && (!curatedHome || curatedHome === 'community')) {
+    return 'community'
+  }
+  if (item?.community && curatedHome) {
+    return CATALOG_COLLECTIONS.has(curatedHome) ? curatedHome : 'community'
+  }
   if (AGENT_PRODUCTIVITY_IDS.has(String(item?.id || '').toLowerCase())) {
     return 'productivity'
   }
@@ -757,35 +765,33 @@ export function communityCatalogItems(payload) {
 // authority; the community row contributes only identity-bound feedback.
 // This prevents a forked publication from rendering a second "not installed"
 // card for an official app while keeping its ratings and reviews available.
+// One row per app across channels. The registry's `repository` field is
+// ownership-verified at admission (the publisher proved control of the repo
+// via the release-proof branch), so repo identity is a stronger join key than
+// the earlier author-string comparison — and it works for any owner, not just
+// mobius-os. A matched community item folds INTO the curated row: curated
+// placement and install source win; the community identity and social block
+// ride along so ratings, reviews, and installed-state matching all work.
 export function mergeOfficialCommunityFeedback(curated = [], community = []) {
   const merged = [...curated]
-  const officialByManifestId = new Map()
-  for (let index = 0; index < merged.length; index += 1) {
-    const item = merged[index]
-    if (!String(item?.repo || '').toLowerCase().startsWith('mobius-os/')) continue
-    const manifestId = String(item?.manifest?.id || item?.id || '').toLowerCase()
-    const author = String(item?.manifest?.author || '').toLowerCase()
-    const repositoryUrl = communityRepositoryUrl(`https://github.com/${item.repo}`).toLowerCase()
-    if (manifestId && author && repositoryUrl) {
-      officialByManifestId.set(manifestId, { index, author, repositoryUrl })
-    }
-  }
-
+  const indexByRepo = new Map()
+  merged.forEach((item, index) => {
+    const repo = catalogRepoIdentity(item)
+    if (repo && !indexByRepo.has(repo)) indexByRepo.set(repo, index)
+  })
   const remainingCommunity = []
   for (const item of community || []) {
-    const manifestId = String(item?.manifest?.id || '').toLowerCase()
-    const author = String(item?.manifest?.author || '').toLowerCase()
-    const repositoryUrl = String(item?.community?.verified_repository_url || '').toLowerCase()
-    const official = officialByManifestId.get(manifestId)
-    if (!official
-      || !author
-      || author !== official.author
-      || repositoryUrl !== official.repositoryUrl) {
+    const repo = catalogRepoIdentity(item)
+    const index = repo !== '' ? indexByRepo.get(repo) : undefined
+    if (index === undefined) {
       remainingCommunity.push(item)
       continue
     }
-    merged[official.index] = {
-      ...merged[official.index],
+    // Absorb the social block ONLY. The curated row must never become a
+    // community-install item: its manifest, install source, and rendering
+    // stay official, with ratings/reviews riding along as feedback.
+    merged[index] = {
+      ...merged[index],
       community_feedback: item.community,
     }
   }
@@ -815,6 +821,19 @@ export function communityCatalogPage(payload, requestedLimit = 50) {
       : Number.isInteger(nextOffset),
     nextCursor: Number.isInteger(nextOffset) ? String(nextOffset) : '',
   }
+}
+
+function catalogRepoIdentity(item) {
+  if (typeof item?.repository === 'string'
+    && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(item.repository)) {
+    return item.repository.toLowerCase()
+  }
+  if (typeof item?.repo === 'string'
+    && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(item.repo)) {
+    return item.repo.toLowerCase()
+  }
+  const manifestId = item?.source_manifest?.id || item?.manifest?.id || item?.id
+  return githubRepoIdentity(canonicalIdentityKey(item?.manifest_url, manifestId))
 }
 
 export function mergeCommunityCatalog(current, incoming) {
