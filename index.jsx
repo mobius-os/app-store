@@ -37,6 +37,7 @@ import {
   otherInstalledCatalogItems,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
+  setInstalledMatchViewer,
   sourceBackedInstalledApps,
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
@@ -619,6 +620,10 @@ export default function App({ appId, token }) {
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [githubIdentity, refreshGithubIdentity, tab])
+
+  useEffect(() => {
+    setInstalledMatchViewer(githubIdentity?.login || '')
+  }, [githubIdentity])
 
   const handleRegisterCommunity = useCallback(async (release) => {
     if (publishingId) return false

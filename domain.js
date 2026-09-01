@@ -252,6 +252,25 @@ function trustedCatalogRepoBase(urlOrIdentity) {
 // subdirectory manifests (which have no trusted repo identity) match precisely,
 // and a null-manifest legacy row — which has no canonical identity at all —
 // still matches nothing.
+// Community listings introduce identities the URL match cannot relate to an
+// installed row. Two additional identities close that gap: root-manifest REPO
+// equality for any owner, and the viewer's own publication matching their
+// locally authored app (gated on publisher login === connected GitHub login).
+// Accepts both the raw manifest URL and the backend's canonical installed
+// form (filename stripped, #manifest-id fragment appended).
+const GITHUB_RAW_ROOT_MANIFEST =
+  /^https:\/\/raw\.githubusercontent\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/[^/#]+(?:\/mobius\.json)?(?:#.*)?$/i
+
+function githubRepoIdentity(url) {
+  const match = GITHUB_RAW_ROOT_MANIFEST.exec(String(url || '').trim())
+  return match ? match[1].toLowerCase() : ''
+}
+
+let viewerGithubLogin = ''
+export function setInstalledMatchViewer(login) {
+  viewerGithubLogin = String(login || '').trim().toLowerCase()
+}
+
 export function findInstalled(installed, item) {
   const manifestId = item.source_manifest?.id || item.manifest?.id || item.id
   const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
@@ -260,11 +279,41 @@ export function findInstalled(installed, item) {
   if (exact) return exact
 
   const repoBase = trustedCatalogRepoBase(canonical)
-  if (!repoBase) return null
-  return installed.find(
-    (app) => trustedCatalogRepoBase(app.manifest_url || '') === repoBase,
-  ) || null
+  if (repoBase) {
+    const trusted = installed.find(
+      (app) => trustedCatalogRepoBase(app.manifest_url || '') === repoBase,
+    )
+    if (trusted) return trusted
+  }
+
+  const itemRepo = typeof item.repository === 'string'
+    && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(item.repository)
+    ? item.repository.toLowerCase()
+    : githubRepoIdentity(canonical)
+  if (itemRepo) {
+    const byRepo = installed.find(
+      (app) => githubRepoIdentity(app.manifest_url || '') === itemRepo,
+    )
+    if (byRepo) return byRepo
+  }
+
+  // The viewer's own app: a row whose publisher login or repository owner is
+  // the connected GitHub account matches the locally authored app by id, so
+  // an author never sees their own app as installable.
+  const publisher = String(item.publisher?.login || '').trim().toLowerCase()
+  const repoOwner = itemRepo ? itemRepo.split('/', 1)[0] : ''
+  const id = String(manifestId || '').trim().toLowerCase()
+  const owned = viewerGithubLogin
+    && (publisher === viewerGithubLogin || repoOwner === viewerGithubLogin)
+  if (id && owned) {
+    const own = installed.find(
+      (app) => String(app.slug || '').toLowerCase() === id,
+    )
+    if (own) return own
+  }
+  return null
 }
+
 
 // A baked manifest gives an uninstalled discovery card a fast, offline-safe
 // first paint. Installed apps still refresh their live manifest so their
@@ -662,6 +711,12 @@ export function communityCatalogItems(payload) {
         ? row.categories
         : Array.isArray(manifest?.categories) ? manifest.categories : ['Community'],
       manifest,
+      // Identity fields findInstalled uses to relate this row to an installed
+      // or locally authored app.
+      repository: typeof row.repository === 'string' ? row.repository : '',
+      publisher: row.publisher && typeof row.publisher === 'object'
+        ? { login: String(row.publisher.login || '') }
+        : null,
       error: null,
       community: {
         id,
