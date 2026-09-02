@@ -102,7 +102,28 @@ export const CSS = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.st-header-balance { display: block; }
+.st-header-search { position: relative; justify-self: end; }
+.st-header-search-toggle {
+  width: 44px; height: 44px; display: grid; place-items: center;
+  padding: 0; border: 1px solid var(--border); border-radius: 10px;
+  color: var(--muted); background: var(--surface); cursor: pointer;
+}
+.st-header-search-toggle:hover,
+.st-header-search.is-open .st-header-search-toggle {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.st-header-search-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-header-search-toggle svg { width: 18px; height: 18px; }
+.st-header-search-popover {
+  position: absolute; z-index: 20; top: calc(100% + 10px); right: 0;
+  width: min(360px, calc(100vw - 32px)); min-height: 52px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 9px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg); box-shadow: 0 14px 34px rgba(0, 0, 0, .22);
+}
+.st-header-search-popover > svg { width: 18px; height: 18px; color: var(--muted); }
 
 /* mobius-ui:Segmented v1 — keep in sync; library candidate. Diverge below the marker only. */
 .st-seg {
@@ -158,27 +179,19 @@ export const CSS = `
 }
 
 @media (max-width: 620px) {
-  .st-title-row { grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
-  .st-brand-name,
-  .st-header-balance { display: none; }
+  .st-title-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; }
+  .st-brand-name { display: none; }
   .st-brand-icon,
   .st-brand-fallback { width: 32px; height: 32px; }
 }
 
-/* Discovery controls: compact search + category chips. This is an
-   operational filter surface, not a hero — it sits in-flow above the grid and
-   keeps the direct install/update card actions visible. */
+/* Discovery controls now contain only Library filters. Search lives in the
+   header and opens over content, keeping Browse focused on discovery. */
 .st-discovery {
   margin: 0 0 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-.st-search-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
 }
 .st-search-label {
   position: absolute;
@@ -192,13 +205,12 @@ export const CSS = `
   border: 0;
 }
 .st-search-input {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   min-height: 44px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
@@ -207,30 +219,7 @@ export const CSS = `
 }
 .st-search-input::placeholder { color: color-mix(in srgb, var(--muted) 88%, var(--text)); }
 .st-search-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-.st-search-clear {
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface2, var(--surface));
-  color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
-  font-family: var(--font);
-  cursor: pointer;
-  touch-action: manipulation;
-  user-select: none;
-}
-.st-search-clear svg { display: block; margin: auto; }
-@media (hover: hover) {
-  .st-search-clear:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .st-search-clear:active { opacity: 0.75; transform: scale(0.97); }
+  box-shadow: none;
 }
 .st-result-count {
   flex-shrink: 0;
@@ -341,34 +330,6 @@ export const CSS = `
   color: var(--muted); background: var(--surface); border: 1px solid var(--border);
   font-size: 12px;
 }
-.st-registry-offline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 12px 0 18px;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  font-size: 11px;
-  line-height: 1.35;
-}
-.st-registry-offline strong { color: var(--text); font-weight: 700; }
-.st-registry-offline button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 8px;
-  border: 0;
-  color: var(--accent);
-  background: transparent;
-  font: inherit;
-  font-weight: 750;
-  cursor: pointer;
-}
-.st-registry-offline button:hover { text-decoration: underline; }
-.st-registry-offline button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 7px; }
 .st-publisher { display: flex; flex-direction: column; gap: 22px; padding-bottom: 36px; }
 .st-publisher-intro {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 28px;
@@ -704,7 +665,7 @@ export const CSS = `
   grid-column: 1 / -1;
   grid-row: 4;
   margin-top: 8px;
-  padding-top: 10px;
+  align-items: flex-end;
 }
 .st-card.is-catalog .st-card-notice,
 .st-card.is-catalog .st-card-inline-error { grid-column: 1 / -1; }
@@ -875,36 +836,32 @@ export const CSS = `
   text-align: center;
   min-height: 49px;
 }
-/* Top-border separator between the description and the one card action.
-   Each card reads as exactly one state/action: Install, Installed, or Update.
-   z-index:1 lifts the action above the .st-card-open ::after overlay so it
-   stays independently clickable. */
+/* The single icon action stays visually quiet while preserving a full 44px
+   touch target. Its accessible label and native tooltip carry the action name. */
 .st-card-status-row {
   position: relative;
   z-index: 1;
-  width: 100%;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+  width: auto;
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: flex-end;
   justify-content: center;
   gap: 8px;
 }
 .st-card-action {
-  width: 100%;
-  min-height: 44px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   border: 1px solid transparent;
-  border-radius: 7px;
-  padding: 5px 12px;
+  border-radius: 999px;
+  padding: 0;
   background: var(--accent-hover, var(--accent));
   color: var(--accent-fg);
-  font-weight: 600;
-  font-size: 12px;
   cursor: pointer;
-  font-family: var(--font);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   touch-action: manipulation; user-select: none;
 }
 /* Install and Update share the accent primary look so the action button
@@ -928,6 +885,7 @@ export const CSS = `
   border-color: color-mix(in srgb, var(--text) 18%, var(--border));
 }
 .st-card-action:disabled { opacity: 0.65; cursor: default; pointer-events: none; }
+.st-card-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: no-preference) {
   .st-card-action:not(:disabled):active { opacity: 0.8; transform: scale(0.97); }
 }
@@ -1766,9 +1724,9 @@ export const CSS = `
 }
 
 /* Editorial discovery keeps the Möbius journey chrome and borrows the calm,
-   story-led hierarchy of a focused marketplace: one deliberate feature at a
-   time, followed by dense app rows. Spotlight is user-controlled and never
-   advances on a timer. */
+   story-led hierarchy of a focused marketplace: one feature at a time,
+   followed by dense app rows. Spotlight advances gently but remains fully
+   pausable and yields to hover, focus, visibility, and reduced-motion. */
 .st-spotlights { min-width: 0; }
 .st-spotlights-head {
   display: flex;
@@ -1793,6 +1751,12 @@ export const CSS = `
 }
 .st-spotlight-pagination button.is-active span { transform: scaleX(3.4); background: var(--accent); }
 .st-spotlight-pagination button:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+.st-spotlight-pagination .st-spotlight-toggle {
+  margin-left: 4px; border: 1px solid var(--border); color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+.st-spotlight-pagination .st-spotlight-toggle:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 24%, var(--border)); }
+.st-spotlight-pagination .st-spotlight-toggle[aria-pressed="true"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
 .st-spotlight-stage { min-width: 0; }
 .st-spotlight-slide {
   position: relative; min-height: clamp(360px, 43vw, 520px); overflow: hidden;
@@ -1855,7 +1819,6 @@ export const CSS = `
 }
 .st-card.is-editorial-row .st-card-state-row { grid-column: 2; grid-row: 3; justify-content: flex-start; min-height: 18px; margin: 2px 0 0; }
 .st-card.is-editorial-row .st-card-status-row { grid-column: 3; grid-row: 1 / span 3; align-self: center; margin: 0; }
-.st-card.is-editorial-row .st-card-action { min-width: 104px; border-radius: 999px; }
 .st-card.is-editorial-row .st-card-notice,
 .st-card.is-editorial-row .st-card-inline-error { grid-column: 1 / -1; grid-row: 4; }
 
@@ -1872,7 +1835,6 @@ export const CSS = `
 .st-card.is-list .st-card-state-row { grid-column: 2; grid-row: 2; justify-content: flex-start; min-height: 18px; margin: 0; }
 .st-card.is-list .st-card-desc { display: none; }
 .st-card.is-list .st-card-status-row { grid-column: 3; grid-row: 1 / span 2; align-self: center; margin: 0; }
-.st-card.is-list .st-card-action { min-width: 92px; }
 .st-card.is-list .st-card-notice,
 .st-card.is-list .st-card-inline-error { grid-column: 1 / -1; grid-row: 3; }
 
@@ -1922,13 +1884,12 @@ export const CSS = `
   }
   .st-spotlight-slide-copy { left: 16px; right: 16px; bottom: 16px; gap: 10px; }
   .st-spotlight-slide-copy .st-icon-wrap { width: 50px; height: 50px; border-radius: 13px; }
-  .st-card.is-editorial-row { grid-template-columns: 50px minmax(0, 1fr); min-height: 132px; padding: 12px; column-gap: 11px; }
+  .st-card.is-editorial-row { grid-template-columns: 50px minmax(0, 1fr) auto; min-height: 108px; padding: 12px; column-gap: 11px; }
   .st-card.is-editorial-row .st-icon-slot { grid-row: 1 / span 3; }
   .st-card.is-editorial-row .st-icon-wrap { width: 48px; height: 48px; border-radius: 12px; }
-  .st-card.is-editorial-row .st-card-status-row { grid-column: 1 / -1; grid-row: 4; width: 100%; margin-top: 8px; }
-  .st-card.is-editorial-row .st-card-action { width: 100%; }
+  .st-card.is-editorial-row .st-card-status-row { grid-column: 3; grid-row: 1 / span 3; width: auto; margin: 0; }
   .st-card.is-editorial-row .st-card-notice,
-  .st-card.is-editorial-row .st-card-inline-error { grid-row: 5; }
+  .st-card.is-editorial-row .st-card-inline-error { grid-row: 4; }
 }
 
 /* Hosted Spotlight editing stays inside publishing: the same reviewed GitHub

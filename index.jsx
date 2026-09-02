@@ -86,6 +86,7 @@ import { PublisherTab } from './ui/PublisherTab.jsx'
 import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
+import { Search, X } from '@openai/apps-sdk-ui/components/Icon'
 
 export {
   appLifecycleFor,
@@ -373,6 +374,8 @@ export default function App({ appId, token }) {
   const [agentReviewingUpdate, setAgentReviewingUpdate] = useState(false)
   const [agentErrorItemId, setAgentErrorItemId] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchInputRef = useRef(null)
   // A complete baked snapshot is usable on the very first render. Installed
   // state and the remote registry hydrate independently; neither should make a
   // healthy catalog flash a skeleton or feel network-bound. Catalog releases
@@ -602,6 +605,23 @@ export default function App({ appId, token }) {
   // an explicit Load more action should issue another request.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, token, query])
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus()
+  }, [searchOpen])
+
+  useEffect(() => {
+    if (!communityError || tab !== 'browse') return undefined
+    const retry = () => refreshCommunity({ append: false })
+    const timer = window.setInterval(retry, 30_000)
+    window.addEventListener('online', retry)
+    window.addEventListener('focus', retry)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('online', retry)
+      window.removeEventListener('focus', retry)
+    }
+  }, [communityError, tab, refreshCommunity])
 
   const refreshGithubIdentity = useCallback(async () => {
     try {
@@ -1860,7 +1880,44 @@ export default function App({ appId, token }) {
               Publish
             </button>
           </div>
-          <span className="st-header-balance" aria-hidden="true" />
+          <div className={`st-header-search${searchOpen ? ' is-open' : ''}`}>
+            <button
+              type="button"
+              className="st-header-search-toggle"
+              aria-label={searchOpen ? 'Close app search' : 'Search apps'}
+              aria-expanded={searchOpen}
+              onClick={() => {
+                if (searchOpen && query) setQuery('')
+                setSearchOpen((open) => !open)
+              }}
+            >
+              {searchOpen
+                ? <X width="1em" height="1em" aria-hidden="true" />
+                : <Search width="1em" height="1em" aria-hidden="true" />}
+            </button>
+            {searchOpen ? (
+              <div className="st-header-search-popover">
+                <label className="st-search-label" htmlFor="st-catalog-search">Search apps</label>
+                <Search width="1em" height="1em" aria-hidden="true" />
+                <input
+                  ref={searchInputRef}
+                  id="st-catalog-search"
+                  className="st-search-input"
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search apps"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <span className="st-result-count" aria-live="polite">
+                  {visibleCatalog.length === displayCatalog.length
+                    ? `${displayCatalog.length} apps`
+                    : `${visibleCatalog.length} of ${displayCatalog.length}`}
+                </span>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -1874,12 +1931,8 @@ export default function App({ appId, token }) {
               ? <CatalogSkeleton count={CATALOG.length} />
               : <>
                   <CatalogFilters
-                    query={query}
                     category={category}
                     filterCounts={filterCounts}
-                    totalCount={displayCatalog.length}
-                    resultCount={tab === 'library' ? libraryCatalog.length : visibleCatalog.length}
-                    onQueryChange={setQuery}
                     onCategoryChange={setCategory}
                     updateAllCount={updateItems.length}
                     updateAllState={checkingAllUpdates
@@ -1911,12 +1964,11 @@ export default function App({ appId, token }) {
                       </button>
                     </div>
                   )}
-                  {tab === 'browse' && communityError && (
-                    <div className="st-registry-offline" role="status">
-                      <span><strong>Built-in selection</strong> · Shared listings are offline.</span>
-                      <button type="button" onClick={() => refreshCommunity({ append: false })}>Retry</button>
+                  {tab === 'browse' && communityError ? (
+                    <div className="st-sr-only" role="status">
+                      Shared listings are temporarily unavailable. The Store will retry automatically.
                     </div>
-                  )}
+                  ) : null}
                   <CatalogList
                     appId={appId}
                     items={tab === 'library' ? libraryCatalog : visibleCatalog}

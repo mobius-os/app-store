@@ -1,5 +1,5 @@
 import { appLifecycleFor, busyLabelForAction, catalogCardDescription } from '../domain.js'
-import { Check } from '@openai/apps-sdk-ui/components/Icon'
+import { ArrowRotateCw, ArrowUpRight, Chat, Check, Download } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 
 function cardVariantClass(variant) {
@@ -83,11 +83,24 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     updateNotice?.kind === 'conflict'
   const noticeDisabled = busy || blocked
   const reviewLabel = lifecycle.actionKind === 'install'
-    ? 'Review & Install'
+    ? 'Install'
     : lifecycle.actionKind === 'update'
     ? 'Update'
     : lifecycle.actionLabel
   const actionLabel = busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind) : reviewLabel
+  const ActionIcon = busy
+    ? ArrowRotateCw
+    : lifecycle.actionKind === 'install'
+    ? Download
+    : lifecycle.actionKind === 'update' || lifecycle.actionKind === 'retry'
+    ? ArrowRotateCw
+    : lifecycle.actionKind === 'resolve'
+    ? Chat
+    : ArrowUpRight
+  // Routine lifecycle state is already carried by the one action and the
+  // installed badge. Keep text only when it tells the owner about an actual
+  // problem that the icon alone cannot explain.
+  const showLifecycleStatus = ['unavailable', 'conflict', 'unverified'].includes(lifecycle.key)
   const onCardAction = () => {
     if (cardActionDisabled) return
     if (lifecycle.actionKind === 'open') {
@@ -152,10 +165,13 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       >
         {m.name}
       </button>
+      {(showLifecycleStatus || m.embeds_agent || item.community?.repository_update) && (
       <div className="st-card-state-row">
-        <div className={`st-card-state-line is-${lifecycle.key}`}>
-          {lifecycle.statusLabel}
-        </div>
+        {showLifecycleStatus ? (
+          <div className={`st-card-state-line is-${lifecycle.key}`}>
+            {lifecycle.statusLabel}
+          </div>
+        ) : null}
         {m.embeds_agent ? (
           <span className="st-card-agent" title="This app includes an in-app agent">Agent</span>
         ) : null}
@@ -165,6 +181,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
           </span>
         ) : null}
       </div>
+      )}
       {description ? (
         <div className="st-card-desc">{description}</div>
       ) : null}
@@ -174,9 +191,10 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
           className={cardActionClass}
           disabled={cardActionDisabled}
           onClick={onCardAction}
-          aria-label={`${reviewLabel} ${m.name}`}
+          aria-label={`${actionLabel} ${m.name}`}
+          title={actionLabel}
         >
-          {actionLabel}
+          <ActionIcon width={20} height={20} aria-hidden="true" />
         </button>
       </div>
       {showUpdateNotice ? (

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Pause, Play } from '@openai/apps-sdk-ui/components/Icon'
 import { CatalogCard } from './CatalogCard.jsx'
 import { catalogCollection } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
@@ -135,10 +136,44 @@ export function CatalogList({
     ? hostedSpotlights
     : editorial ? items.filter((item) => listingHero(item)).slice(0, 3) : []
   const [spotlightIndex, setSpotlightIndex] = useState(0)
+  const [spotlightHoverPaused, setSpotlightHoverPaused] = useState(false)
+  const [spotlightFocusPaused, setSpotlightFocusPaused] = useState(false)
+  const [spotlightUserPaused, setSpotlightUserPaused] = useState(false)
+  const [spotlightReducedMotion, setSpotlightReducedMotion] = useState(false)
+  const [spotlightPageVisible, setSpotlightPageVisible] = useState(true)
   const activeSpotlightIndex = spotlights.length
     ? Math.min(spotlightIndex, spotlights.length - 1)
     : 0
   const activeSpotlight = spotlights[activeSpotlightIndex]
+  const spotlightAutoPaused = spotlightHoverPaused
+    || spotlightFocusPaused
+    || spotlightUserPaused
+    || spotlightReducedMotion
+    || !spotlightPageVisible
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    const syncMotion = () => setSpotlightReducedMotion(!!media?.matches)
+    const syncVisibility = () => setSpotlightPageVisible(document.visibilityState !== 'hidden')
+    syncMotion()
+    syncVisibility()
+    media?.addEventListener?.('change', syncMotion)
+    document.addEventListener('visibilitychange', syncVisibility)
+    return () => {
+      media?.removeEventListener?.('change', syncMotion)
+      document.removeEventListener('visibilitychange', syncVisibility)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (spotlights.length < 2 || spotlightAutoPaused) return undefined
+    const timer = window.setTimeout(() => {
+      setSpotlightIndex((current) => (
+        Math.min(current, spotlights.length - 1) + 1
+      ) % spotlights.length)
+    }, 6000)
+    return () => window.clearTimeout(timer)
+  }, [activeSpotlightIndex, spotlightAutoPaused, spotlights.length])
 
   if (items.length === 0) {
     return (
@@ -226,7 +261,18 @@ export function CatalogList({
         {searchLoading ? 'Refreshing shared listings.' : ''}
       </span>
       {activeSpotlight ? (
-        <section className="st-spotlights" aria-labelledby="st-spotlights-title">
+        <section
+          className="st-spotlights"
+          aria-labelledby="st-spotlights-title"
+          onMouseEnter={() => setSpotlightHoverPaused(true)}
+          onMouseLeave={() => setSpotlightHoverPaused(false)}
+          onFocusCapture={() => setSpotlightFocusPaused(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              setSpotlightFocusPaused(false)
+            }
+          }}
+        >
           <div className="st-catalog-section-head st-spotlights-head">
             <div>
               <h2 id="st-spotlights-title" className="st-catalog-section-title">Spotlight</h2>
@@ -246,6 +292,17 @@ export function CatalogList({
                     <span aria-hidden="true" />
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className="st-spotlight-toggle"
+                  aria-label={spotlightUserPaused ? 'Resume spotlight' : 'Pause spotlight'}
+                  aria-pressed={spotlightUserPaused}
+                  onClick={() => setSpotlightUserPaused((paused) => !paused)}
+                >
+                  {spotlightUserPaused
+                    ? <Play width={15} height={15} aria-hidden="true" />
+                    : <Pause width={15} height={15} aria-hidden="true" />}
+                </button>
               </div>
             ) : null}
           </div>

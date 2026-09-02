@@ -22,7 +22,8 @@ without turning the Store into a developer dashboard.
 - Desktop uses one cinematic spotlight and two-column editorial app rows.
 - Phone keeps the same hierarchy in one column with full-width controls and
   no clipped or horizontal document layout.
-- Motion is user-driven; Spotlight never auto-advances.
+- Spotlight advances every six seconds, with an explicit pause control. It
+  pauses during hover, keyboard focus, hidden-page time, and reduced-motion.
 
 ## Editorial content
 

@@ -1,5 +1,3 @@
-import { X } from '@openai/apps-sdk-ui/components/Icon'
-
 const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'installed', label: 'Installed' },
@@ -8,12 +6,8 @@ const FILTERS = [
 ]
 
 export function CatalogFilters({
-  query,
   category,
   filterCounts = {},
-  totalCount,
-  resultCount,
-  onQueryChange,
   onCategoryChange,
   updateAllCount = 0,
   updateAllState = 'idle',
@@ -29,34 +23,8 @@ export function CatalogFilters({
     ? `Updating ${updateAllProgress.current}/${updateAllProgress.total}`
     : 'Update all'
   return (
-    <div className="st-discovery">
-      <div className="st-search-row">
-        <label className="st-search-label" htmlFor="st-catalog-search">Search</label>
-        <input
-          id="st-catalog-search"
-          className="st-search-input"
-          type="search"
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="Search apps"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        {query && (
-          <button
-            type="button"
-            className="st-search-clear"
-            aria-label="Clear search"
-            onClick={() => onQueryChange('')}
-          >
-            <X width="1em" height="1em" aria-hidden="true" />
-          </button>
-        )}
-        <div className="st-result-count" aria-live="polite">
-          {resultCount === totalCount ? `${totalCount} apps` : `${resultCount} of ${totalCount}`}
-        </div>
-      </div>
-      {mode === 'library' ? (
+    mode === 'library' ? (
+      <div className="st-discovery">
         <div className="st-category-strip" aria-label="Library filters">
         {FILTERS.map((filter) => {
           const count = filterCounts[filter.id]
@@ -88,7 +56,7 @@ export function CatalogFilters({
           </button>
         ) : null}
         </div>
-      ) : null}
-    </div>
+      </div>
+    ) : null
   )
 }
