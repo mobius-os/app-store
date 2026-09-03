@@ -43,13 +43,21 @@ test('App Store preserves its reviewed immersive hold gesture', () => {
   assert.match(app, /window\.mobius\.immersive\.holdToToggle/)
 })
 
-test('Browse presents a user-controlled spotlight while keeping ordinary category rows', () => {
+test('Browse presents a pausable auto-advancing spotlight while keeping ordinary category rows', () => {
   assert.match(catalogList, /filter\(\(item\) => listingHero\(item\)\)\.slice\(0, 3\)/)
   assert.match(catalogList, /Array\.isArray\(spotlightFeed\?\.items\)/)
   assert.match(catalogList, /hostedSpotlights\.length/)
   assert.match(catalogList, /className="st-spotlight-stage"/)
   assert.match(catalogList, /className="st-spotlight-pagination"/)
   assert.match(catalogList, /aria-current=\{index === activeSpotlightIndex/)
+  assert.match(catalogList, /window\.setTimeout/)
+  assert.match(catalogList, /6000/)
+  assert.match(catalogList, /prefers-reduced-motion: reduce/)
+  assert.match(catalogList, /document\.visibilityState !== 'hidden'/)
+  assert.match(catalogList, /onMouseEnter=/)
+  assert.match(catalogList, /onFocusCapture=/)
+  assert.match(catalogList, /'Pause spotlight'/)
+  assert.match(catalogList, /'Resume spotlight'/)
   assert.doesNotMatch(catalogList, /setInterval|autoPlay|autoplay/)
   assert.match(catalogList, /className="st-spotlight-open"/)
   assert.match(catalogList, /const groupedItems = items/)
@@ -69,6 +77,14 @@ test('browse cards reserve accepted screenshots for the app description', () => 
   assert.doesNotMatch(catalogCard, /StoreImage|st-card-preview|listingScreenshot/)
   assert.match(detailView, /<p className="st-detail-desc">\{listingDescription\}<\/p>[\s\S]*st-detail-gallery/)
   assert.match(detailView, /listingScreenshots\.map/)
+})
+
+test('catalog cards use one labelled icon action without repeating routine lifecycle text', () => {
+  assert.match(catalogCard, /ArrowRotateCw, ArrowUpRight, Chat, Check, Download/)
+  assert.match(catalogCard, /aria-label=\{`\$\{actionLabel\} \$\{m\.name\}`\}/)
+  assert.match(catalogCard, /title=\{actionLabel\}/)
+  assert.match(catalogCard, /\['unavailable', 'conflict', 'unverified'\]\.includes\(lifecycle\.key\)/)
+  assert.doesNotMatch(catalogCard, />\s*\{actionLabel\}\s*<\/button>/)
 })
 
 test('Browse keeps update controls in Library instead of spending discovery space', () => {
