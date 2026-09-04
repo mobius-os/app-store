@@ -1971,6 +1971,17 @@ test('desktop measure applies to every direct scroll child without a class allow
   assert.doesNotMatch(theme, /\.st-scroll > \.st-[a-z-]+,\s*$/m)
 })
 
+test('late detail artwork rules preserve the desktop centering margin', async () => {
+  const theme = await readFile(join(root, '..', 'theme.js'), 'utf8')
+
+  const galleryRule = theme.match(/\.st-detail-gallery \{([^}]*)\}/)?.[1] || ''
+  const bylineRule = theme.match(/\.st-detail-byline \{([^}]*)\}/)?.[1] || ''
+  assert.match(galleryRule, /margin-block:\s*0 22px/)
+  assert.match(bylineRule, /margin-block:\s*-14px 26px/)
+  assert.doesNotMatch(galleryRule, /(?:^|;)\s*margin:/)
+  assert.doesNotMatch(bylineRule, /(?:^|;)\s*margin:/)
+})
+
 test('busy labels stay tied to the action that started', async () => {
   const { appLifecycleFor, busyLabelForAction } = await bundle()
   const item = {
