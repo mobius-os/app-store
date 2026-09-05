@@ -296,6 +296,16 @@ export const CSS = `
   transition: filter 150ms, transform 150ms, opacity 150ms;
 }
 .st-update-all-trigger:disabled { opacity: 0.52; cursor: default; }
+.st-resolve-all-trigger {
+  margin-left: auto;
+  background: transparent;
+  color: var(--accent);
+}
+.st-update-all-trigger + .st-resolve-all-trigger { margin-left: 8px; }
+.st-resolve-all-trigger .st-update-all-count {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
 .st-library-health {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1657,6 +1667,8 @@ export const CSS = `
   color: var(--muted); background: var(--surface); border: 1px solid var(--border); font-size: 11px; font-weight: 700;
 }
 .st-publish-connection.is-ready { color: var(--green); border-color: color-mix(in srgb, var(--green) 32%, var(--border)); }
+.st-publish-connection-action { cursor: pointer; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); font-family: inherit; }
+.st-publish-connection-action:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
 .st-publish-setup { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 .st-publish-setup > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .st-publish-setup span { color: var(--muted); font-size: 12px; line-height: 1.4; }
@@ -1815,7 +1827,7 @@ export const CSS = `
 .st-card.is-editorial-row .st-card-desc {
   grid-column: 2; grid-row: 2; display: -webkit-box; min-height: 18px; margin: 2px 0 0;
   overflow: hidden; color: var(--muted); text-align: left; line-height: 1.35;
-  -webkit-box-orient: vertical; -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
 .st-card.is-editorial-row .st-card-state-row { grid-column: 2; grid-row: 3; justify-content: flex-start; min-height: 18px; margin: 2px 0 0; }
 .st-card.is-editorial-row .st-card-status-row { grid-column: 3; grid-row: 1 / span 3; align-self: center; margin: 0; }

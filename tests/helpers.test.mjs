@@ -455,6 +455,14 @@ test('local publishing is one reviewed action through the inherited GitHub accou
   )
 })
 
+test('publish identity prompt sends the owner to Möbius · You instead of a dead label', async () => {
+  const publisherSource = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  assert.doesNotMatch(publisherSource, /Link identity/)
+  assert.doesNotMatch(publisherSource, /Link a Möbius identity before publishing/)
+  assert.match(publisherSource, /Log in to Möbius · You/)
+  assert.match(publisherSource, /onLogInToMobiusYou\?\.\(\)/)
+})
+
 test('hosted Spotlight reads and publishes an ordered app-and-artwork feed', async () => {
   const { loadEditorialSpotlight, publishEditorialSpotlight } = await bundle()
   const oldFetch = globalThis.fetch
@@ -851,6 +859,32 @@ test('otherInstalledCatalogItems does not duplicate a curated app under id skew'
   }]
 
   assert.deepEqual(otherInstalledCatalogItems(installed, catalog), [])
+})
+
+test('otherInstalledCatalogItems does not duplicate a live community listing', async () => {
+  const { otherInstalledCatalogItems } = await bundle()
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const installed = [{
+    id: 119,
+    slug: 'common',
+    name: 'Social',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-social/main#manifest-id=social',
+    source_manifest: {
+      id: 'social',
+      url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
+    },
+    version: '1.0.0',
+  }]
+  const communityCatalog = [{
+    id: 'community:app_social',
+    collection: 'community',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
+    manifest: { id: 'social', name: 'Social', version: '1.0.0' },
+    community: { id: 'app_social', revision_id: 'revision_social' },
+  }]
+
+  assert.deepEqual(otherInstalledCatalogItems(installed, communityCatalog), [])
+  assert.match(source, /otherInstalledCatalogItems\(installed, listedCatalog/)
 })
 
 test('installed catalog apps refresh their live manifest for update detection', async () => {
