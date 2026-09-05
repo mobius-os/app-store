@@ -28,14 +28,14 @@ export function LibraryHealth({ installedCount, updateCount, attentionCount, upd
     ? `${installedCount} ${installedCount === 1 ? 'app' : 'apps'} up to date`
     : updateCount > 0
       ? `${updateCount} ${updateCount === 1 ? 'update' : 'updates'} ready`
-      : `${attentionCount} ${attentionCount === 1 ? 'conflict is' : 'conflicts are'} with agents`
+      : `${attentionCount} ${attentionCount === 1 ? 'app needs' : 'apps need'} a reconcile`
   const detail = healthy
     ? checkedLabel(updateChecks)
     : updateCount > 0
       ? attentionCount > 0
-        ? `Safe updates apply automatically. ${attentionCount} ${attentionCount === 1 ? 'conflict is' : 'conflicts are'} being reconciled by agents.`
+        ? `Safe updates apply automatically. ${attentionCount} ${attentionCount === 1 ? 'app has local changes' : 'apps have local changes'} that overlap the update — resolve them individually or with Resolve all.`
         : 'Safe updates apply automatically. Access changes still ask first.'
-      : 'Your current apps stay live while agents reconcile local changes.'
+      : 'Your current apps stay live until you resolve the overlap — individually or with Resolve all.'
 
   return (
     <section className={`st-library-health${healthy ? ' is-healthy' : ''}`} aria-labelledby="st-library-health-title">

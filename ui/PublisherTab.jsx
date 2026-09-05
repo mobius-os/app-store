@@ -64,6 +64,7 @@ export function PublisherTab({
   publicationStates = {},
   publicationStatesError,
   onRefreshPublicationStates,
+  onLogInToMobiusYou,
   onNavigate,
   catalog = [],
   spotlightFeed = null,
@@ -158,9 +159,14 @@ export function PublisherTab({
           <p>Choose an app, review its listing, then make that exact version public.</p>
         </div>
         <div className="st-publish-heading-actions">
-          <span className={`st-publish-connection${signedIn ? ' is-ready' : ''}`}>
-            {identityError ? 'Identity unavailable' : signedIn ? 'Identity ready' : 'Link identity'}
-          </span>
+          {signedIn ? (
+            <span className="st-publish-connection is-ready">Identity ready</span>
+          ) : (
+            <button type="button" className="st-publish-connection st-publish-connection-action"
+                    onClick={() => onLogInToMobiusYou?.()}>
+              Log in to Möbius · You
+            </button>
+          )}
           <span className={`st-publish-connection${githubReady ? ' is-ready' : ''}`}>
             {githubReady ? `GitHub @${githubLogin}` : 'Connect GitHub'}
           </span>
@@ -188,8 +194,18 @@ export function PublisherTab({
           <button type="button" className="st-btn st-btn-secondary" onClick={onRefreshPublicationStates}>Try again</button>
         </div>
       ) : null}
-      {!signedIn && identityReady ? (
-        <div className="st-notice is-warning" role="status">Link a Möbius identity before publishing.</div>
+      {!signedIn ? (
+        <div className="st-notice is-warning" role="status">
+          <div className="st-notice-row">
+            <span>{identityError
+              ? 'Your Möbius · You identity is unavailable. Log in to publish.'
+              : 'Log in to Möbius · You to publish an app.'}</span>
+            <button type="button" className="st-btn st-btn-primary st-notice-action"
+                    onClick={() => onLogInToMobiusYou?.()}>
+              Log in to Möbius · You
+            </button>
+          </div>
+        </div>
       ) : null}
       {signedIn && viewer?.error ? <div className="st-notice is-warning" role="alert">{viewer.error}</div> : null}
       {signedIn && viewer && !githubReady ? (

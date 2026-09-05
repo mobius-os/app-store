@@ -14,6 +14,10 @@ export function CatalogFilters({
   updateAllProgress = null,
   updateAllDisabled = false,
   onUpdateAll,
+  conflictCount = 0,
+  onResolveAll,
+  resolveAllDisabled = false,
+  resolveAllState = 'idle',
   mode = 'browse',
 }) {
   const selected = category || 'all'
@@ -22,6 +26,7 @@ export function CatalogFilters({
     : updateAllState === 'updating' && updateAllProgress
     ? `Updating ${updateAllProgress.current}/${updateAllProgress.total}`
     : 'Update all'
+  const resolveAllLabel = resolveAllState === 'resolving' ? 'Starting…' : 'Resolve all'
   return (
     mode === 'library' ? (
       <div className="st-discovery">
@@ -53,6 +58,18 @@ export function CatalogFilters({
           >
             <span>{updateAllLabel}</span>
             {updateAllState === 'idle' ? <span className="st-update-all-count">{updateAllCount}</span> : null}
+          </button>
+        ) : null}
+        {conflictCount > 0 && onResolveAll ? (
+          <button
+            type="button"
+            className="st-update-all-trigger st-resolve-all-trigger"
+            onClick={onResolveAll}
+            disabled={resolveAllDisabled || resolveAllState !== 'idle'}
+            aria-label={`Resolve all ${conflictCount} ${conflictCount === 1 ? 'app with a conflict' : 'apps with conflicts'}`}
+          >
+            <span>{resolveAllLabel}</span>
+            {resolveAllState === 'idle' ? <span className="st-update-all-count">{conflictCount}</span> : null}
           </button>
         ) : null}
         </div>

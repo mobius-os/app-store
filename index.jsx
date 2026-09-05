@@ -328,6 +328,10 @@ export default function App({ appId, token }) {
     () => installed.find((app) => app?.slug === 'contribute') || null,
     [installed],
   )
+  const identityApp = useMemo(
+    () => installed.find((app) => app?.slug === 'identity') || null,
+    [installed],
+  )
   // Git-native update state per installed app, keyed by numeric app id. Each
   // answered check carries availability and the pending resolution/replay
   // phase; a missing/null answer is unknown and never becomes a version-based
@@ -365,6 +369,7 @@ export default function App({ appId, token }) {
   const checkingUpdateRef = useRef(null)
   const [checkingAllUpdates, setCheckingAllUpdates] = useState(false)
   const checkingAllUpdatesRef = useRef(false)
+  const [resolvingAll, setResolvingAll] = useState(false)
   const [toast, setToast] = useState(null)
   const [updateNotice, setUpdateNotice] = useState(null)
   // Individual updates still offer a read-only candidate diff. "Update all"
@@ -785,13 +790,18 @@ export default function App({ appId, token }) {
     return next
   }, [token])
 
-  // Published apps may exist outside the curated registry. Hydrate them from
-  // the same canonical source the backend updates, while excluding this Store's
-  // own row. A cancelled effect cannot replace a newer installed-state result
-  // after focus refresh.
+  const listedCatalog = useMemo(
+    () => mergeOfficialCommunityFeedback(catalog, communityCatalog),
+    [catalog, communityCatalog],
+  )
+
+  // Published apps may exist outside both the curated registry and the live
+  // community catalog. Hydrate only those genuinely unrepresented installs,
+  // while excluding this Store's own row. A cancelled effect cannot replace a
+  // newer installed-state result after focus refresh.
   const otherInstalledCatalogSources = useMemo(
-    () => otherInstalledCatalogItems(installed, catalog, { excludeAppIds: [appId] }),
-    [appId, installed, catalog],
+    () => otherInstalledCatalogItems(installed, listedCatalog, { excludeAppIds: [appId] }),
+    [appId, installed, listedCatalog],
   )
   useEffect(() => {
     let cancelled = false
@@ -1046,21 +1056,27 @@ export default function App({ appId, token }) {
       const isCleanMerge = result.mode === 'update' && result.divergence === 'clean_merge'
 
       if (isConflict) {
-        // Keep the current app live, select the preserving policy, and start
-        // the durable resolver agent immediately. The exact-upstream path is
-        // still available by an explicit owner instruction inside that chat.
+        // Keep the current app live. On an explicit single update we start the
+        // preserving resolver agent immediately, but "Update all" defers this:
+        // it surfaces each conflicting app as a card the owner can resolve one
+        // at a time or all at once, instead of silently spawning N chats.
+        const deferResolver = _opts.deferResolver === true
         let resolver = null
         let resolverError = ''
-        try {
-          resolver = await createConflictResolverChat(result.id, 'preserve_local', token)
-        } catch (error) {
-          resolverError = error.message || 'The resolver agent could not be started.'
+        if (!deferResolver) {
+          try {
+            resolver = await createConflictResolverChat(result.id, 'preserve_local', token)
+          } catch (error) {
+            resolverError = error.message || 'The resolver agent could not be started.'
+          }
         }
         const notice = {
           kind: 'conflict',
           itemId: item.id,
           appId: result.id,
-          message: resolver
+          message: deferResolver
+            ? 'Local changes overlap this update. Your current app stayed live — resolve it when you’re ready.'
+            : resolver
             ? 'Local changes overlap this update. An agent is reconciling them while your current app stays live.'
             : 'Local changes overlap this update. Your current app stayed live, but the resolver agent could not start.',
           result,
@@ -1068,6 +1084,9 @@ export default function App({ appId, token }) {
           resolverChatId: resolver?.chat_id || null,
         }
         if (result.id) {
+          // Record the pending state so the app's card renders its own
+          // "Resolve in chat" action from durable server state, even when we
+          // deferred spawning the resolver during a batch update.
           setUpdateChecks(prev => mergeUpdateChecks(prev, {
             [result.id]: {
               available: true,
@@ -1076,7 +1095,9 @@ export default function App({ appId, token }) {
             },
           }))
         }
-        setUpdateNotice(notice)
+        // The global notice is single-slot; a batch can produce several
+        // conflicts, so batch mode relies on per-card synthesized notices.
+        if (!deferResolver) setUpdateNotice(notice)
         if (resolverError) {
           setCardErrors(prev => ({ ...prev, [item.id]: resolverError }))
         }
@@ -1569,10 +1590,10 @@ export default function App({ appId, token }) {
 
   const displayCatalog = useMemo(
     () => sortCatalogForDisplay([
-      ...mergeOfficialCommunityFeedback(catalog, communityCatalog),
+      ...listedCatalog,
       ...otherInstalledCatalog,
     ]),
-    [catalog, communityCatalog, otherInstalledCatalog],
+    [listedCatalog, otherInstalledCatalog],
   )
   const detailCommunityFeedback = detail?.community_feedback || detail?.community || null
   const detailCommunityFeedbackKey = detailCommunityFeedback
@@ -1615,10 +1636,72 @@ export default function App({ appId, token }) {
     }
   }, [displayCatalog, lifecycleById])
 
+  // Publishing needs a linked Möbius · You identity. Rather than a dead-end
+  // "Link identity" label, send the owner to where that sign-in actually
+  // happens: the installed Möbius · You app, or its Store listing to install
+  // it first when it is missing.
+  const logInToMobiusYou = useCallback(() => {
+    if (identityApp) {
+      openInstalledApp(identityApp.id)
+      return
+    }
+    const listing = displayCatalog.find((item) => item?.manifest?.id === 'identity')
+    selectTab('browse')
+    if (listing?.manifest) {
+      openDetail(listing)
+    } else {
+      setQuery('Möbius · You')
+    }
+  }, [identityApp, displayCatalog, selectTab, openDetail])
+
   const updateItems = useMemo(
     () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'update'),
     [displayCatalog, lifecycleById],
   )
+
+  const conflictItems = useMemo(
+    () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'conflict'),
+    [displayCatalog, lifecycleById],
+  )
+
+  // Shared "Resolve all" action: start the preserving resolver for every
+  // conflicting app at once. The backend spawn is idempotent per app+upstream,
+  // so this never duplicates a resolver already started from a card.
+  const handleResolveAllConflicts = async () => {
+    if (busy || resolvingAll || !conflictItems.length) return
+    setResolvingAll(true)
+    setCategory('update')
+    let started = 0
+    let failed = 0
+    let firstChatId = null
+    try {
+      for (const item of conflictItems) {
+        const appId = lifecycleById.get(item.id)?.installedApp?.id
+        if (!appId) { failed += 1; continue }
+        try {
+          const resolver = await createConflictResolverChat(appId, 'preserve_local', token)
+          if (resolver?.chat_id) {
+            started += 1
+            if (!firstChatId) firstChatId = resolver.chat_id
+          }
+        } catch (e) {
+          failed += 1
+          setCardErrors(prev => ({ ...prev, [item.id]: e.message || String(e) }))
+        }
+      }
+    } finally {
+      setResolvingAll(false)
+    }
+    await refreshInstalled()
+    const parts = []
+    if (started) parts.push(`${started} ${started === 1 ? 'app is' : 'apps are'} being reconciled`)
+    if (failed) parts.push(`${failed} could not start`)
+    setToast({
+      kind: failed ? 'error' : 'success',
+      message: `${parts.join('; ') || 'No conflicts to resolve'}.`,
+      action: firstChatId ? { label: 'Open agent', onClick: () => openChat(firstChatId) } : null,
+    })
+  }
 
   const handleUpdateAll = async () => {
     if (
@@ -1653,7 +1736,7 @@ export default function App({ appId, token }) {
     const attention = checked.filter((entry) => entry.disposition.kind !== 'ready')
     let completed = 0
     let failed = 0
-    const resolverChats = []
+    let conflicts = 0
     if (ready.length) {
       setBusy(true)
       setBusyActionKind('batch_update')
@@ -1666,15 +1749,13 @@ export default function App({ appId, token }) {
           const outcome = await handleInstall(entry.item, {
             isUpdate: true,
             batch: true,
+            deferResolver: true,
             capabilityDigest: entry.prepared.capabilityReview.preview.capability_digest,
             sourceDigest: entry.prepared.preview.source_digest,
           })
           if (outcome?.ok) completed += 1
-          else if (outcome?.conflict && outcome.resolver?.chat_id) {
-            resolverChats.push(outcome.resolver.chat_id)
-          } else {
-            failed += 1
-          }
+          else if (outcome?.conflict) conflicts += 1
+          else failed += 1
         }
         await refreshInstalled()
       } finally {
@@ -1688,15 +1769,15 @@ export default function App({ appId, token }) {
     const reviewCount = attention.length + failed
     const parts = []
     if (completed) parts.push(`${completed} ${completed === 1 ? 'app' : 'apps'} updated`)
-    if (resolverChats.length) {
-      parts.push(`${resolverChats.length} ${resolverChats.length === 1 ? 'conflict has' : 'conflicts have'} an agent review`)
+    if (conflicts) {
+      parts.push(`${conflicts} ${conflicts === 1 ? 'app needs' : 'apps need'} a quick reconcile`)
     }
     if (reviewCount) parts.push(`${reviewCount} ${reviewCount === 1 ? 'update needs' : 'updates need'} your review`)
     setToast({
-      kind: reviewCount ? 'error' : 'success',
+      kind: (reviewCount || conflicts) ? 'error' : 'success',
       message: `${parts.join('; ') || 'Everything is already up to date'}.`,
-      action: resolverChats.length === 1
-        ? { label: 'Open agent', onClick: () => openChat(resolverChats[0]) }
+      action: conflicts
+        ? { label: 'Resolve all', onClick: () => handleResolveAllConflicts() }
         : null,
     })
   }
@@ -1939,8 +2020,12 @@ export default function App({ appId, token }) {
                       ? 'checking'
                       : busyActionKind === 'batch_update' ? 'updating' : 'idle'}
                     updateAllProgress={batchProgress}
-                    updateAllDisabled={busy || !!checkingUpdateItemId || !!installedLoadError}
+                    updateAllDisabled={busy || resolvingAll || !!checkingUpdateItemId || !!installedLoadError}
                     onUpdateAll={handleUpdateAll}
+                    conflictCount={conflictItems.length}
+                    onResolveAll={handleResolveAllConflicts}
+                    resolveAllDisabled={busy || resolvingAll || checkingAllUpdates || !!installedLoadError}
+                    resolveAllState={resolvingAll ? 'resolving' : 'idle'}
                     mode={tab}
                   />
                   {tab === 'library' && (
@@ -2030,6 +2115,7 @@ export default function App({ appId, token }) {
             token={token}
             onUploadSpotlightArtwork={handleUploadSpotlightArtwork}
             onPublishSpotlight={handlePublishSpotlight}
+            onLogInToMobiusYou={logInToMobiusYou}
             contributeAvailable={!!contributeApp}
             onOpenContributions={(localAppId) => openInstalledApp(
               contributeApp.id,
