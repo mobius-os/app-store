@@ -46,9 +46,10 @@ export async function loadLocalGithubIdentity(token) {
   }
 }
 
-export async function loadCommunityApps(token, { query = '', limit = 50, offset = 0 } = {}) {
+export async function loadCommunityApps(token, { query = '', limit = 50, offset = 0, signal } = {}) {
   const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset) })
   const response = await fetch(`/api/community/apps?${params}`, {
+    signal,
     headers: communityHeaders(token),
   })
   return communityResponse(response, 'Community apps could not be loaded.')

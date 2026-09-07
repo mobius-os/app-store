@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Pause, Play } from '@openai/apps-sdk-ui/components/Icon'
+import { useEffect, useState, useRef } from 'react'
+import { Pause, Play, ChevronLeft, ChevronRight, ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
 import { CatalogCard } from './CatalogCard.jsx'
-import { catalogCollection } from '../domain.js'
+import { catalogCollection, newestPublications, libraryCollections } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
@@ -120,9 +120,16 @@ export function CatalogList({
   onLoadMore,
   editorial = false,
   spotlightFeed = null,
+  activeCollection = null,
+  onOpenCollection,
+  onCloseCollection,
+  shelfScrollRef,
+  lifecycleById = new Map(),
   layout = 'grid',
 }) {
-  const hostedSpotlights = editorial && Array.isArray(spotlightFeed?.items)
+  const arrivals = (editorial || activeCollection) ? newestPublications(items) : []
+  const discover = editorial || !!activeCollection
+  const hostedSpotlights = discover && Array.isArray(spotlightFeed?.items)
     ? spotlightFeed.items.flatMap((entry) => {
         const item = items.find((candidate) => itemManifestId(candidate) === String(entry?.app_id || '').toLowerCase())
         if (!item) return []
@@ -134,7 +141,7 @@ export function CatalogList({
     : []
   const spotlights = hostedSpotlights.length
     ? hostedSpotlights
-    : editorial ? items.filter((item) => listingHero(item)).slice(0, 3) : []
+    : discover ? items.filter((item) => listingHero(item)).slice(0, 3) : []
   const [spotlightIndex, setSpotlightIndex] = useState(0)
   const [spotlightHoverPaused, setSpotlightHoverPaused] = useState(false)
   const [spotlightFocusPaused, setSpotlightFocusPaused] = useState(false)
@@ -145,7 +152,8 @@ export function CatalogList({
     ? Math.min(spotlightIndex, spotlights.length - 1)
     : 0
   const activeSpotlight = spotlights[activeSpotlightIndex]
-  const spotlightAutoPaused = spotlightHoverPaused
+  const spotlightAutoPaused = !!activeCollection
+    || spotlightHoverPaused
     || spotlightFocusPaused
     || spotlightUserPaused
     || spotlightReducedMotion
@@ -175,7 +183,7 @@ export function CatalogList({
     return () => window.clearTimeout(timer)
   }, [activeSpotlightIndex, spotlightAutoPaused, spotlights.length])
 
-  if (items.length === 0) {
+  if (items.length === 0 && !activeCollection) {
     return (
       <div className="st-empty">
         <div className="st-empty-title">{emptyTitle}</div>
@@ -214,9 +222,9 @@ export function CatalogList({
     />
   )
   const spotlightIds = new Set(spotlights.map((item) => item.id))
-  const pickPool = editorial ? items.filter((item) => !spotlightIds.has(item.id)) : []
+  const pickPool = discover ? items.filter((item) => !spotlightIds.has(item.id)) : []
   const pickRank = new Map(CURATED_PICK_IDS.map((id, index) => [id, index]))
-  const picks = editorial
+  const picks = discover
     ? [...pickPool].sort((a, b) => {
         const aRank = pickRank.has(a.id) ? pickRank.get(a.id) : CURATED_PICK_IDS.length
         const bRank = pickRank.has(b.id) ? pickRank.get(b.id) : CURATED_PICK_IDS.length
@@ -229,20 +237,28 @@ export function CatalogList({
   // Editorial placements are discovery lenses, not separate catalogs. Every
   // highlighted app remains an ordinary card in its stable category below.
   const groupedItems = items
-  const groups = CATALOG_COLLECTIONS
+  const groups = layout === 'list' ? libraryCollections(items, lifecycleById) : CATALOG_COLLECTIONS
     .map((group) => ({
       ...group,
       items: groupedItems.filter((item) => catalogCollection(item) === group.id),
     }))
     .filter((group) => group.items.length > 0)
-  const renderGroup = (group) => (
+  const collections = [
+    {id: 'picks', title: 'Our picks', items: picks},
+    {id: 'arrivals', title: 'New arrivals', description: 'Freshly published, newest first.', items: arrivals},
+    ...groups,
+  ]
+  const selectedCollection = collections.find(group => group.id === activeCollection)
+  const renderGroup = group => editorial ? (
+    <CatalogShelf key={group.id} group={group} onOpen={() => onOpenCollection(group.id)}
+      renderCard={item => renderCard(item, 'compact')} scrollPositions={shelfScrollRef} />
+  ) : (
     <section className="st-catalog-section" key={group.id} aria-labelledby={`st-group-${group.id}`}>
       <div className="st-catalog-section-head">
         <h2 id={`st-group-${group.id}`} className="st-catalog-section-title">{group.title}</h2>
-        {!editorial && layout !== 'list' ? <p className="st-catalog-section-desc">{group.description}</p> : null}
       </div>
-      <div className="st-catalog-grid">
-        {group.items.map((item) => renderCard(item, editorial ? 'editorial' : layout))}
+      <div className={layout === 'list' ? 'st-catalog-grid' : 'st-collection-grid'}>
+        {group.items.map(item => renderCard(item, layout === 'list' ? 'list' : 'compact'))}
       </div>
     </section>
   )
@@ -252,6 +268,27 @@ export function CatalogList({
     <CatalogStoreImage storeAppId={appId} path={path} alt="" className={className} loading={loading} />
   )
 
+  if (activeCollection) {
+    const selected = selectedCollection || {...CATALOG_COLLECTIONS.find(group => group.id === activeCollection), items: []}
+    return (
+      <div className="st-collection-view">
+        <header className="st-collection-heading">
+          <button type="button" className="st-btn st-btn-secondary" onClick={onCloseCollection}>
+            <ArrowLeft width={18} height={18} aria-hidden="true" /> Back
+          </button>
+          <div><h2>{selected.title}</h2><p>{selected.items.length} apps{hasMore && ['arrivals', 'community'].includes(activeCollection) ? ' loaded' : ''}</p></div>
+        </header>
+        <div className="st-collection-grid">{selected.items.map(item => renderCard(item, 'compact'))}</div>
+        {!selected.items.length ? <p className="st-empty-text">No apps match in this collection.</p> : null}
+        {hasMore && onLoadMore && ['arrivals', 'community'].includes(activeCollection) ? (
+          <div className="st-catalog-more"><button type="button" className="st-btn st-btn-secondary" disabled={loadingMore} onClick={onLoadMore}>
+            {loadingMore ? 'Loading more…' : 'Load more apps'}
+          </button></div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <div
       className={`st-catalog-sections${layout === 'list' ? ' is-list' : ''}${editorial ? ' is-editorial' : ''}`}
@@ -260,6 +297,7 @@ export function CatalogList({
       <span className="st-sr-only" role="status" aria-live="polite">
         {searchLoading ? 'Refreshing shared listings.' : ''}
       </span>
+
       {activeSpotlight ? (
         <section
           className="st-spotlights"
@@ -332,12 +370,8 @@ export function CatalogList({
           </div>
         </section>
       ) : null}
-      {picks.length ? (
-        <section className="st-picks" aria-labelledby="st-picks-title">
-          <div className="st-catalog-section-head"><h2 id="st-picks-title" className="st-catalog-section-title">Our picks</h2></div>
-          <div className="st-picks-grid">{picks.map((item) => renderCard(item, 'editorial'))}</div>
-        </section>
-      ) : null}
+      {editorial && picks.length ? renderGroup(collections[0]) : null}
+      {editorial && arrivals.length ? renderGroup(collections[1]) : null}
       {groups.map(renderGroup)}
       {hasMore && onLoadMore ? (
         <div className="st-catalog-more">
@@ -350,7 +384,41 @@ export function CatalogList({
   )
 }
 
-// Skeleton grid shown while catalog manifests are being fetched. Same
-// card footprint as the real grid, so the layout doesn't shift when
-// manifests resolve. Per-block width/height stay inline (dynamic
-// dimensions); the pulse animation lives in CSS.
+// Shared preview grammar for editorial picks, arrivals and ordinary categories.
+// Selection opens a host-owned view; this component never stretches the home.
+function CatalogShelf({group, onOpen, renderCard, scrollPositions}) {
+  const rowRef = useRef(null)
+  const [edges, setEdges] = useState({start: true, end: true})
+  useEffect(() => {
+    const row = rowRef.current
+    if (!row) return
+    row.scrollLeft = scrollPositions?.current?.[group.id] || 0
+    const measure = () => setEdges({start: row.scrollLeft <= 1, end: row.scrollLeft + row.clientWidth >= row.scrollWidth - 1})
+    const resize = new ResizeObserver(measure)
+    resize.observe(row)
+    measure()
+    row.addEventListener('scroll', measure, {passive: true})
+    return () => { resize.disconnect(); row.removeEventListener('scroll', measure) }
+  }, [group.id, group.items.length, scrollPositions])
+  const move = direction => rowRef.current?.scrollBy({
+    left: direction * rowRef.current.clientWidth,
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  })
+  return (
+    <section className="st-catalog-section st-shelf" aria-labelledby={`st-group-${group.id}`}>
+      <div className="st-catalog-section-head st-shelf-head">
+        <h2 id={`st-group-${group.id}`} className="st-catalog-section-title">{group.title}</h2>
+        <div className="st-shelf-controls">
+          <button type="button" className="st-shelf-arrow" aria-label={`Previous ${group.title} apps`} disabled={edges.start} onClick={() => move(-1)}><ChevronLeft width={18} height={18} /></button>
+          <button type="button" className="st-shelf-arrow" aria-label={`Next ${group.title} apps`} disabled={edges.end} onClick={() => move(1)}><ChevronRight width={18} height={18} /></button>
+          <button type="button" className="st-shelf-all" aria-label={`See all ${group.title}`} onClick={onOpen}>See all</button>
+        </div>
+      </div>
+      <div className="st-shelf-row" ref={rowRef} onScroll={event => {
+        if (scrollPositions) scrollPositions.current[group.id] = event.currentTarget.scrollLeft
+      }}>
+        {group.items.slice(0, 8).map(renderCard)}
+      </div>
+    </section>
+  )
+}

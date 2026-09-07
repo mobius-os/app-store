@@ -61,7 +61,7 @@ test('Browse presents a pausable auto-advancing spotlight while keeping ordinary
   assert.doesNotMatch(catalogList, /setInterval|autoPlay|autoplay/)
   assert.match(catalogList, /className="st-spotlight-open"/)
   assert.match(catalogList, /const groupedItems = items/)
-  assert.match(catalogList, /editorial \? 'editorial' : layout/)
+  assert.match(catalogList, /renderCard\(item, 'compact'\)/)
   assert.doesNotMatch(catalogList, /items\.filter\(\(item\) => !editorialIds\.has/)
   assert.doesNotMatch(catalogList, /role="button"/)
 })
@@ -97,4 +97,12 @@ test('Library exposes one Update all action instead of duplicate review controls
   assert.match(catalogFilters, /aria-label=\{`Update all/)
   assert.doesNotMatch(libraryHealth, /<button/)
   assert.doesNotMatch(libraryHealth, /Review updates/)
+})
+
+test('Browse leads with Spotlight, Our picks, New arrivals, then categories', () => {
+  const spotlight = catalogList.indexOf('{activeSpotlight ? (')
+  const picks = catalogList.indexOf('renderGroup(collections[0])')
+  const arrivals = catalogList.indexOf('renderGroup(collections[1])')
+  const categories = catalogList.indexOf('{groups.map(renderGroup)}')
+  assert.ok(spotlight >= 0 && spotlight < picks && picks < arrivals && arrivals < categories)
 })

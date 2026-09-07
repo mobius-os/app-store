@@ -13,3 +13,6 @@ export const Search = icon
 export const FileUpload = icon
 export const Pause = icon
 export const Play = icon
+
+export const ChevronLeft = icon
+export const ChevronRight = icon
