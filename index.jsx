@@ -1,3 +1,5 @@
+import { openDetailEntry, closeDetailEntry } from './store-navigation.js'
+import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
 // App Store — thin app shell. The module tree is declared in mobius.json's
 // source_files; the multi-file installer fetches each path and Rolldown bundles
 // from this entry, resolving the relative imports below at compile time.
@@ -294,6 +296,10 @@ function itemIdsSettledByChecks(items, apps, checks) {
 export default function App({ appId, token }) {
   const [tab, setTab] = useState('browse')
   const [query, setQuery] = useState('')
+  const [activeCollection, setActiveCollection] = useState(null)
+  const collectionNavRef = useRef(null)
+  const shelfScrollRef = useRef({})
+  const homeScrollRef = useRef(0)
   const [category, setCategory] = useState('all')
   const [catalog, setCatalog] = useState(() =>
     CATALOG.map(c => ({ ...c, manifest: c.manifest || null, error: null }))
@@ -343,7 +349,7 @@ export default function App({ appId, token }) {
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
   const [intentDestination, setIntentDestination] = useState(null)
   const [capabilityReviews, setCapabilityReviews] = useState({})
-  const navDetailRef = useRef(null)  // pending detail item during nav-push ack
+  const navDetailRef = useRef(null)  // host-owned reversible detail entry
   // B1: preserve the catalog grid's scroll across opening a detail and coming
   // back — the grid unmounts while a detail shows, so it would otherwise
   // re-mount scrolled to the top.
@@ -351,6 +357,9 @@ export default function App({ appId, token }) {
   const savedGridScrollRef = useRef(0)
   const selectTab = useCallback((next) => {
     if (next === tab) return
+    collectionNavRef.current?.close()
+    collectionNavRef.current = null
+    setActiveCollection(null)
     savedGridScrollRef.current = 0
     if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
     setTab(next)
@@ -530,27 +539,42 @@ export default function App({ appId, token }) {
   }, [appId, token, clearSettledUpdateArtifacts])
 
   const communityRequestRef = useRef(0)
-  const refreshCommunity = useCallback(async ({ append = false } = {}) => {
+  const communityAbortRef = useRef(null)
+  const communityBusyRef = useRef(false)
+  const refreshCommunity = useCallback(async ({ append = false, background = false } = {}) => {
+    if (background && communityBusyRef.current) return
+    communityAbortRef.current?.abort()
+    const controller = new AbortController()
+    communityAbortRef.current = controller
+    communityBusyRef.current = true
     const requestId = communityRequestRef.current + 1
     communityRequestRef.current = requestId
     const limit = 24
     const offset = append ? communityOffset : 0
-    setCommunityLoading(true)
+    if (!background) setCommunityLoading(true)
     try {
-      const payload = await loadCommunityApps(token, { query: query.trim(), limit, offset })
+      // Refresh the loaded window atomically: do not discard pages the owner
+      // already loaded, or replace them with a partial failed refresh.
+      const target = background ? Math.max(limit, communityOffset) : limit
+      const page = await loadCommunityWindow(
+        params => loadCommunityApps(token, { ...params, query: query.trim(), signal: controller.signal }),
+        { offset, limit, target: append ? offset + limit : target },
+      )
       if (communityRequestRef.current !== requestId) return
-      const page = communityCatalogPage(payload, limit)
       setCommunityCatalog((current) => append
         ? mergeCommunityCatalog(current, page.items)
         : page.items)
-      setCommunityOffset(offset + page.rowCount)
+      setCommunityOffset(page.nextOffset)
       setCommunityHasMore(page.hasMore)
       setCommunityError('')
     } catch (error) {
-      if (communityRequestRef.current !== requestId) return
+      if (communityRequestRef.current !== requestId || controller.signal.aborted) return
       setCommunityError(error?.message || 'Community apps are unavailable right now.')
     } finally {
-      if (communityRequestRef.current === requestId) setCommunityLoading(false)
+      if (communityRequestRef.current === requestId) {
+        communityBusyRef.current = false
+        setCommunityLoading(false)
+      }
     }
   }, [token, query, communityOffset])
 
@@ -605,7 +629,12 @@ export default function App({ appId, token }) {
       setCommunityOffset(0)
       refreshCommunity({ append: false })
     }, query ? 250 : 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      communityAbortRef.current?.abort()
+      communityRequestRef.current += 1
+      communityBusyRef.current = false
+    }
   // Pagination state changes after a page arrives; only query/tab changes or
   // an explicit Load more action should issue another request.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -615,18 +644,13 @@ export default function App({ appId, token }) {
     if (searchOpen) searchInputRef.current?.focus()
   }, [searchOpen])
 
+  const refreshCommunityRef = useRef(refreshCommunity)
+  useLayoutEffect(() => { refreshCommunityRef.current = refreshCommunity }, [refreshCommunity])
   useEffect(() => {
-    if (!communityError || tab !== 'browse') return undefined
-    const retry = () => refreshCommunity({ append: false })
-    const timer = window.setInterval(retry, 30_000)
-    window.addEventListener('online', retry)
-    window.addEventListener('focus', retry)
-    return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('online', retry)
-      window.removeEventListener('focus', retry)
-    }
-  }, [communityError, tab, refreshCommunity])
+    if (tab !== 'browse') return undefined
+    return watchCatalogFreshness(() => refreshCommunityRef.current({ background: true }))
+  }, [tab])
+
 
   const refreshGithubIdentity = useCallback(async () => {
     try {
@@ -1333,78 +1357,55 @@ export default function App({ appId, token }) {
     return () => clearTimeout(t)
   }, [toast])
 
-  // Integrate with the shell's back-stack so device back / swipe-back
-  // dismisses the detail view first instead of closing the whole app.
-  // Same protocol prod's klix-filter uses (moebius:nav-push / nav-pop
-  // / nav-back postMessages, validated by Shell.jsx). When the shell
-  // tells us the user navigated back, we clear `detail` ourselves; the
-  // shell has already popped its sentinel so we don't echo nav-pop.
-  useEffect(() => {
-    function onMessage(event) {
-      if (event.origin !== window.location.origin) return
-      if (event.source !== window.parent) return
-      if (event.data?.type === 'moebius:nav-back') {
-        setDetail(null)
-        navDetailRef.current = null
-      }
+  // Each nested level owns one reversible host entry. No iframe history or
+  // timeout fallback: an unowned view would strand the device's Back gesture.
+  const openDetail = useCallback(item => openDetailEntry(navDetailRef, item, {
+    nav: window.mobius.nav,
+    show: setDetail,
+    prepare: target => {
+      reviewCapabilities(target)
+      if (!navDetailRef.current) savedGridScrollRef.current = gridScrollRef.current?.scrollTop || 0
+    },
+  }), [reviewCapabilities])
+
+  const openCollection = useCallback(async id => {
+    if (collectionNavRef.current) return
+    homeScrollRef.current = gridScrollRef.current?.scrollTop || 0
+    const leave = () => {
+      collectionNavRef.current = null
+      savedGridScrollRef.current = homeScrollRef.current
+      setActiveCollection(null)
     }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    let handle
+    handle = window.mobius.nav.open('app-store-collection', {
+      onBack: leave,
+      onForward: () => {
+        setTab('browse')
+        setCategory('all')
+        collectionNavRef.current = handle
+        savedGridScrollRef.current = 0
+        setActiveCollection(id)
+      },
+    })
+    collectionNavRef.current = handle
+    const {status} = await handle.outcome
+    if (collectionNavRef.current !== handle) { handle.close(); return }
+    if (status !== 'owned') { collectionNavRef.current = null; return }
+    savedGridScrollRef.current = 0
+    setActiveCollection(id)
   }, [])
 
-  // openDetail: ask the shell to push a back-sentinel BEFORE rendering
-  // the detail view, so a swipe-back gesture snapshots the catalog as
-  // the under-page. The ack/rejected pair (with requestId) keeps
-  // concurrent pushes from cross-resolving.
-  const openDetail = useCallback(async (item) => {
-    if (!item || !item.manifest) return
-    reviewCapabilities(item)
-    savedGridScrollRef.current = gridScrollRef.current?.scrollTop || 0
-    if (navDetailRef.current && !detail) return
-    if (detail) {
-      // Already in a detail view (defensive — UI shouldn't allow this).
-      // Swap without a second nav-push.
-      setDetail(item)
-      return
-    }
-    const requestId = `np-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    navDetailRef.current = item
-    try {
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          window.removeEventListener('message', onAck)
-          reject(new Error('nav-push ack timeout'))
-        }, 5000)
-        function onAck(event) {
-          if (event.origin !== window.location.origin) return
-          if (event.source !== window.parent) return
-          if (event.data?.requestId !== requestId) return
-          if (event.data.type === 'moebius:nav-push-ack') {
-            clearTimeout(timer)
-            window.removeEventListener('message', onAck)
-            resolve()
-          } else if (event.data.type === 'moebius:nav-push-rejected') {
-            clearTimeout(timer)
-            window.removeEventListener('message', onAck)
-            reject(new Error('rejected'))
-          }
-        }
-        window.addEventListener('message', onAck)
-        window.parent.postMessage(
-          { type: 'moebius:nav-push', label: 'app-store-detail', requestId },
-          window.location.origin,
-        )
-      })
-      setDetail(item)
-    } catch {
-      // Older shell without ack support, or the host hung — fall back
-      // to rendering the detail anyway. The back gesture will close the
-      // whole app instead of the detail view, but the detail is still
-      // usable.
-      navDetailRef.current = null
-      setDetail(item)
-    }
-  }, [detail, reviewCapabilities])
+  const closeCollection = useCallback(() => {
+    collectionNavRef.current?.close()
+    collectionNavRef.current = null
+    savedGridScrollRef.current = homeScrollRef.current
+    setActiveCollection(null)
+  }, [])
+
+  useEffect(() => () => {
+    navDetailRef.current?.handle.close()
+    collectionNavRef.current?.close()
+  }, [])
 
   const prepareCatalogUpdate = useCallback(async (item) => {
     const installedApp = findInstalled(installed, item)
@@ -1553,25 +1554,13 @@ export default function App({ appId, token }) {
     }
   }, [agentErrorItemId, installed, token])
 
-  // closeDetail: tell the shell to pop its sentinel, then clear our
-  // own detail state. Idempotent — calling when detail is already
-  // null is a no-op.
-  const closeDetail = useCallback(() => {
-    if (!detail) return
-    window.parent.postMessage(
-      { type: 'moebius:nav-pop' },
-      window.location.origin,
-    )
-    setDetail(null)
-    navDetailRef.current = null
-  }, [detail])
+  const closeDetail = useCallback(() => closeDetailEntry(navDetailRef, setDetail), [])
 
-  // B1: returning from a detail re-mounts the grid; restore its saved scroll.
   useLayoutEffect(() => {
-    if (!detail && gridScrollRef.current && savedGridScrollRef.current) {
+    if (!detail && gridScrollRef.current) {
       gridScrollRef.current.scrollTop = savedGridScrollRef.current
     }
-  }, [detail])
+  }, [detail, activeCollection])
 
   // Roving tab navigation: ArrowLeft/ArrowRight move selection between the
   // tabs with wrap, and move DOM focus to the newly-selected tab (the
@@ -1815,11 +1804,10 @@ export default function App({ appId, token }) {
     if (!intentDestination || loadingCatalog) return
     if (intentDestination.kind === 'updates') {
       setIntentDestination(null)
+      closeDetail()
       selectTab('library')
       setCategory('update')
       setQuery('')
-      setDetail(null)
-      navDetailRef.current = null
       return
     }
     const resolution = resolveCatalogItemIntent(displayCatalog, intentDestination.itemId)
@@ -1838,7 +1826,7 @@ export default function App({ appId, token }) {
     }
     const item = resolution.item
     void openDetail(item)
-  }, [displayCatalog, intentDestination, loadingCatalog, openDetail])
+  }, [displayCatalog, intentDestination, loadingCatalog, openDetail, closeDetail, selectTab])
 
   // Detail view replaces the main layout when set.
   if (detail) {
@@ -2086,6 +2074,11 @@ export default function App({ appId, token }) {
                     onLoadMore={() => refreshCommunity({ append: true })}
                     editorial={tab === 'browse' && !query && category === 'all'}
                     spotlightFeed={spotlightFeed}
+                    activeCollection={tab === 'browse' ? activeCollection : null}
+                    onOpenCollection={openCollection}
+                    onCloseCollection={closeCollection}
+                    shelfScrollRef={shelfScrollRef}
+                    lifecycleById={lifecycleById}
                     layout={tab === 'library' ? 'list' : 'grid'}
                   />
                 </>}

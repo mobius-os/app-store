@@ -1,7 +1,7 @@
 {
   "id": "store",
   "name": "App Store",
-  "version": "1.20.2",
+  "version": "1.21.0",
   "description": "Discover, install, and update Möbius apps.",
   "author": "mobius-os",
   "license": "MIT",
@@ -61,7 +61,9 @@
     "ui/diff/DiffView.jsx",
     "ui/diff/FileDiffList.jsx",
     "ui/diff/styles.js",
-    "LISTING_ART.md"
+    "LISTING_ART.md",
+    "catalog-freshness.js",
+    "store-navigation.js"
   ],
   "static_assets": {
     "previews/artifacts-screen.png": "listing-assets/artifacts-screen.png",

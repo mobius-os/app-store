@@ -56,7 +56,15 @@ export function mergeCatalogEntries(baked = [], remote = []) {
   if (!Array.isArray(remote) || remote.length === 0) return baked
   const merged = new Map((baked || []).map((entry) => [entry.id, entry]))
   for (const entry of remote) {
-    merged.set(entry.id, { ...(merged.get(entry.id) || {}), ...entry })
+    const current = merged.get(entry.id)
+    // A published source migration must not be undone by an older catalogue
+    // copy. Only explicitly retired repositories receive this treatment;
+    // new remote sources continue to override the baked floor normally.
+    if (current?.previous_repositories?.includes(entry.repo)) {
+      merged.set(entry.id, {...entry, ...current})
+    } else {
+      merged.set(entry.id, { ...(current || {}), ...entry })
+    }
   }
   return [...merged.values()]
 }
@@ -730,6 +738,7 @@ export function communityCatalogItems(payload) {
         id,
         revision_id: String(latest.id || latest.revision_id || row.revision_id || ''),
         author: communityAuthor(row),
+        published_at: String(row.created_at || ''),
         rating_average: Number(row.rating_average ?? row.rating?.average ?? 0) || 0,
         rating_count: Number(row.rating_count ?? row.rating?.count ?? 0) || 0,
         user_rating: Number(row.user_rating || 0) || 0,
@@ -996,4 +1005,35 @@ export function hostnameOf(raw) {
   const trimmed = raw.trim()
   if (!trimmed) return ''
   try { return new URL(trimmed).hostname } catch { return '' }
+}
+
+// Publication time, never revision time: an update must not become a new arrival.
+export function newestPublications(items) {
+  const published = item => Date.parse(item.published_at || (item.community || item.community_feedback)?.published_at) || 0
+  return items.filter(item => published(item) > 0)
+    .sort((a, b) => published(b) - published(a) || a.id.localeCompare(b.id))
+}
+
+// Curated entries retain their own source identity when community feedback
+// is folded in; a person submitting a release is not its organization owner.
+export function catalogPublisher(item) {
+  const repo = catalogRepoIdentity(item)
+  if (repo) return repo.split('/')[0]
+  return item.manifest?.author || item.community?.author?.handle || 'Community'
+}
+
+export function libraryCollections(items, lifecycleById) {
+  const buckets = [
+    {id: 'attention', title: 'Needs attention', items: []},
+    {id: 'updates', title: 'Updates available', items: []},
+    {id: 'installed', title: 'Installed apps', items: []},
+  ]
+  for (const item of items) {
+    const state = lifecycleById.get(item.id)
+    if (!state?.installedApp) continue
+    const attention = state.setupNeedsAttention || ['conflict', 'unverified', 'unavailable'].includes(state.key)
+    buckets[attention ? 0 : state.key === 'update' ? 1 : 2].items.push(item)
+  }
+  for (const group of buckets) group.items.sort((a,b) => (a.manifest?.name || a.name || a.id).localeCompare(b.manifest?.name || b.name || b.id))
+  return buckets.filter(group => group.items.length)
 }

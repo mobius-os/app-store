@@ -1,6 +1,5 @@
 const FILTERS = [
   { id: 'all', label: 'All' },
-  { id: 'installed', label: 'Installed' },
   { id: 'update', label: 'Update' },
   { id: 'setup', label: 'Setup' },
 ]

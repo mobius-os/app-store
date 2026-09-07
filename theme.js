@@ -138,7 +138,7 @@ export const CSS = `
   touch-action: manipulation; user-select: none;
 }
 @media (hover: hover) {
-  .st-seg-btn:hover { color: var(--text); }
+  .st-seg-btn:hover { text-decoration: underline; text-underline-offset: 4px; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .st-seg-btn:active { opacity: 0.75; }
@@ -166,7 +166,7 @@ export const CSS = `
   place-items: center;
   padding: 0 5px;
   border-radius: 999px;
-  color: var(--accent);
+  color: var(--text);
   background: color-mix(in srgb, var(--accent) 13%, var(--bg));
   font-size: 10px;
   font-weight: 800;
@@ -174,8 +174,8 @@ export const CSS = `
   font-variant-numeric: tabular-nums;
 }
 .st-seg.is-accent .st-seg-btn.is-active .st-tab-count {
-  color: var(--accent-hover, var(--accent));
-  background: var(--accent-fg);
+  color: var(--accent-fg);
+  background: rgba(0, 0, 0, .22);
 }
 
 @media (max-width: 620px) {
@@ -299,12 +299,12 @@ export const CSS = `
 .st-resolve-all-trigger {
   margin-left: auto;
   background: transparent;
-  color: var(--accent);
+  color: var(--text);
 }
 .st-update-all-trigger + .st-resolve-all-trigger { margin-left: 8px; }
 .st-resolve-all-trigger .st-update-all-count {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
+  color: var(--text);
 }
 .st-library-health {
   display: grid;
@@ -364,7 +364,7 @@ export const CSS = `
 .st-publish-result span { color: var(--muted); font-size: 12px; }
 .st-publish-result a {
   width: fit-content; min-height: 44px; display: inline-flex; align-items: center;
-  margin-top: 5px; color: var(--accent); font-size: 12px; font-weight: 700;
+  margin-top: 5px; color: var(--text); font-size: 12px; font-weight: 700;
 }
 .st-publish-review {
   display: grid; gap: 16px; padding: 20px; border-radius: 16px;
@@ -407,7 +407,7 @@ export const CSS = `
 .st-community-provenance span { color: var(--muted); font-size: 11px; }
 .st-community-provenance a {
   min-height: 44px; display: inline-flex; align-items: center;
-  color: var(--accent); font-size: 12px; font-weight: 700; white-space: nowrap;
+  color: var(--text); font-size: 12px; font-weight: 700; white-space: nowrap;
 }
 .st-community-actions { display: flex; align-items: center; gap: 10px; }
 .st-community-actions .st-btn { min-height: 44px; padding: 7px 13px; }
@@ -421,7 +421,7 @@ export const CSS = `
 .st-rating-picker { display: flex; align-items: center; gap: 3px; margin: 16px 0 18px; }
 .st-rating-picker button {
   width: 44px; height: 44px; padding: 9px; border: 0; border-radius: 10px;
-  color: var(--accent); background: transparent; cursor: pointer;
+  color: var(--text); background: transparent; cursor: pointer;
 }
 @media (hover: hover) { .st-rating-picker button:not(:disabled):hover { background: var(--surface2, var(--surface)); } }
 .st-rating-picker button:disabled { opacity: .45; cursor: default; }
@@ -497,7 +497,7 @@ export const CSS = `
   .st-update-all-trigger:not(:disabled):active { transform: scale(0.97); }
 }
 @media (hover: hover) {
-  .st-chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+  .st-chip:hover { text-decoration: underline; text-underline-offset: 4px; }
 }
 .st-notice {
   margin: 0 0 14px;
@@ -751,7 +751,7 @@ export const CSS = `
   background: var(--surface2);
   border: 1px solid var(--border);
 }
-.st-icon-letter { font-size: 36px; font-weight: 700; color: var(--accent); }
+.st-icon-letter { font-size: 36px; font-weight: 700; color: var(--text); }
 /* A tiny check dot sits at the icon's bottom-right when the app is
    already installed. Quicker to read than the pill text, lets the grid
    double as an "at a glance" inventory. */
@@ -797,7 +797,7 @@ export const CSS = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.st-card-state-line.is-update { color: var(--accent); }
+.st-card-state-line.is-update { color: var(--text); }
 .st-card-state-line.is-conflict { color: var(--danger, #e5484d); }
 .st-card-state-line.is-unavailable { color: var(--muted); }
 .st-card-agent {
@@ -812,7 +812,7 @@ export const CSS = `
 .st-card-source-update {
   display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
-  border-radius: 999px; color: var(--accent); background: var(--accent-dim);
+  border-radius: 999px; color: var(--text); background: var(--accent-dim);
   font-size: 10px; font-weight: 800; letter-spacing: .01em; white-space: nowrap;
 }
 .st-repository-update {
@@ -823,7 +823,7 @@ export const CSS = `
 .st-repository-update strong, .st-repository-update span { display: block; }
 .st-repository-update strong { color: var(--text); font-size: 13px; margin-bottom: 4px; }
 .st-repository-update div > span { color: var(--muted); font-size: 12px; line-height: 1.45; }
-.st-repository-update-sha { color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 800; }
+.st-repository-update-sha { color: var(--text); font-family: var(--mono); font-size: 11px; font-weight: 800; }
 @media (max-width: 680px) { .st-repository-update { align-items: flex-start; flex-direction: column; } }
 .st-source-status {
   display: flex;
@@ -1043,7 +1043,7 @@ export const CSS = `
 }
 .st-host-badge.is-trusted {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
+  color: var(--text);
   border-color: var(--accent);
 }
 .st-host-badge-dot {
@@ -1068,7 +1068,7 @@ export const CSS = `
   flex-shrink: 0;
 }
 .st-back-btn {
-  background: none; border: none; color: var(--accent);
+  background: none; border: none; color: var(--text);
   font-size: 14px; cursor: pointer; padding: 8px 12px;
   font-family: var(--font); font-weight: 500;
   min-height: 44px;
@@ -1097,7 +1097,7 @@ export const CSS = `
   flex-shrink: 0; overflow: hidden;
 }
 .st-hero-icon.is-letter { background: var(--surface2); border: 1px solid var(--border); }
-.st-hero-icon-letter { font-size: 32px; font-weight: 700; color: var(--accent); }
+.st-hero-icon-letter { font-size: 32px; font-weight: 700; color: var(--text); }
 .st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: 0; user-select: none; }
 .st-hero-meta { font-size: 12px; color: var(--muted); font-family: var(--mono, monospace); user-select: none; }
 .st-detail-desc { font-size: 14px; line-height: 1.55; color: var(--text); margin-bottom: 24px; }
@@ -1193,7 +1193,7 @@ export const CSS = `
   font-size: 11px;
   line-height: 1.35;
 }
-.st-technical-details.is-attention .st-technical-summary-meta { color: var(--accent); }
+.st-technical-details.is-attention .st-technical-summary-meta { color: var(--text); }
 .st-technical-body {
   padding: 14px;
   border-top: 1px solid var(--border);
@@ -1207,7 +1207,7 @@ export const CSS = `
   font-size: 12px; font-weight: 600;
   font-family: var(--font); letter-spacing: 0;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent);
+  color: var(--text);
   border: 1px solid var(--accent);
   align-self: flex-start;
 }
@@ -1246,7 +1246,7 @@ export const CSS = `
   padding: 3px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 13%, transparent);
-  color: var(--accent);
+  color: var(--text);
   font-size: 12px;
   font-weight: 650;
 }
@@ -1283,10 +1283,10 @@ export const CSS = `
   border: 1px solid var(--accent); border-radius: 8px;
   font-size: 14px; line-height: 1.5;
 }
-.st-host-warn-icon { font-size: 16px; line-height: 1.2; color: var(--accent); flex-shrink: 0; }
+.st-host-warn-icon { font-size: 16px; line-height: 1.2; color: var(--text); flex-shrink: 0; }
 .st-host-warn-host { font-weight: 600; color: var(--text); font-family: var(--mono, monospace); }
 .st-host-warn-body { color: var(--muted); margin-top: 2px; }
-.st-link { color: var(--accent); text-decoration: none; }
+.st-link { color: var(--text); text-decoration: none; }
 .st-installed-note { font-size: 14px; color: var(--muted); user-select: none; }
 .st-detail-footer {
   padding: 16px; border-top: 1px solid var(--border);
@@ -1521,7 +1521,7 @@ export const CSS = `
   .st-btn-ghost:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 }
 .st-btn-secondary { background: var(--surface2, var(--surface)); }
-.st-btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }
+.st-btn-ghost { background: transparent; border-color: transparent; color: var(--text); }
 .st-btn-danger { background: var(--danger); border-color: var(--danger); color: var(--accent-fg); }
 .st-btn-icon { width: 44px; padding: 0; border-radius: 8px; font-size: 18px; }
 /* /mobius-ui:Button */
@@ -1658,7 +1658,7 @@ export const CSS = `
   display: flex; align-items: flex-start; justify-content: space-between; gap: 24px;
   margin: 4px 0 22px; padding: 22px 0 18px; border-bottom: 1px solid var(--border);
 }
-.st-eyebrow { color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.st-eyebrow { color: var(--text); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .st-publish-heading h2 { margin: 5px 0 6px; font-size: clamp(27px, 4vw, 40px); line-height: 1; letter-spacing: -.045em; }
 .st-publish-heading p { margin: 0; max-width: 46ch; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .st-publish-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
@@ -1667,7 +1667,7 @@ export const CSS = `
   color: var(--muted); background: var(--surface); border: 1px solid var(--border); font-size: 11px; font-weight: 700;
 }
 .st-publish-connection.is-ready { color: var(--green); border-color: color-mix(in srgb, var(--green) 32%, var(--border)); }
-.st-publish-connection-action { cursor: pointer; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); font-family: inherit; }
+.st-publish-connection-action { cursor: pointer; color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); font-family: inherit; }
 .st-publish-connection-action:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
 .st-publish-setup { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 .st-publish-setup > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
@@ -1768,7 +1768,7 @@ export const CSS = `
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 .st-spotlight-pagination .st-spotlight-toggle:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 24%, var(--border)); }
-.st-spotlight-pagination .st-spotlight-toggle[aria-pressed="true"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
+.st-spotlight-pagination .st-spotlight-toggle[aria-pressed="true"] { color: var(--text); border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
 .st-spotlight-stage { min-width: 0; }
 .st-spotlight-slide {
   position: relative; min-height: clamp(360px, 43vw, 520px); overflow: hidden;
@@ -1974,4 +1974,61 @@ export const CSS = `
   .st-header { width: min(100%, 1120px); margin-inline: auto; }
 }
 /* /mobius-ui:CenteredRail */
+
+/* Compact catalogue grammar: shared by each discovery shelf and full view. */
+.st-shelf { min-width: 0; }
+.st-shelf-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.st-shelf-controls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.st-shelf-arrow, .st-shelf-all { min-height: 44px; min-width: 44px; border: 0; background: transparent; color: var(--text); cursor: pointer; font: 600 13px var(--font); }
+.st-shelf-arrow { display: grid; place-items: center; border-radius: 50%; }
+.st-shelf-arrow:disabled { opacity: .3; cursor: default; }
+.st-shelf-all { padding: 0 10px; color: var(--text); }
+@media (hover: hover) {
+  .st-shelf-all:hover { text-decoration: underline; text-underline-offset: 4px; }
+  .st-shelf-arrow:not(:disabled):hover { outline: 1px solid currentColor; outline-offset: -6px; }
+}
+.st-shelf-row { display: grid; grid-template-rows: repeat(2, auto); grid-auto-flow: column; grid-auto-columns: calc((100% - 32px) / 3); gap: 12px 16px; overflow-x: auto; padding: 3px 2px 10px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; scroll-snap-type: x proximity; }
+.st-shelf-row > .st-card { scroll-snap-align: start; }
+.st-collection-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.st-collection-heading { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
+.st-collection-heading h2 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+.st-collection-heading p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.st-collection-heading .st-btn { display: flex; align-items: center; gap: 6px; min-height: 44px; }
+.st-card.is-compact, .st-card.is-list {
+  display: grid; grid-template-columns: 62px minmax(0,1fr) auto;
+  grid-template-rows: auto auto auto auto; gap: 2px 12px;
+  align-items: center; min-width: 0; min-height: 92px;
+  padding: 10px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: left;
+}
+.st-card.is-compact:hover, .st-card.is-list:hover { transform: none; box-shadow: none; background: transparent; }
+.st-card.is-compact .st-icon-slot, .st-card.is-list .st-icon-slot { grid-column: 1; grid-row: 1 / span 4; margin: 0; }
+.st-card.is-compact .st-icon-wrap, .st-card.is-list .st-icon-wrap { width: 62px; height: 62px; }
+.st-card.is-compact .st-card-open, .st-card.is-list .st-card-open { grid-column: 2; grid-row: 1; align-self: end; text-align: left; font-size: 15px; line-height: 1.35; margin: 0; min-height: 0; }
+.st-card.is-compact .st-card-desc, .st-card.is-list .st-card-desc { grid-column: 2; grid-row: 2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; line-height: 1.4; min-height: 0; margin: 0; color: var(--muted); text-align: left; }
+.st-card-byline { grid-column: 2; grid-row: 3; color: var(--muted); font-size: 12px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-card.is-compact .st-card-state-row, .st-card.is-list .st-card-state-row { grid-column: 2; grid-row: 4; margin: 0; min-height: 0; justify-content: flex-start; }
+.st-card.is-compact .st-card-status-row, .st-card.is-list .st-card-status-row { grid-column: 3; grid-row: 1 / span 4; margin: 0; align-self: center; }
+.st-card.is-compact .st-card-action, .st-card.is-list .st-card-action { width: auto; min-width: 60px; min-height: 44px; height: auto; padding: 8px 13px; border: 0; border-radius: 999px; background: var(--surface); color: var(--text); font: 650 12px/1.3 var(--font); }
+.st-card.is-compact .st-card-action.is-update, .st-card.is-list .st-card-action.is-update { background: var(--accent); color: var(--accent-text, white); }
+.st-card.is-compact .st-card-notice, .st-card.is-compact .st-card-inline-error, .st-card.is-list .st-card-notice, .st-card.is-list .st-card-inline-error { grid-column: 1 / -1; grid-row: auto; }
+.st-catalog-sections.is-list .st-catalog-grid { gap: 0; }
+.st-catalog-sections.is-list .st-card + .st-card { border-top: 1px solid var(--border); }
+@media (max-width: 1100px) {
+  .st-shelf-row { grid-auto-columns: calc((100% - 16px) / 2); }
+  .st-collection-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 620px) {
+  .st-shelf-row { grid-auto-columns: minmax(280px, 91%); }
+  .st-collection-grid { grid-template-columns: minmax(0,1fr); gap: 12px; }
+  .st-shelf-controls { gap: 0; }
+  .st-card.is-compact, .st-card.is-list { grid-template-columns: 52px minmax(0,1fr) auto; gap: 2px 10px; }
+  .st-card.is-compact .st-icon-wrap, .st-card.is-list .st-icon-wrap { width: 52px; height: 52px; }
+  .st-card.is-compact .st-card-action, .st-card.is-list .st-card-action { padding: 8px 10px; min-width: 54px; }
+}
+
+/* Library keeps maintenance controls compact, leaving room for the apps. */
+.st-scroll.is-library .st-category-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.st-scroll.is-library .st-chip { flex: 0 0 auto; width: auto; min-height: 44px; padding: 8px 14px; }
+.st-scroll.is-library .st-update-all-trigger { width: auto; min-height: 44px; margin-left: auto; padding: 8px 16px; }
+.st-scroll.is-library .st-library-health { padding: 14px; margin-bottom: 22px; }
 `

@@ -909,9 +909,9 @@
       "id": "kanban",
       "name": "Kanban",
       "description": "Kanban boards you can share: drag-and-drop lists and cards, labels, and live collaboration with people on their own Möbius.",
-      "repo": "hamzamerzic/app-kanban",
-      "manifest_url": "https://raw.githubusercontent.com/hamzamerzic/app-kanban/main/mobius.json",
-      "raw_base": "https://raw.githubusercontent.com/hamzamerzic/app-kanban/main/",
+      "repo": "mobius-os/app-kanban",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-kanban/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-kanban/main/",
       "categories": [
         "productivity",
         "collaboration"
@@ -934,7 +934,11 @@
       ],
       "audience": "general",
       "collection": "everyday",
-      "summary": "Shareable drag-and-drop boards."
+      "summary": "Shareable drag-and-drop boards.",
+      "previous_repositories": [
+        "hamzamerzic/app-kanban"
+      ],
+      "published_at": "2026-08-31T19:12:46+00:00"
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { appLifecycleFor, busyLabelForAction, catalogCardDescription } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, catalogCardDescription, catalogPublisher } from '../domain.js'
 import { ArrowRotateCw, ArrowUpRight, Chat, Check, Download } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 
@@ -146,7 +146,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   // z-index layer above that overlay so it stays independently clickable.
   // No nested role=button, no stopPropagation gymnastics.
   return (
-    <div className={`${cardVariantClass(cardVariant)}${layout === 'list' ? ' is-list' : layout === 'editorial' ? ' is-editorial-row' : ' is-catalog'}`}>
+    <div className={`${cardVariantClass(cardVariant)}${layout === 'compact' ? ' is-compact' : layout === 'list' ? ' is-list' : layout === 'editorial' ? ' is-editorial-row' : ' is-catalog'}`}>
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
         {(cardVariant === 'installed' || cardVariant === 'update') && (
@@ -165,13 +165,14 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       >
         {m.name}
       </button>
-      {(showLifecycleStatus || m.embeds_agent || item.community?.repository_update) && (
+      {(showLifecycleStatus || lifecycle.setupNeedsAttention || m.embeds_agent || item.community?.repository_update) && (
       <div className="st-card-state-row">
         {showLifecycleStatus ? (
           <div className={`st-card-state-line is-${lifecycle.key}`}>
             {lifecycle.statusLabel}
           </div>
         ) : null}
+        {lifecycle.setupNeedsAttention ? <span className="st-card-state-line">Setup needed</span> : null}
         {m.embeds_agent ? (
           <span className="st-card-agent" title="This app includes an in-app agent">Agent</span>
         ) : null}
@@ -185,6 +186,9 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       {description ? (
         <div className="st-card-desc">{description}</div>
       ) : null}
+      {(layout === 'compact' || layout === 'list') ? (
+        <div className="st-card-byline">{catalogPublisher(item)}</div>
+      ) : null}
       <div className="st-card-status-row">
         <button
           type="button"
@@ -194,7 +198,9 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
           aria-label={`${actionLabel} ${m.name}`}
           title={actionLabel}
         >
-          <ActionIcon width={20} height={20} aria-hidden="true" />
+          {(layout === 'compact' || layout === 'list')
+            ? actionLabel
+            : <ActionIcon width={20} height={20} aria-hidden="true" />}
         </button>
       </div>
       {showUpdateNotice ? (

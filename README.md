@@ -92,3 +92,41 @@ storage).
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+### Fresh community discovery
+
+Browse quietly revalidates community listings every minute while visible and
+online, and on focus/reconnection. Refresh preserves the loaded page window;
+failed refreshes retain the last successful listings. Query changes cancel
+old requests. Catalogue refresh never navigates or replaces an open detail.
+
+Spotlight stays first, followed by Our picks, New arrivals, and the existing
+categories. All previews use the same compact two-row horizontal shelf (up to
+eight entries). See all opens a separate collection view using the host's
+reversible navigation; Back restores home and shelf scroll positions. App
+details return to their owning collection. Further community pages can be
+loaded inside the collection view. Empty searches retain the collection Back.
+Publication dates, not revision updates, determine New arrivals order. Entries
+without a known publication date remain in the ordinary catalogue.
+
+Library uses compact rows grouped into Needs attention, Updates available, and
+Installed apps. Existing setup, permission review, conflict resolution, and
+update controls remain authoritative; grouping does not bypass any action.
+
+Publisher labels come from each app's repository identity, not a community
+feedback submitter. Kanban's curated entry points to mobius-os/app-kanban
+and retains its verified original publication date. Its explicit
+previous_repositories marker prevents the stale remote catalogue from reverting
+to the retired personal source; unrelated future remote source changes still
+win normally. The older community listing is not relabeled or merged across
+repository identities. This changes catalogue source metadata, not the community registry. Remove the retired-source marker once stale catalogues no longer
+advertise that source.
+
+Verification: contract/design/evidence reviewed at the owning catalogue seam;
+no new shell mechanism. Regression tests cover date
+ordering, author normalization, refresh cadence, pagination, atomic failure,
+visibility, offline and cleanup.
+
+Store typography uses the theme foreground (white in dark mode), not purple accent
+text. Discovery links use underlines on hover, and shelf arrows use outlines;
+accent button fills and keyboard focus remain intact. Styling stays in theme.js.
