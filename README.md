@@ -46,7 +46,12 @@ sensible.
 
 ### Naming convention
 
-Manifest `id` == repo name minus the `app-` prefix == lowercased display name; renames set `previous_id` so installs migrate in place rather than duplicating.
+Manifest `id` == repo name minus the `app-` prefix == lowercased display name.
+Renames change all three together. Set `previous_id` so installs migrate in
+place; when the GitHub repository also changes, set `previous_manifest_url` to
+the old root manifest URL. Möbius keeps the numeric app row and saved data,
+moves the source slug, adopts the new package identity, and updates the clone's
+origin instead of leaving the former product name as permanent plumbing.
 
 ### Adding a new curated app
 

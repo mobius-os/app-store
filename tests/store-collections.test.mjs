@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {catalogPublisher, libraryCollections, mergeCatalogEntries, newestPublications, mergeOfficialCommunityFeedback} from '../domain.js'
+import {MANIFEST_SNAPSHOTS} from '../manifest-snapshots.js'
 
 test('a curated repository owner is not replaced by the person submitting community feedback', () => {
   assert.equal(catalogPublisher({repo:'mobius-os/app-kanban',community_feedback:{author:{handle:'example-publisher'}}}), 'mobius-os')
@@ -33,6 +34,21 @@ test('Social uses the maintained organization source and retires its stale publi
   const merged=mergeOfficialCommunityFeedback([{...social,manifest:{id:'common'}}],[stale])
   assert.equal(merged.length,1)
   assert.equal(merged[0].community_feedback,undefined)
+})
+test('renamed first-party apps use their canonical package identities', () => {
+  const data=JSON.parse(readFileSync(new URL('../catalog.json',import.meta.url)))
+  const integrations=data.apps.find(x=>x.id==='integrations')
+  const pages=data.apps.find(x=>x.id==='pages')
+  assert.equal(integrations.name,'Integrations')
+  assert.equal(integrations.repo,'mobius-os/app-integrations')
+  assert.equal(MANIFEST_SNAPSHOTS.integrations.id,'integrations')
+  assert.equal(MANIFEST_SNAPSHOTS.integrations.previous_id,'connections')
+  assert.equal(integrations.listing.screenshots[0].alt,'Standalone Integrations app screen')
+  assert.equal(pages.name,'Pages')
+  assert.equal(pages.repo,'mobius-os/app-pages')
+  assert.equal(MANIFEST_SNAPSHOTS.pages.id,'pages')
+  assert.equal(MANIFEST_SNAPSHOTS.pages.previous_id,'artifacts')
+  assert.equal(pages.listing.screenshots[0].alt,'Standalone Pages app screen')
 })
 test('Library groups attention and updates first without duplicating or adding uninstalled apps', () => {
   const rows=['ready','update','setup','conflict','not-installed'].map(id=>({id,name:id}))

@@ -164,10 +164,10 @@ export const MANIFEST_SNAPSHOTS = {
       "seed-memory/notes/memory-is-visible-to-the-partner.md"
     ]
   },
-  "connections": {
-    "id": "connections",
+  "integrations": {
+    "id": "integrations",
     "name": "Integrations",
-    "version": "0.4.1",
+    "version": "0.5.0",
     "description": "Give your agents new tools through MCP integrations — with live health, honest per-message cost, and curated suggestions.",
     "author": "mobius-os",
     "license": "MIT",
@@ -188,15 +188,18 @@ export const MANIFEST_SNAPSHOTS = {
       "esm_deps": []
     },
     "skills": [
-      "connections.md"
+      "integrations.md"
     ],
     "source_files": [
       "theme.js",
       "api.js",
       "suggestions.js",
-      "connections.md",
+      "integrations.md",
       "icon.png"
-    ]
+    ],
+    "homepage": "https://github.com/mobius-os/app-integrations",
+    "previous_id": "connections",
+    "previous_manifest_url": "https://raw.githubusercontent.com/mobius-os/app-connections/main/mobius.json"
   },
   "connect": {
     "id": "connect",
@@ -440,27 +443,27 @@ export const MANIFEST_SNAPSHOTS = {
       "execution": "none"
     }
   },
-  "artifacts": {
-    "id": "artifacts",
-    "name": "Artifacts",
-    "version": "0.6.3",
-    "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
+  "pages": {
+    "id": "pages",
+    "name": "Pages",
+    "version": "0.7.0",
+    "description": "Browse, preview, version, share, view, copy, and download self-contained pages — interactive mockups, explainers, and polished documents — created in Möbius chats.",
     "author": "mobius-os",
     "license": "MIT",
-    "homepage": "https://github.com/mobius-os/app-artifacts",
+    "homepage": "https://github.com/mobius-os/app-pages",
     "entry": "index.jsx",
     "system_app": true,
-    "system_prompt": "artifacts-core.md",
+    "system_prompt": "pages-core.md",
     "icon": "icon.png",
     "skills": [
-      "artifacts.md"
+      "pages.md"
     ],
     "permissions": {
       "chat_log_access": "summary"
     },
     "source_files": [
-      "artifacts-core.md",
-      "artifacts.md",
+      "pages-core.md",
+      "pages.md",
       "domain.js",
       "linkPreview.js",
       "source-syntax.js",
@@ -491,7 +494,9 @@ export const MANIFEST_SNAPSHOTS = {
         "@codemirror/view",
         "@openai/apps-sdk-ui/components/Icon"
       ]
-    }
+    },
+    "previous_id": "artifacts",
+    "previous_manifest_url": "https://raw.githubusercontent.com/mobius-os/app-artifacts/main/mobius.json"
   },
   "maps": {
     "id": "maps",

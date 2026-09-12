@@ -49,12 +49,12 @@ const CATALOG_COLLECTIONS = [
 ]
 
 const CURATED_PICK_IDS = [
-  'artifacts',
+  'pages',
   'news',
   'notes',
   'tasks',
   'reflection',
-  'connections',
+  'integrations',
 ]
 
 function listingFor(item) {
