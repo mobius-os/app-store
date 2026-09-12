@@ -89,7 +89,7 @@
     },
     {
       "id": "connections",
-      "name": "Connections",
+      "name": "Integrations",
       "description": "Add remote MCP services once and both agent runtimes can use them — with live health, honest per-message cost, and curated suggestions.",
       "repo": "mobius-os/app-connections",
       "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-connections/main/mobius.json",
@@ -121,7 +121,7 @@
         "screenshots": [
           {
             "src": "connections-screen.png",
-            "alt": "Standalone Connections app screen",
+            "alt": "Standalone Integrations app screen",
             "label": "See connected tools and their availability at a glance."
           }
         ]
@@ -350,7 +350,7 @@
     },
     {
       "id": "artifacts",
-      "name": "Artifacts",
+      "name": "Pages",
       "description": "Browse, preview, version, and share the interactive HTML artifacts and documents your agent builds in chat — and jump back to the chat that made each one.",
       "repo": "mobius-os/app-artifacts",
       "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-artifacts/main/mobius.json",
@@ -383,7 +383,7 @@
         "screenshots": [
           {
             "src": "artifacts-screen.png",
-            "alt": "Standalone Artifacts app screen",
+            "alt": "Standalone Pages app screen",
             "label": "Begin from a focused canvas for interactive work."
           }
         ]

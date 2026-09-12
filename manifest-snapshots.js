@@ -442,7 +442,7 @@ export const MANIFEST_SNAPSHOTS = {
   },
   "artifacts": {
     "id": "artifacts",
-    "name": "Artifacts",
+    "name": "Pages",
     "version": "0.6.3",
     "description": "Browse, preview, version, share, view, copy, and download interactive pages and polished documents created in Möbius chats.",
     "author": "mobius-os",
