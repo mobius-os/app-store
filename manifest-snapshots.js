@@ -1583,5 +1583,51 @@ export const MANIFEST_SNAPSHOTS = {
         }
       ]
     }
+  },
+  "common": {
+    "id": "common",
+    "name": "Social",
+    "version": "0.1.3",
+    "description": "Federated social for Möbius people — private messages between instances, a community board, and people search.",
+    "author": "hamzamerzic",
+    "license": "MIT",
+    "homepage": "https://github.com/hamzamerzic/app-social",
+    "entry": "index.jsx",
+    "icon": "icon.png",
+    "offline_capable": false,
+    "permissions": {},
+    "source_files": [
+      "api.js",
+      "community.js",
+      "participation.js",
+      "reconciliation.js",
+      "theme.js",
+      "ui/Board.jsx",
+      "ui/Messages.jsx",
+      "ui/Thread.jsx",
+      "ui/GroupThread.jsx",
+      "ui/People.jsx",
+      "ui/Media.jsx",
+      "ui/MessageBubble.jsx",
+      "ui/landingImage.js",
+      "ui/modalFocus.js",
+      "ui/GroupDetails.jsx"
+    ],
+    "store": {
+      "tagline": "Your people, across every Möbius.",
+      "description": "Social gives every Möbius a direct way to reach people on other instances. Find someone by handle, send private one-to-one messages, create group conversations, or post to a shared community board.\n\nMessages travel directly between each person's Möbius and each side keeps its own copy. Everyone browses one global board and opt-in People directory. Private conversations stay on the participants’ own instances.",
+      "screenshots": [
+        {
+          "src": "static/store/messages.png",
+          "alt": "Social's empty Messages view with actions to find people or start a group.",
+          "label": "Private conversations between instances"
+        },
+        {
+          "src": "static/store/people.png",
+          "alt": "Social's People view with a search field for finding someone by handle.",
+          "label": "Find anyone by their Möbius handle"
+        }
+      ]
+    }
   }
 }

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-08-01",
+  "updated": "2026-09-12",
   "note": "Sole registry of Mobius App Store membership and discovery copy. The Store bundles this file as its offline floor and fetches the published copy at mount so new entries can appear without a Store release. Version-coupled manifest snapshots belong only in manifest-snapshots.js.",
   "apps": [
     {
@@ -939,6 +939,38 @@
         "hamzamerzic/app-kanban"
       ],
       "published_at": "2026-08-31T19:12:46+00:00"
+    },
+    {
+      "id": "common",
+      "name": "Social",
+      "description": "Federated social for Möbius people — private messages between instances, a community board, and people search.",
+      "repo": "mobius-os/app-social",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-social/main/",
+      "categories": [
+        "social",
+        "collaboration"
+      ],
+      "keywords": [
+        "social",
+        "messages",
+        "community board",
+        "people",
+        "federation",
+        "collaboration"
+      ],
+      "capabilities": [
+        "browse the shared community board",
+        "find people across Möbius instances",
+        "send private and group messages"
+      ],
+      "audience": "general",
+      "collection": "everyday",
+      "summary": "Your people, across every Möbius.",
+      "previous_repositories": [
+        "hamzamerzic/app-social"
+      ],
+      "published_at": "2026-09-02T16:57:55+00:00"
     }
   ]
 }
