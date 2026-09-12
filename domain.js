@@ -274,6 +274,23 @@ function githubRepoIdentity(url) {
   return match ? match[1].toLowerCase() : ''
 }
 
+// Store installs expose `source_manifest`; a locally authored app whose exact
+// accepted package has been attached to a public release exposes
+// `distribution_manifest` instead. The backend only creates the latter after
+// byte-for-byte package verification, so both are trustworthy package
+// identities for deciding whether a catalog card is already installed. They
+// are not interchangeable update authorities: update checks still come only
+// from the installed row's source provenance.
+function installedManifestIdentities(app) {
+  const identities = []
+  if (app?.manifest_url) identities.push(String(app.manifest_url))
+  for (const manifest of [app?.source_manifest, app?.distribution_manifest]) {
+    const canonical = canonicalIdentityKey(manifest?.url, manifest?.id)
+    if (canonical) identities.push(canonical)
+  }
+  return identities
+}
+
 let viewerGithubLogin = ''
 export function setInstalledMatchViewer(login) {
   viewerGithubLogin = String(login || '').trim().toLowerCase()
@@ -282,13 +299,17 @@ export function setInstalledMatchViewer(login) {
 function findInstalledPackage(installed, manifestUrl, manifestId, repository = '') {
   const canonical = canonicalIdentityKey(manifestUrl, manifestId)
   if (!canonical) return null
-  const exact = installed.find(a => a.manifest_url === canonical)
+  const exact = installed.find(
+    (app) => installedManifestIdentities(app).includes(canonical),
+  )
   if (exact) return exact
 
   const repoBase = trustedCatalogRepoBase(canonical)
   if (repoBase) {
     const trusted = installed.find(
-      (app) => trustedCatalogRepoBase(app.manifest_url || '') === repoBase,
+      (app) => installedManifestIdentities(app).some(
+        identity => trustedCatalogRepoBase(identity) === repoBase,
+      ),
     )
     if (trusted) return trusted
   }
@@ -299,7 +320,9 @@ function findInstalledPackage(installed, manifestUrl, manifestId, repository = '
     : githubRepoIdentity(canonical)
   if (itemRepo) {
     const byRepo = installed.find(
-      (app) => githubRepoIdentity(app.manifest_url || '') === itemRepo,
+      (app) => installedManifestIdentities(app).some(
+        identity => githubRepoIdentity(identity) === itemRepo,
+      ),
     )
     if (byRepo) return byRepo
   }

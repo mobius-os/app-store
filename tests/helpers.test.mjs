@@ -768,6 +768,29 @@ test('findInstalled matches canonical manifest identity, not slug', async () => 
   assert.equal(findInstalled(installed, item), installed[0])
 })
 
+test('findInstalled matches a verified local publication identity', async () => {
+  const { findInstalled } = await bundle()
+  const installed = [{
+    id: 119,
+    slug: 'common',
+    manifest_url: null,
+    source_manifest: null,
+    distribution_manifest: {
+      id: 'common',
+      url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
+      kind: 'published',
+    },
+  }]
+  const item = {
+    id: 'common',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
+    manifest: { id: 'common' },
+    repository: 'mobius-os/app-social',
+  }
+
+  assert.equal(findInstalled(installed, item), installed[0])
+})
+
 test('findInstalled treats trusted catalog commit pins as the same installed app', async () => {
   const { findInstalled } = await bundle()
   const pinned = {
