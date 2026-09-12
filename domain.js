@@ -279,9 +279,8 @@ export function setInstalledMatchViewer(login) {
   viewerGithubLogin = String(login || '').trim().toLowerCase()
 }
 
-export function findInstalled(installed, item) {
-  const manifestId = item.source_manifest?.id || item.manifest?.id || item.id
-  const canonical = canonicalIdentityKey(item.manifest_url, manifestId)
+function findInstalledPackage(installed, manifestUrl, manifestId, repository = '') {
+  const canonical = canonicalIdentityKey(manifestUrl, manifestId)
   if (!canonical) return null
   const exact = installed.find(a => a.manifest_url === canonical)
   if (exact) return exact
@@ -294,9 +293,9 @@ export function findInstalled(installed, item) {
     if (trusted) return trusted
   }
 
-  const itemRepo = typeof item.repository === 'string'
-    && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(item.repository)
-    ? item.repository.toLowerCase()
+  const itemRepo = typeof repository === 'string'
+    && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
+    ? repository.toLowerCase()
     : githubRepoIdentity(canonical)
   if (itemRepo) {
     const byRepo = installed.find(
@@ -304,6 +303,30 @@ export function findInstalled(installed, item) {
     )
     if (byRepo) return byRepo
   }
+  return null
+}
+
+export function findInstalled(installed, item) {
+  const manifestId = item.source_manifest?.id || item.manifest?.id || item.id
+  const current = findInstalledPackage(
+    installed, item.manifest_url, manifestId, item.repository,
+  )
+  if (current) return current
+
+  // A product rename may also rename its repository. The reviewed manifest
+  // declares the exact predecessor package so the old install remains the same
+  // numeric app and saved data instead of appearing as a duplicate.
+  const previousId = item.manifest?.previous_id
+  const previousManifestUrl = item.manifest?.previous_manifest_url
+  const predecessor = previousId && previousManifestUrl
+    ? findInstalledPackage(installed, previousManifestUrl, previousId)
+    : null
+  if (predecessor) return predecessor
+
+  const itemRepo = typeof item.repository === 'string'
+    && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(item.repository)
+    ? item.repository.toLowerCase()
+    : githubRepoIdentity(canonicalIdentityKey(item.manifest_url, manifestId))
 
   // The viewer's own app: a row whose publisher login or repository owner is
   // the connected GitHub account matches the locally authored app by id, so

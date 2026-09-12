@@ -88,19 +88,19 @@
       "summary": "A private knowledge graph for your agent."
     },
     {
-      "id": "connections",
+      "id": "integrations",
       "name": "Integrations",
       "description": "Add remote MCP services once and both agent runtimes can use them — with live health, honest per-message cost, and curated suggestions.",
-      "repo": "mobius-os/app-connections",
-      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-connections/main/mobius.json",
-      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-connections/main/",
+      "repo": "mobius-os/app-integrations",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-integrations/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-integrations/main/",
       "categories": [
         "system",
         "agents"
       ],
       "keywords": [
         "mcp",
-        "connections",
+        "integrations",
         "connectors",
         "remote tools",
         "agent capabilities",
@@ -108,8 +108,8 @@
         "tool cost"
       ],
       "capabilities": [
-        "manage MCP connections",
-        "verified connection suggestions",
+        "manage MCP integrations",
+        "verified integration suggestions",
         "per-message cost visibility"
       ],
       "audience": "developer",
@@ -349,18 +349,18 @@
       }
     },
     {
-      "id": "artifacts",
+      "id": "pages",
       "name": "Pages",
-      "description": "Browse, preview, version, and share the interactive HTML artifacts and documents your agent builds in chat — and jump back to the chat that made each one.",
-      "repo": "mobius-os/app-artifacts",
-      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-artifacts/main/mobius.json",
-      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-artifacts/main/",
+      "description": "Browse, preview, version, and share the interactive pages and documents your agent builds in chat — and jump back to the chat that made each one.",
+      "repo": "mobius-os/app-pages",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-pages/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-pages/main/",
       "categories": [
         "development",
         "productivity"
       ],
       "keywords": [
-        "artifacts",
+        "pages",
         "interactive",
         "html",
         "canvas",
@@ -370,16 +370,16 @@
         "documents"
       ],
       "capabilities": [
-        "build interactive artifacts in chat",
-        "preview and version artifacts",
-        "share artifacts publicly"
+        "build interactive pages in chat",
+        "preview and version pages",
+        "share pages publicly"
       ],
       "audience": "general",
       "collection": "create",
       "summary": "Create interactive pages and polished reports.",
       "listing": {
         "tagline": "Create interactive pages and polished reports.",
-        "description": "Browse, preview, version, and share the interactive HTML artifacts and documents your agent builds in chat — and jump back to the chat that made each one.",
+        "description": "Browse, preview, version, and share the interactive pages and documents your agent builds in chat — and jump back to the chat that made each one.",
         "screenshots": [
           {
             "src": "artifacts-screen.png",

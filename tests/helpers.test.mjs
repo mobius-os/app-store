@@ -835,6 +835,32 @@ test('findInstalled matches a trusted mobius-os app across any manifest-id skew'
   assert.equal(findInstalled([foreignRow], renamedItem), null)
 })
 
+test('findInstalled follows an explicit package and repository rename', async () => {
+  const { findInstalled } = await bundle()
+  const installed = {
+    id: 88,
+    slug: 'artifacts',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-artifacts/main#manifest-id=artifacts',
+    version: '0.6.4',
+  }
+  const renamed = {
+    id: 'pages',
+    repository: 'mobius-os/app-pages',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-pages/main/mobius.json',
+    manifest: {
+      id: 'pages',
+      previous_id: 'artifacts',
+      previous_manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-artifacts/main/mobius.json',
+    },
+  }
+
+  assert.equal(findInstalled([installed], renamed), installed)
+  assert.equal(findInstalled([{
+    ...installed,
+    manifest_url: 'https://raw.githubusercontent.com/someone-else/app-artifacts/main#manifest-id=artifacts',
+  }], renamed), null)
+})
+
 test('otherInstalledCatalogItems does not duplicate a curated app under id skew', async () => {
   const { otherInstalledCatalogItems } = await bundle()
   // The installed row carries the renamed id and a source_manifest, so it is a
