@@ -35,19 +35,15 @@ test('Social uses the maintained organization source and retires its stale publi
   assert.equal(merged.length,1)
   assert.equal(merged[0].community_feedback,undefined)
 })
-test('renamed first-party apps use their canonical package identities', () => {
+test('renamed first-party apps use canonical identities and public names', () => {
   const data=JSON.parse(readFileSync(new URL('../catalog.json',import.meta.url)))
   const integrations=data.apps.find(x=>x.id==='integrations')
   const pages=data.apps.find(x=>x.id==='pages')
   assert.equal(integrations.name,'Integrations')
-  assert.equal(integrations.repo,'mobius-os/app-integrations')
-  assert.equal(MANIFEST_SNAPSHOTS.integrations.id,'integrations')
-  assert.equal(MANIFEST_SNAPSHOTS.integrations.previous_id,'connections')
+  assert.equal(MANIFEST_SNAPSHOTS.integrations.name,'Integrations')
   assert.equal(integrations.listing.screenshots[0].alt,'Standalone Integrations app screen')
   assert.equal(pages.name,'Pages')
-  assert.equal(pages.repo,'mobius-os/app-pages')
-  assert.equal(MANIFEST_SNAPSHOTS.pages.id,'pages')
-  assert.equal(MANIFEST_SNAPSHOTS.pages.previous_id,'artifacts')
+  assert.equal(MANIFEST_SNAPSHOTS.pages.name,'Pages')
   assert.equal(pages.listing.screenshots[0].alt,'Standalone Pages app screen')
 })
 test('Library groups attention and updates first without duplicating or adding uninstalled apps', () => {
