@@ -226,7 +226,7 @@ export function readSetupCompletions() {
 
 export function hasConnectedProvider(status) {
   if (!status || typeof status !== 'object') return false
-  return Object.values(status).some((value) => value && value.authenticated)
+  return Object.values(status).some((value) => value && value.configured)
 }
 
 export function readSystemSetupReady() {
