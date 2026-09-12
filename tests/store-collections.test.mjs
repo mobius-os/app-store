@@ -23,6 +23,17 @@ test('Kanban uses the verified organization source and keeps its original public
   assert.equal(merged.length,1)
   assert.equal(merged[0].community_feedback,undefined)
 })
+test('Social uses the maintained organization source and retires its stale publication', () => {
+  const data=JSON.parse(readFileSync(new URL('../catalog.json',import.meta.url)))
+  const social=data.apps.find(x=>x.id==='common')
+  assert.equal(social.repo,'mobius-os/app-social')
+  assert.equal(social.manifest_url,'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json')
+  assert.deepEqual(social.previous_repositories,['hamzamerzic/app-social'])
+  const stale={id:'community:old',repository:'hamzamerzic/app-social',manifest:{id:'common'},community:{author:{handle:'hamzamerzic'}}}
+  const merged=mergeOfficialCommunityFeedback([{...social,manifest:{id:'common'}}],[stale])
+  assert.equal(merged.length,1)
+  assert.equal(merged[0].community_feedback,undefined)
+})
 test('Library groups attention and updates first without duplicating or adding uninstalled apps', () => {
   const rows=['ready','update','setup','conflict','not-installed'].map(id=>({id,name:id}))
   const states=new Map([
