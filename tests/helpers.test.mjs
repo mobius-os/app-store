@@ -4,12 +4,22 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import test from 'node:test'
+import { hasConnectedProvider } from '../api.js'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(root, '.build')
 const bundled = join(buildDir, 'index.mjs')
 const reactStub = join(root, 'react-stub.mjs')
 const iconStub = join(root, 'sdk-icon-stub.mjs')
+
+test('setup readiness follows the canonical configured provider status', () => {
+  assert.equal(hasConnectedProvider({ claude: { configured: true } }), true)
+  assert.equal(
+    hasConnectedProvider({ claude: { configured: false, authenticated: true } }),
+    false,
+    'the retired authenticated alias must not make setup ready',
+  )
+})
 
 // Möbius compiles mini-apps with Rolldown, so the tests bundle the same way.
 // CI points MOBIUS_FRONTEND_NODE_MODULES at the shell's installed frontend;
