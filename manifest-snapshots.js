@@ -1589,23 +1589,40 @@ export const MANIFEST_SNAPSHOTS = {
       ]
     }
   },
-  "common": {
-    "id": "common",
+  "social": {
+    "id": "social",
+    "previous_id": "common",
     "name": "Social",
-    "version": "0.1.3",
+    "version": "0.3.0",
     "description": "Federated social for Möbius people — private messages between instances, a community board, and people search.",
     "author": "hamzamerzic",
     "license": "MIT",
-    "homepage": "https://github.com/hamzamerzic/app-social",
+    "homepage": "https://github.com/mobius-os/app-social",
     "entry": "index.jsx",
     "icon": "icon.png",
     "offline_capable": false,
-    "permissions": {},
+    "permissions": {
+      "identity_manage": true
+    },
+    "service": {
+      "entry": "service.py",
+      "access": "public"
+    },
     "source_files": [
       "api.js",
       "community.js",
       "participation.js",
       "reconciliation.js",
+      "service.py",
+      "service_io.py",
+      "service_runtime.py",
+      "common_protocol.py",
+      "common_public.py",
+      "common_transport.py",
+      "net_utils.py",
+      "social_routes.py",
+      "social_groups.py",
+      "social_objects.py",
       "theme.js",
       "ui/Board.jsx",
       "ui/Messages.jsx",

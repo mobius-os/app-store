@@ -941,7 +941,7 @@
       "published_at": "2026-08-31T19:12:46+00:00"
     },
     {
-      "id": "common",
+      "id": "social",
       "name": "Social",
       "description": "Federated social for Möbius people — private messages between instances, a community board, and people search.",
       "repo": "mobius-os/app-social",
