@@ -23,6 +23,7 @@ import {
   busyLabelForAction,
   storeDestinationFromMessage,
   capabilityDiffNeedsReview,
+  catalogUpdateItemForInstalled,
   collectCategories,
   sourceAvailabilityStatus,
   communityCatalogPage,
@@ -98,6 +99,7 @@ export {
   storeDestinationFromIntent,
   storeDestinationFromMessage,
   capabilityDiffNeedsReview,
+  catalogUpdateItemForInstalled,
   canonicalIdentityKey,
   CARD_DESCRIPTION_LIMIT,
   catalogAudience,
@@ -1410,14 +1412,15 @@ export default function App({ appId, token }) {
   const prepareCatalogUpdate = useCallback(async (item) => {
     const installedApp = findInstalled(installed, item)
     if (!installedApp) throw new Error('Installed app could not be matched for review.')
+    const updateItem = catalogUpdateItemForInstalled(item, installedApp)
     const [capabilityPreview, candidate] = await Promise.all([
         previewApp({
-          manifest_url: item.manifest_url,
-          manifest: item.manifest,
-          raw_base: item.raw_base,
+          manifest_url: updateItem.manifest_url,
+          manifest: updateItem.manifest,
+          raw_base: updateItem.raw_base,
           token,
         }),
-        loadUpdateCandidatePreview(installedApp.id, item.manifest_url, token).then(
+        loadUpdateCandidatePreview(installedApp.id, updateItem.manifest_url, token).then(
           (preview) => ({ preview, error: '' }),
           (error) => ({
             preview: null,
@@ -1433,7 +1436,7 @@ export default function App({ appId, token }) {
       error: '',
     }
     return {
-      item,
+      item: updateItem,
       installedApp,
       preview: candidate.preview || {
         upstream_version: item.manifest?.version,
@@ -1735,7 +1738,7 @@ export default function App({ appId, token }) {
           const name = entry.item.manifest?.name || entry.item.id
           setBusyItemId(entry.item.id)
           setBatchProgress({ current: index + 1, total: ready.length, name })
-          const outcome = await handleInstall(entry.item, {
+          const outcome = await handleInstall(entry.prepared.item, {
             isUpdate: true,
             batch: true,
             deferResolver: true,
