@@ -291,6 +291,39 @@ function installedManifestIdentities(app) {
   return identities
 }
 
+function previousRepositoryForInstalled(installedApp, item) {
+  const previous = Array.isArray(item?.previous_repositories)
+    ? item.previous_repositories
+    : []
+  if (!previous.length) return ''
+  const installedRepos = new Set(
+    installedManifestIdentities(installedApp).map(githubRepoIdentity).filter(Boolean),
+  )
+  return previous.find(repo => (
+    typeof repo === 'string'
+    && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)
+    && installedRepos.has(repo.toLowerCase())
+  )) || ''
+}
+
+// Curated apps occasionally move from their original publication repository
+// into the official catalogue. Keep an existing install on its already-trusted
+// repository identity while fetching that repository's current release. This
+// lets the backend update the same numeric app and preserve its saved data;
+// it does not grant the replacement repository authority over the old install.
+export function catalogUpdateItemForInstalled(item, installedApp) {
+  const repository = previousRepositoryForInstalled(installedApp, item)
+  if (!repository) return item
+  const manifestId = item?.source_manifest?.id || item?.manifest?.id || item?.id
+  if (!manifestId) return item
+  const rawBase = `https://raw.githubusercontent.com/${repository}/main`
+  return {
+    ...item,
+    manifest_url: `${rawBase}/mobius.json`,
+    raw_base: rawBase,
+  }
+}
+
 let viewerGithubLogin = ''
 export function setInstalledMatchViewer(login) {
   viewerGithubLogin = String(login || '').trim().toLowerCase()
@@ -345,6 +378,20 @@ export function findInstalled(installed, item) {
     ? findInstalledPackage(installed, previousManifestUrl, previousId)
     : null
   if (predecessor) return predecessor
+
+  for (const repository of item?.previous_repositories || []) {
+    if (
+      typeof repository !== 'string'
+      || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
+    ) continue
+    const previous = findInstalledPackage(
+      installed,
+      `https://raw.githubusercontent.com/${repository}/main#manifest-id=${manifestId}`,
+      manifestId,
+      repository,
+    )
+    if (previous) return previous
+  }
 
   const itemRepo = typeof item.repository === 'string'
     && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(item.repository)

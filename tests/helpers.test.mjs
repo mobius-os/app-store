@@ -894,6 +894,49 @@ test('findInstalled follows an explicit package and repository rename', async ()
   }], renamed), null)
 })
 
+test('catalog predecessor repositories update the existing app through its trusted source', async () => {
+  const { catalogUpdateItemForInstalled, findInstalled } = await bundle()
+  const installed = {
+    id: 9,
+    slug: 'common',
+    manifest_url: 'https://raw.githubusercontent.com/hamzamerzic/app-social/e729622a3df49f21fa6b2e54bc912e2013c926bc#manifest-id=common',
+    version: '0.1.1',
+  }
+  const catalogItem = {
+    id: 'common',
+    repository: 'mobius-os/app-social',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
+    previous_repositories: ['hamzamerzic/app-social'],
+    manifest: { id: 'common', version: '0.2.1' },
+  }
+
+  assert.equal(findInstalled([installed], catalogItem), installed)
+  assert.deepEqual(catalogUpdateItemForInstalled(catalogItem, installed), {
+    ...catalogItem,
+    manifest_url: 'https://raw.githubusercontent.com/hamzamerzic/app-social/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/hamzamerzic/app-social/main',
+  })
+})
+
+test('catalog predecessor metadata cannot redirect an unrelated install', async () => {
+  const { catalogUpdateItemForInstalled, findInstalled } = await bundle()
+  const installed = {
+    id: 9,
+    slug: 'common',
+    manifest_url: 'https://raw.githubusercontent.com/someone-else/app-social/main#manifest-id=common',
+  }
+  const catalogItem = {
+    id: 'common',
+    repository: 'mobius-os/app-social',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
+    previous_repositories: ['hamzamerzic/app-social'],
+    manifest: { id: 'common' },
+  }
+
+  assert.equal(findInstalled([installed], catalogItem), null)
+  assert.equal(catalogUpdateItemForInstalled(catalogItem, installed), catalogItem)
+})
+
 test('otherInstalledCatalogItems does not duplicate a curated app under id skew', async () => {
   const { otherInstalledCatalogItems } = await bundle()
   // The installed row carries the renamed id and a source_manifest, so it is a
@@ -1540,7 +1583,7 @@ test('individual catalog updates keep a read-only review with bound digests', as
   assert.ok(indexSource.includes('const handleCatalogUpdate = useCallback'))
   assert.ok(indexSource.includes('onUpdate={handleCatalogUpdate}'))
   assert.ok(indexSource.includes(
-    'loadUpdateCandidatePreview(installedApp.id, item.manifest_url, token)',
+    'loadUpdateCandidatePreview(installedApp.id, updateItem.manifest_url, token)',
   ))
   assert.ok(indexSource.includes('capabilityDiffNeedsReview('))
   // An individual update still opens a review. Update all intentionally uses
