@@ -786,15 +786,15 @@ test('findInstalled matches a verified local publication identity', async () => 
     manifest_url: null,
     source_manifest: null,
     distribution_manifest: {
-      id: 'common',
+      id: 'social',
       url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
       kind: 'published',
     },
   }]
   const item = {
-    id: 'common',
+    id: 'social',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
-    manifest: { id: 'common' },
+    manifest: { id: 'social' },
     repository: 'mobius-os/app-social',
   }
 
@@ -903,11 +903,11 @@ test('catalog predecessor repositories update the existing app through its trust
     version: '0.1.1',
   }
   const catalogItem = {
-    id: 'common',
+    id: 'social',
     repository: 'mobius-os/app-social',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-social/main/mobius.json',
     previous_repositories: ['hamzamerzic/app-social'],
-    manifest: { id: 'common', version: '0.2.1' },
+    manifest: { id: 'social', previous_id: 'common', version: '0.3.0' },
   }
 
   assert.equal(findInstalled([installed], catalogItem), installed)
