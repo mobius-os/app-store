@@ -918,6 +918,37 @@ test('catalog predecessor repositories update the existing app through its trust
   })
 })
 
+test('immutable package identity advances a staged repository handoff', async () => {
+  const { catalogUpdateItemForInstalled, findInstalled } = await bundle()
+  const packageId = 'urn:uuid:5130825e-905c-4527-8ad0-4bdd2a7357c0'
+  const installed = {
+    id: 7,
+    slug: 'kanban',
+    manifest_url: 'https://raw.githubusercontent.com/hamzamerzic/app-kanban/main#manifest-id=kanban',
+  }
+  const catalogItem = {
+    id: 'kanban',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-kanban/main/mobius.json',
+    raw_base: 'https://raw.githubusercontent.com/mobius-os/app-kanban/main/',
+    previous_repositories: ['hamzamerzic/app-kanban'],
+    manifest: { id: 'kanban', package_id: packageId },
+  }
+
+  assert.equal(findInstalled([installed], catalogItem), installed)
+  assert.equal(
+    catalogUpdateItemForInstalled(catalogItem, installed).manifest_url,
+    'https://raw.githubusercontent.com/hamzamerzic/app-kanban/main/mobius.json',
+  )
+
+  const stamped = { ...installed, package_id: packageId }
+  assert.equal(findInstalled([stamped], catalogItem), stamped)
+  assert.equal(catalogUpdateItemForInstalled(catalogItem, stamped), catalogItem)
+  assert.equal(findInstalled([stamped], {
+    ...catalogItem,
+    package_id: 'app.unreviewed.catalog-claim',
+  }), stamped)
+})
+
 test('catalog predecessor metadata cannot redirect an unrelated install', async () => {
   const { catalogUpdateItemForInstalled, findInstalled } = await bundle()
   const installed = {

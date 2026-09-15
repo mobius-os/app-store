@@ -291,6 +291,11 @@ function installedManifestIdentities(app) {
   return identities
 }
 
+function packageIdentity(value) {
+  const packageId = value?.manifest?.package_id || value?.package_id
+  return typeof packageId === 'string' && packageId ? packageId : ''
+}
+
 function previousRepositoryForInstalled(installedApp, item) {
   const previous = Array.isArray(item?.previous_repositories)
     ? item.previous_repositories
@@ -312,6 +317,17 @@ function previousRepositoryForInstalled(installedApp, item) {
 // lets the backend update the same numeric app and preserve its saved data;
 // it does not grant the replacement repository authority over the old install.
 export function catalogUpdateItemForInstalled(item, installedApp) {
+  // Once both sides carry the immutable package id, the catalog may point at
+  // the current repository. The backend remains the authority: a different
+  // repository is accepted only when the installed source explicitly names it
+  // in `moved_to`. Before that one-time bootstrap lands, keep reading updates
+  // from the already-trusted predecessor repository.
+  const itemPackageId = packageIdentity(item)
+  if (
+    itemPackageId
+    && packageIdentity(installedApp) === itemPackageId
+  ) return item
+
   const repository = previousRepositoryForInstalled(installedApp, item)
   if (!repository) return item
   const manifestId = item?.source_manifest?.id || item?.manifest?.id || item?.id
@@ -363,6 +379,14 @@ function findInstalledPackage(installed, manifestUrl, manifestId, repository = '
 }
 
 export function findInstalled(installed, item) {
+  const itemPackageId = packageIdentity(item)
+  if (itemPackageId) {
+    const byPackageId = installed.find(
+      app => packageIdentity(app) === itemPackageId,
+    )
+    if (byPackageId) return byPackageId
+  }
+
   const manifestId = item.source_manifest?.id || item.manifest?.id || item.id
   const current = findInstalledPackage(
     installed, item.manifest_url, manifestId, item.repository,
