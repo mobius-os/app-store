@@ -44,14 +44,23 @@ Catalog entries can declare a curated `collection`: **Everyday**, **Create**,
 fall back to their audience and categories, so new apps still land somewhere
 sensible.
 
-### Naming convention
+### Package identity and moves
 
-Manifest `id` == repo name minus the `app-` prefix == lowercased display name.
-Renames change all three together. Set `previous_id` so installs migrate in
-place; when the GitHub repository also changes, set `previous_manifest_url` to
-the old root manifest URL. Möbius keeps the numeric app row and saved data,
-moves the source slug, adopts the new package identity, and updates the clone's
-origin instead of leaving the former product name as permanent plumbing.
+Generate one random UUID when an app is first published and keep it in the
+manifest as `package_id` for the app's lifetime. Display names, manifest `id`,
+source paths, and repository names may then change without becoming identity.
+
+A GitHub rename or owner transfer keeps the same provider repository identity,
+so keeping `package_id` is sufficient. Moving the app into a different
+repository is an explicit trust handoff: release the old trusted manifest once
+with the same `package_id` and `moved_to.manifest_url` naming the new manifest.
+Existing installs update from the old source first, then the backend verifies
+that declaration before adopting the new repository. A fork that is meant to
+be a separate app gets a new package id.
+
+`previous_id`, `previous_manifest_url`, and catalog `previous_repositories`
+remain bounded migration aids for installs that predate package identities;
+they are not the steady-state identity model.
 
 ### Adding a new curated app
 
