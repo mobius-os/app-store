@@ -67,6 +67,7 @@ import {
   publishEditorialSpotlight,
   registerCommunityRevision,
   rateCommunityApp,
+  withdrawCommunityApp,
   commentOnCommunityRevision,
   recordCommunityInstall,
   uploadEditorialArtwork,
@@ -147,6 +148,7 @@ export {
   publishEditorialSpotlight,
   registerCommunityRevision,
   rateCommunityApp,
+  withdrawCommunityApp,
   commentOnCommunityRevision,
   uploadEditorialArtwork,
   previewApp,
@@ -1559,6 +1561,33 @@ export default function App({ appId, token }) {
 
   const closeDetail = useCallback(() => closeDetailEntry(navDetailRef, setDetail), [])
 
+  const handleCommunityWithdraw = useCallback(async () => {
+    const community = detail?.community
+    if (!community?.id || communityActionBusy || !communityIdentity?.linked) {
+      return false
+    }
+    setCommunityActionBusy(true)
+    setCommunityActionError({ key: community.id, message: '' })
+    try {
+      await withdrawCommunityApp(token, community.id)
+      closeDetail()
+      await refreshCommunity()
+      setToast({
+        kind: 'success',
+        message: `${detail?.name || 'Your app'} was withdrawn from the community.`,
+      })
+      return true
+    } catch (error) {
+      setCommunityActionError({
+        key: community.id,
+        message: error?.message || 'This app could not be withdrawn.',
+      })
+      return false
+    } finally {
+      setCommunityActionBusy(false)
+    }
+  }, [communityActionBusy, communityIdentity, detail, token, closeDetail, refreshCommunity])
+
   useLayoutEffect(() => {
     if (!detail && gridScrollRef.current) {
       gridScrollRef.current.scrollTop = savedGridScrollRef.current
@@ -1860,6 +1889,14 @@ export default function App({ appId, token }) {
           onDismissNotice={handleDismissNotice}
           onCommunityRate={handleCommunityRate}
           onCommunityComment={handleCommunityComment}
+          onCommunityWithdraw={handleCommunityWithdraw}
+          canCommunityWithdraw={!!(
+            githubIdentity?.login
+            && detail?.community
+            && detail?.publisher?.login
+            && String(githubIdentity.login).toLowerCase()
+              === String(detail.publisher.login).toLowerCase()
+          )}
           communityBusy={communityActionBusy}
           communityError={communityActionError.key === detailCommunityFeedbackKey
             ? communityActionError.message

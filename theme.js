@@ -411,6 +411,33 @@ export const CSS = `
 }
 .st-community-actions { display: flex; align-items: center; gap: 10px; }
 .st-community-actions .st-btn { min-height: 44px; padding: 7px 13px; }
+.st-community-withdraw { margin-top: 12px; }
+.st-community-withdraw-btn {
+  min-height: 40px; padding: 7px 13px; border-radius: 9px; cursor: pointer;
+  background: transparent; color: var(--danger, #d05a5a);
+  border: 1px solid color-mix(in srgb, var(--danger, #d05a5a) 45%, var(--border));
+  font: inherit; font-size: 12px; font-weight: 600;
+}
+.st-community-withdraw-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--danger, #d05a5a) 12%, transparent); }
+.st-community-withdraw-btn:disabled { opacity: 0.55; cursor: default; }
+.st-community-withdraw-confirm {
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger, #d05a5a) 40%, var(--border));
+  border-radius: 11px; background: color-mix(in srgb, var(--danger, #d05a5a) 7%, transparent);
+}
+.st-community-withdraw-confirm > span { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.st-community-withdraw-actions { display: flex; gap: 10px; }
+.st-community-withdraw-actions button {
+  min-height: 40px; padding: 7px 15px; border-radius: 9px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--surface, transparent); color: var(--text);
+}
+.st-community-withdraw-confirm-btn {
+  background: var(--danger, #d05a5a) !important; color: #fff !important;
+  border-color: var(--danger, #d05a5a) !important;
+}
+.st-community-withdraw-actions button:disabled { opacity: 0.55; cursor: default; }
+.st-community-withdraw-error { font-size: 12px; color: var(--danger, #d05a5a); }
 .st-community-feedback { margin: 28px 0 8px; padding-top: 24px; border-top: 1px solid var(--border); }
 .st-community-feedback-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .st-community-feedback h3 { margin: 0 0 5px; font-size: 18px; letter-spacing: -.02em; }

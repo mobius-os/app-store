@@ -36,7 +36,8 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityRate, onCommunityComment, communityBusy = false, communityError = '', communityIdentityLinked = false, githubIdentityConnected = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityRate, onCommunityComment, onCommunityWithdraw, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, githubIdentityConnected = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const lifecycle = appLifecycleFor(reviewedItem, {
@@ -199,6 +200,47 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
               )}
             </div>
           </div>
+          {canCommunityWithdraw && (
+            <div className="st-community-withdraw" role="group" aria-label="Manage your community listing">
+              {!confirmWithdraw ? (
+                <button
+                  type="button"
+                  className="st-community-withdraw-btn"
+                  disabled={communityBusy}
+                  onClick={() => setConfirmWithdraw(true)}
+                >
+                  Withdraw from community
+                </button>
+              ) : (
+                <div className="st-community-withdraw-confirm">
+                  <span>Remove this listing from the community store? People will no longer find or install it. You can republish later.</span>
+                  <div className="st-community-withdraw-actions">
+                    <button
+                      type="button"
+                      className="st-community-withdraw-confirm-btn"
+                      disabled={communityBusy}
+                      onClick={async () => {
+                        const ok = await onCommunityWithdraw?.()
+                        if (!ok) setConfirmWithdraw(false)
+                      }}
+                    >
+                      {communityBusy ? 'Withdrawing…' : 'Withdraw'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={communityBusy}
+                      onClick={() => setConfirmWithdraw(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {communityError && (
+                    <span className="st-community-withdraw-error" role="alert">{communityError}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {item.community.repository_update && (
             <div className="st-repository-update" role="status">
               <div>
