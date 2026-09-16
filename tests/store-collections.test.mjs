@@ -18,6 +18,7 @@ test('Kanban uses the verified organization source and keeps its original public
   const kanban=data.apps.find(x=>x.id==='kanban')
   assert.equal(kanban.repo,'mobius-os/app-kanban')
   assert.equal(kanban.manifest_url,'https://raw.githubusercontent.com/mobius-os/app-kanban/main/mobius.json')
+  assert.equal(kanban.previous_repositories,undefined)
   assert.equal(newestPublications([kanban])[0],kanban)
   const personal={id:'community:old',repository:'hamzamerzic/app-kanban',manifest:{id:'kanban'},community:{author:{handle:'hamzamerzic'}}}
   const merged=mergeOfficialCommunityFeedback([{...kanban,manifest:{id:'kanban'}}],[personal])

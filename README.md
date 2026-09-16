@@ -128,13 +128,12 @@ Installed apps. Existing setup, permission review, conflict resolution, and
 update controls remain authoritative; grouping does not bypass any action.
 
 Publisher labels come from each app's repository identity, not a community
-feedback submitter. Kanban's curated entry points to mobius-os/app-kanban
-and retains its verified original publication date. Its explicit
-previous_repositories marker prevents the stale remote catalogue from reverting
-to the retired personal source; unrelated future remote source changes still
-win normally. The older community listing is not relabeled or merged across
-repository identities. This changes catalogue source metadata, not the community registry. Remove the retired-source marker once stale catalogues no longer
-advertise that source.
+feedback submitter. Kanban's curated entry points only to
+mobius-os/app-kanban and retains its verified original publication date. The
+older community listing is not relabeled or merged across repository
+identities. This changes catalogue source metadata, not the community registry.
+Social retains its transferred-repository marker only until every known
+installation uses the canonical mobius-os/app-social identity.
 
 Verification: contract/design/evidence reviewed at the owning catalogue seam;
 no new shell mechanism. Regression tests cover date
