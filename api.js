@@ -171,6 +171,14 @@ export async function rateCommunityApp(token, appId, revisionId, value) {
   return communityResponse(response, 'Your rating could not be saved.')
 }
 
+export async function withdrawCommunityApp(token, appId) {
+  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/withdraw`, {
+    method: 'POST',
+    headers: communityHeaders(token, communityRequestKey('withdraw')),
+  })
+  return communityResponse(response, 'This app could not be withdrawn.')
+}
+
 export async function commentOnCommunityRevision(token, appId, revisionId, body) {
   const response = await fetch(
     `/api/community/apps/${encodeURIComponent(appId)}/revisions/${encodeURIComponent(revisionId)}/comments`,
