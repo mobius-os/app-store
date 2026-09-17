@@ -31,12 +31,30 @@ def catalog_manifest_urls():
     payload = json.loads((Path(__file__).with_name("catalog.json")).read_text())
   except (OSError, ValueError):
     return {}
+  try:
+    snapshot_source = (Path(__file__).with_name("manifest-snapshots.js")).read_text()
+    marker = "export const MANIFEST_SNAPSHOTS = "
+    _, separator, snapshot_json = snapshot_source.partition(marker)
+    snapshots = json.loads(snapshot_json) if separator else {}
+  except (OSError, ValueError):
+    snapshots = {}
   items = payload.get("apps", []) if isinstance(payload, dict) else []
-  return {
-    str(item.get("id") or ""): str(item.get("manifest_url") or "")
-    for item in items
-    if item.get("id") and item.get("manifest_url")
-  }
+  urls = {}
+  for item in items:
+    catalog_id = str(item.get("id") or "")
+    candidate_url = str(item.get("manifest_url") or "")
+    manifest = snapshots.get(catalog_id, {})
+    if not catalog_id or not candidate_url or not isinstance(manifest, dict):
+      continue
+    for identity in (
+      catalog_id,
+      manifest.get("id"),
+      manifest.get("previous_id"),
+      manifest.get("package_id"),
+    ):
+      if identity:
+        urls.setdefault(str(identity), candidate_url)
+  return urls
 
 
 def request(method: str, path: str, body=None):

@@ -3,3 +3,4 @@ node_modules/
 *.log
 .env
 tests/.build/
+__pycache__/
