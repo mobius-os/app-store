@@ -16,12 +16,27 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
+from pathlib import Path
 
 
 API = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 TOKEN = os.environ.get("APP_TOKEN", "")
 APP_ID = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else ""
+
+
+def catalog_manifest_urls():
+  try:
+    payload = json.loads((Path(__file__).with_name("catalog.json")).read_text())
+  except (OSError, ValueError):
+    return {}
+  items = payload.get("apps", []) if isinstance(payload, dict) else []
+  return {
+    str(item.get("id") or ""): str(item.get("manifest_url") or "")
+    for item in items
+    if item.get("id") and item.get("manifest_url")
+  }
 
 
 def request(method: str, path: str, body=None):
@@ -38,6 +53,7 @@ def request(method: str, path: str, body=None):
 
 def available_updates():
   apps = request("GET", "/api/apps/") or []
+  catalog_urls = catalog_manifest_urls()
   candidates = [app for app in apps if (
     app.get("manifest_url") and int(app.get("id") or 0) != int(APP_ID)
   )]
@@ -46,7 +62,15 @@ def available_updates():
     if not app.get("manifest_url") or int(app.get("id") or 0) == int(APP_ID):
       return None
     try:
-      check = request("GET", f"/api/apps/{int(app['id'])}/update-check") or {}
+      manifest_id = str((app.get("source_manifest") or {}).get("id") or "")
+      candidate_url = catalog_urls.get(manifest_id, "")
+      query = (
+        "?" + urllib.parse.urlencode({"manifest_url": candidate_url})
+        if candidate_url else ""
+      )
+      check = request(
+        "GET", f"/api/apps/{int(app['id'])}/update-check{query}",
+      ) or {}
     except (OSError, ValueError, urllib.error.HTTPError):
       return None
     if check.get("update_available") is True:

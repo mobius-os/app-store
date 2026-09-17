@@ -304,9 +304,12 @@ export async function loadInstalledApps(token, opts = {}) {
 // NEVER throws and NEVER retries: it runs from focus/visibility listeners whose
 // callers have no rejection handler, so a read-only availability probe must
 // degrade to null rather than let a rejection escape and strand the grid.
-export async function fetchUpdateCheck(appId, token) {
+export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') {
   try {
-    const r = await fetch(`/api/apps/${appId}/update-check`, {
+    const query = candidateManifestUrl
+      ? `?manifest_url=${encodeURIComponent(validateManifestUrl(candidateManifestUrl))}`
+      : ''
+    const r = await fetch(`/api/apps/${appId}/update-check${query}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!r.ok) return null

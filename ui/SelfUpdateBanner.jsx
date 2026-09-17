@@ -22,7 +22,7 @@ export function SelfUpdateBanner({ appId, token }) {
         if (!cancelled) setReview({ status: 'ready', preview, error: '' })
       })
       .catch(() => {})   // a failed self-check is silent — never block the grid
-    fetchUpdateCheck(appId, token)
+    fetchUpdateCheck(appId, token, STORE_SELF.manifest_url)
       .then(check => { if (!cancelled) setUpdateCheck(check) })
     return () => { cancelled = true }
   }, [appId, token])
