@@ -130,6 +130,7 @@ export {
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
   updateBatchDisposition,
+  updateCandidateUrlsByInstalledId,
   validateManifestUrl,
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'

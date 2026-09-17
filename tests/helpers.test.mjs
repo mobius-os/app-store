@@ -826,6 +826,35 @@ test('findInstalled treats trusted catalog commit pins as the same installed app
   }], catalogItem), null)
 })
 
+test('update candidate URLs match installed apps and keep the first catalog source', async () => {
+  const { updateCandidateUrlsByInstalledId } = await bundle()
+  const installed = [{
+    id: 7,
+    slug: 'memory',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/0123456789abcdef0123456789abcdef01234567#manifest-id=memory',
+  }]
+  const unrelated = {
+    id: 'reflection',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-reflection/main/mobius.json',
+    manifest: { id: 'reflection' },
+  }
+  const preferred = {
+    id: 'memory',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json',
+    manifest: { id: 'memory' },
+  }
+  const duplicate = {
+    ...preferred,
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/next/mobius.json',
+  }
+
+  assert.deepEqual(updateCandidateUrlsByInstalledId(installed, [unrelated]), {})
+  assert.deepEqual(
+    updateCandidateUrlsByInstalledId(installed, [unrelated, preferred, duplicate]),
+    { 7: preferred.manifest_url },
+  )
+})
+
 test('findInstalled matches a trusted mobius-os app across any manifest-id skew', async () => {
   const { findInstalled } = await bundle()
   const installedRow = {
