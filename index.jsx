@@ -45,6 +45,7 @@ import {
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
   updateBatchDisposition,
+  updateCandidateUrlsByInstalledId,
 } from './domain.js'
 import {
   createAppChat,
@@ -129,6 +130,7 @@ export {
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
   updateBatchDisposition,
+  updateCandidateUrlsByInstalledId,
   validateManifestUrl,
 } from './domain.js'
 export { STORE_VERSION } from './constants.js'
@@ -218,11 +220,12 @@ async function mapWithConcurrency(items, limit, mapper) {
 // Use the same bounded pool as manifest refetches. fetchUpdateCheck never
 // throws; callers merge answered ids and leave unavailable rows unknown. Every
 // source-backed installed row shares this authority.
-async function fetchUpdateChecksFor(rows, token) {
+async function fetchUpdateChecksFor(rows, token, catalogItems = []) {
   if (!rows.length) return {}
+  const candidateUrls = updateCandidateUrlsByInstalledId(rows, catalogItems)
   const results = await mapWithConcurrency(rows, MANIFEST_FETCH_CONCURRENCY, async (app) => ({
     id: app.id,
-    check: await fetchUpdateCheck(app.id, token),
+    check: await fetchUpdateCheck(app.id, token, candidateUrls[app.id]),
   }))
   const out = {}
   for (const r of results) {
@@ -309,6 +312,8 @@ export default function App({ appId, token }) {
     CATALOG.map(c => ({ ...c, manifest: c.manifest || null, error: null }))
   )
   const [communityCatalog, setCommunityCatalog] = useState([])
+  const communityCatalogRef = useRef(communityCatalog)
+  useEffect(() => { communityCatalogRef.current = communityCatalog }, [communityCatalog])
   const [communityError, setCommunityError] = useState('')
   const [communityLoading, setCommunityLoading] = useState(false)
   const [communityHasMore, setCommunityHasMore] = useState(false)
@@ -528,7 +533,10 @@ export default function App({ appId, token }) {
         // unhandled rejection escapes; until these land the app remains usable,
         // and when they land they are the sole update authority.
         const checkRows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
-        fetchUpdateChecksFor(checkRows, token).then((map) => {
+        fetchUpdateChecksFor(checkRows, token, [
+          ...hydrated,
+          ...communityCatalogRef.current,
+        ]).then((map) => {
           if (cancelled) return
           setUpdateChecks((prev) => mergeUpdateChecks(prev, map))
           clearSettledUpdateArtifacts(itemIdsSettledByChecks(hydrated, apps, map))
@@ -891,7 +899,11 @@ export default function App({ appId, token }) {
     }
     updateCheckingRef.current = true
     try {
-      const checks = await fetchUpdateChecksFor(checkRows, token)
+      const checks = await fetchUpdateChecksFor(checkRows, token, [
+        ...catalogRef.current,
+        ...communityCatalogRef.current,
+        ...otherInstalledCatalogRef.current,
+      ])
       setUpdateChecks(prev => mergeUpdateChecks(prev, checks))
       clearSettledUpdateArtifacts(itemIdsSettledByChecks(
         [...catalogRef.current, ...otherInstalledCatalogRef.current], apps, checks,

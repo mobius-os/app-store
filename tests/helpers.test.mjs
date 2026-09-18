@@ -826,6 +826,35 @@ test('findInstalled treats trusted catalog commit pins as the same installed app
   }], catalogItem), null)
 })
 
+test('update candidate URLs match installed apps and keep the first catalog source', async () => {
+  const { updateCandidateUrlsByInstalledId } = await bundle()
+  const installed = [{
+    id: 7,
+    slug: 'memory',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/0123456789abcdef0123456789abcdef01234567#manifest-id=memory',
+  }]
+  const unrelated = {
+    id: 'reflection',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-reflection/main/mobius.json',
+    manifest: { id: 'reflection' },
+  }
+  const preferred = {
+    id: 'memory',
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json',
+    manifest: { id: 'memory' },
+  }
+  const duplicate = {
+    ...preferred,
+    manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/next/mobius.json',
+  }
+
+  assert.deepEqual(updateCandidateUrlsByInstalledId(installed, [unrelated]), {})
+  assert.deepEqual(
+    updateCandidateUrlsByInstalledId(installed, [unrelated, preferred, duplicate]),
+    { 7: preferred.manifest_url },
+  )
+})
+
 test('findInstalled matches a trusted mobius-os app across any manifest-id skew', async () => {
   const { findInstalled } = await bundle()
   const installedRow = {
@@ -2006,6 +2035,7 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
 test('fetchUpdateCheck maps the current backend contract', async () => {
   const { fetchUpdateCheck } = await bundle()
   const oldFetch = globalThis.fetch
+  const requests = []
   const replies = [
     {
       update_available: true,
@@ -2018,12 +2048,15 @@ test('fetchUpdateCheck maps the current backend contract', async () => {
     { update_available: true, pending_update_state: 'unknown', upstream_version: '2.0.0' },
     { update_available: false, pending_update_state: 'none', upstream_version: '1.0.0' },
   ]
-  globalThis.fetch = async () => new Response(JSON.stringify(replies.shift()), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  })
+  globalThis.fetch = async (url) => {
+    requests.push(url)
+    return new Response(JSON.stringify(replies.shift()), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
   try {
-    assert.deepEqual(await fetchUpdateCheck(1, 'token'), {
+    assert.deepEqual(await fetchUpdateCheck(1, 'token', 'https://example.com/apps/news/mobius.json'), {
       available: true,
       pendingUpdateState: 'replay_pending',
       upstreamVersion: '2.0.0',
@@ -2047,6 +2080,12 @@ test('fetchUpdateCheck maps the current backend contract', async () => {
       candidateSourceDigest: null,
       checkedAt: null,
     })
+    assert.equal(
+      requests[0],
+      '/api/apps/1/update-check?manifest_url=https%3A%2F%2Fexample.com%2Fapps%2Fnews%2Fmobius.json',
+    )
+    assert.equal(requests[1], '/api/apps/1/update-check')
+    assert.equal(requests[2], '/api/apps/1/update-check')
   } finally {
     globalThis.fetch = oldFetch
   }
@@ -2124,7 +2163,7 @@ test('app details keep stable access information in a bottom disclosure', async 
   assert.match(source, /Last verified/)
   assert.doesNotMatch(source, /Access and agent integration/)
   const selfUpdateSource = await readFile(join(root, '..', 'ui', 'SelfUpdateBanner.jsx'), 'utf8')
-  assert.match(selfUpdateSource, /fetchUpdateCheck\(appId, token\)/)
+  assert.match(selfUpdateSource, /fetchUpdateCheck\(appId, token, STORE_SELF\.manifest_url\)/)
   assert.doesNotMatch(selfUpdateSource, /semverCmp/)
   assert.match(selfUpdateSource, /if \(needsAccessReview && !showReview\)/)
   assert.match(selfUpdateSource, /'Update App Store'/)
