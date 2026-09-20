@@ -440,6 +440,18 @@ export function findInstalled(installed, item) {
 }
 
 
+export function updateCandidateUrlsByInstalledId(installed = [], catalog = []) {
+  const urls = {}
+  for (const item of catalog || []) {
+    const app = findInstalled(installed, item)
+    if (app && item?.manifest_url && !urls[app.id]) {
+      urls[app.id] = item.manifest_url
+    }
+  }
+  return urls
+}
+
+
 // A baked manifest gives an uninstalled discovery card a fast, offline-safe
 // first paint. Installed apps still refresh their live manifest so their
 // human-facing labels stay current; source provenance remains the only update
