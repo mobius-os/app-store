@@ -1587,6 +1587,20 @@ test('capability rows disclose embedded agents, server jobs, and offline behavio
   assert.match(rows.find(row => row.label === 'Offline use').summary, /partial offline execution/)
 })
 
+test('capability rows disclose app-provided AI endpoint and charges', async () => {
+  const { capabilityRows } = await bundle()
+  const rows = capabilityRows({
+    model_provider: {
+      name: 'Example AI', base_url: 'https://models.example.com',
+      models: [{ id: 'example-1', label: 'Example 1' }],
+    },
+  })
+  const models = rows.find(row => row.label === 'AI models')
+  assert.equal(models.tag, 'Example AI')
+  assert.match(models.summary, /https:\/\/models\.example\.com/)
+  assert.match(models.summary, /may incur charges/)
+})
+
 test('capability rows disclose GitHub connection and skill management separately', async () => {
   const { capabilityRows } = await bundle()
   const rows = capabilityRows({

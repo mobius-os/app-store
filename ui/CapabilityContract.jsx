@@ -75,6 +75,7 @@ export function capabilityRows(contract) {
   const background = contract.background
   const offline = contract.offline || {}
   const runtime = contract.runtime || {}
+  const modelProvider = contract.model_provider
   const prompt = agent.system_prompt
   const logs = data.chat_logs || {}
   const rows = [
@@ -117,6 +118,13 @@ export function capabilityRows(contract) {
       'Embedded agent', 'Included',
       'Mounts an agent chat inside the app experience.',
       'read',
+    ))
+  }
+  if (modelProvider) {
+    rows.push(row(
+      'AI models', modelProvider.name || 'Provider',
+      `Offers ${(modelProvider.models || []).length} model(s) through ${modelProvider.base_url}. Chats and automatic agents using them send their content to this endpoint and may incur charges after you connect the app.`,
+      'write',
     ))
   }
   if (background) {
