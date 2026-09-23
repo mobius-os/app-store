@@ -1565,7 +1565,7 @@ test('retired receipt fields do not create a second server-job tier', async () =
   assert.doesNotMatch(background.summary, /legacy|filesystem-confined/)
 })
 
-test('capability rows disclose embedded agents, server jobs, and offline behavior', async () => {
+test('capability rows show server jobs but omit non-permission app features', async () => {
   const { capabilityRows } = await bundle()
   const rows = capabilityRows({
     agent: { embeds_agent: true, skills: [] },
@@ -1582,12 +1582,13 @@ test('capability rows disclose embedded agents, server jobs, and offline behavio
       contract: { reads: true, writes: 'none', execution: 'partial' },
     },
   })
-  assert.match(rows.find(row => row.label === 'Embedded agent').summary, /agent chat/)
+  assert.equal(rows.find(row => row.label === 'Embedded agent'), undefined)
   assert.equal(rows.find(row => row.label === 'Background work').tag, 'Server job')
-  assert.match(rows.find(row => row.label === 'Offline use').summary, /partial offline execution/)
+  assert.equal(rows.find(row => row.label === 'Offline use'), undefined)
+  assert.equal(rows.find(row => row.tag === 'None'), undefined)
 })
 
-test('capability rows disclose app-provided AI endpoint and charges', async () => {
+test('capability rows omit model-provider metadata and empty grants', async () => {
   const { capabilityRows } = await bundle()
   const rows = capabilityRows({
     model_provider: {
@@ -1595,10 +1596,7 @@ test('capability rows disclose app-provided AI endpoint and charges', async () =
       models: [{ id: 'example-1', label: 'Example 1' }],
     },
   })
-  const models = rows.find(row => row.label === 'AI models')
-  assert.equal(models.tag, 'Example AI')
-  assert.match(models.summary, /https:\/\/models\.example\.com/)
-  assert.match(models.summary, /may incur charges/)
+  assert.deepEqual(rows, [])
 })
 
 test('capability rows disclose GitHub connection and skill management separately', async () => {
