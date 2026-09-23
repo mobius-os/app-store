@@ -4,8 +4,7 @@ function row(label, tag, summary, tone = '') {
 
 function accessText(level, subject) {
   if (level === 'write') return `Can read and write ${subject}.`
-  if (level === 'read') return `Can read ${subject}, but cannot change it.`
-  return `Cannot access ${subject}.`
+  return `Can read ${subject}, but cannot change it.`
 }
 
 // Boolean data capabilities belong in one disclosure registry. Keeping their
@@ -73,60 +72,37 @@ export function capabilityRows(contract) {
   const agent = contract.agent || {}
   const data = contract.data || {}
   const background = contract.background
-  const offline = contract.offline || {}
   const runtime = contract.runtime || {}
-  const modelProvider = contract.model_provider
   const prompt = agent.system_prompt
   const logs = data.chat_logs || {}
-  const rows = [
-    prompt
-      ? row(
-          'Agent chats', 'All chats',
-          `Adds system instructions to every agent chat on its next turn (${prompt.file}).`,
-          'write',
-        )
-      : row('Agent chats', 'None', 'Does not add system instructions to agent chats.', 'muted'),
-    logs.effective === 'summary'
-      ? row(
-          'Chat history', 'Redacted',
-          'Can request structurally redacted chat text; tool calls, hidden reasoning, errors, and secret-like values are removed.',
-          'read',
-        )
-      : row('Chat history', 'None', 'Cannot read chat history.', 'muted'),
-    row(
-      'Shared memory', data.shared_memory === 'write' ? 'Read + write' : data.shared_memory === 'read' ? 'Read' : 'None',
-      accessText(data.shared_memory, 'the shared memory area'),
-      data.shared_memory === 'none' ? 'muted' : data.shared_memory,
-    ),
-    row(
-      'Other apps’ data', data.cross_app_access === 'write' ? 'Read + write' : data.cross_app_access === 'read' ? 'Read' : 'None',
-      accessText(data.cross_app_access, 'other apps’ private data'),
-      data.cross_app_access === 'none' ? 'muted' : data.cross_app_access,
-    ),
-    row(
-      'Shares its data', data.share_with_apps === 'write' ? 'Read + write' : data.share_with_apps === 'read' ? 'Read' : 'None',
-      data.share_with_apps === 'write'
-        ? 'Allows authorized apps to read and change this app’s private data.'
-        : data.share_with_apps === 'read'
-        ? 'Allows authorized apps to read this app’s private data.'
-        : 'Does not share its private data with other apps.',
-      data.share_with_apps === 'none' ? 'muted' : data.share_with_apps,
-    ),
-  ]
-  if (agent.embeds_agent) {
-    rows.push(row(
-      'Embedded agent', 'Included',
-      'Mounts an agent chat inside the app experience.',
-      'read',
-    ))
-  }
-  if (modelProvider) {
-    rows.push(row(
-      'AI models', modelProvider.name || 'Provider',
-      `Offers ${(modelProvider.models || []).length} model(s) through ${modelProvider.base_url}. Chats and automatic agents using them send their content to this endpoint and may incur charges after you connect the app.`,
-      'write',
-    ))
-  }
+  const rows = []
+  if (prompt) rows.push(row(
+    'Agent chats', 'All chats',
+    `Adds system instructions to every agent chat on its next turn (${prompt.file}).`,
+    'write',
+  ))
+  if (logs.effective === 'summary') rows.push(row(
+    'Chat history', 'Redacted',
+    'Can request structurally redacted chat text; tool calls, hidden reasoning, errors, and secret-like values are removed.',
+    'read',
+  ))
+  if (data.shared_memory === 'read' || data.shared_memory === 'write') rows.push(row(
+    'Shared memory', data.shared_memory === 'write' ? 'Read + write' : 'Read',
+    accessText(data.shared_memory, 'the shared memory area'),
+    data.shared_memory,
+  ))
+  if (data.cross_app_access === 'read' || data.cross_app_access === 'write') rows.push(row(
+    'Other apps’ data', data.cross_app_access === 'write' ? 'Read + write' : 'Read',
+    accessText(data.cross_app_access, 'other apps’ private data'),
+    data.cross_app_access,
+  ))
+  if (data.share_with_apps === 'read' || data.share_with_apps === 'write') rows.push(row(
+    'Shares its data', data.share_with_apps === 'write' ? 'Read + write' : 'Read',
+    data.share_with_apps === 'write'
+      ? 'Allows authorized apps to read and change this app’s private data.'
+      : 'Allows authorized apps to read this app’s private data.',
+    data.share_with_apps,
+  ))
   if (background) {
     const timing = background.mode === 'scheduled'
       ? `Runs on schedule ${background.cron || ''}`.trim()
@@ -139,8 +115,6 @@ export function capabilityRows(contract) {
       `${timing}${init}. It runs as reviewed owner-installed code with Möbius process access and receives a short-lived app token for API calls.`,
       'write',
     ))
-  } else {
-    rows.push(row('Background work', 'None', 'Does not run a background job.', 'muted'))
   }
   if (Array.isArray(agent.skills) && agent.skills.length) {
     rows.push(row(
@@ -186,15 +160,6 @@ export function capabilityRows(contract) {
       declaration?.risk === 'device' ? 'write' : 'read',
     ))
   }
-  rows.push(
-    offline.capable
-      ? row(
-          'Offline use', offline.contract?.execution || 'Declared',
-          `Declares offline reads ${offline.contract?.reads ? 'available' : 'unavailable'}, writes ${offline.contract?.writes || 'none'}, and ${offline.contract?.execution || 'partial'} offline execution.`,
-          'read',
-        )
-      : row('Offline use', 'None', 'Does not declare offline operation.', 'muted'),
-  )
   return rows
 }
 
@@ -224,6 +189,7 @@ export function CapabilityContract({ review, onRetry, isInstalled = false }) {
   const preview = review.preview
   const changes = changedCapabilityPaths(preview?.capability_diff)
   const unknownPrevious = preview?.capability_diff?.unknown_previous === true
+  const rows = capabilityRows(preview?.capability_contract)
   return (
     <>
       {review.status === 'changed' && (
@@ -241,7 +207,10 @@ export function CapabilityContract({ review, onRetry, isInstalled = false }) {
         </div>
       )}
       <div className="st-capability-list">
-        {capabilityRows(preview?.capability_contract).map((item) => (
+        {rows.length === 0 && (
+          <div className="st-capability-state">No special permissions requested.</div>
+        )}
+        {rows.map((item) => (
           <div className="st-permission-row" key={item.label}>
             <div className="st-perm-row-main">
               <div className="st-perm-label">{item.label}</div>
