@@ -203,9 +203,8 @@ test('community listings join the ordinary install path with source provenance',
       status: 'available_for_review',
     },
     rating: { average: 4.6, count: 12 },
-    user_rating: 5,
-    review_eligible: true,
-    comments: [{ id: 'comment_public_1', body: 'Excellent.' }],
+    user_review: { stars: 5, review_text: 'Excellent.' },
+    review_eligibility: 'eligible',
   }] })
   assert.equal(item.id, 'community:app_public_1234')
   assert.equal(item.collection, 'community')
@@ -218,9 +217,9 @@ test('community listings join the ordinary install path with source provenance',
   assert.equal(item.community.publication_status, 'live')
   assert.equal(item.community.rating_average, 4.6)
   assert.equal(item.community.rating_count, 12)
-  assert.equal(item.community.user_rating, 5)
-  assert.equal(item.community.review_eligible, true)
-  assert.deepEqual(item.community.comments, [{ id: 'comment_public_1', body: 'Excellent.' }])
+  assert.deepEqual(item.community.user_review, { stars: 5, review_text: 'Excellent.' })
+  assert.equal(item.community.review_eligibility, 'eligible')
+  assert.deepEqual(item.community.reviews, [])
 })
 
 test('official catalog apps absorb verified feedback and omit colliding package ids', async () => {
@@ -339,13 +338,14 @@ test('the Store uses shared listings rather than a raw link-install tab', async 
   assert.doesNotMatch(source, />Install from link</)
   assert.match(source, /loadCommunityApps/)
   assert.match(source, /registerCommunityRevision/)
-  assert.match(source, /rateCommunityApp/)
-  assert.match(source, /commentOnCommunityRevision/)
+  assert.match(source, /saveCommunityReview/)
+  assert.match(source, /loadCommunityReviews/)
+  assert.doesNotMatch(source, /rateCommunityApp|commentOnCommunityRevision/)
   assert.doesNotMatch(source, /remixCommunityApp/)
 })
 
-test('ratings and written reviews use exact identity-bound community mutations', async () => {
-  const { rateCommunityApp, commentOnCommunityRevision } = await bundle()
+test('ratings and optional written reviews use one account-bound community mutation', async () => {
+  const { saveCommunityReview } = await bundle()
   const oldFetch = globalThis.fetch
   const calls = []
   globalThis.fetch = async (url, options) => {
@@ -356,41 +356,38 @@ test('ratings and written reviews use exact identity-bound community mutations',
     })
   }
   try {
-    await rateCommunityApp('owner-token', 'app_public_notes', 'revision_public_notes', 5)
-    await commentOnCommunityRevision(
-      'owner-token', 'app_public_notes', 'revision_public_notes', 'Clear and useful.',
-    )
+    await saveCommunityReview('owner-token', 'app_public_notes', 5, null)
+    await saveCommunityReview('owner-token', 'app_public_notes', 4, 'Clear and useful.')
   } finally {
     globalThis.fetch = oldFetch
   }
-  assert.equal(calls[0].url, '/api/community/apps/app_public_notes/rating')
+  assert.equal(calls[0].url, '/api/community/apps/app_public_notes/review')
   assert.equal(calls[0].options.method, 'PUT')
   assert.deepEqual(JSON.parse(calls[0].options.body), {
-    revision_id: 'revision_public_notes', value: 5,
+    stars: 5, review_text: null,
   })
-  assert.match(calls[0].options.headers['Idempotency-Key'], /^store:rating:/)
-  assert.equal(
-    calls[1].url,
-    '/api/community/apps/app_public_notes/revisions/revision_public_notes/comments',
-  )
-  assert.equal(calls[1].options.method, 'POST')
+  assert.match(calls[0].options.headers['Idempotency-Key'], /^store:review:/)
+  assert.equal(calls[1].url, '/api/community/apps/app_public_notes/review')
+  assert.equal(calls[1].options.method, 'PUT')
   assert.deepEqual(JSON.parse(calls[1].options.body), {
-    body: 'Clear and useful.', public_identity: 'github',
+    stars: 4, review_text: 'Clear and useful.',
   })
-  assert.match(calls[1].options.headers['Idempotency-Key'], /^store:comment:/)
+  assert.match(calls[1].options.headers['Idempotency-Key'], /^store:review:/)
 })
 
-test('ratings and public reviews use distinct identity gates and scoped errors', async () => {
+test('ratings and optional reviews use one account gate and scoped errors', async () => {
   const appSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   const feedbackSource = await readFile(join(root, '..', 'ui', 'CommunityFeedback.jsx'), 'utf8')
 
-  assert.match(appSource, /!communityIdentity\?\.linked[\s\S]*!githubIdentity\?\.connected/)
+  assert.match(appSource, /feedback\.review_eligibility !== 'eligible'/)
   assert.match(appSource, /communityActionError\.key === detailCommunityFeedbackKey/)
-  assert.match(detailSource, /canRate=\{!!storeInstalled && communityIdentityLinked/)
-  assert.match(detailSource, /canComment=\{!!storeInstalled[\s\S]*githubIdentityConnected/)
+  assert.match(detailSource, /communityFeedback\?\.review_eligibility === 'eligible'/)
+  assert.match(detailSource, /canRate=\{verifiedCommunityInstall\}/)
   assert.match(feedbackSource, /disabled=\{busy \|\| !canRate\}/)
-  assert.match(feedbackSource, /Connect GitHub to post a public written review\./)
+  assert.match(feedbackSource, /Add a written review \(optional\)/)
+  assert.match(feedbackSource, /feedback\.user_review \? 'Update' : 'Post'/)
+  assert.doesNotMatch(feedbackSource, /Connect GitHub/)
 })
 
 test('distributed publishing submits one immutable GitHub revision', async () => {
