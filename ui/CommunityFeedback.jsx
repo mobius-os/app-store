@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 function StarIcon({ filled }) {
   return (
@@ -14,18 +14,24 @@ function StarIcon({ filled }) {
   )
 }
 
-export function CommunityFeedback({ feedback, canRate = false, canComment = false, onRate, onComment, busy, error }) {
-  const [rating, setRating] = useState(feedback?.user_rating || 0)
-  const [draft, setDraft] = useState('')
+export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback, busy, error }) {
+  const [rating, setRating] = useState(feedback?.user_review?.stars || 0)
+  const [draft, setDraft] = useState(feedback?.user_review?.review_text || '')
+  useEffect(() => {
+    setRating(feedback?.user_review?.stars || 0)
+  }, [feedback?.user_review?.stars])
+  useEffect(() => {
+    setDraft(feedback?.user_review?.review_text || '')
+  }, [feedback?.user_review?.review_text])
   if (!feedback?.id || !feedback?.revision_id) return null
-  const comments = Array.isArray(feedback.comments) ? feedback.comments : []
+  const reviews = Array.isArray(feedback.reviews) ? feedback.reviews : []
   const average = feedback.rating_average > 0 ? feedback.rating_average.toFixed(1) : '—'
   return (
     <section className="st-community-feedback" aria-labelledby="st-community-feedback-title">
       <div className="st-community-feedback-head">
         <div>
           <h3 id="st-community-feedback-title">Ratings &amp; reviews</h3>
-          <p>Feedback comes from linked Möbius identities that installed the app.</p>
+          <p>Rate with your mobius.you account after installing this app. Written reviews are optional.</p>
         </div>
         <div className="st-rating-summary" aria-label={`${average} from ${feedback.rating_count} ratings`}>
           <strong>{average}</strong>
@@ -35,37 +41,39 @@ export function CommunityFeedback({ feedback, canRate = false, canComment = fals
 
       {!canRate ? (
         <div className="st-review-eligibility">
-          Install this listed release and link your Möbius identity to leave verified feedback.
+          {feedback.review_eligibility === 'handle_required'
+            ? 'Choose a mobius.you handle to rate or review this app.'
+            : feedback.review_eligibility === 'install_required'
+              ? 'Install this app to leave verified feedback.'
+              : 'Sign in to mobius.you to rate or review this app.'}
         </div>
       ) : null}
-      <div className="st-rating-picker" role="group" aria-label="Rate this app">
-        {[1, 2, 3, 4, 5].map((value) => (
-          <button
-            type="button"
-            key={value}
-            aria-label={`${value} ${value === 1 ? 'star' : 'stars'}`}
-            aria-pressed={rating === value}
-            disabled={busy || !canRate}
-            onClick={async () => {
-              if (await onRate?.(value)) setRating(value)
-            }}
-          >
-            <StarIcon filled={value <= rating} />
-          </button>
-        ))}
-        <span>{rating ? 'Your rating' : feedback.rating_count ? 'Add your rating' : 'Not rated yet'}</span>
-      </div>
-
-      {canComment ? (
-        <form
-          className="st-review-form"
-          onSubmit={async (event) => {
-            event.preventDefault()
-            if (!draft.trim()) return
-            if (await onComment?.(draft.trim())) setDraft('')
-          }}
-        >
-          <label htmlFor="st-review-draft">Write a review</label>
+      <form
+        className="st-review-form"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          if (!canRate || !rating || busy) return
+          const body = draft.trim()
+          if (await onSubmitFeedback?.(rating, body || null)) setDraft(body)
+        }}
+      >
+        <div className="st-rating-picker" role="group" aria-label="Rate this app">
+          {[1, 2, 3, 4, 5].map((value) => (
+            <button
+              type="button"
+              key={value}
+              aria-label={`${value} ${value === 1 ? 'star' : 'stars'}`}
+              aria-pressed={rating === value}
+              disabled={busy || !canRate}
+              onClick={() => setRating(value)}
+            >
+              <StarIcon filled={value <= rating} />
+            </button>
+          ))}
+          <span>{rating ? 'Your rating' : feedback.rating_count ? 'Add your rating' : 'Not rated yet'}</span>
+        </div>
+        {canRate ? <>
+          <label htmlFor="st-review-draft">Add a written review (optional)</label>
           <textarea
             id="st-review-draft"
             value={draft}
@@ -74,28 +82,28 @@ export function CommunityFeedback({ feedback, canRate = false, canComment = fals
             placeholder="What was useful? What should improve?"
             disabled={busy}
           />
-          <button type="submit" className="st-btn st-btn-secondary" disabled={busy || !draft.trim()}>
-            {busy ? 'Posting…' : 'Post review'}
+          <button type="submit" className="st-btn st-btn-secondary" disabled={busy || !rating}>
+            {busy ? 'Saving…' : feedback.user_review ? 'Update' : 'Post'}
           </button>
-        </form>
-      ) : canRate ? (
-        <div className="st-review-eligibility">
-          Connect GitHub to post a public written review.
-        </div>
-      ) : null}
+        </> : null}
+      </form>
       {error ? <div className="st-community-feedback-error" role="alert">{error}</div> : null}
 
-      {comments.length ? (
+      {feedback.reviews_error ? (
+        <p className="st-review-empty" role="alert">{feedback.reviews_error}</p>
+      ) : !feedback.reviews_loaded ? (
+        <p className="st-review-empty">Loading ratings &amp; reviews…</p>
+      ) : reviews.length ? (
         <div className="st-review-list">
-          {comments.slice(0, 6).map((comment, index) => (
-            <article key={comment.id || index}>
-              <strong>{comment.author?.handle || comment.author_handle || 'Möbius user'}</strong>
-              <p>{comment.body}</p>
+          {reviews.slice(0, 6).map((review, index) => (
+            <article key={review.id || index}>
+              <strong>@{review.author_handle || 'mobius-user'} · {review.stars}/5</strong>
+              {review.review_text ? <p>{review.review_text}</p> : null}
             </article>
           ))}
         </div>
       ) : (
-        <p className="st-review-empty">No written reviews yet.</p>
+        <p className="st-review-empty">No public feedback entries to show.</p>
       )}
     </section>
   )

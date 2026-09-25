@@ -870,11 +870,13 @@ export function communityCatalogItems(payload) {
         published_at: String(row.created_at || ''),
         rating_average: Number(row.rating_average ?? row.rating?.average ?? 0) || 0,
         rating_count: Number(row.rating_count ?? row.rating?.count ?? 0) || 0,
-        user_rating: Number(row.user_rating || 0) || 0,
-        review_eligible: Boolean(row.review_eligible ?? latest.review_eligible ?? false),
-        comments: Array.isArray(latest.comments)
-          ? latest.comments
-          : Array.isArray(row.comments) ? row.comments : [],
+        user_review: row.user_review && typeof row.user_review === 'object'
+          ? row.user_review : null,
+        review_eligibility: String(row.review_eligibility || 'account_required'),
+        has_verified_install: row.has_verified_install === true,
+        reviews: [],
+        reviews_loaded: false,
+        reviews_error: '',
         repository_url: communityRepositoryUrl(
           row.repository_url || row.github?.url || row.homepage || manifest?.homepage,
         ),
