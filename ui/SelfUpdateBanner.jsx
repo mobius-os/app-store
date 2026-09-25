@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { STORE_SELF } from '../constants.js'
-import { fetchUpdateCheck, installApp, previewApp } from '../api.js'
+import { fetchUpdateCheck, installApp, loadUpdateCandidatePreview } from '../api.js'
 import { capabilityDiffNeedsReview } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
 // Self-update banner. The store is bootstrapped separately from its catalog
-// grid, so it checks for its OWN updates here: fetch the published manifest,
-// then compare it with this app's recorded upstream source. The version remains
-// a human label only. Renders null when current or verification is unavailable.
+// grid, so it checks for its OWN updates here: preview the published candidate
+// commit, compare it with this app's recorded upstream source, and install that
+// exact commit. The version remains a human label only. Renders null when
+// current or verification is unavailable.
 export function SelfUpdateBanner({ appId, token }) {
   const [review, setReview] = useState(null)
   const [showReview, setShowReview] = useState(false)
@@ -17,9 +18,13 @@ export function SelfUpdateBanner({ appId, token }) {
 
   useEffect(() => {
     let cancelled = false
-    previewApp({ manifest_url: STORE_SELF.manifest_url, token })
-      .then(preview => {
-        if (!cancelled) setReview({ status: 'ready', preview, error: '' })
+    loadUpdateCandidatePreview(appId, STORE_SELF.manifest_url, token)
+      .then(candidate => {
+        if (!cancelled) {
+          setReview({
+            status: 'ready', preview: candidate.capability_preview, candidate, error: '',
+          })
+        }
       })
       .catch(() => {})   // a failed self-check is silent — never block the grid
     fetchUpdateCheck(appId, token, STORE_SELF.manifest_url)
@@ -45,6 +50,9 @@ export function SelfUpdateBanner({ appId, token }) {
         manifest_url: STORE_SELF.manifest_url,
         token,
         reviewed_capability_digest: review.preview.capability_digest,
+        reviewed_source_digest: review.candidate.source_digest,
+        update_app_id: review.candidate.app_id,
+        reviewed_upstream_commit: review.candidate.upstream_commit,
       })
       if (result.mode === 'conflict') {
         const paths = result.conflict_paths?.length
@@ -57,11 +65,12 @@ export function SelfUpdateBanner({ appId, token }) {
       setPhase('done')
     } catch (e) {
       if (e?.code === 'capability_changed') {
-        let preview = e.preview
+        let next = { status: 'changed', preview: e.preview, candidate: review.candidate, error: '' }
         try {
-          preview = await previewApp({ manifest_url: STORE_SELF.manifest_url, token })
+          const candidate = await loadUpdateCandidatePreview(appId, STORE_SELF.manifest_url, token)
+          next = { status: 'changed', preview: candidate.capability_preview, candidate, error: '' }
         } catch {}
-        setReview({ status: 'changed', preview, error: '' })
+        setReview(next)
         setPhase('error')
         setMsg('Access changed after review. Review the current contract and click Update again.')
         return

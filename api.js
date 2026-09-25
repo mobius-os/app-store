@@ -583,7 +583,10 @@ export async function fetchCatalog(url, token, opts = {}) {
   return entries
 }
 
-function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capability_digest, reviewed_source_digest }) {
+function installRequestBody({
+  manifest_url, manifest, raw_base, reviewed_capability_digest,
+  reviewed_source_digest, update_app_id, reviewed_upstream_commit,
+}) {
   const body = {}
   if (manifest_url) {
     body.manifest_url = manifest_url
@@ -596,6 +599,12 @@ function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capabil
   }
   if (reviewed_source_digest) {
     body.reviewed_source_digest = reviewed_source_digest
+  }
+  // An update installs exactly the commit its review showed, already fetched
+  // on the instance, instead of fetching the branch again.
+  if (update_app_id && reviewed_upstream_commit) {
+    body.update_app_id = update_app_id
+    body.reviewed_upstream_commit = reviewed_upstream_commit
   }
   return body
 }
@@ -635,10 +644,13 @@ export class UpdateChangedError extends Error {
   }
 }
 
-export async function installApp({ manifest_url, manifest, raw_base, token, reviewed_capability_digest, reviewed_source_digest }) {
+export async function installApp({
+  manifest_url, manifest, raw_base, token, reviewed_capability_digest,
+  reviewed_source_digest, update_app_id, reviewed_upstream_commit,
+}) {
   const body = installRequestBody({
     manifest_url, manifest, raw_base, reviewed_capability_digest,
-    reviewed_source_digest,
+    reviewed_source_digest, update_app_id, reviewed_upstream_commit,
   })
   const res = await fetch('/api/apps/install', {
     method: 'POST',

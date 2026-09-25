@@ -1418,6 +1418,37 @@ test('installApp prefers live manifest_url over embedded manifest snapshots', as
   }
 })
 
+test('a reviewed update installs exactly the previewed commit of that app', async () => {
+  const oldFetch = globalThis.fetch
+  const bodies = []
+  globalThis.fetch = async (url, opts) => {
+    bodies.push(JSON.parse(opts.body))
+    return new Response(JSON.stringify({ id: 12, mode: 'update' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })
+  }
+  try {
+    const { installApp } = await bundle()
+    await installApp({
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
+      token: 'tok',
+      reviewed_capability_digest: 'c'.repeat(64),
+      reviewed_source_digest: 's'.repeat(64),
+      update_app_id: 12,
+      reviewed_upstream_commit: 'e'.repeat(40),
+    })
+    assert.deepEqual(bodies, [{
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-notes/main/mobius.json',
+      reviewed_capability_digest: 'c'.repeat(64),
+      reviewed_source_digest: 's'.repeat(64),
+      update_app_id: 12,
+      reviewed_upstream_commit: 'e'.repeat(40),
+    }])
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
 test('review digests bind capability and source previews to install', async () => {
   const oldFetch = globalThis.fetch
   const calls = []
@@ -2177,6 +2208,8 @@ test('app details keep stable access information in a bottom disclosure', async 
   assert.doesNotMatch(source, /Access and agent integration/)
   const selfUpdateSource = await readFile(join(root, '..', 'ui', 'SelfUpdateBanner.jsx'), 'utf8')
   assert.match(selfUpdateSource, /fetchUpdateCheck\(appId, token, STORE_SELF\.manifest_url\)/)
+  assert.match(selfUpdateSource, /loadUpdateCandidatePreview\(appId, STORE_SELF\.manifest_url, token\)/)
+  assert.match(selfUpdateSource, /reviewed_upstream_commit: review\.candidate\.upstream_commit/)
   assert.doesNotMatch(selfUpdateSource, /semverCmp/)
   assert.match(selfUpdateSource, /if \(needsAccessReview && !showReview\)/)
   assert.match(selfUpdateSource, /'Update App Store'/)

@@ -1089,6 +1089,8 @@ export default function App({ appId, token }) {
         token,
         reviewed_capability_digest: _opts.capabilityDigest,
         reviewed_source_digest: _opts.sourceDigest,
+        update_app_id: _opts.updateAppId,
+        reviewed_upstream_commit: _opts.upstreamCommit,
       })
       const isConflict = result.mode === 'conflict'
       const isSeamlessUpdate = result.mode === 'update' &&
@@ -1507,6 +1509,8 @@ export default function App({ appId, token }) {
       isUpdate: true,
       capabilityDigest: updateReview.capabilityReview.preview.capability_digest,
       sourceDigest: updateReview.preview.source_digest,
+      updateAppId: updateReview.preview.app_id,
+      upstreamCommit: updateReview.preview.upstream_commit,
     })
     if (outcome?.ok) {
       setUpdateReview(null)
@@ -1785,6 +1789,8 @@ export default function App({ appId, token }) {
             deferResolver: true,
             capabilityDigest: entry.prepared.capabilityReview.preview.capability_digest,
             sourceDigest: entry.prepared.preview.source_digest,
+            updateAppId: entry.prepared.preview.app_id,
+            upstreamCommit: entry.prepared.preview.upstream_commit,
           })
           if (outcome?.ok) completed += 1
           else if (outcome?.conflict) conflicts += 1
