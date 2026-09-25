@@ -489,11 +489,9 @@ export const CSS = `
 }
 .st-publisher-repository-name input:focus { outline: 0; }
 .st-publish-repository-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr); gap: 12px; }
-.st-publish-repository-grid .st-publish-field:last-child { grid-column: 1 / -1; }
 .st-publish-source-note { color: var(--muted); font-size: 12px; margin-right: auto; }
 @media (max-width: 680px) {
   .st-publish-repository-grid { grid-template-columns: 1fr; }
-  .st-publish-repository-grid .st-publish-field:last-child { grid-column: auto; }
 }
 @media (max-width: 620px) {
   .st-community-unavailable, .st-publisher-intro, .st-community-provenance { align-items: stretch; flex-direction: column; }

@@ -89,7 +89,6 @@ export function PublisherTab({
   const [localRepositoryName, setLocalRepositoryName] = useState('')
   const [repository, setRepository] = useState('')
   const [commitSha, setCommitSha] = useState('')
-  const [manifestPath, setManifestPath] = useState('mobius.json')
   const previewGateRef = useRef(null)
   if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
@@ -312,17 +311,16 @@ export function PublisherTab({
         <details className="st-publish-advanced">
           <summary><span>Already on GitHub?</span><small>List one exact commit</small></summary>
           <section className="st-publish-review" aria-labelledby="st-register-release-title">
-            <div><h3 id="st-register-release-title">List a GitHub release</h3><p>Choose a public repository and exact commit. Möbius adds a proof without moving your main branch.</p></div>
+            <div><h3 id="st-register-release-title">List a GitHub release</h3><p>Choose a public repository with <code>mobius.json</code> at its root and an exact commit. Möbius adds a proof without moving your main branch.</p></div>
             <div className="st-publish-repository-grid">
               <label className="st-publish-field"><span>Repository</span><input value={repository} placeholder="owner/repository" autoCapitalize="none" autoCorrect="off" onChange={(event) => setRepository(event.target.value)} disabled={!!publishingId} /></label>
               <label className="st-publish-field"><span>Exact commit</span><input value={commitSha} placeholder="40-character Git commit" autoCapitalize="none" autoCorrect="off" onChange={(event) => setCommitSha(event.target.value)} disabled={!!publishingId} /></label>
-              <label className="st-publish-field"><span>Manifest path</span><input value={manifestPath} placeholder="mobius.json" autoCapitalize="none" autoCorrect="off" onChange={(event) => setManifestPath(event.target.value)} disabled={!!publishingId} /></label>
             </div>
             <div className="st-publish-review-actions">
-              <button type="button" className="st-btn st-btn-primary" disabled={!signedIn || !githubReady || !repositoryValid || !commitValid || !manifestPath.trim() || !!publishingId}
+              <button type="button" className="st-btn st-btn-primary" disabled={!signedIn || !githubReady || !repositoryValid || !commitValid || !!publishingId}
                       onClick={async () => {
-                        const ok = await onRegisterRepository({ repository: repository.trim(), commitSha: commitSha.trim().toLowerCase(), manifestPath: manifestPath.trim(), publicIdentity: 'github' })
-                        if (ok) { setRepository(''); setCommitSha(''); setManifestPath('mobius.json') }
+                        const ok = await onRegisterRepository({ repository: repository.trim(), commitSha: commitSha.trim().toLowerCase(), publicIdentity: 'github' })
+                        if (ok) { setRepository(''); setCommitSha('') }
                       }}>
                 {publishingId === 'github-release' ? 'Creating proof…' : 'Create proof & list'}
               </button>
