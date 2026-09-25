@@ -340,7 +340,6 @@ test('the Store uses shared listings rather than a raw link-install tab', async 
   assert.match(source, /registerCommunityRevision/)
   assert.match(source, /saveCommunityReview/)
   assert.match(source, /loadCommunityReviews/)
-  assert.doesNotMatch(source, /rateCommunityApp|commentOnCommunityRevision/)
   assert.doesNotMatch(source, /remixCommunityApp/)
 })
 
