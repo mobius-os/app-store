@@ -124,7 +124,7 @@ export async function loadLocalPublicationPreview(token, appId) {
 
 export async function registerCommunityRevision(
   token,
-  { repository, commitSha, manifestPath = 'mobius.json', publicIdentity = 'github' },
+  { repository, commitSha, publicIdentity = 'github' },
 ) {
   const response = await fetch('/api/community/apps', {
     method: 'POST',
@@ -135,7 +135,6 @@ export async function registerCommunityRevision(
     body: JSON.stringify({
       repository,
       commit_sha: commitSha,
-      manifest_path: manifestPath,
       public_identity: publicIdentity,
     }),
   })

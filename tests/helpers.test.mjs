@@ -409,7 +409,6 @@ test('distributed publishing submits one immutable GitHub revision', async () =>
     await registerCommunityRevision('owner-token', {
       repository: 'example/notes',
       commitSha: 'a'.repeat(40),
-      manifestPath: 'apps/notes/mobius.json',
       publicIdentity: 'github',
     })
   } finally {
@@ -421,7 +420,6 @@ test('distributed publishing submits one immutable GitHub revision', async () =>
   assert.deepEqual(JSON.parse(calls[0].options.body), {
     repository: 'example/notes',
     commit_sha: 'a'.repeat(40),
-    manifest_path: 'apps/notes/mobius.json',
     public_identity: 'github',
   })
   assert.match(calls[0].options.headers['Idempotency-Key'], /^store:register:/)
