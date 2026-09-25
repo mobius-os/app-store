@@ -1,4 +1,4 @@
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, stat } from 'node:fs/promises'
 import { posix, resolve } from 'node:path'
 
 const STATIC_IMPORT = /\b(?:import|export)\s+(?:[^'";]*?\s+from\s*)?['"](\.[^'"]+)['"]/g
@@ -43,6 +43,8 @@ export async function assertCompleteSourceManifest(root, manifest) {
     }
   }
 
+  if (job) await assertRunnableJob(root, job)
+
   const visited = new Set()
   const queue = [entry, ...(job ? [job] : [])]
   while (queue.length) {
@@ -58,5 +60,18 @@ export async function assertCompleteSourceManifest(root, manifest) {
       }
       queue.push(imported)
     }
+  }
+}
+
+// Mirrors the platform's scheduled-job contract: the job names its own
+// interpreter and is committed executable, or Möbius refuses to install it.
+async function assertRunnableJob(root, job) {
+  const path = resolve(root, job)
+  const firstLine = (await readFile(path, 'utf8')).split('\n', 1)[0]
+  if (!/^#!\s*\//.test(firstLine)) {
+    throw new Error(`${job}: schedule job must start with a shebang naming an absolute interpreter`)
+  }
+  if (!((await stat(path)).mode & 0o111)) {
+    throw new Error(`${job}: schedule job must be executable (git update-index --chmod=+x ${job})`)
   }
 }

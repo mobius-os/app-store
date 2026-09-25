@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import test from 'node:test'
@@ -2341,6 +2342,30 @@ test('app publication requires a complete source_files import tree', async () =>
     }),
     /index\.jsx: relative import \.\/ui\/UpdateReviewModal\.jsx is not declared in source_files/,
   )
+})
+
+test('app publication requires an executable scheduled job with a shebang', async () => {
+  const { assertCompleteSourceManifest } = await import(
+    pathToFileURL(join(root, '..', 'scripts', 'source-manifest-contract.mjs'))
+  )
+  const pkg = await mkdtemp(join(tmpdir(), 'store-job-contract-'))
+  try {
+    await writeFile(join(pkg, 'index.jsx'), 'export default function App() { return null }\n')
+    await writeFile(join(pkg, 'theme.js'), 'export const theme = {}\n')
+    const manifest = { entry: 'index.jsx', source_files: ['theme.js'], schedule: { job: 'job.py' } }
+
+    await writeFile(join(pkg, 'job.py'), '#!/usr/bin/env python3\nprint("ok")\n')
+    await chmod(join(pkg, 'job.py'), 0o644)
+    await assert.rejects(() => assertCompleteSourceManifest(pkg, manifest), /job\.py: schedule job must be executable/)
+
+    await chmod(join(pkg, 'job.py'), 0o755)
+    await assert.doesNotReject(() => assertCompleteSourceManifest(pkg, manifest))
+
+    await writeFile(join(pkg, 'job.py'), 'print("ok")\n')
+    await assert.rejects(() => assertCompleteSourceManifest(pkg, manifest), /job\.py: schedule job must start with a shebang/)
+  } finally {
+    await rm(pkg, { recursive: true, force: true })
+  }
 })
 
 test('Beat Machine discovery entry sells beat-making in one short promise', async () => {
