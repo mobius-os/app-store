@@ -36,7 +36,7 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityRate, onCommunityComment, onCommunityWithdraw, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, githubIdentityConnected = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityFeedback, onCommunityWithdraw, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
@@ -106,6 +106,9 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
     ? sourceAvailabilityStatus(item.community.cache)
     : null
   const communityFeedback = item.community_feedback || item.community || null
+  const verifiedCommunityInstall = !!storeInstalled
+    && communityIdentityLinked
+    && communityFeedback?.review_eligibility === 'eligible'
   const previewUrl = item.preview && storeAppId
     ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`
     : ''
@@ -438,13 +441,8 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           <CommunityFeedback
             key={communityFeedback.revision_id}
             feedback={communityFeedback}
-            canRate={!!storeInstalled && communityIdentityLinked && communityFeedback.review_eligible}
-            canComment={!!storeInstalled
-              && communityIdentityLinked
-              && githubIdentityConnected
-              && communityFeedback.review_eligible}
-            onRate={onCommunityRate}
-            onComment={onCommunityComment}
+            canRate={verifiedCommunityInstall}
+            onSubmitFeedback={onCommunityFeedback}
             busy={communityBusy}
             error={communityError}
           />

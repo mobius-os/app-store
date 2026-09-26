@@ -55,6 +55,20 @@ export async function loadCommunityApps(token, { query = '', limit = 50, offset 
   return communityResponse(response, 'Community apps could not be loaded.')
 }
 
+export async function loadCommunityApp(token, appId) {
+  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}`, {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'This app could not be refreshed.')
+}
+
+export async function loadCommunityReviews(token, appId) {
+  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/reviews`, {
+    headers: communityHeaders(token),
+  })
+  return communityResponse(response, 'Ratings and reviews could not be loaded.')
+}
+
 export async function loadEditorialSpotlight(token) {
   const response = await fetch('/api/community/editorial/spotlight', {
     headers: communityHeaders(token),
@@ -158,16 +172,16 @@ export async function publishLocalAppToGithub(token, appId, repositoryName) {
   return communityResponse(response, 'This local app could not be published.')
 }
 
-export async function rateCommunityApp(token, appId, revisionId, value) {
-  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/rating`, {
+export async function saveCommunityReview(token, appId, stars, reviewText = null) {
+  const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}/review`, {
     method: 'PUT',
     headers: {
-      ...communityHeaders(token, communityRequestKey('rating')),
+      ...communityHeaders(token, communityRequestKey('review')),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ revision_id: revisionId, value }),
+    body: JSON.stringify({ stars, review_text: reviewText }),
   })
-  return communityResponse(response, 'Your rating could not be saved.')
+  return communityResponse(response, 'Your rating or review could not be saved.')
 }
 
 export async function withdrawCommunityApp(token, appId) {
@@ -176,21 +190,6 @@ export async function withdrawCommunityApp(token, appId) {
     headers: communityHeaders(token, communityRequestKey('withdraw')),
   })
   return communityResponse(response, 'This app could not be withdrawn.')
-}
-
-export async function commentOnCommunityRevision(token, appId, revisionId, body) {
-  const response = await fetch(
-    `/api/community/apps/${encodeURIComponent(appId)}/revisions/${encodeURIComponent(revisionId)}/comments`,
-    {
-      method: 'POST',
-      headers: {
-        ...communityHeaders(token, communityRequestKey('comment')),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ body, public_identity: 'github' }),
-    },
-  )
-  return communityResponse(response, 'Your review could not be posted.')
 }
 
 export async function recordCommunityInstall(token, appId, revisionId, localAppId) {
@@ -202,10 +201,17 @@ export async function recordCommunityInstall(token, appId, revisionId, localAppI
         ...communityHeaders(token, communityRequestKey('install')),
         'Content-Type': 'application/json',
       },
+      // The owner may open the newly installed app before Store's iframe settles.
+      keepalive: true,
       body: JSON.stringify({ local_app_id: localAppId }),
     },
   )
   return communityResponse(response, 'This exact release could not be preserved.')
+}
+
+export async function confirmCommunityInstallReceipt(token, appId, revisionId, localAppId) {
+  await recordCommunityInstall(token, appId, revisionId, localAppId)
+  return loadCommunityApp(token, appId)
 }
 
 export function openInstalledApp(id, { intent, onUnembedded } = {}) {
@@ -682,6 +688,7 @@ export async function installApp({
     divergence: out.divergence,
     conflict_paths: out.conflict_paths || [],
     warnings: out.warnings || [],
+    updated_at: out.updated_at,
   }
 }
 
@@ -697,6 +704,9 @@ function formatErrorDetail(detail) {
     if (messages.length) return messages.join('; ')
   }
   if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) {
+      return detail.message.trim()
+    }
     try { return JSON.stringify(detail) } catch {}
   }
   return ''

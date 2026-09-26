@@ -38,6 +38,9 @@ import {
   mergeCommunityCatalog,
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
+  rememberCommunityInstallRevision,
+  installedCommunityRevision,
+  attemptCommunityReceiptOnce,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
   setInstalledMatchViewer,
@@ -56,6 +59,7 @@ import {
   hasConnectedProvider,
   installApp,
   loadCommunityApps,
+  loadCommunityReviews,
   loadCommunityIdentity,
   loadEditorialSpotlight,
   loadLocalGithubIdentity,
@@ -67,10 +71,9 @@ import {
   publishLocalAppToGithub,
   publishEditorialSpotlight,
   registerCommunityRevision,
-  rateCommunityApp,
+  saveCommunityReview,
   withdrawCommunityApp,
-  commentOnCommunityRevision,
-  recordCommunityInstall,
+  confirmCommunityInstallReceipt,
   uploadEditorialArtwork,
   openChat,
   openInstalledApp,
@@ -121,6 +124,9 @@ export {
   mergeCommunityCatalog,
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
+  rememberCommunityInstallRevision,
+  installedCommunityRevision,
+  attemptCommunityReceiptOnce,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
   humanCron,
@@ -140,6 +146,8 @@ export {
   fetchUpdateCheck,
   installApp,
   loadCommunityApps,
+  loadCommunityApp,
+  loadCommunityReviews,
   loadCommunityIdentity,
   loadEditorialSpotlight,
   loadLocalGithubIdentity,
@@ -149,9 +157,9 @@ export {
   publishLocalAppToGithub,
   publishEditorialSpotlight,
   registerCommunityRevision,
-  rateCommunityApp,
+  saveCommunityReview,
+  confirmCommunityInstallReceipt,
   withdrawCommunityApp,
-  commentOnCommunityRevision,
   uploadEditorialArtwork,
   previewApp,
   proxyUrl,
@@ -330,6 +338,8 @@ export default function App({ appId, token }) {
   const [publicationStatesError, setPublicationStatesError] = useState('')
   const [communityActionBusy, setCommunityActionBusy] = useState(false)
   const [communityActionError, setCommunityActionError] = useState({ key: '', message: '' })
+  // Retry an old interrupted install receipt once when its detail opens.
+  const communityReceiptAttemptsRef = useRef(new Set())
   const [otherInstalledCatalog, setOtherInstalledCatalog] = useState([])
   const otherInstalledCatalogRef = useRef(otherInstalledCatalog)
   useEffect(() => { otherInstalledCatalogRef.current = otherInstalledCatalog }, [otherInstalledCatalog])
@@ -755,64 +765,131 @@ export default function App({ appId, token }) {
     })
   }, [])
 
-  const handleCommunityRate = useCallback(async (value) => {
+  const confirmCommunityInstall = useCallback(async (item, installedApp, revisionId) => {
+    const feedback = item?.community
+    if (!feedback?.id || !revisionId || !installedApp?.id) return false
+    const feedbackKey = `${feedback.id}:${feedback.revision_id}`
+    try {
+      const refreshed = await confirmCommunityInstallReceipt(
+        token,
+        feedback.id,
+        revisionId,
+        `app:${installedApp.id}:${installedApp.slug || item.manifest?.id || 'community'}`,
+      )
+      updateCommunityFeedback(feedback.id, (current) => ({
+        ...current,
+        review_eligibility: String(refreshed.review_eligibility || current.review_eligibility),
+        has_verified_install: refreshed.has_verified_install === true,
+        user_review: refreshed.user_review || null,
+      }))
+      setCommunityActionError((current) => (
+        current.key === feedbackKey ? { key: feedbackKey, message: '' } : current
+      ))
+      return true
+    } catch (error) {
+      setCommunityActionError({
+        key: feedbackKey,
+        message: error?.message || 'Your installation could not be verified for rating.',
+      })
+      return false
+    }
+  }, [token, updateCommunityFeedback])
+
+  // Reconcile a missed receipt only when the installed release is known.
+  // /current is a mutable source alias, so the latest listing revision must
+  // never stand in for the release actually installed.
+  useEffect(() => {
+    const feedback = detail?.community
+    if (!communityIdentity?.linked || !feedback?.id || !feedback?.revision_id
+      || feedback.has_verified_install) return
+    const installedApp = findInstalled(installed, detail)
+    if (!installedApp) return
+    const revisionId = installedCommunityRevision(installedApp, feedback.id)
+    if (!revisionId) {
+      const key = `${feedback.id}:${feedback.revision_id}`
+      const message = 'This older install has no recorded release. Update it to verify rating access.'
+      setCommunityActionError((current) => (
+        current.key === key && current.message === message ? current : { key, message }
+      ))
+      return
+    }
+    const attemptKey = `${communityIdentity.issuer}:${communityIdentity.subject}:${communityIdentity.instance_id}:${feedback.id}:${revisionId}:${installedApp.id}`
+    void attemptCommunityReceiptOnce(
+      communityReceiptAttemptsRef.current,
+      attemptKey,
+      () => confirmCommunityInstall(detail, installedApp, revisionId),
+    )
+  }, [communityIdentity, confirmCommunityInstall, detail, installed])
+
+  useEffect(() => {
+    const communityId = detail?.community_feedback?.id || detail?.community?.id
+    if (!communityId) return undefined
+    let active = true
+    loadCommunityReviews(token, communityId).then((result) => {
+      if (!active) return
+      updateCommunityFeedback(communityId, (current) => ({
+        ...current,
+        reviews: Array.isArray(result.items) ? result.items : [],
+        reviews_loaded: true,
+        reviews_error: '',
+      }))
+    }).catch((error) => {
+      if (!active) return
+      updateCommunityFeedback(communityId, (current) => ({
+        ...current,
+        reviews_loaded: true,
+        reviews_error: error?.message || 'Ratings and reviews could not be loaded.',
+      }))
+    })
+    return () => { active = false }
+  }, [detail?.community?.id, detail?.community_feedback?.id, token, updateCommunityFeedback])
+
+  const handleCommunityFeedback = useCallback(async (stars, body) => {
     const feedback = detail?.community_feedback || detail?.community
-    if (!feedback || communityActionBusy || !communityIdentity?.linked || !feedback.review_eligible) {
+    if (!feedback
+      || communityActionBusy
+      || !communityIdentity?.linked
+      || feedback.review_eligibility !== 'eligible'
+      || !Number.isInteger(stars) || stars < 1 || stars > 5) {
       return false
     }
     const feedbackKey = `${feedback.id}:${feedback.revision_id}`
     setCommunityActionBusy(true)
     setCommunityActionError({ key: feedbackKey, message: '' })
     try {
-      const result = await rateCommunityApp(token, feedback.id, feedback.revision_id, value)
+      const result = await saveCommunityReview(token, feedback.id, stars, body)
       updateCommunityFeedback(feedback.id, (current) => ({
         ...current,
-        user_rating: value,
-        rating_average: Number(result.rating_average ?? result.rating?.average ?? current.rating_average) || value,
-        rating_count: Number(result.rating_count ?? result.rating?.count ?? current.rating_count) || Math.max(1, current.rating_count),
+        user_review: result.user_review || null,
+        rating_average: Number(result.rating_average),
+        rating_count: Number(result.rating_count),
+        review_eligibility: String(result.review_eligibility || current.review_eligibility),
       }))
+      try {
+        const reviews = await loadCommunityReviews(token, feedback.id)
+        updateCommunityFeedback(feedback.id, (current) => ({
+          ...current,
+          reviews: Array.isArray(reviews.items) ? reviews.items : [],
+          reviews_loaded: true,
+          reviews_error: '',
+        }))
+      } catch (readError) {
+        updateCommunityFeedback(feedback.id, (current) => ({
+          ...current,
+          reviews_error: readError?.message || 'Review saved, but the list could not refresh.',
+        }))
+      }
       return true
     } catch (error) {
       setCommunityActionError({
         key: feedbackKey,
-        message: error?.message || 'Your rating could not be saved.',
+        message: error?.message || 'Your rating or review could not be saved.',
       })
       return false
     } finally {
       setCommunityActionBusy(false)
     }
   }, [communityActionBusy, communityIdentity, detail, token, updateCommunityFeedback])
-
-  const handleCommunityComment = useCallback(async (body) => {
-    const feedback = detail?.community_feedback || detail?.community
-    if (!feedback
-      || communityActionBusy
-      || !communityIdentity?.linked
-      || !githubIdentity?.connected
-      || !feedback.review_eligible) {
-      return false
-    }
-    const feedbackKey = `${feedback.id}:${feedback.revision_id}`
-    setCommunityActionBusy(true)
-    setCommunityActionError({ key: feedbackKey, message: '' })
-    try {
-      const result = await commentOnCommunityRevision(token, feedback.id, feedback.revision_id, body)
-      const comment = result.comment || result
-      updateCommunityFeedback(feedback.id, (current) => ({
-        ...current,
-        comments: [comment, ...(current.comments || [])],
-      }))
-      return true
-    } catch (error) {
-      setCommunityActionError({
-        key: feedbackKey,
-        message: error?.message || 'Your review could not be posted.',
-      })
-      return false
-    } finally {
-      setCommunityActionBusy(false)
-    }
-  }, [communityActionBusy, communityIdentity, detail, githubIdentity, token, updateCommunityFeedback])
 
   const handleUploadSpotlightArtwork = useCallback(
     (file) => uploadEditorialArtwork(token, file),
@@ -1162,20 +1239,28 @@ export default function App({ appId, token }) {
           },
         }))
       }
-      if (item.community?.id && item.community?.revision_id && result.id) {
-        // Installation is already complete; receipt failure must never roll it
-        // back. A later successful install/update retries with a fresh,
-        // idempotent receipt so Host can keep this exact release available.
-        void recordCommunityInstall(
-          token,
-          item.community.id,
-          item.community.revision_id,
-          `app:${result.id}:${result.slug || item.manifest?.id || 'community'}`,
-        ).catch(() => {})
+      const communityFeedback = item.community
+      if (communityFeedback?.id && communityFeedback?.revision_id && result.id) {
+        rememberCommunityInstallRevision(result, communityFeedback)
       }
       setCardErrors(prev => withoutKey(prev, item.id))
       setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
       if (!isBatch) await refreshInstalled()
+      if (communityFeedback?.id && communityFeedback?.revision_id && result.id) {
+        const attemptKey = `${communityIdentity?.issuer}:${communityIdentity?.subject}:${communityIdentity?.instance_id}:${communityFeedback.id}:${communityFeedback.revision_id}:${result.id}`
+        // Do not hold the completed install UI on an external community call.
+        // The receipt request itself uses keepalive if the owner opens the app.
+        void attemptCommunityReceiptOnce(
+          communityReceiptAttemptsRef.current,
+          attemptKey,
+          () => confirmCommunityInstall(item, result, communityFeedback.revision_id),
+        )?.then((confirmed) => {
+          if (!confirmed && !isBatch) setToast({
+            kind: 'error',
+            message: 'App installed, but rating access could not be verified. Reopen Store to retry.',
+          })
+        })
+      }
       const openAction = result.id
         ? {
             label: 'Open App',
@@ -1217,8 +1302,9 @@ export default function App({ appId, token }) {
       }
 
       const verb = result.mode === 'update' ? 'updated' : 'installed'
-      const warnSuffix = result.warnings.length
-        ? ` (with notes: ${result.warnings.join('; ')})`
+      const installNotes = result.warnings || []
+      const warnSuffix = installNotes.length
+        ? ` (with notes: ${installNotes.join('; ')})`
         : ''
       if (result.mode === 'update') {
         window.mobius?.signal?.('app_updated', { slug: result.id || item.id })
@@ -1625,13 +1711,13 @@ export default function App({ appId, token }) {
     document.getElementById(`st-tab-${next}`)?.focus()
   }
 
-  const displayCatalog = useMemo(
-    () => sortCatalogForDisplay([
+  const displayCatalog = useMemo(() => {
+    const remainingInstalledIds = new Set(otherInstalledCatalogSources.map((item) => item.id))
+    return sortCatalogForDisplay([
       ...listedCatalog,
-      ...otherInstalledCatalog,
-    ]),
-    [listedCatalog, otherInstalledCatalog],
-  )
+      ...otherInstalledCatalog.filter((item) => remainingInstalledIds.has(item.id)),
+    ])
+  }, [listedCatalog, otherInstalledCatalog, otherInstalledCatalogSources])
   const detailCommunityFeedback = detail?.community_feedback || detail?.community || null
   const detailCommunityFeedbackKey = detailCommunityFeedback
     ? `${detailCommunityFeedback.id}:${detailCommunityFeedback.revision_id}`
@@ -1905,8 +1991,7 @@ export default function App({ appId, token }) {
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
           onDismissNotice={handleDismissNotice}
-          onCommunityRate={handleCommunityRate}
-          onCommunityComment={handleCommunityComment}
+          onCommunityFeedback={handleCommunityFeedback}
           onCommunityWithdraw={handleCommunityWithdraw}
           canCommunityWithdraw={!!(
             githubIdentity?.login
@@ -1920,7 +2005,6 @@ export default function App({ appId, token }) {
             ? communityActionError.message
             : ''}
           communityIdentityLinked={!!communityIdentity?.linked}
-          githubIdentityConnected={!!githubIdentity?.connected}
           token={token}
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}

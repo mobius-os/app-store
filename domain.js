@@ -168,6 +168,66 @@ export function canonicalIdentityKey(url, manifestId) {
   return `${base}#manifest-id=${manifestId}`
 }
 
+const COMMUNITY_INSTALL_REVISIONS_KEY = 'store:community-install-revisions:v1'
+
+function communityInstallStorage() {
+  try { return globalThis.window?.localStorage || null } catch { return null }
+}
+
+// The Host records an installed community source as a mutable /current URL.
+// Remember the exact listed revision at install time so a missed receipt can
+// be retried without attributing an older install to a newer public release.
+export function rememberCommunityInstallRevision(installedApp, community, storage = communityInstallStorage()) {
+  if (!installedApp?.id || !installedApp.updated_at || !community?.id || !community.revision_id || !storage) return false
+  try {
+    const saved = JSON.parse(storage.getItem(COMMUNITY_INSTALL_REVISIONS_KEY) || '{}')
+    const entries = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+    entries[String(installedApp.id)] = {
+      community_id: community.id,
+      revision_id: community.revision_id,
+      updated_at: installedApp.updated_at,
+    }
+    storage.setItem(COMMUNITY_INSTALL_REVISIONS_KEY, JSON.stringify(entries))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function installedCommunityRevision(installedApp, communityId, storage = communityInstallStorage()) {
+  if (!installedApp?.id || !communityId) return null
+  for (const source of [installedApp.source_manifest?.url, installedApp.manifest_url]) {
+    try {
+      const match = new URL(source).pathname.match(/\/v1\/community\/source\/(app_[A-Za-z0-9_-]+)\/(rev_[A-Za-z0-9_-]+)(?:\/|$)/)
+      if (match?.[1] === communityId) return match[2]
+    } catch {}
+  }
+  if (!storage || !installedApp.updated_at) return null
+  try {
+    const entries = JSON.parse(storage.getItem(COMMUNITY_INSTALL_REVISIONS_KEY) || '{}')
+    const saved = entries?.[String(installedApp.id)]
+    return saved?.community_id === communityId && saved?.updated_at === installedApp.updated_at
+      ? saved.revision_id || null : null
+  } catch {
+    return null
+  }
+}
+
+export function attemptCommunityReceiptOnce(attempts, key, confirm) {
+  if (attempts.has(key)) return null
+  attempts.add(key)
+  return Promise.resolve().then(confirm).then(
+    (confirmed) => {
+      if (!confirmed) attempts.delete(key)
+      return confirmed
+    },
+    (error) => {
+      attempts.delete(key)
+      throw error
+    },
+  )
+}
+
 export function sourceBackedInstalledApps(
   installed = [],
   { excludeAppIds = [] } = {},
@@ -870,11 +930,13 @@ export function communityCatalogItems(payload) {
         published_at: String(row.created_at || ''),
         rating_average: Number(row.rating_average ?? row.rating?.average ?? 0) || 0,
         rating_count: Number(row.rating_count ?? row.rating?.count ?? 0) || 0,
-        user_rating: Number(row.user_rating || 0) || 0,
-        review_eligible: Boolean(row.review_eligible ?? latest.review_eligible ?? false),
-        comments: Array.isArray(latest.comments)
-          ? latest.comments
-          : Array.isArray(row.comments) ? row.comments : [],
+        user_review: row.user_review && typeof row.user_review === 'object'
+          ? row.user_review : null,
+        review_eligibility: String(row.review_eligibility || 'account_required'),
+        has_verified_install: row.has_verified_install === true,
+        reviews: [],
+        reviews_loaded: false,
+        reviews_error: '',
         repository_url: communityRepositoryUrl(
           row.repository_url || row.github?.url || row.homepage || manifest?.homepage,
         ),
