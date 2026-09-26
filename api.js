@@ -209,6 +209,11 @@ export async function recordCommunityInstall(token, appId, revisionId, localAppI
   return communityResponse(response, 'This exact release could not be preserved.')
 }
 
+export async function confirmCommunityInstallReceipt(token, appId, revisionId, localAppId) {
+  await recordCommunityInstall(token, appId, revisionId, localAppId)
+  return loadCommunityApp(token, appId)
+}
+
 export function openInstalledApp(id, { intent, onUnembedded } = {}) {
   if (window.parent === window) {
     if (onUnembedded) onUnembedded()
@@ -683,6 +688,7 @@ export async function installApp({
     divergence: out.divergence,
     conflict_paths: out.conflict_paths || [],
     warnings: out.warnings || [],
+    updated_at: out.updated_at,
   }
 }
 
