@@ -38,6 +38,9 @@ import {
   mergeCommunityCatalog,
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
+  rememberCommunityInstallRevision,
+  installedCommunityRevision,
+  attemptCommunityReceiptOnce,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
   setInstalledMatchViewer,
@@ -56,7 +59,6 @@ import {
   hasConnectedProvider,
   installApp,
   loadCommunityApps,
-  loadCommunityApp,
   loadCommunityReviews,
   loadCommunityIdentity,
   loadEditorialSpotlight,
@@ -71,7 +73,7 @@ import {
   registerCommunityRevision,
   saveCommunityReview,
   withdrawCommunityApp,
-  recordCommunityInstall,
+  confirmCommunityInstallReceipt,
   uploadEditorialArtwork,
   openChat,
   openInstalledApp,
@@ -122,6 +124,9 @@ export {
   mergeCommunityCatalog,
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
+  rememberCommunityInstallRevision,
+  installedCommunityRevision,
+  attemptCommunityReceiptOnce,
   manifestCapabilityRows,
   resolveCatalogItemIntent,
   humanCron,
@@ -153,6 +158,7 @@ export {
   publishEditorialSpotlight,
   registerCommunityRevision,
   saveCommunityReview,
+  confirmCommunityInstallReceipt,
   withdrawCommunityApp,
   uploadEditorialArtwork,
   previewApp,
@@ -759,18 +765,17 @@ export default function App({ appId, token }) {
     })
   }, [])
 
-  const confirmCommunityInstall = useCallback(async (item, installedApp) => {
+  const confirmCommunityInstall = useCallback(async (item, installedApp, revisionId) => {
     const feedback = item?.community
-    if (!feedback?.id || !feedback?.revision_id || !installedApp?.id) return true
+    if (!feedback?.id || !revisionId || !installedApp?.id) return false
     const feedbackKey = `${feedback.id}:${feedback.revision_id}`
     try {
-      await recordCommunityInstall(
+      const refreshed = await confirmCommunityInstallReceipt(
         token,
         feedback.id,
-        feedback.revision_id,
+        revisionId,
         `app:${installedApp.id}:${installedApp.slug || item.manifest?.id || 'community'}`,
       )
-      const refreshed = await loadCommunityApp(token, feedback.id)
       updateCommunityFeedback(feedback.id, (current) => ({
         ...current,
         review_eligibility: String(refreshed.review_eligibility || current.review_eligibility),
@@ -790,23 +795,30 @@ export default function App({ appId, token }) {
     }
   }, [token, updateCommunityFeedback])
 
-  // Older Store builds sent the install receipt in an unobserved background
-  // request. Navigating into the newly installed app could destroy the iframe
-  // before that request completed, leaving a real install permanently unable
-  // to rate. When an installed community app is opened in Store, reconcile the
-  // missing receipt once and enable feedback after the Host accepts it.
+  // Reconcile a missed receipt only when the installed release is known.
+  // /current is a mutable source alias, so the latest listing revision must
+  // never stand in for the release actually installed.
   useEffect(() => {
     const feedback = detail?.community
     if (!communityIdentity?.linked || !feedback?.id || !feedback?.revision_id
       || feedback.has_verified_install) return
     const installedApp = findInstalled(installed, detail)
     if (!installedApp) return
-    const attemptKey = `${feedback.id}:${feedback.revision_id}:${installedApp.id}`
-    if (communityReceiptAttemptsRef.current.has(attemptKey)) return
-    communityReceiptAttemptsRef.current.add(attemptKey)
-    confirmCommunityInstall(detail, installedApp).then((confirmed) => {
-      if (!confirmed) communityReceiptAttemptsRef.current.delete(attemptKey)
-    })
+    const revisionId = installedCommunityRevision(installedApp, feedback.id)
+    if (!revisionId) {
+      const key = `${feedback.id}:${feedback.revision_id}`
+      const message = 'This older install has no recorded release. Update it to verify rating access.'
+      setCommunityActionError((current) => (
+        current.key === key && current.message === message ? current : { key, message }
+      ))
+      return
+    }
+    const attemptKey = `${communityIdentity.issuer}:${communityIdentity.subject}:${communityIdentity.instance_id}:${feedback.id}:${revisionId}:${installedApp.id}`
+    void attemptCommunityReceiptOnce(
+      communityReceiptAttemptsRef.current,
+      attemptKey,
+      () => confirmCommunityInstall(detail, installedApp, revisionId),
+    )
   }, [communityIdentity, confirmCommunityInstall, detail, installed])
 
   useEffect(() => {
@@ -1225,15 +1237,28 @@ export default function App({ appId, token }) {
           },
         }))
       }
-      let communityReceiptConfirmed = true
-      if (item.community?.id && item.community?.revision_id && result.id) {
-        // Installation is complete, but rating eligibility depends on the
-        // receipt. Finish it before offering an action that leaves Store.
-        communityReceiptConfirmed = await confirmCommunityInstall(item, result)
+      const communityFeedback = item.community
+      if (communityFeedback?.id && communityFeedback?.revision_id && result.id) {
+        rememberCommunityInstallRevision(result, communityFeedback)
       }
       setCardErrors(prev => withoutKey(prev, item.id))
       setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
       if (!isBatch) await refreshInstalled()
+      if (communityFeedback?.id && communityFeedback?.revision_id && result.id) {
+        const attemptKey = `${communityIdentity?.issuer}:${communityIdentity?.subject}:${communityIdentity?.instance_id}:${communityFeedback.id}:${communityFeedback.revision_id}:${result.id}`
+        // Do not hold the completed install UI on an external community call.
+        // The receipt request itself uses keepalive if the owner opens the app.
+        void attemptCommunityReceiptOnce(
+          communityReceiptAttemptsRef.current,
+          attemptKey,
+          () => confirmCommunityInstall(item, result, communityFeedback.revision_id),
+        )?.then((confirmed) => {
+          if (!confirmed && !isBatch) setToast({
+            kind: 'error',
+            message: 'App installed, but rating access could not be verified. Reopen Store to retry.',
+          })
+        })
+      }
       const openAction = result.id
         ? {
             label: 'Open App',
@@ -1275,12 +1300,7 @@ export default function App({ appId, token }) {
       }
 
       const verb = result.mode === 'update' ? 'updated' : 'installed'
-      const installNotes = [
-        ...(result.warnings || []),
-        ...(!communityReceiptConfirmed
-          ? ['rating access could not be verified; reopen this Store page to retry']
-          : []),
-      ]
+      const installNotes = result.warnings || []
       const warnSuffix = installNotes.length
         ? ` (with notes: ${installNotes.join('; ')})`
         : ''

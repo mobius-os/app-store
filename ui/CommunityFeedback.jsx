@@ -26,6 +26,7 @@ export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback,
   if (!feedback?.id || !feedback?.revision_id) return null
   const reviews = Array.isArray(feedback.reviews) ? feedback.reviews : []
   const average = feedback.rating_average > 0 ? feedback.rating_average.toFixed(1) : '—'
+  const removingWrittenReview = !!feedback.user_review?.review_text && !draft.trim()
   return (
     <section className="st-community-feedback" aria-labelledby="st-community-feedback-title">
       <div className="st-community-feedback-head">
@@ -82,8 +83,18 @@ export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback,
             placeholder="What was useful? What should improve?"
             disabled={busy}
           />
-          <button type="submit" className="st-btn st-btn-secondary" disabled={busy || !rating}>
-            {busy ? 'Saving…' : feedback.user_review ? 'Update' : 'Post'}
+          {removingWrittenReview ? (
+            <p id="st-review-removal-hint" className="st-review-eligibility">
+              Updating with an empty box removes your public written review. Your stars stay.
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            className="st-btn st-btn-secondary"
+            disabled={busy || !rating}
+            aria-describedby={removingWrittenReview ? 'st-review-removal-hint' : undefined}
+          >
+            {busy ? 'Saving…' : removingWrittenReview ? 'Remove text & update' : feedback.user_review ? 'Update' : 'Post'}
           </button>
         </> : null}
       </form>

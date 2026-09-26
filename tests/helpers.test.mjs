@@ -374,6 +374,82 @@ test('ratings and optional written reviews use one account-bound community mutat
   assert.match(calls[1].options.headers['Idempotency-Key'], /^store:review:/)
 })
 
+test('install receipt retries use the exact installed release and enable feedback on acceptance', async () => {
+  const {
+    rememberCommunityInstallRevision, installedCommunityRevision,
+    attemptCommunityReceiptOnce, confirmCommunityInstallReceipt,
+  } = await bundle()
+  const values = new Map()
+  const storage = {
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => values.set(key, value),
+  }
+  const installed = {
+    id: 42, slug: 'notes', updated_at: '2026-09-26T00:00:00Z',
+    source_manifest: {
+      url: 'https://www.mobius.you/v1/community/source/app_notes123/current/mobius.json',
+    },
+  }
+  const community = { id: 'app_notes123', revision_id: 'rev_installed123' }
+  assert.equal(rememberCommunityInstallRevision(installed, community, storage), true)
+  assert.equal(installedCommunityRevision(installed, community.id, storage), 'rev_installed123')
+  assert.equal(installedCommunityRevision({ ...installed, updated_at: 'later' }, community.id, storage), null)
+  assert.equal(installedCommunityRevision({
+    ...installed,
+    source_manifest: { url: 'https://www.mobius.you/v1/community/source/app_notes123/rev_older123/mobius.json' },
+  }, community.id, null), 'rev_older123')
+
+  const oldFetch = globalThis.fetch
+  const calls = []
+  let offline = true
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options })
+    if (options.method === 'POST' && offline) {
+      offline = false
+      throw new Error('offline')
+    }
+    return new Response(JSON.stringify(options.method === 'POST'
+      ? { recorded: true }
+      : { has_verified_install: true, review_eligibility: 'eligible' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    const attempts = new Set()
+    const key = 'app_notes123:rev_installed123:42'
+    let eligibility = 'install_required'
+    const confirm = async () => {
+      try {
+        const refreshed = await confirmCommunityInstallReceipt(
+          'owner-token', community.id, installedCommunityRevision(installed, community.id, storage),
+          'app:42:notes',
+        )
+        eligibility = refreshed.review_eligibility
+        return true
+      } catch {
+        return false
+      }
+    }
+    const first = attemptCommunityReceiptOnce(attempts, key, confirm)
+    assert.equal(attemptCommunityReceiptOnce(attempts, key, confirm), null,
+      'an in-flight receipt must not be duplicated')
+    assert.equal(await first, false)
+    assert.equal(attempts.has(key), false, 'a failed receipt can be retried')
+    assert.equal(await attemptCommunityReceiptOnce(attempts, key, confirm), true)
+    assert.equal(eligibility, 'eligible')
+    assert.equal(attemptCommunityReceiptOnce(attempts, key, confirm), null,
+      'an accepted receipt must not be repeated')
+    assert.equal(calls.filter((call) => call.options.method === 'POST').length, 2)
+    assert.equal(calls.filter((call) => !call.options.method).length, 1)
+    assert.equal(calls[1].url,
+      '/api/community/apps/app_notes123/revisions/rev_installed123/installs')
+    assert.equal(calls[1].options.keepalive, true)
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
 test('ratings and optional reviews use one account gate and scoped errors', async () => {
   const appSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
@@ -386,6 +462,7 @@ test('ratings and optional reviews use one account gate and scoped errors', asyn
   assert.match(feedbackSource, /disabled=\{busy \|\| !canRate\}/)
   assert.match(feedbackSource, /Add a written review \(optional\)/)
   assert.match(feedbackSource, /feedback\.user_review \? 'Update' : 'Post'/)
+  assert.match(feedbackSource, /Updating with an empty box removes your public written review/)
   assert.doesNotMatch(feedbackSource, /Connect GitHub/)
 })
 
