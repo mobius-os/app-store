@@ -128,7 +128,7 @@ export const CSS = `
 /* mobius-ui:Segmented v1 — keep in sync; library candidate. Diverge below the marker only. */
 .st-seg {
   display: inline-flex; gap: 2px; height: 44px;
-  background: var(--surface2, var(--surface)); border: 0; border-radius: 10px;
+  background: var(--surface-2, var(--surface)); border: 0; border-radius: 10px;
   box-shadow: inset 0 0 0 1px var(--border);
 }
 .st-seg-btn {
@@ -450,7 +450,7 @@ export const CSS = `
   width: 44px; height: 44px; padding: 9px; border: 0; border-radius: 10px;
   color: var(--text); background: transparent; cursor: pointer;
 }
-@media (hover: hover) { .st-rating-picker button:not(:disabled):hover { background: var(--surface2, var(--surface)); } }
+@media (hover: hover) { .st-rating-picker button:not(:disabled):hover { background: var(--surface-2, var(--surface)); } }
 .st-rating-picker button:disabled { opacity: .45; cursor: default; }
 .st-rating-picker button svg { width: 100%; height: 100%; }
 .st-rating-picker > span { margin-left: 7px; color: var(--muted); font-size: 11px; }
@@ -529,7 +529,7 @@ export const CSS = `
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--surface2, var(--surface));
+  background: var(--surface-2, var(--surface));
   color: var(--muted);
   font-size: 13px;
   line-height: 1.4;
@@ -766,14 +766,14 @@ export const CSS = `
 /* Known remote icon still resolving. Never use the letter as a loading state:
    it creates a visible false identity immediately before the real icon. */
 .st-icon-loading {
-  background: color-mix(in srgb, var(--surface2) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 /* Letter fallback (no icon / load error) gets a surface tile + border so the
    initial reads as a recognisable icon slot — real icons float transparent,
    but an iconless app still looks finished. */
 .st-icon-wrap--letter {
-  background: var(--surface2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
 }
 .st-icon-letter { font-size: 36px; font-weight: 700; color: var(--text); }
@@ -1121,7 +1121,7 @@ export const CSS = `
   align-items: center; justify-content: center;
   flex-shrink: 0; overflow: hidden;
 }
-.st-hero-icon.is-letter { background: var(--surface2); border: 1px solid var(--border); }
+.st-hero-icon.is-letter { background: var(--surface-2); border: 1px solid var(--border); }
 .st-hero-icon-letter { font-size: 32px; font-weight: 700; color: var(--text); }
 .st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: 0; user-select: none; }
 .st-hero-meta { font-size: 12px; color: var(--muted); font-family: var(--mono, monospace); user-select: none; }
@@ -1442,7 +1442,7 @@ export const CSS = `
 .st-update-review-close svg { width: 18px; height: 18px; }
 .st-update-review-close:disabled { opacity: 0.5; cursor: default; }
 @media (hover: hover) {
-  .st-update-review-close:not(:disabled):hover { background: var(--surface2); color: var(--text); }
+  .st-update-review-close:not(:disabled):hover { background: var(--surface-2); color: var(--text); }
 }
 .st-update-review-body {
   min-height: 0; overflow-y: auto; overflow-x: hidden;
@@ -1467,7 +1467,7 @@ export const CSS = `
 .st-update-review-total .is-del { color: var(--danger); }
 .st-update-review-notice {
   padding: 12px; border: 1px solid var(--border); border-radius: 10px;
-  background: var(--surface2); color: var(--muted);
+  background: var(--surface-2); color: var(--muted);
   font-size: 13px; line-height: 1.5;
 }
 .st-update-review-notice.is-error {
@@ -1545,7 +1545,7 @@ export const CSS = `
   .st-btn-secondary:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
   .st-btn-ghost:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 }
-.st-btn-secondary { background: var(--surface2, var(--surface)); }
+.st-btn-secondary { background: var(--surface-2, var(--surface)); }
 .st-btn-ghost { background: transparent; border-color: transparent; color: var(--text); }
 .st-btn-danger { background: var(--danger); border-color: var(--danger); color: var(--accent-fg); }
 .st-btn-icon { width: 44px; padding: 0; border-radius: 8px; font-size: 18px; }
@@ -1577,7 +1577,7 @@ export const CSS = `
 }
 .st-toast-btn-primary { background: var(--accent-hover, var(--accent)); color: var(--accent-fg); }
 .st-toast-btn-secondary {
-  background: var(--surface2, var(--surface));
+  background: var(--surface-2, var(--surface));
   color: var(--text);
   border: 1px solid var(--border);
 }
@@ -1709,7 +1709,7 @@ export const CSS = `
   background: var(--surface); font-size: 12px; font-weight: 700; cursor: pointer; list-style: none;
 }
 .st-publish-more > summary::-webkit-details-marker { display: none; }
-.st-publish-more > summary small { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; background: var(--surface2, var(--bg)); }
+.st-publish-more > summary small { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; background: var(--surface-2, var(--bg)); }
 .st-publish-more[open] > summary { margin-bottom: 8px; }
 .st-publish-row {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 13px;
@@ -1720,7 +1720,7 @@ export const CSS = `
 .st-publish-row-copy p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .st-publish-row-copy span { color: var(--muted); font-size: 11px; }
 .st-publish-row-copy .st-publish-row-message { display: block; margin-top: 4px; color: var(--danger); }
-.st-publish-icon { position: relative; width: 48px; height: 48px; border-radius: 12px; overflow: hidden; display: grid; place-items: center; color: var(--muted); background: var(--surface2, var(--bg)); font-weight: 800; }
+.st-publish-icon { position: relative; width: 48px; height: 48px; border-radius: 12px; overflow: hidden; display: grid; place-items: center; color: var(--muted); background: var(--surface-2, var(--bg)); font-weight: 800; }
 .st-publish-icon img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .st-listing-review { overflow: hidden; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
 .st-listing-review-top { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; }
@@ -1744,7 +1744,7 @@ export const CSS = `
 .st-listing-gallery figure { margin: 0; scroll-snap-align: start; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--bg); }
 .st-listing-gallery img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
 .st-listing-gallery figcaption { padding: 9px 11px; color: var(--muted); font-size: 11px; }
-.st-listing-publish-bar { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(190px, auto) auto; align-items: end; gap: 12px; padding: 16px 22px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface2, var(--surface)) 70%, var(--surface)); }
+.st-listing-publish-bar { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(190px, auto) auto; align-items: end; gap: 12px; padding: 16px 22px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface-2, var(--surface)) 70%, var(--surface)); }
 .st-listing-publish-bar .st-publish-consent { align-self: center; margin: 0; }
 .st-listing-source-note { margin: 0; padding: 0 22px 18px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .st-publish-advanced { margin-top: 24px; }
@@ -1805,7 +1805,7 @@ export const CSS = `
 .st-spotlight-slide > .st-store-image-placeholder {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
 }
-.st-spotlight-slide > .st-store-image-placeholder { background: var(--surface2, var(--surface)); }
+.st-spotlight-slide > .st-store-image-placeholder { background: var(--surface-2, var(--surface)); }
 .st-spotlight-slide-shade {
   position: absolute; inset: 0;
   background:
@@ -1882,7 +1882,7 @@ export const CSS = `
 }
 .st-detail-editorial-image,
 .st-detail-editorial > .st-store-image-placeholder { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.st-detail-editorial > .st-store-image-placeholder { background: var(--surface2, var(--surface)); }
+.st-detail-editorial > .st-store-image-placeholder { background: var(--surface-2, var(--surface)); }
 .st-detail-editorial-shade { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(3,5,7,.94) 0%, rgba(3,5,7,.2) 78%); }
 .st-detail-editorial-copy {
   position: absolute; z-index: 1; left: clamp(20px, 5vw, 46px); right: clamp(20px, 5vw, 46px); bottom: clamp(22px, 5vw, 46px);
@@ -1900,7 +1900,7 @@ export const CSS = `
 .st-detail-gallery figure { margin: 0; overflow: hidden; scroll-snap-align: start; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
 .st-detail-gallery-image,
 .st-detail-gallery .st-store-image-placeholder { display: block; width: 100%; aspect-ratio: 5 / 3; object-fit: cover; object-position: top center; }
-.st-detail-gallery .st-store-image-placeholder { background: var(--surface2, var(--surface)); }
+.st-detail-gallery .st-store-image-placeholder { background: var(--surface-2, var(--surface)); }
 .st-detail-gallery figcaption { padding: 9px 12px; color: var(--muted); border-top: 1px solid var(--border); font-size: 11px; font-weight: 650; }
 .st-detail-byline { margin-block: -14px 26px; color: var(--muted); font: 11px/1.4 var(--mono, monospace); }
 .st-detail-tagline { margin: 5px 0 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
@@ -1951,7 +1951,7 @@ export const CSS = `
 }
 .st-spotlight-editor-preview {
   display: grid; place-items: center; width: 76px; height: 54px; overflow: hidden;
-  border-radius: 10px; background: var(--surface2, var(--surface));
+  border-radius: 10px; background: var(--surface-2, var(--surface));
 }
 .st-spotlight-editor-preview > img,
 .st-spotlight-editor-preview > .st-store-image-placeholder { width: 100%; height: 100%; object-fit: cover; }
