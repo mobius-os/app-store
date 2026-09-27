@@ -168,6 +168,121 @@ export function canonicalIdentityKey(url, manifestId) {
   return `${base}#manifest-id=${manifestId}`
 }
 
+const COMMUNITY_INSTALL_REVISIONS_KEY = 'store:community-install-revisions:v1'
+
+function communityInstallStorage() {
+  try { return globalThis.window?.localStorage || null } catch { return null }
+}
+
+// The Host records an installed community source as a mutable /current URL.
+// Remember the exact listed revision at install time so a missed receipt can
+// be retried without attributing an older install to a newer public release.
+export function rememberCommunityInstallRevision(installedApp, community, storage = communityInstallStorage()) {
+  if (!installedApp?.id || !installedApp.updated_at || !community?.id || !community.revision_id || !storage) return false
+  try {
+    const saved = JSON.parse(storage.getItem(COMMUNITY_INSTALL_REVISIONS_KEY) || '{}')
+    const entries = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+    entries[String(installedApp.id)] = {
+      community_id: community.id,
+      revision_id: community.revision_id,
+      updated_at: installedApp.updated_at,
+    }
+    storage.setItem(COMMUNITY_INSTALL_REVISIONS_KEY, JSON.stringify(entries))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function installedCommunityRevision(installedApp, communityId, storage = communityInstallStorage()) {
+  if (!installedApp?.id || !communityId) return null
+  for (const source of [installedApp.source_manifest?.url, installedApp.manifest_url]) {
+    try {
+      const match = new URL(source).pathname.match(/\/v1\/community\/source\/(app_[A-Za-z0-9_-]+)\/(rev_[A-Za-z0-9_-]+)(?:\/|$)/)
+      if (match?.[1] === communityId) return match[2]
+    } catch {}
+  }
+  if (!storage || !installedApp.updated_at) return null
+  try {
+    const entries = JSON.parse(storage.getItem(COMMUNITY_INSTALL_REVISIONS_KEY) || '{}')
+    const saved = entries?.[String(installedApp.id)]
+    return saved?.community_id === communityId && saved?.updated_at === installedApp.updated_at
+      ? saved.revision_id || null : null
+  } catch {
+    return null
+  }
+}
+
+// Curated/official rows carry their social block as `community_feedback`
+// (mergeOfficialCommunityFeedback folds it in), while a pure community row
+// carries it as `community`. Every install, receipt, display, and submit path
+// reads the block through this one accessor so both channels record and render
+// feedback identically.
+export function communityFeedbackOf(item) {
+  return item?.community_feedback || item?.community || null
+}
+
+// A review submit may echo the new rating aggregate flat, nested under
+// `rating`, or omit it. Read every shape and fall back to the current values so
+// a missing or nested aggregate never renders NaN.
+export function communityRatingAggregate(result, current = {}) {
+  const pick = (next, fallback) => Number(next ?? fallback) || Number(fallback) || 0
+  return {
+    rating_average: pick(result?.rating_average ?? result?.rating?.average, current?.rating_average),
+    rating_count: pick(result?.rating_count ?? result?.rating?.count, current?.rating_count),
+  }
+}
+
+// A receipt records this owner's linked mobius.you identity against one
+// installed app. Review eligibility is per app and the receipt's revision only
+// labels which release a review attaches to (mobius.you#167).
+function communityReceipt(feedback, installedApp, identity, revisionId) {
+  return {
+    communityId: feedback.id,
+    revisionId,
+    attemptKey: `${identity.issuer}:${identity.subject}:${identity.instance_id}:${feedback.id}:${revisionId}:${installedApp.id}`,
+  }
+}
+
+// The receipt to send right after installing a listed app (either channel):
+// the installed release is the listed one. None without a linked identity.
+export function communityReceiptAfterInstall(item, installedApp, identity) {
+  const feedback = communityFeedbackOf(item)
+  if (!identity?.linked || !feedback?.id || !feedback?.revision_id || !installedApp?.id) return null
+  return communityReceipt(feedback, installedApp, identity, feedback.revision_id)
+}
+
+// The receipt to reconcile when a listed app's detail opens (or none, including
+// when no detail is open). An account with any verified install is already
+// eligible, so none is sent; otherwise match the installed row, prefer its exact
+// installed revision, and label older installs, which recorded none, with the
+// listed revision instead of asking the owner to update first.
+export function communityReceiptToReconcile(item, installed, identity, storage = communityInstallStorage()) {
+  const feedback = communityFeedbackOf(item)
+  if (!identity?.linked || !feedback?.id || !feedback?.revision_id
+    || feedback.has_verified_install) return null
+  const installedApp = findInstalled(installed || [], item)
+  if (!installedApp?.id) return null
+  const revisionId = installedCommunityRevision(installedApp, feedback.id, storage)
+    || feedback.revision_id
+  return { ...communityReceipt(feedback, installedApp, identity, revisionId), installedApp }
+}
+
+export function attemptCommunityReceiptOnce(attempts, key, confirm) {
+  if (attempts.has(key)) return null
+  attempts.add(key)
+  return Promise.resolve().then(confirm).then(
+    (confirmed) => {
+      if (!confirmed) attempts.delete(key)
+      return confirmed
+    },
+    (error) => {
+      attempts.delete(key)
+      throw error
+    },
+  )
+}
+
 export function sourceBackedInstalledApps(
   installed = [],
   { excludeAppIds = [] } = {},
@@ -870,11 +985,13 @@ export function communityCatalogItems(payload) {
         published_at: String(row.created_at || ''),
         rating_average: Number(row.rating_average ?? row.rating?.average ?? 0) || 0,
         rating_count: Number(row.rating_count ?? row.rating?.count ?? 0) || 0,
-        user_rating: Number(row.user_rating || 0) || 0,
-        review_eligible: Boolean(row.review_eligible ?? latest.review_eligible ?? false),
-        comments: Array.isArray(latest.comments)
-          ? latest.comments
-          : Array.isArray(row.comments) ? row.comments : [],
+        user_review: row.user_review && typeof row.user_review === 'object'
+          ? row.user_review : null,
+        review_eligibility: String(row.review_eligibility || 'account_required'),
+        has_verified_install: row.has_verified_install === true,
+        reviews: [],
+        reviews_loaded: false,
+        reviews_error: '',
         repository_url: communityRepositoryUrl(
           row.repository_url || row.github?.url || row.homepage || manifest?.homepage,
         ),
