@@ -1921,6 +1921,8 @@ export default function App({ appId, token }) {
             : ''}
           communityIdentityLinked={!!communityIdentity?.linked}
           githubIdentityConnected={!!githubIdentity?.connected}
+          onLogInToMobiusYou={logInToMobiusYou}
+          onConnectGitHub={contributeApp ? () => openInstalledApp(contributeApp.id) : undefined}
           token={token}
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}

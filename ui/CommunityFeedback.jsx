@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { communityPersonName } from '../domain.js'
 
 function StarIcon({ filled }) {
   return (
@@ -14,7 +15,7 @@ function StarIcon({ filled }) {
   )
 }
 
-export function CommunityFeedback({ feedback, canRate = false, canComment = false, onRate, onComment, busy, error }) {
+export function CommunityFeedback({ feedback, canRate = false, canComment = false, identityLinked = false, onRate, onComment, onLogInToMobiusYou, onConnectGitHub, busy, error }) {
   const [rating, setRating] = useState(feedback?.user_rating || 0)
   const [draft, setDraft] = useState('')
   if (!feedback?.id || !feedback?.revision_id) return null
@@ -33,9 +34,18 @@ export function CommunityFeedback({ feedback, canRate = false, canComment = fals
         </div>
       </div>
 
-      {!canRate ? (
+      {!identityLinked ? (
         <div className="st-review-eligibility">
-          Install this listed release and link your Möbius identity to leave verified feedback.
+          <span>Log in to Möbius · You to rate and review apps you’ve installed.</span>
+          {onLogInToMobiusYou ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={onLogInToMobiusYou}>
+              Log in to Möbius · You
+            </button>
+          ) : null}
+        </div>
+      ) : !canRate ? (
+        <div className="st-review-eligibility">
+          Install this listed release to leave verified feedback.
         </div>
       ) : null}
       <div className="st-rating-picker" role="group" aria-label="Rate this app">
@@ -80,7 +90,12 @@ export function CommunityFeedback({ feedback, canRate = false, canComment = fals
         </form>
       ) : canRate ? (
         <div className="st-review-eligibility">
-          Connect GitHub to post a public written review.
+          <span>Written reviews are posted under your GitHub name.</span>
+          {onConnectGitHub ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={onConnectGitHub}>
+              Connect GitHub
+            </button>
+          ) : null}
         </div>
       ) : null}
       {error ? <div className="st-community-feedback-error" role="alert">{error}</div> : null}
@@ -89,7 +104,7 @@ export function CommunityFeedback({ feedback, canRate = false, canComment = fals
         <div className="st-review-list">
           {comments.slice(0, 6).map((comment, index) => (
             <article key={comment.id || index}>
-              <strong>{comment.author?.handle || comment.author_handle || 'Möbius user'}</strong>
+              <strong>{communityPersonName(comment.author || comment.author_handle, 'Möbius user')}</strong>
               <p>{comment.body}</p>
             </article>
           ))}

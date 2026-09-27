@@ -799,6 +799,14 @@ export function filterCatalog(items, { query = '', category = 'all' } = {}) {
   })
 }
 
+// People in the community registry are named by whichever public identity
+// they used: a Möbius handle or, for publishing and written reviews, GitHub.
+export function communityPersonName(person, fallback) {
+  if (typeof person === 'string' && person) return person
+  if (!person || typeof person !== 'object') return fallback
+  return String(person.handle || person.login || person.name || fallback)
+}
+
 function communityAuthor(row) {
   const author = row?.author || row?.publisher || null
   if (typeof author === 'string') return { handle: author }

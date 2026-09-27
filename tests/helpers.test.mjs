@@ -391,7 +391,10 @@ test('ratings and public reviews use distinct identity gates and scoped errors',
   assert.match(detailSource, /canRate=\{!!storeInstalled && communityIdentityLinked/)
   assert.match(detailSource, /canComment=\{!!storeInstalled[\s\S]*githubIdentityConnected/)
   assert.match(feedbackSource, /disabled=\{busy \|\| !canRate\}/)
-  assert.match(feedbackSource, /Connect GitHub to post a public written review\./)
+  // Each gate says what is missing and hands off to where it is fixed.
+  assert.match(feedbackSource, /!identityLinked[\s\S]*onLogInToMobiusYou/)
+  assert.match(feedbackSource, /Written reviews are posted under your GitHub name\.[\s\S]*onConnectGitHub/)
+  assert.match(appSource, /onLogInToMobiusYou=\{logInToMobiusYou\}[\s\S]*onConnectGitHub=/)
 })
 
 test('distributed publishing submits one immutable GitHub revision', async () => {

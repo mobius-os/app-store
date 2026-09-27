@@ -454,7 +454,7 @@ export const CSS = `
 .st-rating-picker button:disabled { opacity: .45; cursor: default; }
 .st-rating-picker button svg { width: 100%; height: 100%; }
 .st-rating-picker > span { margin-left: 7px; color: var(--muted); font-size: 11px; }
-.st-review-eligibility { margin-top: 14px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.st-review-eligibility { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 14px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .st-review-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; }
 .st-review-form label { grid-column: 1 / -1; font-size: 12px; font-weight: 700; }
 .st-review-form textarea {

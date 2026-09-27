@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, communityPersonName, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -30,13 +30,7 @@ function checkedAtText(value) {
   })
 }
 
-function communityAuthorName(author) {
-  if (typeof author === 'string') return author
-  if (!author || typeof author !== 'object') return 'Möbius creator'
-  return String(author.handle || author.login || author.name || 'Möbius creator')
-}
-
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityRate, onCommunityComment, onCommunityWithdraw, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, githubIdentityConnected = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityRate, onCommunityComment, onCommunityWithdraw, onLogInToMobiusYou, onConnectGitHub, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, githubIdentityConnected = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
@@ -188,7 +182,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             <div>
               <strong>Open source from the community</strong>
               <span>
-                {communityAuthorName(item.community.author)}
+                {communityPersonName(item.community.author, 'Möbius creator')}
               </span>
             </div>
             <div className="st-community-actions">
@@ -443,8 +437,11 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
               && communityIdentityLinked
               && githubIdentityConnected
               && communityFeedback.review_eligible}
+            identityLinked={communityIdentityLinked}
             onRate={onCommunityRate}
             onComment={onCommunityComment}
+            onLogInToMobiusYou={onLogInToMobiusYou}
+            onConnectGitHub={onConnectGitHub}
             busy={communityBusy}
             error={communityError}
           />
