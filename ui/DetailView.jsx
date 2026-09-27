@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -105,9 +105,10 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const sourceAvailability = item.community
     ? sourceAvailabilityStatus(item.community.cache)
     : null
-  const communityFeedback = item.community_feedback || item.community || null
-  const verifiedCommunityInstall = !!storeInstalled
-    && communityIdentityLinked
+  const communityFeedback = communityFeedbackOf(item)
+  // The service decides eligibility per app from any verified install, so an
+  // owner who reviewed and later uninstalled can still edit their review.
+  const verifiedCommunityInstall = communityIdentityLinked
     && communityFeedback?.review_eligibility === 'eligible'
   const previewUrl = item.preview && storeAppId
     ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`

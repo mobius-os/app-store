@@ -44,9 +44,9 @@ export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback,
         <div className="st-review-eligibility">
           {feedback.review_eligibility === 'handle_required'
             ? 'Choose a mobius.you handle to rate or review this app.'
-            : feedback.review_eligibility === 'install_required'
-              ? 'Install this app to leave verified feedback.'
-              : 'Sign in to mobius.you to rate or review this app.'}
+            : feedback.review_eligibility === 'account_required'
+              ? 'Sign in to mobius.you to rate or review this app.'
+              : 'Install this app to leave verified feedback.'}
         </div>
       ) : null}
       <form

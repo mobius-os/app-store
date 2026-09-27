@@ -213,6 +213,61 @@ export function installedCommunityRevision(installedApp, communityId, storage = 
   }
 }
 
+// Curated/official rows carry their social block as `community_feedback`
+// (mergeOfficialCommunityFeedback folds it in), while a pure community row
+// carries it as `community`. Every install, receipt, display, and submit path
+// reads the block through this one accessor so both channels record and render
+// feedback identically.
+export function communityFeedbackOf(item) {
+  return item?.community_feedback || item?.community || null
+}
+
+// A review submit may echo the new rating aggregate flat, nested under
+// `rating`, or omit it. Read every shape and fall back to the current values so
+// a missing or nested aggregate never renders NaN.
+export function communityRatingAggregate(result, current = {}) {
+  const pick = (next, fallback) => Number(next ?? fallback) || Number(fallback) || 0
+  return {
+    rating_average: pick(result?.rating_average ?? result?.rating?.average, current?.rating_average),
+    rating_count: pick(result?.rating_count ?? result?.rating?.count, current?.rating_count),
+  }
+}
+
+// A receipt records this owner's linked mobius.you identity against one
+// installed app. Review eligibility is per app and the receipt's revision only
+// labels which release a review attaches to (mobius.you#167).
+function communityReceipt(feedback, installedApp, identity, revisionId) {
+  return {
+    communityId: feedback.id,
+    revisionId,
+    attemptKey: `${identity.issuer}:${identity.subject}:${identity.instance_id}:${feedback.id}:${revisionId}:${installedApp.id}`,
+  }
+}
+
+// The receipt to send right after installing a listed app (either channel):
+// the installed release is the listed one. None without a linked identity.
+export function communityReceiptAfterInstall(item, installedApp, identity) {
+  const feedback = communityFeedbackOf(item)
+  if (!identity?.linked || !feedback?.id || !feedback?.revision_id || !installedApp?.id) return null
+  return communityReceipt(feedback, installedApp, identity, feedback.revision_id)
+}
+
+// The receipt to reconcile when a listed app's detail opens (or none, including
+// when no detail is open). An account with any verified install is already
+// eligible, so none is sent; otherwise match the installed row, prefer its exact
+// installed revision, and label older installs, which recorded none, with the
+// listed revision instead of asking the owner to update first.
+export function communityReceiptToReconcile(item, installed, identity, storage = communityInstallStorage()) {
+  const feedback = communityFeedbackOf(item)
+  if (!identity?.linked || !feedback?.id || !feedback?.revision_id
+    || feedback.has_verified_install) return null
+  const installedApp = findInstalled(installed || [], item)
+  if (!installedApp?.id) return null
+  const revisionId = installedCommunityRevision(installedApp, feedback.id, storage)
+    || feedback.revision_id
+  return { ...communityReceipt(feedback, installedApp, identity, revisionId), installedApp }
+}
+
 export function attemptCommunityReceiptOnce(attempts, key, confirm) {
   if (attempts.has(key)) return null
   attempts.add(key)

@@ -2571,3 +2571,153 @@ test('installed matching recognizes repo identity and viewer-owned publications'
   assert.equal(findInstalled(authored, foreign), null)
   setInstalledMatchViewer('')
 })
+
+test('community feedback resolves from either the community or curated channel', async () => {
+  const { communityFeedbackOf } = await import('../domain.js')
+  const block = { id: 'app_x', revision_id: 'rev_1' }
+  assert.equal(communityFeedbackOf({ community: block }), block)
+  assert.equal(communityFeedbackOf({ community_feedback: block }), block)
+  const folded = { id: 'app_folded', revision_id: 'rev_2' }
+  assert.equal(communityFeedbackOf({ community_feedback: folded, community: block }), folded)
+  assert.equal(communityFeedbackOf({}), null)
+  assert.equal(communityFeedbackOf(null), null)
+})
+
+test('an official app installed from its curated row sends a receipt for its community listing', async () => {
+  // The real merge keeps the curated GitHub source and folds the listing's
+  // social block in as `community_feedback`; installing that row must still
+  // send the owner's receipt, or official apps can never be reviewed.
+  const { mergeOfficialCommunityFeedback, communityReceiptAfterInstall, attemptCommunityReceiptOnce } =
+    await import('../domain.js')
+  const { confirmCommunityInstallReceipt } = await import('../api.js')
+  const curated = [{
+    id: 'notes', collection: 'everyday', manifest: { id: 'notes' },
+    manifest_url: 'https://raw.githubusercontent.com/octo/app-notes/main/mobius.json',
+  }]
+  const community = [{
+    id: 'community:app_x', collection: 'community', manifest: { id: 'notes' },
+    manifest_url: 'https://www.mobius.you/v1/community/source/app_x/current/mobius.json',
+    repository: 'octo/app-notes', publisher: { login: 'octo' },
+    community: { id: 'app_x', revision_id: 'rev_9' },
+  }]
+  const [row] = mergeOfficialCommunityFeedback(curated, community)
+  assert.equal(row.community, undefined)
+  const identity = { linked: true, issuer: 'iss', subject: 'sub', instance_id: 'inst' }
+  const installedApp = { id: 42, slug: 'notes' }
+  const receipt = communityReceiptAfterInstall(row, installedApp, identity)
+  assert.deepEqual(receipt, {
+    communityId: 'app_x', revisionId: 'rev_9', attemptKey: 'iss:sub:inst:app_x:rev_9:42',
+  })
+  const calls = []
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options })
+    return new Response(JSON.stringify(options.method === 'POST'
+      ? { recorded: true }
+      : { has_verified_install: true, review_eligibility: 'eligible' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    const attempts = new Set()
+    const refreshed = await attemptCommunityReceiptOnce(attempts, receipt.attemptKey, () => (
+      confirmCommunityInstallReceipt('owner-token', receipt.communityId, receipt.revisionId, 'app:42:notes')
+    ))
+    assert.equal(refreshed.review_eligibility, 'eligible')
+    assert.equal(attemptCommunityReceiptOnce(attempts, receipt.attemptKey, () => null), null,
+      'the same install is not receipted twice in one Store session')
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+  const posts = calls.filter(call => call.options.method === 'POST')
+  assert.equal(posts.length, 1)
+  assert.equal(posts[0].url, '/api/community/apps/app_x/revisions/rev_9/installs')
+  assert.deepEqual(JSON.parse(posts[0].options.body), { local_app_id: 'app:42:notes' })
+})
+
+test('install receipts need a linked identity and an installed row', async () => {
+  const { communityReceiptAfterInstall } = await import('../domain.js')
+  const listing = { community: { id: 'app_x', revision_id: 'rev_9' } }
+  const linked = { linked: true, issuer: 'iss', subject: 'sub', instance_id: 'inst' }
+  assert.equal(communityReceiptAfterInstall(listing, { id: 42 }, { linked: false }), null,
+    'an unlinked owner gets neither a rejected receipt nor its failure message')
+  assert.equal(communityReceiptAfterInstall(listing, {}, linked), null)
+  assert.equal(communityReceiptAfterInstall({ manifest: { id: 'x' } }, { id: 42 }, linked), null)
+  assert.equal(communityReceiptAfterInstall(listing, { id: 42 }, linked).revisionId, 'rev_9')
+})
+
+test('a nested or missing rating aggregate never renders NaN', async () => {
+  const { communityRatingAggregate } = await import('../domain.js')
+  const current = { rating_average: 4.2, rating_count: 10 }
+  assert.deepEqual(
+    communityRatingAggregate({ rating_average: 4.6, rating_count: 12 }, current),
+    { rating_average: 4.6, rating_count: 12 },
+  )
+  assert.deepEqual(
+    communityRatingAggregate({ rating: { average: 4.6, count: 12 } }, current),
+    { rating_average: 4.6, rating_count: 12 },
+  )
+  const kept = communityRatingAggregate({ user_review: { stars: 5 } }, current)
+  assert.deepEqual(kept, { rating_average: 4.2, rating_count: 10 })
+  assert.deepEqual(communityRatingAggregate({}, undefined), { rating_average: 0, rating_count: 0 })
+})
+
+test('opening an app reconciles its receipt by the service\'s per-app eligibility', async () => {
+  const { communityReceiptToReconcile } = await import('../domain.js')
+  const identity = { linked: true, issuer: 'iss', subject: 'sub', instance_id: 'inst' }
+  const githubSource = 'https://raw.githubusercontent.com/octo/app-notes/main/mobius.json'
+  const curatedRow = {
+    id: 'notes', manifest: { id: 'notes' }, manifest_url: githubSource,
+    community_feedback: { id: 'app_x', revision_id: 'rev_9', has_verified_install: false },
+  }
+  // An official app installed from GitHub before receipts existed recorded no
+  // community revision: label its receipt with the listed revision instead of
+  // asking the owner to update first.
+  const preFeatureInstall = {
+    id: 42, slug: 'notes', updated_at: '2026-09-01T00:00:00Z',
+    manifest_url: githubSource, source_manifest: { id: 'notes', url: githubSource },
+  }
+  const receipt = communityReceiptToReconcile(curatedRow, [preFeatureInstall], identity, null)
+  assert.equal(receipt.installedApp, preFeatureInstall)
+  assert.deepEqual([receipt.communityId, receipt.revisionId, receipt.attemptKey],
+    ['app_x', 'rev_9', 'iss:sub:inst:app_x:rev_9:42'])
+  // A revision the Store remembered at install time names that exact revision,
+  // even after the listing moved on.
+  const { rememberCommunityInstallRevision } = await import('../domain.js')
+  const currentSource = 'https://www.mobius.you/v1/community/source/app_x/current/mobius.json'
+  const communityRow = {
+    id: 'community:app_x', manifest: { id: 'notes' }, manifest_url: currentSource,
+    community: { id: 'app_x', revision_id: 'rev_9' },
+  }
+  const communityInstall = {
+    id: 7, slug: 'notes', updated_at: '2026-09-20T00:00:00Z',
+    manifest_url: currentSource, source_manifest: { id: 'notes', url: currentSource },
+  }
+  const saved = new Map()
+  const storage = { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) }
+  assert.ok(rememberCommunityInstallRevision(communityInstall, { id: 'app_x', revision_id: 'rev_4' }, storage))
+  assert.equal(communityReceiptToReconcile(communityRow, [communityInstall], identity, storage).revisionId, 'rev_4')
+  assert.equal(communityReceiptToReconcile(communityRow, [communityInstall], identity, null).revisionId, 'rev_9')
+  // Any verified install already makes the account eligible: nothing to send.
+  const verified = { ...curatedRow, community_feedback: { ...curatedRow.community_feedback, has_verified_install: true } }
+  assert.equal(communityReceiptToReconcile(verified, [preFeatureInstall], identity, null), null)
+  // No detail open, not installed, or no linked identity: nothing to send, and no throw.
+  assert.equal(communityReceiptToReconcile(null, [preFeatureInstall], identity, null), null)
+  assert.equal(communityReceiptToReconcile(curatedRow, [], identity, null), null)
+  assert.equal(communityReceiptToReconcile(curatedRow, undefined, identity, null), null)
+  assert.equal(communityReceiptToReconcile(curatedRow, [preFeatureInstall], { linked: false }, null), null)
+})
+
+test('the Store sends and reconciles receipts through the shared decisions', async () => {
+  const appSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  const feedbackSource = await readFile(join(root, '..', 'ui', 'CommunityFeedback.jsx'), 'utf8')
+  assert.match(appSource, /communityReceiptAfterInstall\(item, result, communityIdentity\)/)
+  assert.match(appSource, /communityReceiptToReconcile\(detail, installed, communityIdentity\)/)
+  assert.doesNotMatch(appSource, /const communityFeedback = item\.community\b/)
+  assert.doesNotMatch(appSource, /older install has no recorded release/)
+  // Review access is the service's per-app eligibility, not a current install.
+  assert.match(detailSource, /verifiedCommunityInstall = communityIdentityLinked\n\s*&& communityFeedback\?\.review_eligibility === 'eligible'/)
+  // Only a missing account asks the owner to sign in.
+  assert.match(feedbackSource, /review_eligibility === 'account_required'/)
+})

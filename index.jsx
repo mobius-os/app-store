@@ -38,6 +38,10 @@ import {
   mergeCommunityCatalog,
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
+  communityFeedbackOf,
+  communityRatingAggregate,
+  communityReceiptAfterInstall,
+  communityReceiptToReconcile,
   rememberCommunityInstallRevision,
   installedCommunityRevision,
   attemptCommunityReceiptOnce,
@@ -124,6 +128,10 @@ export {
   mergeCommunityCatalog,
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
+  communityFeedbackOf,
+  communityRatingAggregate,
+  communityReceiptAfterInstall,
+  communityReceiptToReconcile,
   rememberCommunityInstallRevision,
   installedCommunityRevision,
   attemptCommunityReceiptOnce,
@@ -766,7 +774,7 @@ export default function App({ appId, token }) {
   }, [])
 
   const confirmCommunityInstall = useCallback(async (item, installedApp, revisionId) => {
-    const feedback = item?.community
+    const feedback = communityFeedbackOf(item)
     if (!feedback?.id || !revisionId || !installedApp?.id) return false
     const feedbackKey = `${feedback.id}:${feedback.revision_id}`
     try {
@@ -795,34 +803,20 @@ export default function App({ appId, token }) {
     }
   }, [token, updateCommunityFeedback])
 
-  // Reconcile a missed receipt only when the installed release is known.
-  // /current is a mutable source alias, so the latest listing revision must
-  // never stand in for the release actually installed.
+  // Reconcile a missed receipt when an installed app's detail opens; see
+  // communityReceiptToReconcile for when one is due and which revision it names.
   useEffect(() => {
-    const feedback = detail?.community
-    if (!communityIdentity?.linked || !feedback?.id || !feedback?.revision_id
-      || feedback.has_verified_install) return
-    const installedApp = findInstalled(installed, detail)
-    if (!installedApp) return
-    const revisionId = installedCommunityRevision(installedApp, feedback.id)
-    if (!revisionId) {
-      const key = `${feedback.id}:${feedback.revision_id}`
-      const message = 'This older install has no recorded release. Update it to verify rating access.'
-      setCommunityActionError((current) => (
-        current.key === key && current.message === message ? current : { key, message }
-      ))
-      return
-    }
-    const attemptKey = `${communityIdentity.issuer}:${communityIdentity.subject}:${communityIdentity.instance_id}:${feedback.id}:${revisionId}:${installedApp.id}`
+    const receipt = communityReceiptToReconcile(detail, installed, communityIdentity)
+    if (!receipt) return
     void attemptCommunityReceiptOnce(
       communityReceiptAttemptsRef.current,
-      attemptKey,
-      () => confirmCommunityInstall(detail, installedApp, revisionId),
+      receipt.attemptKey,
+      () => confirmCommunityInstall(detail, receipt.installedApp, receipt.revisionId),
     )
   }, [communityIdentity, confirmCommunityInstall, detail, installed])
 
   useEffect(() => {
-    const communityId = detail?.community_feedback?.id || detail?.community?.id
+    const communityId = communityFeedbackOf(detail)?.id
     if (!communityId) return undefined
     let active = true
     loadCommunityReviews(token, communityId).then((result) => {
@@ -845,7 +839,7 @@ export default function App({ appId, token }) {
   }, [detail?.community?.id, detail?.community_feedback?.id, token, updateCommunityFeedback])
 
   const handleCommunityFeedback = useCallback(async (stars, body) => {
-    const feedback = detail?.community_feedback || detail?.community
+    const feedback = communityFeedbackOf(detail)
     if (!feedback
       || communityActionBusy
       || !communityIdentity?.linked
@@ -861,8 +855,9 @@ export default function App({ appId, token }) {
       updateCommunityFeedback(feedback.id, (current) => ({
         ...current,
         user_review: result.user_review || null,
-        rating_average: Number(result.rating_average),
-        rating_count: Number(result.rating_count),
+        // The registry may return the aggregate flat, nested under `rating`, or
+        // not at all; never let a missing or nested shape render NaN.
+        ...communityRatingAggregate(result, current),
         review_eligibility: String(result.review_eligibility || current.review_eligibility),
       }))
       try {
@@ -1239,21 +1234,23 @@ export default function App({ appId, token }) {
           },
         }))
       }
-      const communityFeedback = item.community
+      const communityFeedback = communityFeedbackOf(item)
       if (communityFeedback?.id && communityFeedback?.revision_id && result.id) {
         rememberCommunityInstallRevision(result, communityFeedback)
       }
       setCardErrors(prev => withoutKey(prev, item.id))
       setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
       if (!isBatch) await refreshInstalled()
-      if (communityFeedback?.id && communityFeedback?.revision_id && result.id) {
-        const attemptKey = `${communityIdentity?.issuer}:${communityIdentity?.subject}:${communityIdentity?.instance_id}:${communityFeedback.id}:${communityFeedback.revision_id}:${result.id}`
+      // Only a linked mobius.you identity gets a receipt (and its failure
+      // message): an unlinked owner can still install a public listing.
+      const receipt = communityReceiptAfterInstall(item, result, communityIdentity)
+      if (receipt) {
         // Do not hold the completed install UI on an external community call.
         // The receipt request itself uses keepalive if the owner opens the app.
         void attemptCommunityReceiptOnce(
           communityReceiptAttemptsRef.current,
-          attemptKey,
-          () => confirmCommunityInstall(item, result, communityFeedback.revision_id),
+          receipt.attemptKey,
+          () => confirmCommunityInstall(item, result, receipt.revisionId),
         )?.then((confirmed) => {
           if (!confirmed && !isBatch) setToast({
             kind: 'error',
@@ -1718,7 +1715,7 @@ export default function App({ appId, token }) {
       ...otherInstalledCatalog.filter((item) => remainingInstalledIds.has(item.id)),
     ])
   }, [listedCatalog, otherInstalledCatalog, otherInstalledCatalogSources])
-  const detailCommunityFeedback = detail?.community_feedback || detail?.community || null
+  const detailCommunityFeedback = communityFeedbackOf(detail)
   const detailCommunityFeedbackKey = detailCommunityFeedback
     ? `${detailCommunityFeedback.id}:${detailCommunityFeedback.revision_id}`
     : ''
