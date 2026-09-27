@@ -4,11 +4,11 @@ Curated artwork in this package is discovery media only. It never changes the de
 
 ## Included
 
-Fourteen official apps have standalone, shell-free screenshots. Voice, Maps, and Beat Machine also have generated feature heroes. Every catalog filename is restricted to a flat image name and served from this App Store package.
+Thirteen official apps have standalone, shell-free screenshots. Voice, Maps, and Beat Machine also have generated feature heroes. Every catalog filename is restricted to a flat image name and served from this App Store package.
 
 Browse keeps app cards compact and reserves accepted screenshots for each app's detail description. The three official hero artworks still form the Spotlight mosaic; detail pages keep the full screenshot gallery and captions below the descriptive copy.
 
-Included screenshots: artifacts, beat-machine, connections, cuberun, habits, maps, news, notes, reflection, skills, tandem, tasks, voice, workflows.
+Included screenshots: artifacts, beat-machine, connections, cuberun, habits, maps, news, notes, skills, tandem, tasks, voice, workflows.
 
 ## Deliberate exclusions
 
@@ -19,6 +19,7 @@ A listing can ship without a screenshot. Do not replace these exclusions with ca
 - **Identity** — contains the owner’s account, photo, and email.
 - **Subagents** — contains real chat titles and provider settings.
 - **Contribute** — contains the owner’s GitHub identity and live contribution ledger.
+- **Reflection** — its reports and backlog come from the owner’s own agent chats.
 - **Editor** — contains the owner’s local app and file inventory.
 - **Web Studio** — opens in the project workspace rather than a standalone app surface.
 - **Workout** — contains owner-created routines.

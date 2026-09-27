@@ -190,7 +190,7 @@
     {
       "id": "reflection",
       "name": "Reflection",
-      "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
+      "description": "Agents log friction as it happens; on days with new friction, Reflection looks into it, reports, and asks you before fixing anything.",
       "repo": "mobius-os/app-reflection",
       "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-reflection/main/mobius.json",
       "raw_base": "https://raw.githubusercontent.com/mobius-os/app-reflection/main/",
@@ -200,15 +200,15 @@
       ],
       "keywords": [
         "reflection",
-        "morning brief",
-        "overnight",
-        "system improvement",
+        "friction",
+        "self-improvement",
+        "agent feedback",
         "background agent"
       ],
       "capabilities": [
-        "scheduled background run",
-        "writes morning briefs",
-        "proposes system improvements"
+        "agent friction tool",
+        "daily background review",
+        "asks before any fix"
       ],
       "setup": {
         "required": true,
@@ -224,17 +224,10 @@
       },
       "audience": "developer",
       "collection": "developer",
-      "summary": "A morning brief on what Möbius learned.",
+      "summary": "Learns from the snags your agents hit.",
       "listing": {
-        "tagline": "A morning brief on what Möbius learned.",
-        "description": "While you sleep, Möbius reviews the system, proposes improvements, and leaves a one-page morning brief.",
-        "screenshots": [
-          {
-            "src": "reflection-screen.png",
-            "alt": "Standalone Reflection app screen",
-            "label": "Return to each dated reflection from a quiet archive."
-          }
-        ]
+        "tagline": "Learns from the snags your agents hit.",
+        "description": "Agents note friction the moment something gets in their way. On days with new friction, Reflection traces the causes, writes a short report, and asks you before fixing anything."
       }
     },
     {
