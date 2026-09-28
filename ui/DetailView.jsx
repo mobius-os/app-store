@@ -36,7 +36,7 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityFeedback, onCommunityWithdraw, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
@@ -444,6 +444,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             feedback={communityFeedback}
             canRate={verifiedCommunityInstall}
             onSubmitFeedback={onCommunityFeedback}
+            onLogInToMobiusYou={onLogInToMobiusYou}
             busy={communityBusy}
             error={communityError}
           />

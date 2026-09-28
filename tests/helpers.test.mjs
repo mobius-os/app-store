@@ -2721,3 +2721,16 @@ test('the Store sends and reconciles receipts through the shared decisions', asy
   // Only a missing account asks the owner to sign in.
   assert.match(feedbackSource, /review_eligibility === 'account_required'/)
 })
+
+test('review prompts that need an account or handle hand off to Möbius · You', async () => {
+  const { reviewAccountAction } = await import('../domain.js')
+  assert.equal(reviewAccountAction('account_required'), 'Sign in with Möbius · You')
+  assert.equal(reviewAccountAction('handle_required'), 'Choose a handle')
+  assert.equal(reviewAccountAction('eligible'), null)
+  assert.equal(reviewAccountAction('install_required'), null)
+  assert.equal(reviewAccountAction(undefined), null)
+  const appSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  assert.match(appSource, /onLogInToMobiusYou=\{logInToMobiusYou\}/)
+  assert.match(detailSource, /onLogInToMobiusYou=\{onLogInToMobiusYou\}/)
+})
