@@ -14,7 +14,7 @@ function StarIcon({ filled }) {
   )
 }
 
-export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback, busy, error }) {
+export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback, onLogInToMobiusYou, busy, error }) {
   const [rating, setRating] = useState(feedback?.user_review?.stars || 0)
   const [draft, setDraft] = useState(feedback?.user_review?.review_text || '')
   useEffect(() => {
@@ -41,12 +41,20 @@ export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback,
       </div>
 
       {!canRate ? (
-        <div className="st-review-eligibility">
-          {feedback.review_eligibility === 'handle_required'
-            ? 'Choose a mobius.you handle to rate or review this app.'
-            : feedback.review_eligibility === 'account_required'
-              ? 'Sign in to mobius.you to rate or review this app.'
-              : 'Install this app to leave verified feedback.'}
+        <div className="st-review-eligibility st-review-gate">
+          <span>
+            {feedback.review_eligibility === 'handle_required'
+              ? 'Choose a mobius.you handle to rate or review this app.'
+              : feedback.review_eligibility === 'account_required'
+                ? 'Sign in to mobius.you to rate or review this app.'
+                : 'Install this app to leave verified feedback.'}
+          </span>
+          {/* Both fixes happen in Möbius · You, so hand off there. */}
+          {onLogInToMobiusYou && ['handle_required', 'account_required'].includes(feedback.review_eligibility) ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={onLogInToMobiusYou}>
+              Open Möbius · You
+            </button>
+          ) : null}
         </div>
       ) : null}
       <form

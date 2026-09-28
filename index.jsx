@@ -2002,6 +2002,7 @@ export default function App({ appId, token }) {
             ? communityActionError.message
             : ''}
           communityIdentityLinked={!!communityIdentity?.linked}
+          onLogInToMobiusYou={logInToMobiusYou}
           token={token}
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}
