@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { reviewAccountAction } from '../domain.js'
 
 function StarIcon({ filled }) {
   return (
@@ -16,6 +17,7 @@ function StarIcon({ filled }) {
 
 export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback, onLogInToMobiusYou, busy, error }) {
   const [rating, setRating] = useState(feedback?.user_review?.stars || 0)
+  const accountAction = reviewAccountAction(feedback?.review_eligibility)
   const [draft, setDraft] = useState(feedback?.user_review?.review_text || '')
   useEffect(() => {
     setRating(feedback?.user_review?.stars || 0)
@@ -49,10 +51,9 @@ export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback,
                 ? 'Sign in to mobius.you to rate or review this app.'
                 : 'Install this app to leave verified feedback.'}
           </span>
-          {/* Both fixes happen in Möbius · You, so hand off there. */}
-          {onLogInToMobiusYou && ['handle_required', 'account_required'].includes(feedback.review_eligibility) ? (
+          {onLogInToMobiusYou && accountAction ? (
             <button type="button" className="st-btn st-btn-secondary" onClick={onLogInToMobiusYou}>
-              Open Möbius · You
+              {accountAction}
             </button>
           ) : null}
         </div>

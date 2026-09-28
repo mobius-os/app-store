@@ -500,6 +500,7 @@ export const CSS = `
   .st-rating-summary { text-align: left; }
   .st-review-form { grid-template-columns: 1fr; }
   .st-review-form .st-btn { width: 100%; }
+  .st-review-gate .st-btn { width: 100%; }
   .st-publisher-intro { padding: 20px; }
   .st-publisher-identities { justify-items: start; }
   .st-publisher-identity { align-self: flex-start; }

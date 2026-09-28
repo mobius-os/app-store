@@ -1770,9 +1770,11 @@ export default function App({ appId, token }) {
     if (listing?.manifest) {
       openDetail(listing)
     } else {
+      // A detail page covers the grid, so leave it for the search to show.
+      closeDetail()
       setQuery('Möbius · You')
     }
-  }, [identityApp, displayCatalog, selectTab, openDetail])
+  }, [identityApp, displayCatalog, selectTab, openDetail, closeDetail])
 
   const updateItems = useMemo(
     () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'update'),

@@ -922,6 +922,14 @@ function communityAuthor(row) {
   return handle ? { ...author, handle } : null
 }
 
+// Reviews need a mobius.you account with a handle; both are set up in
+// Möbius · You, so these states offer a way there.
+export function reviewAccountAction(eligibility) {
+  if (eligibility === 'account_required') return 'Sign in with Möbius · You'
+  if (eligibility === 'handle_required') return 'Choose a handle'
+  return null
+}
+
 export function communityRepositoryUrl(value) {
   try {
     const url = new URL(String(value || ''))
