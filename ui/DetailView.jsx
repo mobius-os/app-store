@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, communityPersonName, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -30,7 +30,13 @@ function checkedAtText(value) {
   })
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityRate, onCommunityComment, onCommunityWithdraw, onLogInToMobiusYou, onConnectGitHub, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, githubIdentityConnected = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+function communityAuthorName(author) {
+  if (typeof author === 'string') return author
+  if (!author || typeof author !== 'object') return 'Möbius creator'
+  return String(author.handle || author.login || author.name || 'Möbius creator')
+}
+
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityFeedback, onCommunityWithdraw, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
@@ -99,7 +105,11 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const sourceAvailability = item.community
     ? sourceAvailabilityStatus(item.community.cache)
     : null
-  const communityFeedback = item.community_feedback || item.community || null
+  const communityFeedback = communityFeedbackOf(item)
+  // The service decides eligibility per app from any verified install, so an
+  // owner who reviewed and later uninstalled can still edit their review.
+  const verifiedCommunityInstall = communityIdentityLinked
+    && communityFeedback?.review_eligibility === 'eligible'
   const previewUrl = item.preview && storeAppId
     ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`
     : ''
@@ -182,7 +192,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             <div>
               <strong>Open source from the community</strong>
               <span>
-                {communityPersonName(item.community.author, 'Möbius creator')}
+                {communityAuthorName(item.community.author)}
               </span>
             </div>
             <div className="st-community-actions">
@@ -432,16 +442,8 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           <CommunityFeedback
             key={communityFeedback.revision_id}
             feedback={communityFeedback}
-            canRate={!!storeInstalled && communityIdentityLinked && communityFeedback.review_eligible}
-            canComment={!!storeInstalled
-              && communityIdentityLinked
-              && githubIdentityConnected
-              && communityFeedback.review_eligible}
-            identityLinked={communityIdentityLinked}
-            onRate={onCommunityRate}
-            onComment={onCommunityComment}
-            onLogInToMobiusYou={onLogInToMobiusYou}
-            onConnectGitHub={onConnectGitHub}
+            canRate={verifiedCommunityInstall}
+            onSubmitFeedback={onCommunityFeedback}
             busy={communityBusy}
             error={communityError}
           />
