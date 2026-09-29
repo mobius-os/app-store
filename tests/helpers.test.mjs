@@ -1757,9 +1757,8 @@ test('individual catalog updates keep a read-only review with bound digests', as
   const uninstallSource = await readFile(join(root, '..', 'ui', 'UninstallConfirmModal.jsx'), 'utf8')
   assert.ok(indexSource.includes('const handleCatalogUpdate = useCallback'))
   assert.ok(indexSource.includes('onUpdate={handleCatalogUpdate}'))
-  assert.ok(indexSource.includes(
-    'loadUpdateCandidatePreview(installedApp.id, updateItem.manifest_url, token)',
-  ))
+  assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token/)
+  assert.match(indexSource, /const capabilityPreview = candidate\.capability_preview/)
   assert.ok(indexSource.includes('capabilityDiffNeedsReview('))
   // An individual update still opens a review. Update all intentionally uses
   // the same prepared contract without duplicating this modal flow.
@@ -1848,13 +1847,17 @@ test('a conflicting apply starts a preserving resolver agent automatically', asy
   assert.doesNotMatch(modalSource, /blockedNotice|onResolve|accept_reviewed_upstream_exact/)
 })
 
-test('Update all applies verified stable-access releases and stops for access changes', async () => {
+test('Update all applies verified non-widening releases and reviews wider access', async () => {
   const { capabilityDiffNeedsReview, updateBatchDisposition } = await bundle()
   assert.equal(capabilityDiffNeedsReview(null), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: true, added: [], removed: [], changed: [] }), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, added: ['data.manage_apps'], removed: [], changed: [] }), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, added: [], removed: [], changed: ['background.agent'] }), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, added: [], removed: [], changed: [] }), false)
+  assert.equal(capabilityDiffNeedsReview({ unknown_previous: true, widens: false, added: [], removed: [], changed: [] }), true)
+  assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, widens: false, added: [], removed: ['data.github_access'], changed: [] }), false)
+  assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, widens: true, added: [], removed: [], changed: [] }), true)
+  assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, widens: false, added: [], removed: [] }), true)
 
   const verified = {
     preview: { source_digest: 'a'.repeat(64) },
@@ -1865,6 +1868,20 @@ test('Update all applies verified stable-access releases and stops for access ch
     },
   }
   assert.deepEqual(updateBatchDisposition(verified), { kind: 'ready', reason: null })
+  assert.deepEqual(updateBatchDisposition({
+    ...verified,
+    capabilityReview: { preview: { capability_diff: {
+      unknown_previous: false, widens: false,
+      added: [], removed: ['data.github_access'], changed: [],
+    } } },
+  }), { kind: 'ready', reason: null })
+  assert.deepEqual(updateBatchDisposition({
+    ...verified,
+    capabilityReview: { preview: { capability_diff: {
+      unknown_previous: false, widens: true,
+      added: [], removed: [], changed: [],
+    } } },
+  }), { kind: 'review', reason: 'access_changed' })
   assert.deepEqual(
     updateBatchDisposition({ ...verified, preview: {} }),
     { kind: 'review', reason: 'source_unverified' },
