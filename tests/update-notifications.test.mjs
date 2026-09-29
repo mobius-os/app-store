@@ -7,8 +7,13 @@ import {
   storeDestinationFromMessage,
 } from '../domain.js'
 
-test('the update notification intent opens the Store update destination', () => {
+test('Store update intents open the Library or the selected app review', () => {
   assert.deepEqual(storeDestinationFromIntent('updates'), { kind: 'updates' })
+  assert.deepEqual(storeDestinationFromIntent('update:42'), {
+    kind: 'review-update', appId: '42',
+  })
+  assert.equal(storeDestinationFromIntent('update:0'), null)
+  assert.equal(storeDestinationFromIntent('update:app'), null)
   assert.deepEqual(storeDestinationFromIntent(' app:Voice '), {
     kind: 'app', itemId: 'voice',
   })
@@ -28,6 +33,23 @@ test('Store intents accept only the mounted parent and current origin', () => {
   )
   assert.equal(storeDestinationFromMessage(event, 'https://evil.test', source), null)
   assert.equal(storeDestinationFromMessage(event, 'https://mobius.test', {}), null)
+  event.data.intent = 'update:42'
+  assert.deepEqual(
+    storeDestinationFromMessage(event, 'https://mobius.test', source),
+    { kind: 'review-update', appId: '42' },
+  )
+})
+
+test('per-app update intent opens the existing update review path without applying', () => {
+  const source = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
+  const start = source.indexOf("if (intentDestination.kind === 'review-update')")
+  const end = source.indexOf("if (intentDestination.kind === 'updates')", start)
+  assert.ok(start >= 0 && end > start)
+  const branch = source.slice(start, end)
+  assert.match(branch, /selectTab\('library'\)/)
+  assert.match(branch, /setCategory\('update'\)/)
+  assert.match(branch, /handleCatalogUpdate\(item, \{ isUpdate: true \}\)/)
+  assert.doesNotMatch(branch, /handleApplyReviewedUpdate|handleInstall\(/)
 })
 
  test('Updates intent closes owned detail navigation before switching to Library', () => {

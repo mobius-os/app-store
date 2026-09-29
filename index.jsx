@@ -1937,6 +1937,32 @@ export default function App({ appId, token }) {
 
   useEffect(() => {
     if (!intentDestination || loadingCatalog) return
+    if (intentDestination.kind === 'review-update') {
+      const appId = String(intentDestination.appId)
+      const item = displayCatalog.find(candidate => (
+        String(lifecycleById.get(candidate.id)?.installedApp?.id) === appId
+      ))
+      const targetSourceKey = `other-installed-${appId}`
+      const targetSourceStillHydrating = otherInstalledCatalogSources.some(
+        source => source.id === targetSourceKey,
+      ) && !otherInstalledCatalog.some(source => source.id === targetSourceKey)
+      if (!item && targetSourceStillHydrating) return
+
+      setIntentDestination(null)
+      closeDetail()
+      selectTab('library')
+      setCategory('update')
+      setQuery('')
+      if (item) {
+        void handleCatalogUpdate(item, { isUpdate: true })
+      } else {
+        setToast({
+          kind: 'info',
+          message: 'This app’s update is no longer available in the Store.',
+        })
+      }
+      return
+    }
     if (intentDestination.kind === 'updates') {
       setIntentDestination(null)
       closeDetail()
@@ -1961,7 +1987,7 @@ export default function App({ appId, token }) {
     }
     const item = resolution.item
     void openDetail(item)
-  }, [displayCatalog, intentDestination, loadingCatalog, openDetail, closeDetail, selectTab])
+  }, [displayCatalog, intentDestination, loadingCatalog, openDetail, closeDetail, selectTab, lifecycleById, otherInstalledCatalogSources, otherInstalledCatalog, handleCatalogUpdate])
 
   // Detail view replaces the main layout when set.
   if (detail) {
@@ -2137,7 +2163,11 @@ export default function App({ appId, token }) {
            aria-labelledby={`st-tab-${tab}`}>
         {(tab === 'browse' || tab === 'library') && (
           <>
-            <SelfUpdateBanner appId={appId} token={token} />
+            <SelfUpdateBanner
+              appId={appId}
+              app={installed.find((row) => String(row.id) === String(appId)) || null}
+              token={token}
+            />
             {loadingCatalog
               ? <CatalogSkeleton count={CATALOG.length} />
               : <>

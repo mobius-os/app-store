@@ -1375,27 +1375,57 @@ export const CSS = `
 /* Self-update banner — the store checks for its own newer published
    version and offers a one-tap update + reload. App-specific. */
 .st-banner {
-  display: flex; align-items: center; gap: 12px;
-  margin: 0 0 16px; padding: 12px 16px;
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-  border: 1px solid var(--accent); border-radius: 12px;
-  font-size: 14px; line-height: 1.4;
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center; gap: 12px;
+  width: min(420px, 100%); margin: 0 auto 16px; padding: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--text) 12%, var(--surface));
+  border-radius: 12px; box-shadow: 0 12px 36px rgba(0, 0, 0, .28);
+  font-size: 13px; line-height: 1.35;
 }
-.st-banner-msg { flex: 1; }
-.st-banner-content { flex: 1; min-width: 0; }
-.st-banner.is-reviewing { align-items: flex-start; }
-.st-banner.is-reviewing .st-banner-msg { margin-bottom: 10px; }
+.st-banner-logo {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 17%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--surface));
+  border-radius: 10px;
+}
+.st-banner-logo--empty {
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+}
+.st-banner-content { min-width: 0; }
+.st-banner.is-reviewing { width: 100%; max-width: none; align-items: start; margin-left: 0; }
+.st-banner.is-reviewing .st-banner-content { grid-row: 1 / span 2; }
+.st-banner.is-reviewing .st-banner-btn { grid-column: 3; grid-row: 1; align-self: start; }
+.st-banner-msg { min-width: 0; }
+.st-banner-title { display: block; color: var(--text); font-weight: 650; letter-spacing: -.01em; }
+.st-banner-meta,
+.st-banner-error { display: block; margin-top: 3px; font-size: 11px; }
+.st-banner-meta { color: var(--muted); }
+.st-banner-error { color: var(--danger); }
 .st-banner.is-reviewing .st-capability-list { gap: 6px; }
 .st-banner.is-reviewing .st-permission-row { background: var(--bg); }
 .st-banner-btn {
-  flex-shrink: 0; border: none; border-radius: 8px; padding: 8px 16px;
+  border: none; border-radius: 8px; padding: 8px 12px;
   background: var(--accent-hover, var(--accent)); color: var(--accent-fg); font-weight: 600;
-  font-size: 13px; cursor: pointer; font-family: var(--font);
+  font-size: 12px; cursor: pointer; font-family: var(--font); white-space: nowrap;
   min-height: 44px;
   touch-action: manipulation; user-select: none;
 }
 @media (prefers-reduced-motion: no-preference) {
   .st-banner-btn:not(:disabled):active { opacity: 0.8; transform: scale(0.97); }
+}
+@media (max-width: 520px) {
+  .st-banner {
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 8px; padding: 8px;
+  }
+  .st-banner-logo { width: 32px; height: 32px; border-radius: 9px; }
+  .st-banner-btn { padding: 8px 10px; }
+  .st-banner.is-reviewing { grid-template-columns: 32px minmax(0, 1fr); }
+  .st-banner.is-reviewing .st-banner-content { grid-column: 2; grid-row: 1; }
+  .st-banner.is-reviewing .st-banner-btn { grid-column: 2; grid-row: 2; justify-self: start; }
 }
 
 /* mobius-ui:Empty v1 — keep in sync; library candidate. Diverge below the marker only. */

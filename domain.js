@@ -14,8 +14,11 @@ export function catalogItemIdFromMessage(event, expectedOrigin, expectedSource) 
 
 export function storeDestinationFromIntent(intent) {
   if (typeof intent !== 'string') return null
-  if (intent.trim().toLowerCase() === 'updates') return { kind: 'updates' }
-  const itemId = catalogItemIdFromIntent(intent)
+  const value = intent.trim().toLowerCase()
+  if (value === 'updates') return { kind: 'updates' }
+  const updateMatch = /^update:([1-9]\d*)$/.exec(value)
+  if (updateMatch) return { kind: 'review-update', appId: updateMatch[1] }
+  const itemId = catalogItemIdFromIntent(value)
   return itemId ? { kind: 'app', itemId } : null
 }
 

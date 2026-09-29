@@ -82,13 +82,14 @@ export function IconBox({ item, size = 'normal', token }) {
   const [blobUrl, setBlobUrl] = useState(() => (
     external && url ? (_resolvedIconBlobCache.get(url) || null) : null
   ))
-  // Letter-fallback variant: needs the surface tile so the letter reads
-  // on an opaque background. Real icons sit on transparent.
-  const isLetter = !((external ? blobUrl : url) && !errored)
-  const wrapClass = size === 'hero'
-    ? `st-hero-icon${isLetter ? ' is-letter' : ''}`
-    : `st-icon-wrap${isLetter ? ' st-icon-wrap--letter' : ''}`
-  const letterClass = size === 'hero' ? 'st-hero-icon-letter' : 'st-icon-letter'
+  const baseClass = size === 'hero'
+    ? 'st-hero-icon'
+    : size === 'banner'
+    ? 'st-banner-logo'
+    : 'st-icon-wrap'
+  const letterClass = size === 'hero'
+    ? 'st-hero-icon-letter'
+    : 'st-icon-letter'
   const name = (item.manifest && item.manifest.name) || item.name || '?'
   const letter = name.charAt(0).toUpperCase()
 
@@ -112,7 +113,7 @@ export function IconBox({ item, size = 'normal', token }) {
   const src = external ? blobUrl : url
   if (src && !errored) {
     // wrapClass must be re-evaluated now that we know we have an image.
-    const imgWrapClass = size === 'hero' ? 'st-hero-icon' : 'st-icon-wrap'
+    const imgWrapClass = baseClass
     return (
       <div className={imgWrapClass}>
         <img src={src} alt="" className="st-icon-img" loading="lazy" decoding="async"
@@ -127,10 +128,11 @@ export function IconBox({ item, size = 'normal', token }) {
   // footprint reserved instead; letters are now only the true no-icon/error
   // fallback.
   if (url && external && !errored) {
-    const loadingWrapClass = size === 'hero'
-      ? 'st-hero-icon st-icon-loading'
-      : 'st-icon-wrap st-icon-loading'
+    const loadingWrapClass = `${baseClass} st-icon-loading`
     return <div className={loadingWrapClass} aria-hidden="true" />
+  }
+  if (size === 'banner') {
+    return <div className="st-banner-logo st-banner-logo--empty" aria-hidden="true" />
   }
   const letterWrapClass = size === 'hero' ? 'st-hero-icon is-letter' : 'st-icon-wrap st-icon-wrap--letter'
   return (
