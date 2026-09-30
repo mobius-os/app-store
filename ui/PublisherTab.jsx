@@ -209,7 +209,7 @@ export function PublisherTab({
   }
 
   return (
-    <div className="st-publisher">
+    <div className={`st-publisher${candidate ? ' is-reviewing' : ''}`}>
       <section className="st-publish-heading">
         <div>
           <h2>Publish an app</h2>
@@ -332,26 +332,13 @@ export function PublisherTab({
             </div>
           ) : (
             <div className="st-listing-ready-layout">
-              <div className="st-listing-preview">
-                <div className="st-listing-hero">
-                  {listing?.hero?.path ? <img src={assetUrl(preview, listing.hero.path)} alt="" /> : null}
-                  <div className="st-listing-hero-shade" />
-                  <div className="st-listing-hero-copy">
-                    <img src={preview.icon_url} alt="" width="64" height="64" />
-                    <h3 id="st-listing-review-title">{preview.name}</h3>
-                    <p>{listing?.tagline}</p>
-                  </div>
-                </div>
-                <div className="st-listing-body">
-                  <p>{listing?.description}</p>
-                  <div className="st-listing-gallery" aria-label="App screenshots">
-                    {(listing?.screenshots || []).map((shot) => (
-                      <figure key={shot.src}>
-                        <img src={assetUrl(preview, shot.src)} alt={shot.alt} />
-                        {shot.label ? <figcaption>{shot.label}</figcaption> : null}
-                      </figure>
-                    ))}
-                  </div>
+              <div className="st-listing-hero">
+                {listing?.hero?.path ? <img src={assetUrl(preview, listing.hero.path)} alt="" /> : null}
+                <div className="st-listing-hero-shade" />
+                <div className="st-listing-hero-copy">
+                  <img src={preview.icon_url} alt="" width="64" height="64" />
+                  <h3 id="st-listing-review-title">{preview.name}</h3>
+                  <p>{listing?.tagline}</p>
                 </div>
               </div>
               <aside className="st-listing-release-panel" aria-label="Release decision">
@@ -392,6 +379,17 @@ export function PublisherTab({
                   ) : null}
                 </div>
               </aside>
+              <div className="st-listing-body">
+                <p>{listing?.description}</p>
+                <div className="st-listing-gallery" aria-label="App screenshots">
+                  {(listing?.screenshots || []).map((shot) => (
+                    <figure key={shot.src}>
+                      <img src={assetUrl(preview, shot.src)} alt={shot.alt} />
+                      {shot.label ? <figcaption>{shot.label}</figcaption> : null}
+                    </figure>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </section>
