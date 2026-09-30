@@ -68,3 +68,11 @@ test('category and detail navigation require host ownership and support reversib
   assert.match(source,/onForward: \(\) => \{\s*setTab\('browse'\)/)
   assert.doesNotMatch(source,/nav-push ack timeout|Older shell without ack/)
 })
+
+test('community people are named by their Möbius handle or GitHub login', async () => {
+  const { communityPersonName } = await import('../domain.js')
+  assert.equal(communityPersonName({ kind: 'github', login: 'octo' }, 'Möbius user'), 'octo')
+  assert.equal(communityPersonName({ handle: 'ada', login: 'octo' }, 'Möbius user'), 'ada')
+  assert.equal(communityPersonName('lin', 'Möbius user'), 'lin')
+  assert.equal(communityPersonName(null, 'Möbius user'), 'Möbius user')
+})

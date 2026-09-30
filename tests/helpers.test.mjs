@@ -525,7 +525,7 @@ test('local publishing is one reviewed action through the inherited GitHub accou
     public_identity: 'github',
   })
   assert.match(calls[0].options.headers['Idempotency-Key'], /^store:publish-local:/)
-  assert.match(publisherSource, /I want this accepted source revision to become public/)
+  assert.match(publisherSource, /want this exact source revision to become public/)
   assert.match(publisherSource, /onPublishLocal/)
   assert.match(publisherSource, /app\.icon_url/)
   assert.doesNotMatch(publisherSource, /\/api\/apps\/\$\{app\.id\}\/icon/)
@@ -603,11 +603,12 @@ test('publisher preview accepts only the latest app after back navigation', asyn
     label: 'second app',
     preview: { name: 'Second listing' },
   }])
-  assert.match(publisherSource, /const requestId = previewGateRef\.current\.begin\(\)/)
+  const requests = publisherSource.match(/const requestId = previewGateRef\.current\.begin\(\)/g)?.length || 0
+  assert.ok(requests >= 1)
   assert.equal(
     publisherSource.match(/if \(!previewGateRef\.current\.isCurrent\(requestId\)\) return/g)?.length,
-    2,
-    'both fulfilled and rejected stale previews must be ignored',
+    requests * 2,
+    'both fulfilled and rejected stale previews must be ignored for every request',
   )
   assert.match(publisherSource, /function closePreview[\s\S]*previewGateRef\.current\.invalidate\(\)/)
 })
@@ -1316,6 +1317,105 @@ test('readErrorDetail formats FastAPI validation payloads', async () => {
   assert.equal(
     await readErrorDetail(response, 'Update failed'),
     'body.manifest_url: Field required',
+  )
+})
+
+test('a not-ready listing opens one agent brief that fixes it without publishing', async () => {
+  const { buildListingAgentMessage } = await bundle()
+  const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
+  const brief = buildListingAgentMessage({
+    app,
+    problem: 'Add a Store listing with a tagline, description, and screenshots before publishing.',
+  })
+  assert.match(brief, /cannot publish Scorekeeper yet/)
+  assert.match(brief, /Add a Store listing with a tagline/)
+  assert.match(brief, /\/data\/apps\/scorekeeper/)
+  assert.match(brief, /"Store listing" in \/data\/shared\/skills\/building-apps\.md/)
+  assert.match(brief, /preview\?app_id=7/)
+  assert.match(brief, /never the owner's own data/)
+  assert.match(brief, /Do not publish/)
+
+  const revise = buildListingAgentMessage({ app, problem: '' })
+  assert.match(revise, /wants to revise the App Store listing of Scorekeeper/)
+})
+
+test('a checklist item hands an agent just that part of the listing', async () => {
+  const { buildListingAgentMessage } = await bundle()
+  const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
+  const brief = buildListingAgentMessage({ app, problem: '', focus: 'screenshots' })
+  assert.match(brief, /one part of the App Store listing of Scorekeeper/)
+  assert.match(brief, /1–5 truthful screenshots/)
+  assert.match(brief, /keep what the owner already wrote/)
+  assert.match(brief, /Do not publish/)
+  const details = buildListingAgentMessage({ app, problem: '', focus: 'details' })
+  assert.match(details, /scheduled job/)
+})
+
+test('an edited listing saves as one whole listing, keeping unchanged images by path', async () => {
+  const { listingDraftFromPreview, listingPayload } = await bundle()
+  const preview = {
+    asset_root: '/api/x/',
+    draft: {
+      tagline: ' Small. ', description: 'Calm.', icon: 'icon.png', hero: 'static/store/h.png',
+      screenshots: [{ src: 'static/store/a.png', alt: 'A', label: '' }, { src: '', alt: 'gone', label: '' }],
+    },
+  }
+  const draft = listingDraftFromPreview(preview, { icon_url: '/icon' })
+  assert.equal(draft.icon.url, '/api/x/icon.png')
+  assert.equal(draft.screenshots[0].url, '/api/x/static/store/a.png')
+  const unchanged = listingPayload(draft)
+  assert.deepEqual(unchanged, {
+    tagline: 'Small.', description: 'Calm.',
+    hero: { path: 'static/store/h.png' },
+    screenshots: [{ path: 'static/store/a.png', alt: 'A' }],
+  })
+  const edited = listingPayload({
+    ...draft, iconChanged: true, icon: { data: 'ICON', url: 'blob:1' }, hero: null,
+    screenshots: [...draft.screenshots, { key: 'n', data: 'SHOT', url: 'blob:2', alt: ' New ', label: 'Cap' }],
+  })
+  assert.deepEqual(edited.icon, { data_base64: 'ICON' })
+  assert.equal(edited.hero, null)
+  assert.deepEqual(edited.screenshots[1], { data_base64: 'SHOT', alt: 'New', label: 'Cap' })
+  const legacy = listingDraftFromPreview({ draft: { screenshots: [] } }, { icon_url: '/icon' })
+  assert.equal(legacy.icon.url, '/icon')
+  assert.equal(listingPayload(legacy).icon, undefined)
+})
+
+test('the publish review lets the owner fill in the listing by hand', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const editor = await readFile(join(root, '..', 'ui', 'ListingEditor.jsx'), 'utf8')
+  assert.match(source, /<ListingChecklist/)
+  assert.match(source, /<ListingEditor/)
+  assert.match(source, /Edit listing/)
+  assert.match(editor, /Save listing/)
+  assert.match(editor, /Ask an agent/)
+  assert.match(editor, /Do it all with an agent/)
+  assert.match(editor, /not your own/)
+})
+
+test('the publish review offers a way forward instead of a dead end', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  assert.match(source, /This app isn’t ready to publish yet/)
+  assert.match(source, /Get it ready with an agent/)
+  assert.match(source, /Revise with an agent/)
+  assert.doesNotMatch(source, /Finish the Store listing first/)
+})
+
+test('readErrorDetail shows a structured error as its sentence, not raw JSON', async () => {
+  const { readErrorDetail } = await bundle()
+  const response = new Response(JSON.stringify({
+    detail: {
+      code: 'listing_incomplete',
+      message: 'Add a Store listing with a tagline, description, and screenshots before publishing.',
+    },
+  }), {
+    status: 409,
+    headers: { 'content-type': 'application/json' },
+  })
+
+  assert.equal(
+    await readErrorDetail(response, 'This app listing could not be prepared.'),
+    'Add a Store listing with a tagline, description, and screenshots before publishing.',
   )
 })
 
