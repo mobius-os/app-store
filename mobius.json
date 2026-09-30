@@ -3,7 +3,7 @@
   "package_id": "urn:uuid:cbcc33c4-6ff4-4bab-abe7-b9d9363ab72b",
   "name": "App Store",
   "version": "1.21.4",
-  "description": "Discover, install, and update M\u00f6bius apps.",
+  "description": "Discover, install, and update Möbius apps.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-store",
@@ -64,8 +64,7 @@
     "ui/diff/styles.js",
     "LISTING_ART.md",
     "catalog-freshness.js",
-    "store-navigation.js",
-    "update-batch.js"
+    "store-navigation.js"
   ],
   "static_assets": {
     "previews/artifacts-screen.png": "listing-assets/artifacts-screen.png",

@@ -1185,27 +1185,6 @@ export const CSS = `
 .st-capability-change { margin-bottom: 10px; color: var(--text); }
 .st-capability-list { display: grid; gap: 8px; }
 .st-perm-hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.st-capability-diff-row { margin-bottom: 0; }
-.st-capability-diff-row.is-added { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
-.st-capability-diff-row.is-removed { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
-.st-capability-diff-kind {
-  display: inline-block; margin-right: 7px; color: var(--muted);
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-}
-.st-capability-diff-values {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
-  margin-top: 5px; color: var(--text); font-size: 13px; line-height: 1.4;
-}
-.st-capability-diff-arrow { color: var(--muted); }
-.st-capability-full-access {
-  border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
-}
-.st-capability-full-access summary {
-  min-height: 44px; padding: 12px; cursor: pointer; color: var(--muted);
-  font-size: 13px; font-weight: 650; touch-action: manipulation;
-}
-.st-capability-full-access[open] summary { border-bottom: 1px solid var(--border); color: var(--text); }
-.st-capability-full-access > .st-capability-list { padding: 10px; }
 
 /* Progressive disclosure for the information that matters during review or
    troubleshooting but should not dominate everyday app browsing. Permission
@@ -1479,10 +1458,6 @@ export const CSS = `
 .st-update-review-section-head h3 {
   margin: 0; font-size: 12px; line-height: 1.4; font-weight: 650; color: var(--muted);
 }
-.st-update-review-guidance {
-  margin: -2px 0 1px; max-width: 64ch;
-  color: var(--muted); font-size: 13px; line-height: 1.5;
-}
 .st-update-review-section-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
@@ -1500,22 +1475,6 @@ export const CSS = `
 .st-update-review-notice.is-error {
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
-.st-update-review-checking {
-  min-height: 132px; display: flex; align-items: center; justify-content: center; gap: 14px;
-  padding: 24px; border: 1px solid var(--border); border-radius: 12px;
-  background: var(--surface-2); color: var(--text); text-align: left;
-}
-.st-update-review-checking strong { display: block; font-size: 14px; line-height: 1.4; }
-.st-update-review-checking p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.st-update-review-checking-indicator {
-  width: 18px; height: 18px; flex: 0 0 auto; border: 2px solid var(--border);
-  border-top-color: var(--accent); border-radius: 999px;
-}
-.st-update-review-checking-label { color: var(--muted); font-size: 13px; font-weight: 650; }
-@media (prefers-reduced-motion: no-preference) {
-  .st-update-review-checking-indicator { animation: st-update-review-spin 800ms linear infinite; }
-}
-@keyframes st-update-review-spin { to { transform: rotate(360deg); } }
 .st-update-review-error-text,
 .st-selectable-error {
   user-select: text;
@@ -1535,20 +1494,6 @@ export const CSS = `
   padding-top: 14px; border-top: 1px solid var(--border);
 }
 .st-update-review-actions .st-btn:first-child { margin-right: auto; }
-.st-update-review-list { display: flex; flex-direction: column; gap: 12px; }
-.st-update-review-app {
-  padding: 14px; border: 1px solid var(--border); border-radius: 12px;
-  background: var(--bg); display: flex; flex-direction: column; gap: 10px;
-}
-.st-update-review-app.is-issue { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
-.st-update-review-app-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.st-update-review-app-head h3 { margin: 0; font-size: 15px; line-height: 1.35; }
-.st-update-review-app-head p { margin: 3px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
-.st-update-review-app-state { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 650; }
-.st-update-review-app-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.st-update-review-files { border-top: 1px solid var(--border); padding-top: 9px; }
-.st-update-review-files summary { cursor: pointer; color: var(--muted); font-size: 13px; min-height: 32px; }
-.st-update-review-files .st-file-diff-list { margin-top: 8px; }
 
 @media (max-width: 520px) {
   .st-update-review-scrim { align-items: stretch; padding: 8px; }
@@ -1557,9 +1502,6 @@ export const CSS = `
   .st-update-review-actions .st-btn { width: 100%; margin: 0; }
   .st-update-review-actions .st-btn-primary { grid-column: 1 / -1; order: -2; }
   .st-update-review-actions .st-btn-secondary { order: -1; }
-  .st-update-review-app-head { flex-direction: column; gap: 4px; }
-  .st-update-review-app-actions { display: grid; grid-template-columns: 1fr 1fr; }
-  .st-update-review-app-actions .st-btn { width: 100%; }
 }
 
 @media (max-width: 360px) {

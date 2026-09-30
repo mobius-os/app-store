@@ -23,7 +23,7 @@ export function CatalogFilters({
   const updateAllLabel = updateAllState === 'checking'
     ? 'Checking…'
     : updateAllState === 'updating' && updateAllProgress
-    ? `Updating · ${updateAllProgress.current}/${updateAllProgress.total} finished`
+    ? `Updating ${updateAllProgress.current}/${updateAllProgress.total}`
     : 'Update all'
   const resolveAllLabel = resolveAllState === 'resolving' ? 'Starting…' : 'Resolve all'
   return (

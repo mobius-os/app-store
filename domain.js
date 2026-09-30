@@ -567,12 +567,12 @@ export function updateCandidateUrlsByInstalledId(installed = [], catalog = []) {
 }
 
 
-// A baked manifest is the complete display snapshot for this Store release.
-// Git-native source checks remain the update authority, so re-fetching an
-// installed app's manifest only delays first paint and cannot improve the
-// update decision. Fetch only catalog entries that have no bundled snapshot.
+// A baked manifest gives an uninstalled discovery card a fast, offline-safe
+// first paint. Installed apps still refresh their live manifest so their
+// human-facing labels stay current; source provenance remains the only update
+// authority.
 export function shouldRefreshCatalogManifest(item, installed = []) {
-  return !item?.manifest
+  return !item?.manifest || Boolean(findInstalled(installed, item))
 }
 
 export function busyLabelForAction(actionKind) {
@@ -597,30 +597,17 @@ export function capabilityDiffNeedsReview(diff) {
   )
 }
 
-// The server ranks each access change and lists the ones that grant more in
-// `widened`; only those need the owner. Revocations, lowered or added limits,
-// and offline metadata apply as routine updates. A server that predates the
-// detailed ranking may still provide the boolean `widens`; older servers fall
-// back to the conservative any-change rule.
-export function capabilityPreviewNeedsReview(preview) {
-  const diff = preview?.capability_diff
-  if (!diff || typeof diff !== 'object' || diff.unknown_previous !== false) return true
-  if (!Array.isArray(diff.widened)) return capabilityDiffNeedsReview(diff)
-  return diff.widened.length > 0
-}
-
-// Classify candidates for the combined pre-apply review. Exact, non-widening
-// updates are ready; access expansions are disclosed for the transaction-level
-// confirmation; unverifiable candidates remain excluded and retryable.
+// "Update all" applies every exact, non-widening candidate immediately.
+// Anything that widens access or cannot be verified stays on the individual
+// review path rather than being silently approved by the batch action.
 export function updateBatchDisposition(prepared) {
-  if (!prepared || prepared.error) return { kind: 'retry', reason: 'check_failed' }
-  if (!prepared.preview?.source_digest) return { kind: 'retry', reason: 'source_unverified' }
-  const preview = prepared.capabilityReview?.preview
-  const diff = preview?.capability_diff
+  if (!prepared || prepared.error) return { kind: 'review', reason: 'check_failed' }
+  if (!prepared.preview?.source_digest) return { kind: 'review', reason: 'source_unverified' }
+  const diff = prepared.capabilityReview?.preview?.capability_diff
   if (diff?.unknown_previous === true) {
     return { kind: 'review', reason: 'access_unrecorded' }
   }
-  if (capabilityPreviewNeedsReview(preview)) {
+  if (capabilityDiffNeedsReview(diff)) {
     return { kind: 'review', reason: 'access_changed' }
   }
   return { kind: 'ready', reason: null }
@@ -1301,7 +1288,7 @@ export function libraryCollections(items, lifecycleById) {
   for (const item of items) {
     const state = lifecycleById.get(item.id)
     if (!state?.installedApp) continue
-    const attention = state.setupNeedsAttention || state.key === 'conflict'
+    const attention = state.setupNeedsAttention || ['conflict', 'unverified', 'unavailable'].includes(state.key)
     buckets[attention ? 0 : state.key === 'update' ? 1 : 2].items.push(item)
   }
   for (const group of buckets) group.items.sort((a,b) => (a.manifest?.name || a.name || a.id).localeCompare(b.manifest?.name || b.name || b.id))

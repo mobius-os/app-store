@@ -269,35 +269,29 @@ export function openSystemSettings(section = 'ai-providers', onUnembedded) {
 export async function loadInstalledApps(token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 250
-  const deadline = requestDeadline(opts)
   let lastError = null
 
-  try {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      let r
-      try {
-        r = await fetch('/api/apps/', {
-          signal: deadline.signal,
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      } catch (err) {
-        lastError = err
-        if (!deadline.signal.aborted && attempt < retries && retryableFetchError(err)) {
-          if (!await deadline.wait(retryDelay(null, attempt, delayMs))) break
-          continue
-        }
-        throw new Error(transientFetchMessage('Installed apps'))
-      }
-
-      if (r.ok) return await r.json()
-      if (!deadline.signal.aborted && attempt < retries && retryableFetchStatus(r.status)) {
-        if (!await deadline.wait(retryDelay(r, attempt, delayMs))) break
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let r
+    try {
+      r = await fetch('/api/apps/', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    } catch (err) {
+      lastError = err
+      if (attempt < retries && retryableFetchError(err)) {
+        await sleep(retryDelay(null, attempt, delayMs))
         continue
       }
-      throw new Error(`Installed apps could not be loaded (${r.status}).`)
+      throw new Error(transientFetchMessage('Installed apps'))
     }
-  } finally {
-    deadline.dispose()
+
+    if (r.ok) return await r.json()
+    if (attempt < retries && retryableFetchStatus(r.status)) {
+      await sleep(retryDelay(r, attempt, delayMs))
+      continue
+    }
+    throw new Error(`Installed apps could not be loaded (${r.status}).`)
   }
 
   throw new Error(lastError?.message || 'Installed apps could not be loaded.')
@@ -315,14 +309,12 @@ export async function loadInstalledApps(token, opts = {}) {
 // NEVER throws and NEVER retries: it runs from focus/visibility listeners whose
 // callers have no rejection handler, so a read-only availability probe must
 // degrade to null rather than let a rejection escape and strand the grid.
-export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '', opts = {}) {
-  const deadline = requestDeadline(opts)
+export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') {
   try {
     const query = candidateManifestUrl
       ? `?manifest_url=${encodeURIComponent(validateManifestUrl(candidateManifestUrl))}`
       : ''
     const r = await fetch(`/api/apps/${appId}/update-check${query}`, {
-      signal: deadline.signal,
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!r.ok) return null
@@ -339,33 +331,25 @@ export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '', 
     }
   } catch {
     return null
-  } finally {
-    deadline.dispose()
   }
 }
 
 export async function loadProviderStatus(token, opts = {}) {
   const retries = opts.retries ?? 1
   const delayMs = opts.retryDelayMs ?? 250
-  const deadline = requestDeadline(opts)
-  try {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const r = await fetch('/api/auth/providers/status', {
-          signal: deadline.signal,
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (r.ok) return await r.json()
-        if (!retryableFetchStatus(r.status) || attempt === retries) return null
-      } catch (err) {
-        if (deadline.signal.aborted || !retryableFetchError(err) || attempt === retries) return null
-      }
-      if (!await deadline.wait(retryDelay(null, attempt, delayMs))) return null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch('/api/auth/providers/status', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (r.ok) return await r.json()
+      if (!retryableFetchStatus(r.status) || attempt === retries) return null
+    } catch (err) {
+      if (!retryableFetchError(err) || attempt === retries) return null
     }
-    return null
-  } finally {
-    deadline.dispose()
+    await sleep(retryDelay(null, attempt, delayMs))
   }
+  return null
 }
 
 // External resources (catalog manifests + icons) live on public git hosts
@@ -407,41 +391,8 @@ function rateLimitMessage(url, res) {
   return `${service} rate-limited this request. Please wait a minute and try again.`
 }
 
-// One deadline owns the whole logical read, including every retry and retry
-// delay. A fresh timeout per attempt turns three retries into a much longer
-// wait than the caller asked for.
-function requestDeadline(opts = {}, fallbackMs = 8_000) {
-  const controller = new AbortController()
-  const parentSignal = opts.signal
-  const deadlineMs = Math.max(1, Number(opts.deadlineMs ?? fallbackMs) || fallbackMs)
-  const abortFromParent = () => controller.abort(parentSignal?.reason)
-  if (parentSignal?.aborted) abortFromParent()
-  else parentSignal?.addEventListener?.('abort', abortFromParent, { once: true })
-  const timer = setTimeout(() => controller.abort(), deadlineMs)
-
-  return {
-    signal: controller.signal,
-    async wait(ms) {
-      if (controller.signal.aborted) return false
-      return await new Promise(resolve => {
-        let settled = false
-        const finish = value => {
-          if (settled) return
-          settled = true
-          clearTimeout(waitTimer)
-          controller.signal.removeEventListener('abort', onAbort)
-          resolve(value)
-        }
-        const onAbort = () => finish(false)
-        const waitTimer = setTimeout(() => finish(true), Math.max(0, ms))
-        controller.signal.addEventListener('abort', onAbort, { once: true })
-      })
-    },
-    dispose() {
-      clearTimeout(timer)
-      parentSignal?.removeEventListener?.('abort', abortFromParent)
-    },
-  }
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function transientFetchMessage(kind) {
@@ -452,36 +403,31 @@ export async function fetchManifest(url, token, opts = {}) {
   const manifestUrl = validateManifestUrl(url)
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
-  const deadline = requestDeadline(opts)
   let lastError = null
-  try {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      let r
-      try {
-        r = await fetch(proxyUrl(manifestUrl), {
-          cache: 'no-cache',
-          signal: deadline.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-      } catch (error) {
-        lastError = new Error(transientFetchMessage('Manifest'))
-        if (deadline.signal.aborted || !retryableFetchError(error) || attempt === retries) break
-        if (!await deadline.wait(retryDelay(null, attempt, delayMs))) break
-        continue
-      }
-      if (r.ok) return await r.json()
 
-      if (r.status === 429) {
-        lastError = new Error(rateLimitMessage(manifestUrl, r))
-        break
-      }
-
-      lastError = new Error(`Manifest fetch failed: ${r.status}`)
-      if (!retryableFetchStatus(r.status) || attempt === retries) break
-      if (!await deadline.wait(retryDelay(r, attempt, delayMs))) break
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let r
+    try {
+      r = await fetch(proxyUrl(manifestUrl), {
+        cache: 'no-cache',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+    } catch (error) {
+      lastError = new Error(transientFetchMessage('Manifest'))
+      if (!retryableFetchError(error) || attempt === retries) break
+      await sleep(retryDelay(null, attempt, delayMs))
+      continue
     }
-  } finally {
-    deadline.dispose()
+    if (r.ok) return await r.json()
+
+    if (r.status === 429) {
+      lastError = new Error(rateLimitMessage(manifestUrl, r))
+      break
+    }
+
+    lastError = new Error(`Manifest fetch failed: ${r.status}`)
+    if (!retryableFetchStatus(r.status) || attempt === retries) break
+    await sleep(retryDelay(r, attempt, delayMs))
   }
 
   throw lastError || new Error('Manifest fetch failed')
@@ -500,39 +446,27 @@ export async function fetchManifest(url, token, opts = {}) {
 export async function fetchCatalog(url, token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
-  const deadline = requestDeadline(opts)
   let r
-  let body
   let lastError = null
-  try {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        r = await fetch(proxyUrl(url), {
-          cache: 'no-cache',
-          signal: deadline.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-      } catch (error) {
-        lastError = new Error(transientFetchMessage('Catalog'))
-        if (deadline.signal.aborted || !retryableFetchError(error) || attempt === retries) break
-        if (!await deadline.wait(retryDelay(null, attempt, delayMs))) break
-        continue
-      }
-      if (r.ok || !retryableFetchStatus(r.status) || attempt === retries) break
-      lastError = new Error(`Catalog fetch failed: ${r.status}`)
-      if (!await deadline.wait(retryDelay(r, attempt, delayMs))) break
-    }
-    if (!r) throw lastError || new Error('Catalog fetch failed')
-    if (!r.ok) throw new Error(`Catalog fetch failed: ${r.status}`)
+  for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      body = await r.json()
+      r = await fetch(proxyUrl(url), {
+        cache: 'no-cache',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
     } catch (error) {
-      if (deadline.signal.aborted) throw new Error(transientFetchMessage('Catalog'))
-      throw error
+      lastError = new Error(transientFetchMessage('Catalog'))
+      if (!retryableFetchError(error) || attempt === retries) throw lastError
+      await sleep(retryDelay(null, attempt, delayMs))
+      continue
     }
-  } finally {
-    deadline.dispose()
+    if (r.ok || !retryableFetchStatus(r.status) || attempt === retries) break
+    lastError = new Error(`Catalog fetch failed: ${r.status}`)
+    await sleep(retryDelay(r, attempt, delayMs))
   }
+  if (!r) throw lastError || new Error('Catalog fetch failed')
+  if (!r.ok) throw new Error(`Catalog fetch failed: ${r.status}`)
+  const body = await r.json()
   if (body?.schema !== 1 || !Array.isArray(body.apps)) {
     throw new Error('Catalog schema is unsupported')
   }
@@ -654,7 +588,10 @@ export async function fetchCatalog(url, token, opts = {}) {
   return entries
 }
 
-function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capability_digest, reviewed_source_digest, update_app_id, reviewed_upstream_commit }) {
+function installRequestBody({
+  manifest_url, manifest, raw_base, reviewed_capability_digest,
+  reviewed_source_digest, update_app_id, reviewed_upstream_commit,
+}) {
   const body = {}
   if (manifest_url) {
     body.manifest_url = manifest_url
@@ -712,7 +649,10 @@ export class UpdateChangedError extends Error {
   }
 }
 
-export async function installApp({ manifest_url, manifest, raw_base, token, reviewed_capability_digest, reviewed_source_digest, update_app_id, reviewed_upstream_commit }) {
+export async function installApp({
+  manifest_url, manifest, raw_base, token, reviewed_capability_digest,
+  reviewed_source_digest, update_app_id, reviewed_upstream_commit,
+}) {
   const body = installRequestBody({
     manifest_url, manifest, raw_base, reviewed_capability_digest,
     reviewed_source_digest, update_app_id, reviewed_upstream_commit,
@@ -764,7 +704,6 @@ function formatErrorDetail(detail) {
     if (messages.length) return messages.join('; ')
   }
   if (detail && typeof detail === 'object') {
-    // Structured errors ({code, message}) carry their owner-facing sentence.
     if (typeof detail.message === 'string' && detail.message.trim()) {
       return detail.message.trim()
     }
@@ -792,28 +731,14 @@ export async function readJsonOrThrow(res, fallback) {
 
 // Read-only preview of the currently published candidate. This fetches the
 // incoming release before anything is applied.
-export async function loadUpdateCandidatePreview(appId, manifestUrl, token, opts = {}) {
+export async function loadUpdateCandidatePreview(appId, manifestUrl, token) {
   const query = manifestUrl
     ? `?manifest_url=${encodeURIComponent(manifestUrl)}`
     : ''
-  const deadline = requestDeadline(opts, 12_000)
-  try {
-    const res = await fetch(`/api/apps/${appId}/update-candidate-preview${query}`, {
-      signal: deadline.signal,
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    return await readJsonOrThrow(res, 'Update changes could not be loaded')
-  } catch (error) {
-    if (opts.signal?.aborted) {
-      throw new DOMException('Update check cancelled', 'AbortError')
-    }
-    if (deadline.signal.aborted) {
-      throw new Error('This update check took too long. Please try again.')
-    }
-    throw error
-  } finally {
-    deadline.dispose()
-  }
+  const res = await fetch(`/api/apps/${appId}/update-candidate-preview${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return await readJsonOrThrow(res, 'Update changes could not be loaded')
 }
 
 export async function createConflictResolverChat(appId, resolutionPolicy, token) {
@@ -828,9 +753,6 @@ export async function createConflictResolverChat(appId, resolutionPolicy, token)
   return await readJsonOrThrow(res, 'Could not open resolver chat')
 }
 
-// Batch escalation has one owner-visible chat for the selected apps. The
-// backend owns deduplication and the actual resolver turn; Store only supplies
-// app ids and the explicit whole-tree policy.
 export async function createConflictResolverBatch(appIds, resolutionPolicy, token) {
   const res = await fetch('/api/apps/conflict-resolver-batch', {
     method: 'POST',

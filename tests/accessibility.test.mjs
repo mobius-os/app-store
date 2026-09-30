@@ -17,12 +17,6 @@ test('update review restores its opener independently of busy-state effects', ()
   assert.match(updateReview, /\}, \[\]\)\n\n  useEffect\(\(\) => \{/)
 })
 
-test('closing a pending update review aborts its candidate checks', () => {
-  assert.match(app, /updateTransactionAbortRef\.current\?\.abort\(\)/)
-  assert.match(app, /signal: controller\.signal/)
-  assert.match(app, /onClose=\{closeUpdateTransaction\}/)
-})
-
 test('Browse, Library, and Publish form one keyboard-navigable tab set', () => {
   assert.match(app, /const order = \['browse', 'library', 'publish'\]/)
   assert.match(app, /role="tablist" aria-label="Browse mode"/)
@@ -35,18 +29,14 @@ test('Browse, Library, and Publish form one keyboard-navigable tab set', () => {
 })
 
 test('provider setup status never gates the baked catalog first paint', () => {
-  const initialLoadStart = app.indexOf('const installedResult = await loadInstalledApps')
+  const initialLoadStart = app.indexOf('const remoteCatalogPromise = fetchCatalog')
   const catalogMergeStart = app.indexOf('// Resolve the catalog SOURCE', initialLoadStart)
   const initialPaint = app.slice(initialLoadStart, catalogMergeStart)
 
   assert.ok(initialLoadStart >= 0 && catalogMergeStart > initialLoadStart)
   assert.match(initialPaint, /const providerStatusPromise = loadProviderStatus\(token\)/)
   assert.doesNotMatch(initialPaint, /await providerStatusPromise/)
-  assert.match(initialPaint, /setLoadingCatalog\(false\)[\s\S]*const remoteCatalogPromise/)
-  assert.match(app, /if \(loadingCatalog \|\| appReadySignalledRef\.current\) return undefined/)
-  assert.match(initialPaint, /await appReadyGateRef\.current\.promise[\s\S]*const remoteCatalogPromise/)
-  assert.match(app, /signal\?\.\('app_ready'[\s\S]*appReadyGateRef\.current\.resolve\(\)/)
-  assert.doesNotMatch(app, /requestAnimationFrame\([\s\S]*signal\?\.\('app_ready'/)
+  assert.match(initialPaint, /setLoadingCatalog\(false\)[\s\S]*providerStatusPromise\.then/)
 })
 
 test('App Store preserves its reviewed immersive hold gesture', () => {
