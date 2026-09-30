@@ -31,10 +31,6 @@ import { CATALOG, CATALOG_URL } from './constants.js'
 import { CSS } from './theme.js'
 import {
   buildUpdateFailureMessage,
-  buildListingAgentMessage,
-  listingDraftFromPreview,
-  listingPayload,
-  utf8Length,
   appLifecycleFor,
   busyLabelForAction,
   storeDestinationFromMessage,
@@ -86,8 +82,6 @@ import {
   loadLocalGithubIdentity,
   loadCommunityPublications,
   loadLocalPublicationPreview,
-  prepareListingImage,
-  saveLocalListing,
   loadInstalledApps,
   loadUpdateCandidatePreview,
   loadProviderStatus,
@@ -121,10 +115,6 @@ import { Search, X } from '@openai/apps-sdk-ui/components/Icon'
 
 export {
   appLifecycleFor,
-  buildListingAgentMessage,
-  listingDraftFromPreview,
-  listingPayload,
-  utf8Length,
   busyLabelForAction,
   catalogItemIdFromIntent,
   catalogItemIdFromMessage,
@@ -1815,25 +1805,6 @@ export default function App({ appId, token }) {
   }, [agentReviewingUpdate, applyTransactionEntries, busy, finishTransaction,
     prepareCatalogUpdate, refreshInstalled, startConfirmedConflictResolvers, updateTransaction])
 
-  // Publishing stays in the Store while an owner-visible agent works. The
-  // conversation remains available as optional detail rather than navigation.
-  const handleListingAgent = useCallback(async (app, problem, focus = '') => {
-    if (!app?.id) return false
-    try {
-      const chat = await createAppChat(`Get ${app.name || app.slug} ready to publish`, token, { ownerVisible: true })
-      await seedChatMessage(chat.id, buildListingAgentMessage({ app, problem, focus }), token)
-      setToast({
-        kind: 'success',
-        message: `An agent is preparing ${app.name || app.slug}. You can keep working here.`,
-        action: { label: 'View work', onClick: () => openChat(chat.id) },
-      })
-      return true
-    } catch (error) {
-      setToast({ kind: 'error', message: error.message || 'Could not open an agent chat.' })
-      return false
-    }
-  }, [token])
-
   const handleAskAgentAboutError = useCallback(async (item, error) => {
     if (!item || !error || agentErrorItemId) return
     const installedApp = findInstalled(installed, item)
@@ -2366,9 +2337,6 @@ export default function App({ appId, token }) {
             onRefreshViewer={refreshGithubIdentity}
             onPublishLocal={handlePublishLocal}
             onPreviewLocal={(localAppId) => loadLocalPublicationPreview(token, localAppId)}
-            onSaveListing={(localAppId, listing) => saveLocalListing(token, localAppId, listing)}
-            onPrepareImage={prepareListingImage}
-            onListingAgent={handleListingAgent}
             onRegisterRepository={handleRegisterCommunity}
             publishingId={publishingId}
             publication={publication}

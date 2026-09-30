@@ -16,9 +16,3 @@ export const Play = icon
 
 export const ChevronLeft = icon
 export const ChevronRight = icon
-export const CheckCircleFilled = icon
-export const Circle = icon
-export const ImageSquare = icon
-export const Plus = icon
-export const Sparkles = icon
-export const Trash = icon

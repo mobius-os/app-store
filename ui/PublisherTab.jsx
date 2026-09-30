@@ -1,8 +1,6 @@
 /* PublisherTab turns an accepted local app revision into one reviewable public listing. */
-import { FileUpload, Search } from '@openai/apps-sdk-ui/components/Icon'
+import { FileUpload } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useRef, useState } from 'react'
-import { listingDraftFromPreview, listingPayload } from '../domain.js'
-import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
 import { SpotlightEditor } from './SpotlightEditor.jsx'
 
 // Preview preparation crosses an async boundary while the owner can navigate
@@ -43,7 +41,10 @@ function publicationLabel(state, hosted) {
 }
 
 function assetUrl(preview, path) {
-  return preview?.asset_root && path ? `${preview.asset_root}${path}` : ''
+  const source = String(path || '')
+  return preview?.asset_base && source.startsWith('static/')
+    ? `${preview.asset_base}${source.slice('static/'.length)}`
+    : ''
 }
 
 export function PublisherTab({
@@ -53,9 +54,6 @@ export function PublisherTab({
   viewer,
   onRefreshViewer,
   onPreviewLocal,
-  onListingAgent,
-  onSaveListing,
-  onPrepareImage,
   onPublishLocal,
   onRegisterRepository,
   publishingId,
@@ -78,6 +76,8 @@ export function PublisherTab({
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
     || String(left.name || '').localeCompare(String(right.name || ''))
   ))
+  const recentApps = apps.slice(0, 6)
+  const olderApps = apps.slice(6)
   const identityReady = !!identity && !identityError
   const signedIn = identityReady && !!identity?.linked
   const githubReady = viewer?.github?.connected === true
@@ -86,34 +86,14 @@ export function PublisherTab({
   const [preview, setPreview] = useState(null)
   const [previewError, setPreviewError] = useState('')
   const [confirmed, setConfirmed] = useState(false)
-  const [askingAgent, setAskingAgent] = useState(false)
-  const [draft, setDraft] = useState(null)
-  const [dirty, setDirty] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
-  const [editing, setEditing] = useState(false)
   const [localRepositoryName, setLocalRepositoryName] = useState('')
   const [repository, setRepository] = useState('')
   const [commitSha, setCommitSha] = useState('')
-  const [appQuery, setAppQuery] = useState('')
   const previewGateRef = useRef(null)
   if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
   const commitValid = /^[0-9a-fA-F]{40,64}$/.test(commitSha.trim())
   const localRepositoryValid = /^[A-Za-z0-9_.-]{1,100}$/.test(localRepositoryName.trim())
-  const visibleApps = apps.filter((app) => {
-    const needle = appQuery.trim().toLowerCase()
-    return !needle || `${app.name || ''} ${app.slug || ''}`.toLowerCase().includes(needle)
-  })
-
-  function showPreview(app, result) {
-    const nextDraft = listingDraftFromPreview(result, app)
-    setPreview(result || null)
-    setDraft(nextDraft)
-    setDirty(false)
-    setEditing(false)
-    if (result?.repository_name) setLocalRepositoryName(result.repository_name)
-  }
 
   async function prepare(app) {
     const requestId = previewGateRef.current.begin()
@@ -122,35 +102,16 @@ export function PublisherTab({
     setConfirmed(false)
     setPreview(null)
     setPreviewError('')
-    setSaveError('')
     setLocalRepositoryName(String(app.slug || app.name || 'mobius-app')
       .toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100))
     try {
       const result = await onPreviewLocal?.(app.id)
       if (!previewGateRef.current.isCurrent(requestId)) return
-      showPreview(app, result)
+      setPreview(result || null)
+      if (result?.repository_name) setLocalRepositoryName(result.repository_name)
     } catch (error) {
       if (!previewGateRef.current.isCurrent(requestId)) return
       setPreviewError(error instanceof Error ? error.message : 'This listing could not be prepared.')
-    }
-  }
-
-  async function saveListing() {
-    if (!candidate || !draft || saving) return
-    const app = candidate
-    const requestId = previewGateRef.current.begin()
-    setSaving(true)
-    setSaveError('')
-    try {
-      await onSaveListing?.(app.id, listingPayload(draft))
-      const result = await onPreviewLocal?.(app.id)
-      if (!previewGateRef.current.isCurrent(requestId)) return
-      showPreview(app, result)
-    } catch (error) {
-      if (!previewGateRef.current.isCurrent(requestId)) return
-      setSaveError(error instanceof Error ? error.message : 'The listing could not be saved.')
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -163,26 +124,6 @@ export function PublisherTab({
     setPreviewError('')
     setConfirmed(false)
     setLocalRepositoryName('')
-    setDraft(null)
-    setSaveError('')
-  }
-
-  async function askAgent(problem, focus = '') {
-    if (!candidate || askingAgent) return
-    setAskingAgent(true)
-    try {
-      await onListingAgent?.(candidate, problem, focus)
-    } finally {
-      setAskingAgent(false)
-    }
-  }
-
-  function askAgentForListing(focus) {
-    const missing = (preview?.checklist || [])
-      .filter((item) => !item.done && item.message)
-      .map((item) => `${item.label}: ${item.message}`)
-      .join(' ')
-    askAgent(focus ? '' : missing, focus)
   }
 
   const listing = preview?.listing
@@ -199,7 +140,7 @@ export function PublisherTab({
           ) : null}
         </div>
         <div className="st-publish-row-copy"><h3>{app.name}</h3><span>{label}</span></div>
-        <button type="button" className="st-btn st-btn-secondary"
+        <button type="button" className="st-btn st-btn-primary"
                 disabled={!!publishingId || !signedIn || !githubReady}
                 onClick={() => prepare(app)}>
           {state?.status === 'live' ? 'Review update' : 'Prepare listing'}
@@ -209,26 +150,28 @@ export function PublisherTab({
   }
 
   return (
-    <div className={`st-publisher${candidate ? ' is-reviewing' : ''}`}>
+    <div className="st-publisher">
       <section className="st-publish-heading">
         <div>
+          <span className="st-eyebrow">Creator tools</span>
           <h2>Publish an app</h2>
-          <p>Shape the public listing, check the exact source revision, then release when it is ready.</p>
-          <ol className="st-publish-path" aria-label="Publishing steps">
-            <li>Choose an app</li><li>Review its listing</li><li>Publish this version</li>
-          </ol>
+          <p>Choose an app, review its listing, then make that exact version public.</p>
         </div>
         <div className="st-publish-heading-actions">
-          {!signedIn ? (
+          {signedIn ? (
+            <span className="st-publish-connection is-ready">Identity ready</span>
+          ) : (
             <button type="button" className="st-publish-connection st-publish-connection-action"
                     onClick={() => onLogInToMobiusYou?.()}>
               Log in to Möbius · You
             </button>
-          ) : null}
-          {signedIn && githubReady ? <span className="st-publish-account">Publishing as {githubLogin}</span> : null}
+          )}
+          <span className={`st-publish-connection${githubReady ? ' is-ready' : ''}`}>
+            {githubReady ? `GitHub @${githubLogin}` : 'Connect GitHub'}
+          </span>
           {contributeAvailable ? (
-            <button type="button" className="st-btn st-btn-ghost" onClick={() => onOpenContributions?.()}>
-              Open contributions
+            <button type="button" className="st-btn st-btn-secondary" onClick={() => onOpenContributions?.()}>
+              Contributions
             </button>
           ) : null}
         </div>
@@ -283,102 +226,30 @@ export function PublisherTab({
       ) : null}
 
       {candidate ? (
-        <section className="st-listing-review" aria-label={`${candidate.name || 'App'} publishing review`}>
+        <section className="st-listing-review" aria-labelledby="st-listing-review-title">
           <div className="st-listing-review-top">
             <button type="button" className="st-back-btn" onClick={closePreview} disabled={!!publishingId}>Back</button>
-            <span>{preview ? (preview.ready ? 'Ready to publish' : 'Not ready yet') : 'Accepted source only'}</span>
+            <span>Accepted source only</span>
           </div>
           {!preview && !previewError ? (
             <div className="st-listing-loading" role="status">Preparing {candidate.name}…</div>
           ) : previewError ? (
             <div className="st-listing-incomplete" role="alert">
               <FileUpload width="28" height="28" aria-hidden="true" />
-              <div>
-                <strong>This app isn’t ready to publish yet</strong>
-                <span>{previewError}</span>
-                {onListingAgent ? (
-                  <button type="button" className="st-btn st-btn-primary st-listing-agent"
-                          disabled={askingAgent} onClick={() => askAgent(previewError)}>
-                    {askingAgent ? 'Opening agent…' : 'Get it ready with an agent'}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : !preview.ready || editing ? (
-            <div className="st-listing-work">
-              <ListingChecklist checklist={preview.checklist || []} agentBusy={askingAgent}
-                                onAgent={askAgentForListing} />
-              {draft ? (
-                <ListingEditor
-                  draft={draft}
-                  setDraft={(change) => { setDirty(true); setDraft(change) }}
-                  app={candidate}
-                  detailsNeedAgent={(preview.checklist || []).some((item) => (
-                    item.id === 'details' && !item.done && item.automatic === false
-                  ))}
-                  saving={saving}
-                  saveError={saveError}
-                  dirty={dirty}
-                  onPrepareImage={onPrepareImage}
-                  onSave={saveListing}
-                />
-              ) : null}
-              {preview.ready ? (
-                <button type="button" className="st-btn st-btn-secondary st-listing-agent"
-                        disabled={saving} onClick={() => setEditing(false)}>
-                  Back to publishing
-                </button>
-              ) : null}
+              <div><strong>Finish the Store listing first</strong><span>{previewError}</span></div>
             </div>
           ) : (
-            <div className="st-listing-ready-layout">
+            <>
               <div className="st-listing-hero">
                 {listing?.hero?.path ? <img src={assetUrl(preview, listing.hero.path)} alt="" /> : null}
                 <div className="st-listing-hero-shade" />
                 <div className="st-listing-hero-copy">
                   <img src={preview.icon_url} alt="" width="64" height="64" />
+                  <span className="st-eyebrow">Ready to publish</span>
                   <h3 id="st-listing-review-title">{preview.name}</h3>
                   <p>{listing?.tagline}</p>
                 </div>
               </div>
-              <aside className="st-listing-release-panel" aria-label="Release decision">
-                <div className="st-listing-release-copy">
-                  <h3>Publish this version</h3>
-                  <p>The accepted source and this listing become public together. Later edits stay private until you publish again.</p>
-                </div>
-                <label className="st-publish-field">
-                  <span>Public repository</span>
-                  <div className="st-publisher-repository-name">
-                    <span aria-hidden="true">{githubLogin}/</span>
-                    <input value={localRepositoryName} autoCapitalize="none" autoCorrect="off"
-                           onChange={(event) => setLocalRepositoryName(event.target.value)} disabled={!!publishingId} />
-                  </div>
-                </label>
-                <label className="st-publish-consent">
-                  <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
-                  <span>I’ve reviewed this listing and want this exact source revision to become public.</span>
-                </label>
-                <button type="button" className="st-btn st-btn-primary"
-                        disabled={!confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady}
-                        onClick={async () => {
-                          const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim())
-                          if (ok) closePreview({ force: true })
-                        }}>
-                  {publishingId === candidate.id ? 'Publishing…' : 'Publish app'}
-                </button>
-                <div className="st-listing-revise">
-                  <button type="button" className="st-btn st-btn-secondary"
-                          disabled={!!publishingId} onClick={() => setEditing(true)}>
-                    Edit listing
-                  </button>
-                  {onListingAgent ? (
-                    <button type="button" className="st-btn st-btn-ghost"
-                            disabled={askingAgent || !!publishingId} onClick={() => askAgent('')}>
-                      {askingAgent ? 'Starting agent…' : 'Revise with an agent'}
-                    </button>
-                  ) : null}
-                </div>
-              </aside>
               <div className="st-listing-body">
                 <p>{listing?.description}</p>
                 <div className="st-listing-gallery" aria-label="App screenshots">
@@ -390,26 +261,49 @@ export function PublisherTab({
                   ))}
                 </div>
               </div>
-            </div>
+              <div className="st-listing-publish-bar">
+                <label className="st-publish-field">
+                  <span>Public repository</span>
+                  <div className="st-publisher-repository-name">
+                    <span aria-hidden="true">{githubLogin}/</span>
+                    <input value={localRepositoryName} autoCapitalize="none" autoCorrect="off"
+                           onChange={(event) => setLocalRepositoryName(event.target.value)} disabled={!!publishingId} />
+                  </div>
+                </label>
+                <label className="st-publish-consent">
+                  <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
+                  <span>I want this accepted source revision to become public.</span>
+                </label>
+                <button type="button" className="st-btn st-btn-primary"
+                        disabled={!confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady}
+                        onClick={async () => {
+                          const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim())
+                          if (ok) closePreview({ force: true })
+                        }}>
+                  {publishingId === candidate.id ? 'Publishing…' : 'Publish app'}
+                </button>
+              </div>
+              <p className="st-listing-source-note">Tagline, description, icon, and screenshots are versioned with the app, so the listing cannot drift away from its source.</p>
+            </>
           )}
         </section>
       ) : (
         <>
           <div className="st-publish-list-head">
-            <div><h3>Choose an app</h3><p>{apps.length} local {apps.length === 1 ? 'app' : 'apps'} can be prepared for publishing.</p></div>
-            <label className="st-publish-search">
-              <span className="st-sr-only">Search your apps</span>
-              <Search width="17" height="17" aria-hidden="true" />
-              <input value={appQuery} onChange={(event) => setAppQuery(event.target.value)} placeholder="Search apps" />
-            </label>
+            <h3>Your apps</h3>
+            <span>{apps.length}</span>
           </div>
           <div className="st-publish-list" aria-label="Apps ready to publish">
-            {visibleApps.length ? visibleApps.map(renderApp) : apps.length ? (
-              <div className="st-empty"><div className="st-empty-title">No matching apps</div><p className="st-empty-text">Try another name.</p></div>
-            ) : (
+            {apps.length ? recentApps.map(renderApp) : (
               <div className="st-empty"><div className="st-empty-title">No local apps yet</div><p className="st-empty-text">Build an app, then return here to publish it.</p></div>
             )}
           </div>
+          {olderApps.length ? (
+            <details className="st-publish-more">
+              <summary><span>More apps</span><small>{olderApps.length}</small></summary>
+              <div className="st-publish-list">{olderApps.map(renderApp)}</div>
+            </details>
+          ) : null}
         </>
       )}
 

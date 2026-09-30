@@ -297,7 +297,7 @@
           {
             "src": "workflows-screen.png",
             "alt": "Standalone Workflows app screen",
-            "label": "See completed, running, and waiting agent work in one clear timeline."
+            "label": "Completed agent workflows stay organized in one place."
           }
         ]
       }
@@ -377,7 +377,7 @@
           {
             "src": "artifacts-screen.png",
             "alt": "Standalone Pages app screen",
-            "label": "See polished pages, live previews, and version history at a glance."
+            "label": "Begin from a focused canvas for interactive work."
           }
         ]
       }
@@ -418,7 +418,7 @@
           {
             "src": "maps-screen.png",
             "alt": "Standalone Maps app screen",
-            "label": "Keep useful places together in visual, reusable maps."
+            "label": "Start a private map from any place idea."
           }
         ],
         "hero": "maps-hero.png"
@@ -531,7 +531,7 @@
           {
             "src": "notes-screen.png",
             "alt": "Standalone Notes app screen",
-            "label": "Pin checklists and ideas in a calm, searchable workspace."
+            "label": "Capture a note or checklist in seconds."
           }
         ]
       }
@@ -708,7 +708,7 @@
           {
             "src": "habits-screen.png",
             "alt": "Standalone Habits app screen",
-            "label": "See today’s progress, streaks, and strength in one encouraging view."
+            "label": "Build a routine from a clear, encouraging start."
           }
         ]
       }
