@@ -146,7 +146,10 @@
         "cluster",
         "runner",
         "remote commands",
-        "external computer"
+        "external computer",
+        "server",
+        "core app",
+        "remote access"
       ],
       "capabilities": [
         "pair external machines securely",
@@ -155,7 +158,19 @@
       ],
       "audience": "developer",
       "collection": "developer",
-      "summary": "Bring your computers within reach of Möbius."
+      "summary": "Let Möbius work on your other computers.",
+      "listing": {
+        "tagline": "Let Möbius work on your other computers.",
+        "description": "Pair a laptop, workstation, server, or cluster and let your Möbius agent work there. Follow command progress, read retained output, and stop individual commands. Connections are outbound-only: the computer needs Python 3 and an internet connection, not an open inbound port. Pair only computers and people you trust: Connect grants command execution until you disconnect. Optional full agent access is a separate, explicit grant.",
+        "hero": "connect-hero.png",
+        "screenshots": [
+          {
+            "src": "connect-screen.png",
+            "alt": "Connect with a fictional workstation running a command and a fictional offline server.",
+            "label": "Demo machines — follow progress and stop a command."
+          }
+        ]
+      }
     },
     {
       "id": "identity",
