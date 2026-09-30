@@ -525,7 +525,7 @@ test('local publishing is one reviewed action through the inherited GitHub accou
     public_identity: 'github',
   })
   assert.match(calls[0].options.headers['Idempotency-Key'], /^store:publish-local:/)
-  assert.match(publisherSource, /I want this accepted source revision to become public/)
+  assert.match(publisherSource, /want this exact source revision to become public/)
   assert.match(publisherSource, /onPublishLocal/)
   assert.match(publisherSource, /app\.icon_url/)
   assert.doesNotMatch(publisherSource, /\/api\/apps\/\$\{app\.id\}\/icon/)
@@ -603,11 +603,12 @@ test('publisher preview accepts only the latest app after back navigation', asyn
     label: 'second app',
     preview: { name: 'Second listing' },
   }])
-  assert.match(publisherSource, /const requestId = previewGateRef\.current\.begin\(\)/)
+  const requests = publisherSource.match(/const requestId = previewGateRef\.current\.begin\(\)/g)?.length || 0
+  assert.ok(requests >= 1)
   assert.equal(
     publisherSource.match(/if \(!previewGateRef\.current\.isCurrent\(requestId\)\) return/g)?.length,
-    2,
-    'both fulfilled and rejected stale previews must be ignored',
+    requests * 2,
+    'both fulfilled and rejected stale previews must be ignored for every request',
   )
   assert.match(publisherSource, /function closePreview[\s\S]*previewGateRef\.current\.invalidate\(\)/)
 })
@@ -1121,7 +1122,7 @@ test('otherInstalledCatalogItems does not duplicate a live community listing', a
   assert.match(source, /otherInstalledCatalogItems\(installed, listedCatalog/)
 })
 
-test('installed catalog apps refresh their live manifest for update detection', async () => {
+test('bundled manifests stay off the critical path while new registry entries hydrate', async () => {
   const { shouldRefreshCatalogManifest } = await bundle()
   const item = {
     id: 'beat-machine',
@@ -1134,7 +1135,7 @@ test('installed catalog apps refresh their live manifest for update detection', 
     version: '1.0.14',
   }]
 
-  assert.equal(shouldRefreshCatalogManifest(item, installed), true)
+  assert.equal(shouldRefreshCatalogManifest(item, installed), false)
   assert.equal(shouldRefreshCatalogManifest(item, []), false)
   assert.equal(shouldRefreshCatalogManifest({ ...item, manifest: null }, []), true)
 })
@@ -1316,6 +1317,105 @@ test('readErrorDetail formats FastAPI validation payloads', async () => {
   assert.equal(
     await readErrorDetail(response, 'Update failed'),
     'body.manifest_url: Field required',
+  )
+})
+
+test('a not-ready listing opens one agent brief that fixes it without publishing', async () => {
+  const { buildListingAgentMessage } = await bundle()
+  const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
+  const brief = buildListingAgentMessage({
+    app,
+    problem: 'Add a Store listing with a tagline, description, and screenshots before publishing.',
+  })
+  assert.match(brief, /cannot publish Scorekeeper yet/)
+  assert.match(brief, /Add a Store listing with a tagline/)
+  assert.match(brief, /\/data\/apps\/scorekeeper/)
+  assert.match(brief, /"Store listing" in \/data\/shared\/skills\/building-apps\.md/)
+  assert.match(brief, /preview\?app_id=7/)
+  assert.match(brief, /never the owner's own data/)
+  assert.match(brief, /Do not publish/)
+
+  const revise = buildListingAgentMessage({ app, problem: '' })
+  assert.match(revise, /wants to revise the App Store listing of Scorekeeper/)
+})
+
+test('a checklist item hands an agent just that part of the listing', async () => {
+  const { buildListingAgentMessage } = await bundle()
+  const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
+  const brief = buildListingAgentMessage({ app, problem: '', focus: 'screenshots' })
+  assert.match(brief, /one part of the App Store listing of Scorekeeper/)
+  assert.match(brief, /1–5 truthful screenshots/)
+  assert.match(brief, /keep what the owner already wrote/)
+  assert.match(brief, /Do not publish/)
+  const details = buildListingAgentMessage({ app, problem: '', focus: 'details' })
+  assert.match(details, /scheduled job/)
+})
+
+test('an edited listing saves as one whole listing, keeping unchanged images by path', async () => {
+  const { listingDraftFromPreview, listingPayload } = await bundle()
+  const preview = {
+    asset_root: '/api/x/',
+    draft: {
+      tagline: ' Small. ', description: 'Calm.', icon: 'icon.png', hero: 'static/store/h.png',
+      screenshots: [{ src: 'static/store/a.png', alt: 'A', label: '' }, { src: '', alt: 'gone', label: '' }],
+    },
+  }
+  const draft = listingDraftFromPreview(preview, { icon_url: '/icon' })
+  assert.equal(draft.icon.url, '/api/x/icon.png')
+  assert.equal(draft.screenshots[0].url, '/api/x/static/store/a.png')
+  const unchanged = listingPayload(draft)
+  assert.deepEqual(unchanged, {
+    tagline: 'Small.', description: 'Calm.',
+    hero: { path: 'static/store/h.png' },
+    screenshots: [{ path: 'static/store/a.png', alt: 'A' }],
+  })
+  const edited = listingPayload({
+    ...draft, iconChanged: true, icon: { data: 'ICON', url: 'blob:1' }, hero: null,
+    screenshots: [...draft.screenshots, { key: 'n', data: 'SHOT', url: 'blob:2', alt: ' New ', label: 'Cap' }],
+  })
+  assert.deepEqual(edited.icon, { data_base64: 'ICON' })
+  assert.equal(edited.hero, null)
+  assert.deepEqual(edited.screenshots[1], { data_base64: 'SHOT', alt: 'New', label: 'Cap' })
+  const legacy = listingDraftFromPreview({ draft: { screenshots: [] } }, { icon_url: '/icon' })
+  assert.equal(legacy.icon.url, '/icon')
+  assert.equal(listingPayload(legacy).icon, undefined)
+})
+
+test('the publish review lets the owner fill in the listing by hand', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const editor = await readFile(join(root, '..', 'ui', 'ListingEditor.jsx'), 'utf8')
+  assert.match(source, /<ListingChecklist/)
+  assert.match(source, /<ListingEditor/)
+  assert.match(source, /Edit listing/)
+  assert.match(editor, /Save listing/)
+  assert.match(editor, /Ask an agent/)
+  assert.match(editor, /Do it all with an agent/)
+  assert.match(editor, /not your own/)
+})
+
+test('the publish review offers a way forward instead of a dead end', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  assert.match(source, /This app isn’t ready to publish yet/)
+  assert.match(source, /Get it ready with an agent/)
+  assert.match(source, /Revise with an agent/)
+  assert.doesNotMatch(source, /Finish the Store listing first/)
+})
+
+test('readErrorDetail shows a structured error as its sentence, not raw JSON', async () => {
+  const { readErrorDetail } = await bundle()
+  const response = new Response(JSON.stringify({
+    detail: {
+      code: 'listing_incomplete',
+      message: 'Add a Store listing with a tagline, description, and screenshots before publishing.',
+    },
+  }), {
+    status: 409,
+    headers: { 'content-type': 'application/json' },
+  })
+
+  assert.equal(
+    await readErrorDetail(response, 'This app listing could not be prepared.'),
+    'Add a Store listing with a tagline, description, and screenshots before publishing.',
   )
 })
 
@@ -1547,6 +1647,8 @@ test('review digests bind capability and source previews to install', async () =
       manifest_url: source,
       reviewed_capability_digest: preview.capability_digest,
       reviewed_source_digest: 'c'.repeat(64),
+      update_app_id: 57,
+      reviewed_upstream_commit: 'd'.repeat(40),
       token: 'tok',
     })
     assert.deepEqual(calls, [
@@ -1557,6 +1659,8 @@ test('review digests bind capability and source previews to install', async () =
           manifest_url: source,
           reviewed_capability_digest: digest,
           reviewed_source_digest: 'c'.repeat(64),
+          update_app_id: 57,
+          reviewed_upstream_commit: 'd'.repeat(40),
         },
       },
     ])
@@ -1750,28 +1854,29 @@ test('capability rows fail visibly for a future data grant', async () => {
   assert.equal(future.tone, 'write')
 })
 
-test('individual catalog updates keep a read-only review with bound digests', async () => {
+test('individual and batch updates share one transaction with bound digests', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
   const uninstallSource = await readFile(join(root, '..', 'ui', 'UninstallConfirmModal.jsx'), 'utf8')
   assert.ok(indexSource.includes('const handleCatalogUpdate = useCallback'))
   assert.ok(indexSource.includes('onUpdate={handleCatalogUpdate}'))
-  assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token/)
-  assert.match(indexSource, /const capabilityPreview = candidate\.capability_preview/)
-  assert.ok(indexSource.includes('capabilityDiffNeedsReview('))
-  // An individual update still opens a review. Update all intentionally uses
-  // the same prepared contract without duplicating this modal flow.
-  assert.ok(indexSource.includes('setUpdateReview(prepared)'))
+  assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id,\s*updateItem\.manifest_url,\s*token,/)
+  assert.ok(indexSource.includes('capabilityPreviewNeedsReview('))
+  assert.ok(indexSource.includes('startUpdateTransaction([item], \'single\')'))
+  assert.ok(indexSource.includes("startUpdateTransaction(updateItems, 'batch')"))
+  assert.ok(indexSource.includes('setUpdateTransaction'))
   assert.equal(indexSource.includes('This update changes app access. Open it to review'), false)
   // Applying is a separate, explicit step that binds exactly the digests shown
   // in the review the owner just approved.
-  assert.ok(indexSource.includes('const handleApplyReviewedUpdate = useCallback'))
-  assert.ok(indexSource.includes('capabilityDigest: updateReview.capabilityReview.preview.capability_digest'))
-  assert.ok(indexSource.includes('sourceDigest: updateReview.preview.source_digest'))
-  assert.ok(indexSource.includes('onApply={handleApplyReviewedUpdate}'))
+  assert.ok(indexSource.includes('const confirmUpdateTransaction = useCallback'))
+  assert.ok(indexSource.includes('capabilityDigest: entry.prepared?.capabilityReview?.preview?.capability_digest'))
+  assert.ok(indexSource.includes('sourceDigest: entry.prepared?.preview?.source_digest'))
+  assert.ok(indexSource.includes('onConfirm={confirmUpdateTransaction}'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
   assert.ok(indexSource.includes('reviewed_source_digest: _opts.sourceDigest'))
+  assert.ok(indexSource.includes('update_app_id: _opts.updateAppId'))
+  assert.ok(indexSource.includes('reviewed_upstream_commit: _opts.upstreamCommit'))
   assert.ok(detailSource.includes('<CapabilityContract'))
   assert.ok(detailSource.includes('capabilityReview.preview.capability_digest'))
   assert.ok(cardSource.includes("lifecycle.actionKind === 'update' || lifecycle.actionKind === 'retry'"))
@@ -1835,20 +1940,50 @@ test('resolver chat request binds the selected whole-tree policy', async () => {
   }
 })
 
-test('a conflicting apply starts a preserving resolver agent automatically', async () => {
+test('batch resolver request creates one chat for every selected issue', async () => {
+  const { createConflictResolverBatch } = await import(
+    pathToFileURL(join(root, '..', 'api.js'))
+  )
+  const oldFetch = globalThis.fetch
+  let request = null
+  globalThis.fetch = async (url, options) => {
+    request = { url: String(url), options }
+    return new Response(JSON.stringify({
+      chat_id: 'batch-resolver-chat', created: true, started: true,
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    await createConflictResolverBatch([80, 81, 82], 'preserve_local', 'token')
+    assert.equal(request.url, '/api/apps/conflict-resolver-batch')
+    assert.equal(request.options.method, 'POST')
+    assert.deepEqual(JSON.parse(request.options.body), {
+      app_ids: [80, 81, 82],
+      resolution_policy: 'preserve_local',
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('one confirmed transaction starts conflict agents without leaving the Store', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
 
-  assert.match(indexSource, /if \(isConflict\)[\s\S]*createConflictResolverChat\(result\.id, 'preserve_local', token\)/)
-  assert.match(indexSource, /if \(!isBatch && resolver\?\.chat_id\) openChat\(resolver\.chat_id\)/)
-  assert.match(indexSource, /return \{ ok: false, conflict: true, result, notice, resolver, resolverError \}/)
-  assert.match(indexSource, /if \(outcome\?\.conflict\)[\s\S]*setUpdateReview\(null\)/)
-  assert.match(indexSource, /const handleReviewUpdate[\s\S]*'preserve_local'[\s\S]*openChat\(resolver\.chat_id\)/)
-  assert.doesNotMatch(modalSource, /blockedNotice|onResolve|accept_reviewed_upstream_exact/)
+  assert.match(indexSource, /const startConfirmedConflictResolvers = useCallback[\s\S]*createConflictResolverBatch/)
+  assert.match(indexSource, /confirmUpdateTransaction[\s\S]*startConfirmedConflictResolvers\(nextEntries\)/)
+  assert.match(indexSource, /confirmed: true, phase: 'applying'/)
+  assert.doesNotMatch(indexSource, /confirmUpdateTransaction[\s\S]*if \(chatId\) openChat/)
+  assert.match(modalSource, /lets Möbius start resolver agents if local edits overlap/)
+  assert.match(modalSource, /Agent working/)
+  assert.match(modalSource, />\s*Try again\s*</)
+  assert.match(modalSource, /Update checks incomplete/)
+  assert.match(modalSource, /requiresAgent\(entry\) \? 'Needs attention' : 'Try again'/)
 })
 
-test('Update all applies verified non-widening releases and reviews wider access', async () => {
-  const { capabilityDiffNeedsReview, updateBatchDisposition } = await bundle()
+test('Update all reviews every candidate and applies only after one confirmation', async () => {
+  const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
+  const { capabilityDiffNeedsReview, capabilityPreviewNeedsReview, updateBatchDisposition } = await bundle()
   assert.equal(capabilityDiffNeedsReview(null), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: true, added: [], removed: [], changed: [] }), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, added: ['data.manage_apps'], removed: [], changed: [] }), true)
@@ -1858,6 +1993,25 @@ test('Update all applies verified non-widening releases and reviews wider access
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, widens: false, added: [], removed: ['data.github_access'], changed: [] }), false)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, widens: true, added: [], removed: [], changed: [] }), true)
   assert.equal(capabilityDiffNeedsReview({ unknown_previous: false, widens: false, added: [], removed: [] }), true)
+
+  const preview = diff => ({
+    capability_diff: { unknown_previous: false, added: [], removed: [], changed: [], ...diff },
+  })
+  // Revocations and other narrowing changes apply without asking.
+  assert.equal(capabilityPreviewNeedsReview(preview(
+    { removed: ['system_app', 'data.github_access'], widened: [] },
+  )), false)
+  // Anything the server ranks as widening still asks.
+  assert.equal(capabilityPreviewNeedsReview(preview(
+    { added: ['data.github_access'], widened: ['data.github_access'] },
+  )), true)
+  assert.equal(capabilityPreviewNeedsReview(preview(
+    { removed: ['runtime.media.speech.limits.max_text_chars'], widened: ['runtime.media.speech.limits.max_text_chars'] },
+  )), true)
+  // A server that predates the ranking gets the conservative any-change rule.
+  assert.equal(capabilityPreviewNeedsReview(preview({ removed: ['data.github_access'] })), true)
+  assert.equal(capabilityPreviewNeedsReview(preview({})), false)
+  assert.equal(capabilityPreviewNeedsReview(preview({ unknown_previous: true, widened: [] })), true)
 
   const verified = {
     preview: { source_digest: 'a'.repeat(64) },
@@ -1884,7 +2038,7 @@ test('Update all applies verified non-widening releases and reviews wider access
   }), { kind: 'review', reason: 'access_changed' })
   assert.deepEqual(
     updateBatchDisposition({ ...verified, preview: {} }),
-    { kind: 'review', reason: 'source_unverified' },
+    { kind: 'retry', reason: 'source_unverified' },
   )
   assert.deepEqual(
     updateBatchDisposition({
@@ -1903,11 +2057,143 @@ test('Update all applies verified non-widening releases and reviews wider access
       capabilityReview: {
         preview: {
           capability_diff: { unknown_previous: false, added: ['data.manage_apps'], removed: [], changed: [] },
+          installed_contract: { data: { manage_apps: false } },
+          capability_contract: { data: { manage_apps: true } },
         },
       },
     }),
     { kind: 'review', reason: 'access_changed' },
   )
+  assert.match(indexSource, /phase: 'review', entries/)
+  assert.match(indexSource, /authorizeUpdateEntries\(updateTransaction\.entries\)/)
+  assert.match(indexSource, /nextUpdateTransactionPhase\(entries\)/)
+  assert.match(indexSource, /reconcileUpdateTransaction\(current, checks\)/)
+  // A finished resolver settles the review on the shell's app_updated message
+  // for that app, with a re-read on return to the Store and no polling.
+  assert.match(indexSource, /agentRequestedAppIds\(updateTransaction\)/)
+  assert.match(indexSource, /'moebius:managed-app-event'/)
+  assert.doesNotMatch(indexSource, /setInterval\(settle/)
+  assert.match(indexSource, /handleInstall\(entry\.prepared\.item/)
+  assert.match(indexSource, /applyTransactionEntries\(\[retried\]\)/)
+  assert.doesNotMatch(indexSource, /applyTransactionEntries\(updateTransaction,/)
+  assert.match(modalSource, /Updates ready for confirmation/)
+  assert.match(modalSource, /Confirm & update/)
+  assert.match(modalSource, /approves the disclosed access changes/)
+  const updateAllSource = indexSource.slice(
+    indexSource.indexOf('const handleUpdateAll'),
+    indexSource.indexOf('const handleUpdateAll') + 900,
+  )
+  assert.doesNotMatch(updateAllSource, /setCategory\('update'\)/)
+})
+
+test('slow Store reads have one bounded deadline and deliberate review cancellation stays silent', async () => {
+  const { loadInstalledApps, fetchCatalog, fetchUpdateCheck, loadUpdateCandidatePreview } = await bundle()
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async (_url, options = {}) => await new Promise((_resolve, reject) => {
+    const rejectAbort = () => reject(new DOMException('aborted', 'AbortError'))
+    if (options.signal?.aborted) rejectAbort()
+    else options.signal?.addEventListener('abort', rejectAbort, { once: true })
+  })
+  try {
+    await assert.rejects(
+      () => loadInstalledApps('tok', { deadlineMs: 5, retries: 2 }),
+      /Installed apps could not be reached/,
+    )
+    assert.equal(
+      await fetchUpdateCheck(12, 'tok', '', { deadlineMs: 5 }),
+      null,
+    )
+    await assert.rejects(
+      () => loadUpdateCandidatePreview(12, '', 'tok', { deadlineMs: 5 }),
+      /took too long/,
+    )
+
+    const controller = new AbortController()
+    const pending = loadUpdateCandidatePreview(12, '', 'tok', {
+      deadlineMs: 500,
+      signal: controller.signal,
+    })
+    controller.abort()
+    await assert.rejects(pending, error => error?.name === 'AbortError')
+
+    globalThis.fetch = async (_url, options = {}) => new Response(new ReadableStream({
+      start(controller) {
+        options.signal?.addEventListener('abort', () => {
+          controller.error(new DOMException('aborted', 'AbortError'))
+        }, { once: true })
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+    await assert.rejects(
+      () => fetchCatalog('https://example.test/catalog.json', 'tok', {
+        deadlineMs: 5,
+        retries: 0,
+      }),
+      /Catalog could not be reached/,
+    )
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('mixed update review has one confirmation for every verified candidate', async () => {
+  const { UpdateReviewModal } = await bundle()
+  const tree = UpdateReviewModal({
+    review: {
+      mode: 'batch',
+      phase: 'review',
+      entries: [
+        {
+          item: { id: 'permission', name: 'Permission app' },
+          disposition: { kind: 'review', reason: 'access_changed' },
+          permissionDecision: 'pending',
+          applyState: 'waiting',
+        },
+        {
+          item: { id: 'ready', name: 'Ready app' },
+          disposition: { kind: 'ready' },
+          permissionDecision: 'not_required',
+          applyState: 'queued',
+        },
+        {
+          item: { id: 'retry', name: 'Retry app' },
+          disposition: { kind: 'retry', reason: 'check_failed' },
+          permissionDecision: 'not_required',
+          applyState: 'waiting',
+          error: 'Network unavailable',
+        },
+      ],
+    },
+    onClose() {}, onConfirm() {}, onRetry() {}, onReviewWithAgent() {},
+  })
+  const text = node => {
+    if (node == null || typeof node === 'boolean') return ''
+    if (typeof node !== 'object') return String(node)
+    const children = Array.isArray(node) ? node : node.props?.children
+    return Array.isArray(children) ? children.map(text).join(' ') : text(children)
+  }
+  assert.match(text(tree), /Access changes/)
+  assert.match(text(tree), /Not included/)
+  assert.match(text(tree), /Confirm & update · 2/)
+})
+
+test('completed update transactions never report success when nothing updated', async () => {
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.match(source, /const count = entries\.filter\(entry => entry\.applyState === 'updated'\)\.length/)
+  assert.match(source, /if \(count > 0\)[\s\S]*setToast\(\{ kind: 'success'/)
+  assert.doesNotMatch(source, /\$\{count \|\| 'All'\}/)
+})
+
+test('resolve all keeps failures visible and retryable', async () => {
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.match(source, /const handleResolveAllConflicts[\s\S]*createConflictResolverBatch[\s\S]*catch \(error\)/)
+  assert.match(source, /Could not start conflict resolution\. Please try again\./)
+  assert.match(source, /catch \(error\)[\s\S]*kind: 'error'[\s\S]*return[\s\S]*finally/)
+})
+
+test('legacy conflict notices retain the app id needed for explicit agent escalation', async () => {
+  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  assert.match(source, /prepared: \{ installedApp: \{ id: notice\.appId \} \}/)
+  assert.match(source, /conflictApps = unresolved\.filter\(entry => entry\.prepared\?\.installedApp\?\.id\)/)
 })
 
 test('automatic updates have no duplicate trust preference path', async () => {
@@ -1915,7 +2201,8 @@ test('automatic updates have no duplicate trust preference path', async () => {
   const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   assert.doesNotMatch(source, /trusted-updates\.json|trustedUpdate|toggleTrusted/)
   assert.doesNotMatch(detail, /Trust routine updates|Require review|Review every update/)
-  assert.match(source, /updateBatchDisposition\(prepared\)/)
+  const batchSource = await readFile(join(root, '..', 'update-batch.js'), 'utf8')
+  assert.match(batchSource, /updateBatchDisposition\(prepared\)/)
 })
 
 test('filterCatalog matches categories, descriptions, and setup metadata', async () => {
@@ -2587,6 +2874,56 @@ test('installed matching recognizes repo identity and viewer-owned publications'
   }
   assert.equal(findInstalled(authored, foreign), null)
   setInstalledMatchViewer('')
+})
+
+test('first permission review does not imply a failed install or another click', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'CapabilityContract.jsx'), 'utf8')
+  assert.ok(source.includes('Review the permissions below before approving.'))
+  assert.ok(!source.includes('then click again'))
+})
+
+test('installed update permission review exposes only precise access changes', async () => {
+  const { capabilityChangeRows } = await bundle()
+  const review = {
+    preview: {
+      installed_contract: {
+        data: { manage_apps: false, shared_memory: 'read' },
+      },
+      capability_contract: {
+        data: { manage_apps: true, shared_memory: 'write', manage_skills: true },
+      },
+      capability_diff: {
+        unknown_previous: false,
+        added: ['data.manage_skills'],
+        removed: [],
+        changed: ['data.manage_apps', 'data.shared_memory'],
+      },
+    },
+  }
+  assert.deepEqual(capabilityChangeRows(review), [
+    {
+      kind: 'Added', path: 'data.manage_skills', label: 'Agent skills',
+      previous: 'Not granted', proposed: 'Allowed',
+    },
+    {
+      kind: 'Changed', path: 'data.manage_apps', label: 'Installed apps',
+      previous: 'Not allowed', proposed: 'Allowed',
+    },
+    {
+      kind: 'Changed', path: 'data.shared_memory', label: 'Shared memory',
+      previous: 'read', proposed: 'write',
+    },
+  ])
+})
+
+test('unrecorded update access falls back to the full review', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'CapabilityContract.jsx'), 'utf8')
+  const modal = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
+  const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  assert.match(source, /Show full resulting access/)
+  assert.match(source, /unknownPrevious/)
+  assert.match(modal, /isInstalled updateReview/)
+  assert.doesNotMatch(detail, /updateReview/)
 })
 
 test('community feedback resolves from either the community or curated channel', async () => {

@@ -47,17 +47,19 @@ test('renamed first-party apps use canonical identities and public names', () =>
   assert.equal(MANIFEST_SNAPSHOTS.pages.name,'Pages')
   assert.equal(pages.listing.screenshots[0].alt,'Standalone Pages app screen')
 })
-test('Library groups attention and updates first without duplicating or adding uninstalled apps', () => {
-  const rows=['ready','update','setup','conflict','not-installed'].map(id=>({id,name:id}))
+test('Library groups real attention and updates first without treating temporary checks as problems', () => {
+  const rows=['ready','unverified','unavailable','update','setup','conflict','not-installed'].map(id=>({id,name:id}))
   const states=new Map([
     ['ready',{key:'installed',installedApp:{id:1}}],
+    ['unverified',{key:'installed',sourceStatus:'unverified',installedApp:{id:5}}],
+    ['unavailable',{key:'installed',sourceStatus:'unavailable',installedApp:{id:6}}],
     ['update',{key:'update',installedApp:{id:2}}],
     ['setup',{key:'installed',setupNeedsAttention:true,installedApp:{id:3}}],
     ['conflict',{key:'conflict',installedApp:{id:4}}],
   ])
   const groups=libraryCollections(rows,states)
   assert.deepEqual(groups.map(g=>g.id),['attention','updates','installed'])
-  assert.deepEqual(groups.flatMap(g=>g.items.map(x=>x.id)),['conflict','setup','update','ready'])
+  assert.deepEqual(groups.flatMap(g=>g.items.map(x=>x.id)),['conflict','setup','update','ready','unavailable','unverified'])
   assert.deepEqual(libraryCollections([],states),[])
 })
 test('category and detail navigation require host ownership and support reversible back levels', () => {
@@ -67,4 +69,12 @@ test('category and detail navigation require host ownership and support reversib
   assert.match(source,/status !== 'owned'/)
   assert.match(source,/onForward: \(\) => \{\s*setTab\('browse'\)/)
   assert.doesNotMatch(source,/nav-push ack timeout|Older shell without ack/)
+})
+
+test('community people are named by their Möbius handle or GitHub login', async () => {
+  const { communityPersonName } = await import('../domain.js')
+  assert.equal(communityPersonName({ kind: 'github', login: 'octo' }, 'Möbius user'), 'octo')
+  assert.equal(communityPersonName({ handle: 'ada', login: 'octo' }, 'Möbius user'), 'ada')
+  assert.equal(communityPersonName('lin', 'Möbius user'), 'lin')
+  assert.equal(communityPersonName(null, 'Möbius user'), 'Möbius user')
 })

@@ -79,10 +79,10 @@ export async function loadEditorialSpotlight(token) {
 function fileDataBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(new Error('That artwork file could not be read.'))
+    reader.onerror = () => reject(new Error('That image could not be read.'))
     reader.onload = () => {
       const encoded = String(reader.result || '').split(',', 2)[1]
-      if (!encoded) reject(new Error('That artwork file is empty.'))
+      if (!encoded) reject(new Error('That image is empty.'))
       else resolve(encoded)
     }
     reader.readAsDataURL(file)
@@ -134,6 +134,47 @@ export async function loadLocalPublicationPreview(token, appId) {
     headers: communityHeaders(token),
   })
   return communityResponse(response, 'This app listing could not be prepared.')
+}
+
+export async function saveLocalListing(token, appId, listing) {
+  const response = await fetch(`/api/apps/${encodeURIComponent(appId)}/store-listing`, {
+    method: 'PUT',
+    headers: { ...communityHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(listing),
+  })
+  return communityResponse(response, 'The listing could not be saved.')
+}
+
+const LISTING_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const LISTING_IMAGE_MAX_SIDE = 2400
+const LISTING_IMAGE_KEEP_BYTES = 1_500_000
+
+// Read one chosen listing image as base64, shrinking a large photo or phone
+// screenshot so a full listing stays a small upload. Small PNGs are sent
+// untouched so interface screenshots stay pixel-exact.
+export async function prepareListingImage(file) {
+  if (!file || file.size <= 0) throw new Error('That image is empty.')
+  if (!LISTING_IMAGE_TYPES.has(file.type)) throw new Error('Use a PNG, JPEG, or WebP image.')
+  let bitmap = null
+  try {
+    bitmap = await createImageBitmap(file)
+  } catch {
+    throw new Error('That image could not be read.')
+  }
+  const longest = Math.max(bitmap.width, bitmap.height)
+  if (file.size <= LISTING_IMAGE_KEEP_BYTES && longest <= LISTING_IMAGE_MAX_SIDE) {
+    bitmap.close?.()
+    return { data: await fileDataBase64(file), url: URL.createObjectURL(file) }
+  }
+  const scale = Math.min(1, LISTING_IMAGE_MAX_SIDE / longest)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close?.()
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.9))
+  if (!blob) throw new Error('That image could not be prepared.')
+  return { data: await fileDataBase64(blob), url: URL.createObjectURL(blob) }
 }
 
 export async function registerCommunityRevision(
@@ -269,29 +310,35 @@ export function openSystemSettings(section = 'ai-providers', onUnembedded) {
 export async function loadInstalledApps(token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 250
+  const deadline = requestDeadline(opts)
   let lastError = null
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    let r
-    try {
-      r = await fetch('/api/apps/', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    } catch (err) {
-      lastError = err
-      if (attempt < retries && retryableFetchError(err)) {
-        await sleep(retryDelay(null, attempt, delayMs))
+  try {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      let r
+      try {
+        r = await fetch('/api/apps/', {
+          signal: deadline.signal,
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      } catch (err) {
+        lastError = err
+        if (!deadline.signal.aborted && attempt < retries && retryableFetchError(err)) {
+          if (!await deadline.wait(retryDelay(null, attempt, delayMs))) break
+          continue
+        }
+        throw new Error(transientFetchMessage('Installed apps'))
+      }
+
+      if (r.ok) return await r.json()
+      if (!deadline.signal.aborted && attempt < retries && retryableFetchStatus(r.status)) {
+        if (!await deadline.wait(retryDelay(r, attempt, delayMs))) break
         continue
       }
-      throw new Error(transientFetchMessage('Installed apps'))
+      throw new Error(`Installed apps could not be loaded (${r.status}).`)
     }
-
-    if (r.ok) return await r.json()
-    if (attempt < retries && retryableFetchStatus(r.status)) {
-      await sleep(retryDelay(r, attempt, delayMs))
-      continue
-    }
-    throw new Error(`Installed apps could not be loaded (${r.status}).`)
+  } finally {
+    deadline.dispose()
   }
 
   throw new Error(lastError?.message || 'Installed apps could not be loaded.')
@@ -309,12 +356,14 @@ export async function loadInstalledApps(token, opts = {}) {
 // NEVER throws and NEVER retries: it runs from focus/visibility listeners whose
 // callers have no rejection handler, so a read-only availability probe must
 // degrade to null rather than let a rejection escape and strand the grid.
-export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') {
+export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '', opts = {}) {
+  const deadline = requestDeadline(opts)
   try {
     const query = candidateManifestUrl
       ? `?manifest_url=${encodeURIComponent(validateManifestUrl(candidateManifestUrl))}`
       : ''
     const r = await fetch(`/api/apps/${appId}/update-check${query}`, {
+      signal: deadline.signal,
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!r.ok) return null
@@ -331,25 +380,33 @@ export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') 
     }
   } catch {
     return null
+  } finally {
+    deadline.dispose()
   }
 }
 
 export async function loadProviderStatus(token, opts = {}) {
   const retries = opts.retries ?? 1
   const delayMs = opts.retryDelayMs ?? 250
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const r = await fetch('/api/auth/providers/status', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (r.ok) return await r.json()
-      if (!retryableFetchStatus(r.status) || attempt === retries) return null
-    } catch (err) {
-      if (!retryableFetchError(err) || attempt === retries) return null
+  const deadline = requestDeadline(opts)
+  try {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const r = await fetch('/api/auth/providers/status', {
+          signal: deadline.signal,
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (r.ok) return await r.json()
+        if (!retryableFetchStatus(r.status) || attempt === retries) return null
+      } catch (err) {
+        if (deadline.signal.aborted || !retryableFetchError(err) || attempt === retries) return null
+      }
+      if (!await deadline.wait(retryDelay(null, attempt, delayMs))) return null
     }
-    await sleep(retryDelay(null, attempt, delayMs))
+    return null
+  } finally {
+    deadline.dispose()
   }
-  return null
 }
 
 // External resources (catalog manifests + icons) live on public git hosts
@@ -391,8 +448,41 @@ function rateLimitMessage(url, res) {
   return `${service} rate-limited this request. Please wait a minute and try again.`
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+// One deadline owns the whole logical read, including every retry and retry
+// delay. A fresh timeout per attempt turns three retries into a much longer
+// wait than the caller asked for.
+function requestDeadline(opts = {}, fallbackMs = 8_000) {
+  const controller = new AbortController()
+  const parentSignal = opts.signal
+  const deadlineMs = Math.max(1, Number(opts.deadlineMs ?? fallbackMs) || fallbackMs)
+  const abortFromParent = () => controller.abort(parentSignal?.reason)
+  if (parentSignal?.aborted) abortFromParent()
+  else parentSignal?.addEventListener?.('abort', abortFromParent, { once: true })
+  const timer = setTimeout(() => controller.abort(), deadlineMs)
+
+  return {
+    signal: controller.signal,
+    async wait(ms) {
+      if (controller.signal.aborted) return false
+      return await new Promise(resolve => {
+        let settled = false
+        const finish = value => {
+          if (settled) return
+          settled = true
+          clearTimeout(waitTimer)
+          controller.signal.removeEventListener('abort', onAbort)
+          resolve(value)
+        }
+        const onAbort = () => finish(false)
+        const waitTimer = setTimeout(() => finish(true), Math.max(0, ms))
+        controller.signal.addEventListener('abort', onAbort, { once: true })
+      })
+    },
+    dispose() {
+      clearTimeout(timer)
+      parentSignal?.removeEventListener?.('abort', abortFromParent)
+    },
+  }
 }
 
 function transientFetchMessage(kind) {
@@ -403,31 +493,36 @@ export async function fetchManifest(url, token, opts = {}) {
   const manifestUrl = validateManifestUrl(url)
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
+  const deadline = requestDeadline(opts)
   let lastError = null
+  try {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      let r
+      try {
+        r = await fetch(proxyUrl(manifestUrl), {
+          cache: 'no-cache',
+          signal: deadline.signal,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+      } catch (error) {
+        lastError = new Error(transientFetchMessage('Manifest'))
+        if (deadline.signal.aborted || !retryableFetchError(error) || attempt === retries) break
+        if (!await deadline.wait(retryDelay(null, attempt, delayMs))) break
+        continue
+      }
+      if (r.ok) return await r.json()
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    let r
-    try {
-      r = await fetch(proxyUrl(manifestUrl), {
-        cache: 'no-cache',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-    } catch (error) {
-      lastError = new Error(transientFetchMessage('Manifest'))
-      if (!retryableFetchError(error) || attempt === retries) break
-      await sleep(retryDelay(null, attempt, delayMs))
-      continue
+      if (r.status === 429) {
+        lastError = new Error(rateLimitMessage(manifestUrl, r))
+        break
+      }
+
+      lastError = new Error(`Manifest fetch failed: ${r.status}`)
+      if (!retryableFetchStatus(r.status) || attempt === retries) break
+      if (!await deadline.wait(retryDelay(r, attempt, delayMs))) break
     }
-    if (r.ok) return await r.json()
-
-    if (r.status === 429) {
-      lastError = new Error(rateLimitMessage(manifestUrl, r))
-      break
-    }
-
-    lastError = new Error(`Manifest fetch failed: ${r.status}`)
-    if (!retryableFetchStatus(r.status) || attempt === retries) break
-    await sleep(retryDelay(r, attempt, delayMs))
+  } finally {
+    deadline.dispose()
   }
 
   throw lastError || new Error('Manifest fetch failed')
@@ -446,27 +541,39 @@ export async function fetchManifest(url, token, opts = {}) {
 export async function fetchCatalog(url, token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
+  const deadline = requestDeadline(opts)
   let r
+  let body
   let lastError = null
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      r = await fetch(proxyUrl(url), {
-        cache: 'no-cache',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-    } catch (error) {
-      lastError = new Error(transientFetchMessage('Catalog'))
-      if (!retryableFetchError(error) || attempt === retries) throw lastError
-      await sleep(retryDelay(null, attempt, delayMs))
-      continue
+  try {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        r = await fetch(proxyUrl(url), {
+          cache: 'no-cache',
+          signal: deadline.signal,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+      } catch (error) {
+        lastError = new Error(transientFetchMessage('Catalog'))
+        if (deadline.signal.aborted || !retryableFetchError(error) || attempt === retries) break
+        if (!await deadline.wait(retryDelay(null, attempt, delayMs))) break
+        continue
+      }
+      if (r.ok || !retryableFetchStatus(r.status) || attempt === retries) break
+      lastError = new Error(`Catalog fetch failed: ${r.status}`)
+      if (!await deadline.wait(retryDelay(r, attempt, delayMs))) break
     }
-    if (r.ok || !retryableFetchStatus(r.status) || attempt === retries) break
-    lastError = new Error(`Catalog fetch failed: ${r.status}`)
-    await sleep(retryDelay(r, attempt, delayMs))
+    if (!r) throw lastError || new Error('Catalog fetch failed')
+    if (!r.ok) throw new Error(`Catalog fetch failed: ${r.status}`)
+    try {
+      body = await r.json()
+    } catch (error) {
+      if (deadline.signal.aborted) throw new Error(transientFetchMessage('Catalog'))
+      throw error
+    }
+  } finally {
+    deadline.dispose()
   }
-  if (!r) throw lastError || new Error('Catalog fetch failed')
-  if (!r.ok) throw new Error(`Catalog fetch failed: ${r.status}`)
-  const body = await r.json()
   if (body?.schema !== 1 || !Array.isArray(body.apps)) {
     throw new Error('Catalog schema is unsupported')
   }
@@ -588,10 +695,7 @@ export async function fetchCatalog(url, token, opts = {}) {
   return entries
 }
 
-function installRequestBody({
-  manifest_url, manifest, raw_base, reviewed_capability_digest,
-  reviewed_source_digest, update_app_id, reviewed_upstream_commit,
-}) {
+function installRequestBody({ manifest_url, manifest, raw_base, reviewed_capability_digest, reviewed_source_digest, update_app_id, reviewed_upstream_commit }) {
   const body = {}
   if (manifest_url) {
     body.manifest_url = manifest_url
@@ -649,10 +753,7 @@ export class UpdateChangedError extends Error {
   }
 }
 
-export async function installApp({
-  manifest_url, manifest, raw_base, token, reviewed_capability_digest,
-  reviewed_source_digest, update_app_id, reviewed_upstream_commit,
-}) {
+export async function installApp({ manifest_url, manifest, raw_base, token, reviewed_capability_digest, reviewed_source_digest, update_app_id, reviewed_upstream_commit }) {
   const body = installRequestBody({
     manifest_url, manifest, raw_base, reviewed_capability_digest,
     reviewed_source_digest, update_app_id, reviewed_upstream_commit,
@@ -704,6 +805,7 @@ function formatErrorDetail(detail) {
     if (messages.length) return messages.join('; ')
   }
   if (detail && typeof detail === 'object') {
+    // Structured errors ({code, message}) carry their owner-facing sentence.
     if (typeof detail.message === 'string' && detail.message.trim()) {
       return detail.message.trim()
     }
@@ -731,14 +833,28 @@ export async function readJsonOrThrow(res, fallback) {
 
 // Read-only preview of the currently published candidate. This fetches the
 // incoming release before anything is applied.
-export async function loadUpdateCandidatePreview(appId, manifestUrl, token) {
+export async function loadUpdateCandidatePreview(appId, manifestUrl, token, opts = {}) {
   const query = manifestUrl
     ? `?manifest_url=${encodeURIComponent(manifestUrl)}`
     : ''
-  const res = await fetch(`/api/apps/${appId}/update-candidate-preview${query}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  return await readJsonOrThrow(res, 'Update changes could not be loaded')
+  const deadline = requestDeadline(opts, 12_000)
+  try {
+    const res = await fetch(`/api/apps/${appId}/update-candidate-preview${query}`, {
+      signal: deadline.signal,
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return await readJsonOrThrow(res, 'Update changes could not be loaded')
+  } catch (error) {
+    if (opts.signal?.aborted) {
+      throw new DOMException('Update check cancelled', 'AbortError')
+    }
+    if (deadline.signal.aborted) {
+      throw new Error('This update check took too long. Please try again.')
+    }
+    throw error
+  } finally {
+    deadline.dispose()
+  }
 }
 
 export async function createConflictResolverChat(appId, resolutionPolicy, token) {
@@ -749,6 +865,21 @@ export async function createConflictResolverChat(appId, resolutionPolicy, token)
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ resolution_policy: resolutionPolicy }),
+  })
+  return await readJsonOrThrow(res, 'Could not open resolver chat')
+}
+
+// Batch escalation has one owner-visible chat for the selected apps. The
+// backend owns deduplication and the actual resolver turn; Store only supplies
+// app ids and the explicit whole-tree policy.
+export async function createConflictResolverBatch(appIds, resolutionPolicy, token) {
+  const res = await fetch('/api/apps/conflict-resolver-batch', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ app_ids: appIds, resolution_policy: resolutionPolicy }),
   })
   return await readJsonOrThrow(res, 'Could not open resolver chat')
 }

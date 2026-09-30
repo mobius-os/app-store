@@ -100,6 +100,7 @@ export function CatalogList({
   onRetryInstalled,
   busy,
   busyItemId,
+  busyItemIds = [],
   busyActionKind,
   checkingUpdateItemId = null,
   errors,
@@ -202,11 +203,11 @@ export function CatalogList({
       onUpdate={onUpdate}
       onOpenInstalled={onOpenInstalled}
       onRetryInstalled={onRetryInstalled}
-      busy={busyItemId === item.id || checkingUpdateItemId === item.id}
-      busyActionKind={busyItemId === item.id
-        ? busyActionKind
+      busy={(busyItemId === item.id || busyItemIds.includes(item.id)) || checkingUpdateItemId === item.id}
+      busyActionKind={(busyItemId === item.id || busyItemIds.includes(item.id))
+        ? (busyActionKind === 'batch_update' ? 'update' : busyActionKind)
         : checkingUpdateItemId === item.id ? 'checking_update' : null}
-      blocked={(busy && busyItemId !== item.id) ||
+      blocked={(busy && !(busyItemId === item.id || busyItemIds.includes(item.id))) ||
         (checkingUpdateItemId !== null && checkingUpdateItemId !== item.id)}
       error={errors?.[item.id]}
       onAskAgentError={onAskAgentError}

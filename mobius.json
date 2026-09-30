@@ -53,7 +53,7 @@
     "ui/CatalogSkeleton.jsx",
     "ui/DetailView.jsx",
     "ui/LibraryHealth.jsx",
-    "ui/PublisherTab.jsx",
+    "ui/PublisherTab.jsx", "ui/ListingEditor.jsx",
     "ui/SpotlightEditor.jsx",
     "ui/CommunityFeedback.jsx",
     "ui/UpdateReviewModal.jsx",
@@ -64,7 +64,8 @@
     "ui/diff/styles.js",
     "LISTING_ART.md",
     "catalog-freshness.js",
-    "store-navigation.js"
+    "store-navigation.js",
+    "update-batch.js"
   ],
   "static_assets": {
     "previews/artifacts-screen.png": "listing-assets/artifacts-screen.png",
