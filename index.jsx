@@ -1512,21 +1512,10 @@ export default function App({ appId, token }) {
     const installedApp = findInstalled(installed, item)
     if (!installedApp) throw new Error('Installed app could not be matched for review.')
     const updateItem = catalogUpdateItemForInstalled(item, installedApp)
-    const [capabilityPreview, candidate] = await Promise.all([
-        previewApp({
-          manifest_url: updateItem.manifest_url,
-          manifest: updateItem.manifest,
-          raw_base: updateItem.raw_base,
-          token,
-        }),
-        loadUpdateCandidatePreview(installedApp.id, updateItem.manifest_url, token).then(
-          (preview) => ({ preview, error: '' }),
-          (error) => ({
-            preview: null,
-            error: error.message || 'Update changes could not be loaded.',
-          }),
-        ),
-      ])
+    const candidate = await loadUpdateCandidatePreview(
+      installedApp.id, updateItem.manifest_url, token,
+    )
+    const capabilityPreview = candidate.capability_preview
     const capabilityReview = {
       status: capabilityDiffNeedsReview(capabilityPreview.capability_diff)
         ? 'changed'
@@ -1537,11 +1526,8 @@ export default function App({ appId, token }) {
     return {
       item: updateItem,
       installedApp,
-      preview: candidate.preview || {
-        upstream_version: item.manifest?.version,
-        upstream_diff: '',
-      },
-      previewError: candidate.error,
+      preview: candidate,
+      previewError: '',
       capabilityReview,
     }
   }, [installed, token])

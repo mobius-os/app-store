@@ -588,14 +588,17 @@ export function busyLabelForAction(actionKind) {
 
 export function capabilityDiffNeedsReview(diff) {
   if (!diff || typeof diff !== 'object') return true
-  if (diff.unknown_previous === true) return true
+  if (diff.unknown_previous !== false) return true
+  if (!['added', 'removed', 'changed'].every(key => Array.isArray(diff[key]))) return true
+  if (typeof diff.widens === 'boolean') return diff.widens
+  // A server without ranking keeps the original any-change review rule.
   return ['added', 'removed', 'changed'].some(
     (key) => Array.isArray(diff[key]) && diff[key].length > 0,
   )
 }
 
-// "Update all" applies every exact, access-stable candidate immediately.
-// Anything that changes access or cannot be verified stays on the individual
+// "Update all" applies every exact, non-widening candidate immediately.
+// Anything that widens access or cannot be verified stays on the individual
 // review path rather than being silently approved by the batch action.
 export function updateBatchDisposition(prepared) {
   if (!prepared || prepared.error) return { kind: 'review', reason: 'check_failed' }
