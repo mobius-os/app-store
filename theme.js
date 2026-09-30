@@ -1092,7 +1092,7 @@ export const CSS = `
 .st-detail-header {
   padding: 12px 16px; display: flex; align-items: center;
   gap: 8px; border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  flex-shrink: 0; width: min(100%, 1180px); margin-inline: auto; box-sizing: border-box;
 }
 .st-back-btn {
   background: none; border: none; color: var(--text);
@@ -1127,7 +1127,7 @@ export const CSS = `
 .st-hero-icon-letter { font-size: 32px; font-weight: 700; color: var(--text); }
 .st-hero-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: 0; user-select: none; }
 .st-hero-meta { font-size: 12px; color: var(--muted); font-family: var(--mono, monospace); user-select: none; }
-.st-detail-desc { font-size: 14px; line-height: 1.55; color: var(--text); margin-bottom: 24px; }
+.st-detail-desc { max-width: 72ch; font-size: 14px; line-height: 1.55; color: var(--text); margin-bottom: 24px; }
 .st-detail-preview {
   margin: 22px 0 28px;
   overflow: hidden;
@@ -1627,6 +1627,7 @@ export const CSS = `
   }
   .st-scroll.is-browse > * { max-width: 1180px; }
   .st-scroll.is-library > * { max-width: 960px; }
+  .st-scroll.is-detail > * { max-width: 1180px; }
   .st-catalog-grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
@@ -1636,7 +1637,7 @@ export const CSS = `
   }
   .st-detail-footer {
     width: 100%;
-    max-width: 840px;
+    max-width: 1180px;
     margin-inline: auto;
     box-sizing: border-box;
     flex-direction: row;
