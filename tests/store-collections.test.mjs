@@ -69,6 +69,14 @@ test('category and detail navigation require host ownership and support reversib
   assert.doesNotMatch(source,/nav-push ack timeout|Older shell without ack/)
 })
 
+test('community people are named by their Möbius handle or GitHub login', async () => {
+  const { communityPersonName } = await import('../domain.js')
+  assert.equal(communityPersonName({ kind: 'github', login: 'octo' }, 'Möbius user'), 'octo')
+  assert.equal(communityPersonName({ handle: 'ada', login: 'octo' }, 'Möbius user'), 'ada')
+  assert.equal(communityPersonName('lin', 'Möbius user'), 'lin')
+  assert.equal(communityPersonName(null, 'Möbius user'), 'Möbius user')
+})
+
 test('Connect is fourth in bundled Spotlight, not Our picks, and remains in its ordinary category', () => {
   const data = JSON.parse(readFileSync(new URL('../catalog.json', import.meta.url)))
   const connect = data.apps.find(item => item.id === 'connect')

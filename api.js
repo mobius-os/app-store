@@ -79,10 +79,10 @@ export async function loadEditorialSpotlight(token) {
 function fileDataBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(new Error('That artwork file could not be read.'))
+    reader.onerror = () => reject(new Error('That image could not be read.'))
     reader.onload = () => {
       const encoded = String(reader.result || '').split(',', 2)[1]
-      if (!encoded) reject(new Error('That artwork file is empty.'))
+      if (!encoded) reject(new Error('That image is empty.'))
       else resolve(encoded)
     }
     reader.readAsDataURL(file)
@@ -134,6 +134,49 @@ export async function loadLocalPublicationPreview(token, appId) {
     headers: communityHeaders(token),
   })
   return communityResponse(response, 'This app listing could not be prepared.')
+}
+
+export async function saveLocalListing(token, appId, listing) {
+  const response = await fetch(`/api/apps/${encodeURIComponent(appId)}/store-listing`, {
+    method: 'PUT',
+    headers: { ...communityHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(listing),
+  })
+  return communityResponse(response, 'The listing could not be saved.')
+}
+
+const LISTING_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const LISTING_IMAGE_MAX_SIDE = 2400
+const LISTING_IMAGE_KEEP_BYTES = 1_500_000
+
+// Read one chosen listing image as base64, shrinking a large photo or phone
+// screenshot so a full listing stays a small upload. Small PNGs are sent
+// untouched so interface screenshots stay pixel-exact.
+export async function prepareListingImage(file) {
+  if (!file || file.size <= 0) throw new Error('That image is empty.')
+  if (!LISTING_IMAGE_TYPES.has(file.type)) throw new Error('Use a PNG, JPEG, or WebP image.')
+  let bitmap = null
+  try {
+    bitmap = await createImageBitmap(file)
+  } catch {
+    throw new Error('That image could not be read.')
+  }
+  const longest = Math.max(bitmap.width, bitmap.height)
+  if (file.size <= LISTING_IMAGE_KEEP_BYTES && longest <= LISTING_IMAGE_MAX_SIDE) {
+    bitmap.close?.()
+    const data = await fileDataBase64(file)
+    return { data, url: `data:${file.type};base64,${data}` }
+  }
+  const scale = Math.min(1, LISTING_IMAGE_MAX_SIDE / longest)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close?.()
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.9))
+  if (!blob) throw new Error('That image could not be prepared.')
+  const data = await fileDataBase64(blob)
+  return { data, url: `data:${blob.type};base64,${data}` }
 }
 
 export async function registerCommunityRevision(

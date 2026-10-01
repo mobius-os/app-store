@@ -54,6 +54,7 @@
     "ui/DetailView.jsx",
     "ui/LibraryHealth.jsx",
     "ui/PublisherTab.jsx",
+    "ui/ListingEditor.jsx",
     "ui/SpotlightEditor.jsx",
     "ui/CommunityFeedback.jsx",
     "ui/UpdateReviewModal.jsx",
