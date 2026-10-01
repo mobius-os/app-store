@@ -17,6 +17,22 @@ test('update review restores its opener independently of busy-state effects', ()
   assert.match(updateReview, /\}, \[\]\)\n\n  useEffect\(\(\) => \{/)
 })
 
+test('retry preserves sibling update outcomes and requires a fresh confirmation', () => {
+  assert.match(app, /\.filter\(entry => entry\.outcome \|\| !entry\.preview\?\.source_digest\)/)
+  assert.match(app, /current\.entries\.map\(entry => entry\.item\.id === item\.id \? prepared : entry\)/)
+  assert.match(app, /applyingUpdateRef\.current = true/)
+  assert.match(app, /if \(!updateReview \|\| busy \|\| applyingUpdateRef\.current \|\| checkingUpdateRef\.current\) return/)
+  assert.match(updateReview, /\{verified\.length \? \(/)
+  assert.match(updateReview, /onClick=\{onApply\} disabled=\{busy\}/)
+})
+
+test('review with agent remains available without applying an update', () => {
+  assert.match(updateReview, /Review with agent/)
+  assert.match(app, /onReviewWithAgent=\{handleAgentUpdateReview\}/)
+  assert.match(app, /buildUpdateReviewMessage\(entry\)/)
+  assert.match(app, /buildUpdateFailureMessage\(\{ \.\.\.entry, error \}\)/)
+})
+
 test('Browse, Library, and Publish form one keyboard-navigable tab set', () => {
   assert.match(app, /const order = \['browse', 'library', 'publish'\]/)
   assert.match(app, /role="tablist" aria-label="Browse mode"/)

@@ -5,45 +5,79 @@ import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
 import FileDiffList from './diff/FileDiffList.jsx'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
-function fileCountLabel(count) {
-  return `${count} ${count === 1 ? 'file' : 'files'}`
-}
-
-export function UpdateReviewModal({
-  review,
-  applying = false,
-  agentReviewing = false,
-  error = '',
-  onClose,
-  onApply,
-  onReviewWithAgent,
-}) {
-  const dialogRef = useRef(null)
-  const closeRef = useRef(null)
-  const openerRef = useRef(null)
-  const item = review.item
+function ReviewEntry({ review, busy, onRetry }) {
   const preview = review.preview || {}
-  const diff = typeof preview.upstream_diff === 'string' ? preview.upstream_diff : ''
-  const files = useMemo(() => parseUnifiedDiff(diff), [diff])
+  const files = useMemo(
+    () => parseUnifiedDiff(typeof preview.upstream_diff === 'string' ? preview.upstream_diff : ''),
+    [preview.upstream_diff],
+  )
   const insertions = files.reduce((sum, file) => sum + (file.insertions || 0), 0)
   const deletions = files.reduce((sum, file) => sum + (file.deletions || 0), 0)
   const capabilitiesChanged = capabilityDiffNeedsReview(
     review.capabilityReview?.preview?.capability_diff,
   )
-  const unknownPrevious = review.capabilityReview?.preview?.capability_diff?.unknown_previous === true
-  const busy = applying || agentReviewing
-  const sourceVerified = !!preview.source_digest
-  const hasFailure = !!(error || review.previewError)
-  const name = item.manifest?.name || item.id
-  const version = preview.upstream_version || item.manifest?.version || 'latest'
+  const name = review.item.manifest?.name || review.item.id
+  const version = preview.upstream_version || review.item.manifest?.version || 'latest'
+  const conflict = review.outcome?.conflict
+  const error = review.previewError || review.outcome?.error || review.outcome?.resolverError ||
+    (review.outcome && !conflict ? 'This update could not be completed.' : '')
+
+  return (
+    <section className="st-update-review-section">
+      <div className="st-update-review-section-head">
+        <h3>{name} · v{version}</h3>
+        {files.length ? (
+          <div className="st-update-review-total" aria-label={`${insertions} additions and ${deletions} deletions`}>
+            <span className="is-add">+{insertions}</span>
+            <span className="is-del">−{deletions}</span>
+          </div>
+        ) : null}
+      </div>
+
+      {error || conflict ? (
+        <div className="st-update-review-notice is-error" role="alert">
+          <div className="st-update-review-error-text">
+            {error || 'Local changes overlap this update.'}
+          </div>
+          {conflict && !review.outcome?.resolverError
+            ? 'An agent is reconciling the update while the current app stays live.'
+            : onRetry
+              ? 'Nothing else will change until you try again.'
+              : 'This app is not included in the confirmed updates.'}
+          {onRetry && (!conflict || review.outcome?.resolverError) ? (
+            <div><button type="button" className="st-btn st-btn-secondary" onClick={() => onRetry(review.item)} disabled={busy}>Try again</button></div>
+          ) : null}
+        </div>
+      ) : files.length === 0 ? (
+        <div className="st-update-review-notice" role="status">
+          No source-file changes to show. This release may update package metadata or assets.
+        </div>
+      ) : <FileDiffList files={files} />}
+
+      {capabilitiesChanged ? (
+        <div>
+          <h3>{review.capabilityReview?.preview?.capability_diff?.unknown_previous ? 'Access review' : 'Access changes'}</h3>
+          <CapabilityContract review={review.capabilityReview} isInstalled />
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+export function UpdateReviewModal({ review, applying = false, preparing = false, agentReviewing = false, onClose, onApply, onRetry, onReviewWithAgent }) {
+  const dialogRef = useRef(null)
+  const closeRef = useRef(null)
+  const openerRef = useRef(null)
+  const entries = review.entries || [review]
+  const verified = entries.filter(entry => entry.preview?.source_digest && !entry.outcome)
+  const complete = entries.some(entry => entry.outcome)
+  const busy = applying || preparing || agentReviewing
+  const hasFailure = entries.some(entry => entry.previewError || entry.outcome?.error || entry.outcome?.resolverError)
 
   const requestClose = useCallback(() => {
     if (!busy) onClose()
   }, [busy, onClose])
 
-  // Capture/restore only once per open. The keyboard-listener effect below
-  // legitimately re-runs when busy changes; coupling restoration to it would
-  // briefly throw focus behind the modal during Apply/agent-review transitions.
   useEffect(() => {
     openerRef.current = document.activeElement
     closeRef.current?.focus()
@@ -54,26 +88,16 @@ export function UpdateReviewModal({
   }, [])
 
   useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        requestClose()
-        return
-      }
+    const onKeyDown = event => {
+      if (event.key === 'Escape') { event.preventDefault(); requestClose(); return }
       if (event.key !== 'Tab' || !dialogRef.current) return
       const focusable = [...dialogRef.current.querySelectorAll(
         'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
       )]
       if (!focusable.length) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
+      const first = focusable[0], last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
@@ -81,82 +105,37 @@ export function UpdateReviewModal({
 
   return (
     <div className="st-update-review-scrim" role="presentation" onClick={requestClose}>
-      <div
-        ref={dialogRef}
-        className="st-update-review"
-        role="dialog"
-        tabIndex={-1}
-        aria-modal="true"
-        aria-labelledby="st-update-review-title"
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div ref={dialogRef} className="st-update-review" role="dialog" tabIndex={-1} aria-modal="true" aria-labelledby="st-update-review-title" onClick={event => event.stopPropagation()}>
         <div className="st-update-review-head">
           <div>
-            <h2 id="st-update-review-title" className="st-update-review-title">
-              Review update
-            </h2>
+            <h2 id="st-update-review-title" className="st-update-review-title">{complete ? 'Updates need attention' : entries.length === 1 ? 'Review update' : 'Review app updates'}</h2>
             <p className="st-update-review-subtitle">
-              {name} to v{version}{files.length > 0 ? ` · ${fileCountLabel(files.length)}` : ''}
+              {verified.length
+                ? `Confirm once to update ${verified.length} verified ${verified.length === 1 ? 'app' : 'apps'} and start one resolver chat if local edits overlap.`
+                : complete
+                  ? 'These apps need attention. Completed apps will not be updated again.'
+                  : 'No updates could be verified. Nothing will change.'}
             </p>
           </div>
-          <button
-            ref={closeRef}
-            type="button"
-            className="st-update-review-close"
-            onClick={requestClose}
-            disabled={busy}
-            aria-label="Close update review"
-          ><X width="1em" height="1em" aria-hidden="true" /></button>
+          <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} disabled={busy} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
         </div>
 
         <div className="st-update-review-body">
-          {review.previewError ? (
-            <div className="st-update-review-notice is-error" role="alert">
-              <div className="st-update-review-error-text">{review.previewError}</div>
-              <div>Nothing will be changed until the source can be verified. You can close and try again, or ask the agent to investigate.</div>
-            </div>
-          ) : files.length === 0 ? (
-            <div className="st-update-review-notice" role="status">
-              No source-file changes to show. This release may update package metadata or assets.
-            </div>
-          ) : (
-            <section className="st-update-review-section">
-              <div className="st-update-review-section-head">
-                <h3>{fileCountLabel(files.length)}</h3>
-                <div className="st-update-review-total" aria-label={`${insertions} additions and ${deletions} deletions`}>
-                  <span className="is-add">+{insertions}</span>
-                  <span className="is-del">−{deletions}</span>
-                </div>
-              </div>
-              <FileDiffList files={files} />
-            </section>
-          )}
-
-          {capabilitiesChanged ? (
-            <section className="st-update-review-section">
-              <h3>{unknownPrevious ? 'Access review' : 'Access changes'}</h3>
-              <CapabilityContract review={review.capabilityReview} isInstalled />
-            </section>
-          ) : null}
-
-          {error ? <div className="st-error-box st-selectable-error" role="alert">{error}</div> : null}
+          {entries.map(entry => <ReviewEntry key={entry.item.id} review={entry} busy={busy} onRetry={onRetry} />)}
         </div>
 
         <div className="st-update-review-actions">
-          <button type="button" className="st-btn st-btn-ghost" onClick={requestClose} disabled={busy}>
-            Not now
-          </button>
-          <button
-            type="button"
-            className="st-btn st-btn-secondary"
-            onClick={onReviewWithAgent}
-            disabled={busy}
-          >
-            {agentReviewing ? 'Opening agent…' : hasFailure ? 'Ask agent about error' : 'Review with agent'}
-          </button>
-          <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={busy || !sourceVerified}>
-            {applying ? 'Updating…' : sourceVerified ? 'Apply update' : 'Update unavailable'}
-          </button>
+          <button type="button" className="st-btn st-btn-ghost" onClick={requestClose} disabled={busy}>Not now</button>
+          {onReviewWithAgent ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={onReviewWithAgent} disabled={busy}>
+              {agentReviewing ? 'Opening agent…' : hasFailure ? 'Ask agent about error' : 'Review with agent'}
+            </button>
+          ) : null}
+          {verified.length ? (
+            <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={busy}>
+              {preparing ? 'Checking…' : applying ? 'Updating…' : entries.length === 1 ? 'Confirm update' : `Confirm & update · ${verified.length}`}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

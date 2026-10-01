@@ -796,6 +796,18 @@ export async function createConflictResolverChat(appId, resolutionPolicy, token)
   return await readJsonOrThrow(res, 'Could not open resolver chat')
 }
 
+export async function createConflictResolverBatch(appIds, resolutionPolicy, token) {
+  const res = await fetch('/api/apps/conflict-resolver-batch', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ app_ids: appIds, resolution_policy: resolutionPolicy }),
+  })
+  return await readJsonOrThrow(res, 'Could not open resolver chat')
+}
+
 export async function createAppChat(title, token, { ownerVisible = false } = {}) {
   const res = await fetch('/api/app-chats', {
     method: 'POST',

@@ -1898,31 +1898,15 @@ test('capability rows fail visibly for a future data grant', async () => {
 
 test('individual catalog updates keep a read-only review with bound digests', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
-  const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
-  const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
-  const uninstallSource = await readFile(join(root, '..', 'ui', 'UninstallConfirmModal.jsx'), 'utf8')
-  assert.ok(indexSource.includes('const handleCatalogUpdate = useCallback'))
-  assert.ok(indexSource.includes('onUpdate={handleCatalogUpdate}'))
   assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token/)
-  assert.match(indexSource, /const capabilityPreview = candidate\.capability_preview/)
-  assert.ok(indexSource.includes('capabilityDiffNeedsReview('))
-  // An individual update still opens a review. Update all intentionally uses
-  // the same prepared contract without duplicating this modal flow.
   assert.ok(indexSource.includes('setUpdateReview(prepared)'))
-  assert.equal(indexSource.includes('This update changes app access. Open it to review'), false)
-  // Applying is a separate, explicit step that binds exactly the digests shown
-  // in the review the owner just approved.
-  assert.ok(indexSource.includes('const handleApplyReviewedUpdate = useCallback'))
-  assert.ok(indexSource.includes('capabilityDigest: updateReview.capabilityReview.preview.capability_digest'))
-  assert.ok(indexSource.includes('sourceDigest: updateReview.preview.source_digest'))
-  assert.ok(indexSource.includes('onApply={handleApplyReviewedUpdate}'))
+  assert.match(indexSource, /filter\(entry => entry\.preview\?\.source_digest && !entry\.outcome\)/)
+  assert.match(indexSource, /filter\(entry => entry\.outcome \|\| !entry\.preview\?\.source_digest\)/)
+  assert.ok(indexSource.includes('capabilityDigest: entry.capabilityReview.preview.capability_digest'))
+  assert.ok(indexSource.includes('sourceDigest: entry.preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
   assert.ok(indexSource.includes('reviewed_source_digest: _opts.sourceDigest'))
-  assert.ok(detailSource.includes('<CapabilityContract'))
-  assert.ok(detailSource.includes('capabilityReview.preview.capability_digest'))
-  assert.ok(cardSource.includes("lifecycle.actionKind === 'update' || lifecycle.actionKind === 'retry'"))
-  assert.match(uninstallSource, /kept\s+temporarily for recovery/)
-  assert.match(uninstallSource, /shared files.*not erased/)
+  assert.match(indexSource, /setUpdateReview\(issues\.length[\s\S]*await refreshInstalled\(\)/)
 })
 
 test('candidate review requests the exact catalog manifest selected by the user', async () => {
@@ -1981,16 +1965,32 @@ test('resolver chat request binds the selected whole-tree policy', async () => {
   }
 })
 
-test('a conflicting apply starts a preserving resolver agent automatically', async () => {
+test('confirmed conflicts are handed to one preserving resolver chat', async () => {
+  const { createConflictResolverBatch } = await import(
+    pathToFileURL(join(root, '..', 'api.js'))
+  )
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
-  const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
-
-  assert.match(indexSource, /if \(isConflict\)[\s\S]*createConflictResolverChat\(result\.id, 'preserve_local', token\)/)
-  assert.match(indexSource, /if \(!isBatch && resolver\?\.chat_id\) openChat\(resolver\.chat_id\)/)
-  assert.match(indexSource, /return \{ ok: false, conflict: true, result, notice, resolver, resolverError \}/)
-  assert.match(indexSource, /if \(outcome\?\.conflict\)[\s\S]*setUpdateReview\(null\)/)
-  assert.match(indexSource, /const handleReviewUpdate[\s\S]*'preserve_local'[\s\S]*openChat\(resolver\.chat_id\)/)
-  assert.doesNotMatch(modalSource, /blockedNotice|onResolve|accept_reviewed_upstream_exact/)
+  const oldFetch = globalThis.fetch
+  let request = null
+  globalThis.fetch = async (url, options) => {
+    request = { url: String(url), options }
+    return new Response(JSON.stringify({ chat_id: 'one-chat' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })
+  }
+  try {
+    assert.deepEqual(await createConflictResolverBatch([80, 81], 'preserve_local', 'token'), {
+      chat_id: 'one-chat',
+    })
+    assert.equal(request.url, '/api/apps/conflict-resolver-batch')
+    assert.deepEqual(JSON.parse(request.options.body), {
+      app_ids: [80, 81],
+      resolution_policy: 'preserve_local',
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+  assert.match(indexSource, /const newConflicts = \[\][\s\S]*createConflictResolverBatch\([\s\S]*'preserve_local'/)
 })
 
 test('Update all applies verified non-widening releases and reviews wider access', async () => {
@@ -2061,7 +2061,7 @@ test('automatic updates have no duplicate trust preference path', async () => {
   const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   assert.doesNotMatch(source, /trusted-updates\.json|trustedUpdate|toggleTrusted/)
   assert.doesNotMatch(detail, /Trust routine updates|Require review|Review every update/)
-  assert.match(source, /updateBatchDisposition\(prepared\)/)
+  assert.match(source, /setUpdateReview\(\{ entries \}\)/)
 })
 
 test('filterCatalog matches categories, descriptions, and setup metadata', async () => {

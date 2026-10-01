@@ -4,5 +4,9 @@
     "test": "node --test tests/*.mjs && python3 -m unittest discover -s tests -p 'test_*.py'",
     "refresh-catalog": "node scripts/refresh-manifest-snapshots.mjs"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
 }

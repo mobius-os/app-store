@@ -1,0 +1,25 @@
+import React from 'react'
+function icon(props = {}) { return React.createElement('svg', props) }
+
+export const ArrowLeft = icon
+export const ArrowDown = icon
+export const ArrowUp = icon
+export const ArrowRotateCw = icon
+export const ArrowUpRight = icon
+export const Chat = icon
+export const Check = icon
+export const Download = icon
+export const X = icon
+export const Search = icon
+export const FileUpload = icon
+export const Pause = icon
+export const Play = icon
+
+export const ChevronLeft = icon
+export const ChevronRight = icon
+export const CheckCircleFilled = icon
+export const Circle = icon
+export const ImageSquare = icon
+export const Plus = icon
+export const Sparkles = icon
+export const Trash = icon
