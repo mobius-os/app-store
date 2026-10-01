@@ -112,6 +112,7 @@ export function PublisherTab({
     setDraft(nextDraft)
     setDirty(false)
     setEditing(false)
+    setConfirmed(false)
     if (result?.repository_name) setLocalRepositoryName(result.repository_name)
   }
 
@@ -141,6 +142,7 @@ export function PublisherTab({
     const requestId = previewGateRef.current.begin()
     setSaving(true)
     setSaveError('')
+    setConfirmed(false)
     try {
       await onSaveListing?.(app.id, listingPayload(draft))
       const result = await onPreviewLocal?.(app.id)
@@ -310,6 +312,7 @@ export function PublisherTab({
                                 onAgent={askAgentForListing} />
               {draft ? (
                 <ListingEditor
+                  key={`${candidate.id}:${preview.accepted_commit}`}
                   draft={draft}
                   setDraft={(change) => { setDirty(true); setDraft(change) }}
                   app={candidate}
@@ -368,7 +371,7 @@ export function PublisherTab({
                 </button>
                 <div className="st-listing-revise">
                   <button type="button" className="st-btn st-btn-secondary"
-                          disabled={!!publishingId} onClick={() => setEditing(true)}>
+                          disabled={!!publishingId} onClick={() => { setConfirmed(false); setEditing(true) }}>
                     Edit listing
                   </button>
                   {onListingAgent ? (

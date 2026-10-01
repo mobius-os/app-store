@@ -4,7 +4,7 @@
 import {
   CheckCircleFilled, Circle, ImageSquare, Plus, Sparkles, Trash,
 } from '@openai/apps-sdk-ui/components/Icon'
-import React, { useId, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { utf8Length } from '../domain.js'
 
 const TAGLINE_MAX = 120
@@ -84,19 +84,22 @@ export function ListingEditor({
 }) {
   const [imageError, setImageError] = useState('')
   const [preparing, setPreparing] = useState('')
+  const pickSession = useRef(0)
+  useEffect(() => () => { pickSession.current += 1 }, [])
   const ids = useId()
   const busy = saving || !!preparing
 
   async function pick(slot, file, apply) {
+    const session = pickSession.current
     setImageError('')
     setPreparing(slot)
     try {
       const image = await onPrepareImage(file)
-      apply(image)
+      if (session === pickSession.current) apply(image)
     } catch (error) {
-      setImageError(error instanceof Error ? error.message : 'That image could not be used.')
+      if (session === pickSession.current) setImageError(error instanceof Error ? error.message : 'That image could not be used.')
     } finally {
-      setPreparing('')
+      if (session === pickSession.current) setPreparing('')
     }
   }
 

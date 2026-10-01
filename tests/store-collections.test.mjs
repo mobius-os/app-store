@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-import {catalogPublisher, libraryCollections, mergeCatalogEntries, newestPublications, mergeOfficialCommunityFeedback} from '../domain.js'
+import {catalogPublisher, libraryCollections, mergeCatalogEntries, newestPublications, mergeOfficialCommunityFeedback, bundledSpotlights} from '../domain.js'
 import {MANIFEST_SNAPSHOTS} from '../manifest-snapshots.js'
 
 test('a curated repository owner is not replaced by the person submitting community feedback', () => {
@@ -75,4 +75,27 @@ test('community people are named by their Möbius handle or GitHub login', async
   assert.equal(communityPersonName({ handle: 'ada', login: 'octo' }, 'Möbius user'), 'ada')
   assert.equal(communityPersonName('lin', 'Möbius user'), 'lin')
   assert.equal(communityPersonName(null, 'Möbius user'), 'Möbius user')
+})
+
+test('Connect is fourth in bundled Spotlight, not Our picks, and remains in its ordinary category', () => {
+  const data = JSON.parse(readFileSync(new URL('../catalog.json', import.meta.url)))
+  const connect = data.apps.find(item => item.id === 'connect')
+  assert.equal(connect.collection, 'developer')
+  assert.match(connect.listing.description, /Python 3/)
+  assert.match(connect.listing.description, /explicit grant/)
+  assert.deepEqual(bundledSpotlights(data.apps).map(item => item.id), ['voice', 'maps', 'beat-machine', 'connect'])
+  const source = readFileSync(new URL('../ui/CatalogList.jsx', import.meta.url), 'utf8')
+  assert.match(source, /hostedSpotlights.length\s*\? hostedSpotlights/)
+  assert.match(source, /itemManifestId\(item\) !== 'connect'/)
+  assert.match(source, /!spotlightIds.has\(item.id\)/)
+})
+
+test('bundled Spotlight has explicit order and requires artwork', () => {
+  const items = ['unrelated', 'connect', 'beat-machine', 'maps', 'voice'].map(id => ({id, listing: {hero: `${id}.png`}}))
+  assert.deepEqual(bundledSpotlights(items).map(item => item.id), ['voice', 'maps', 'beat-machine', 'connect'])
+  delete items.find(item => item.id === 'maps').listing.hero
+  assert.deepEqual(bundledSpotlights(items).map(item => item.id), ['voice', 'beat-machine', 'connect'])
+  items.find(item => item.id === 'voice').listing.hero = {path: 'voice.png'}
+  assert.deepEqual(bundledSpotlights(items).map(item => item.id), ['voice', 'beat-machine', 'connect'])
+  assert.deepEqual(bundledSpotlights([]), [])
 })

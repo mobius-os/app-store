@@ -146,7 +146,10 @@
         "cluster",
         "runner",
         "remote commands",
-        "external computer"
+        "external computer",
+        "server",
+        "core app",
+        "remote access"
       ],
       "capabilities": [
         "pair external machines securely",
@@ -155,7 +158,19 @@
       ],
       "audience": "developer",
       "collection": "developer",
-      "summary": "Bring your computers within reach of Möbius."
+      "summary": "Let Möbius work on your other computers.",
+      "listing": {
+        "tagline": "Let Möbius work on your other computers.",
+        "description": "Pair a laptop, workstation, server, or cluster and let your Möbius agent work there. Follow command progress, read retained output, and stop individual commands. Connections are outbound-only: the computer needs Python 3 and an internet connection, not an open inbound port. Pair only computers and people you trust: Connect grants command execution until you disconnect. Optional full agent access is a separate, explicit grant.",
+        "hero": "connect-hero.png",
+        "screenshots": [
+          {
+            "src": "connect-screen.png",
+            "alt": "Connect with a fictional workstation running a command and a fictional offline server.",
+            "label": "Demo machines — follow progress and stop a command."
+          }
+        ]
+      }
     },
     {
       "id": "identity",
@@ -297,7 +312,7 @@
           {
             "src": "workflows-screen.png",
             "alt": "Standalone Workflows app screen",
-            "label": "Completed agent workflows stay organized in one place."
+            "label": "See completed, running, and waiting agent work in one clear timeline."
           }
         ]
       }
@@ -377,7 +392,7 @@
           {
             "src": "artifacts-screen.png",
             "alt": "Standalone Pages app screen",
-            "label": "Begin from a focused canvas for interactive work."
+            "label": "See polished pages, live previews, and version history at a glance."
           }
         ]
       }
@@ -418,7 +433,7 @@
           {
             "src": "maps-screen.png",
             "alt": "Standalone Maps app screen",
-            "label": "Start a private map from any place idea."
+            "label": "Keep useful places together in visual, reusable maps."
           }
         ],
         "hero": "maps-hero.png"
@@ -531,7 +546,7 @@
           {
             "src": "notes-screen.png",
             "alt": "Standalone Notes app screen",
-            "label": "Capture a note or checklist in seconds."
+            "label": "Pin checklists and ideas in a calm, searchable workspace."
           }
         ]
       }
@@ -708,7 +723,7 @@
           {
             "src": "habits-screen.png",
             "alt": "Standalone Habits app screen",
-            "label": "Build a routine from a clear, encouraging start."
+            "label": "See today’s progress, streaks, and strength in one encouraging view."
           }
         ]
       }

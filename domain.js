@@ -1240,7 +1240,7 @@ export function buildUpdateFailureMessage({ item, installedApp, preview, error }
 // passes: the preview check is the single definition of ready.
 // What an agent is asked to do for one checklist item of a Store listing.
 const LISTING_AGENT_FOCUS = {
-  details: 'Create its mobius.json. It is an older app that runs a scheduled job: declare that job as the manifest `schedule` so accepting the revision keeps it running.',
+  details: 'Inspect the app source and create or repair its mobius.json without changing how the app runs. If it has a scheduled job, declare that job as the manifest `schedule` so accepting the revision keeps it running.',
   icon: 'Make an app icon that fits what the app does.',
   tagline: 'Write the one-line tagline.',
   description: 'Write the description: what it does, who it is for, and what stays private.',
@@ -1385,4 +1385,13 @@ export function libraryCollections(items, lifecycleById) {
   }
   for (const group of buckets) group.items.sort((a,b) => (a.manifest?.name || a.name || a.id).localeCompare(b.manifest?.name || b.name || b.id))
   return buckets.filter(group => group.items.length)
+}
+
+// The bundled edition is used only when no hosted Spotlight entries resolve.
+export function bundledSpotlights(items) {
+  return ['voice', 'maps', 'beat-machine', 'connect'].flatMap(id => {
+    const item = items.find(item => !item.community && String(item.manifest?.id || item.id).toLowerCase() === id)
+    const hero = (item?.listing || item?.manifest?.store)?.hero
+    return (typeof hero === 'string' ? hero : hero?.path) ? [item] : []
+  })
 }

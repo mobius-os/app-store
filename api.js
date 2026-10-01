@@ -164,7 +164,8 @@ export async function prepareListingImage(file) {
   const longest = Math.max(bitmap.width, bitmap.height)
   if (file.size <= LISTING_IMAGE_KEEP_BYTES && longest <= LISTING_IMAGE_MAX_SIDE) {
     bitmap.close?.()
-    return { data: await fileDataBase64(file), url: URL.createObjectURL(file) }
+    const data = await fileDataBase64(file)
+    return { data, url: `data:${file.type};base64,${data}` }
   }
   const scale = Math.min(1, LISTING_IMAGE_MAX_SIDE / longest)
   const canvas = document.createElement('canvas')
@@ -174,7 +175,8 @@ export async function prepareListingImage(file) {
   bitmap.close?.()
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.9))
   if (!blob) throw new Error('That image could not be prepared.')
-  return { data: await fileDataBase64(blob), url: URL.createObjectURL(blob) }
+  const data = await fileDataBase64(blob)
+  return { data, url: `data:${blob.type};base64,${data}` }
 }
 
 export async function registerCommunityRevision(

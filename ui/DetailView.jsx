@@ -138,7 +138,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           <ArrowLeft width="1em" height="1em" aria-hidden="true" /> Back
         </button>
       </div>
-      <div className="st-scroll">
+      <div className="st-scroll is-detail">
         {listingHero ? (
           <section className="st-detail-editorial" aria-labelledby="st-detail-name">
             {listingImage(listingHero, '', 'st-detail-editorial-image', 'eager')}
@@ -160,7 +160,9 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           </div>
         )}
 
-        <p className="st-detail-desc">{listingDescription}</p>
+        <div className="st-detail-desc-wrap">
+          <p className="st-detail-desc">{listingDescription}</p>
+        </div>
 
         {(m.author || m.license) ? (
           <div className="st-detail-byline">{[m.author, m.license].filter(Boolean).join(' · ')}</div>
