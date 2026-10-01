@@ -2311,6 +2311,17 @@ test('desktop measure applies to every direct scroll child without a class allow
   assert.doesNotMatch(theme, /\.st-scroll > \.st-[a-z-]+,\s*$/m)
 })
 
+test('app details share the browse rail while keeping prose readable', async () => {
+  const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  const theme = await readFile(join(root, '..', 'theme.js'), 'utf8')
+
+  assert.match(detail, /className="st-scroll is-detail"/)
+  assert.match(detail, /className="st-detail-desc-wrap"/)
+  assert.match(theme, /\.st-scroll\.is-detail > \* \{ max-width: 1180px; \}/)
+  assert.match(theme, /\.st-detail-desc \{ max-width: 72ch;/)
+  assert.match(theme, /\.st-detail-footer \{[\s\S]*?max-width: 1180px;/)
+})
+
 test('late detail artwork rules preserve the desktop centering margin', async () => {
   const theme = await readFile(join(root, '..', 'theme.js'), 'utf8')
 
