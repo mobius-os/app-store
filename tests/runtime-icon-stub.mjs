@@ -1,4 +1,5 @@
-function icon(props = {}) { return { type: 'svg', props } }
+import React from 'react'
+function icon(props = {}) { return React.createElement('svg', props) }
 
 export const ArrowLeft = icon
 export const ArrowDown = icon

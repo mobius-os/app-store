@@ -64,17 +64,19 @@ function ReviewEntry({ review, busy, onRetry }) {
   )
 }
 
-export function UpdateReviewModal({ review, applying = false, onClose, onApply, onRetry }) {
+export function UpdateReviewModal({ review, applying = false, preparing = false, agentReviewing = false, onClose, onApply, onRetry, onReviewWithAgent }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
   const openerRef = useRef(null)
   const entries = review.entries || [review]
   const verified = entries.filter(entry => entry.preview?.source_digest && !entry.outcome)
   const complete = entries.some(entry => entry.outcome)
+  const busy = applying || preparing || agentReviewing
+  const hasFailure = entries.some(entry => entry.previewError || entry.outcome?.error || entry.outcome?.resolverError)
 
   const requestClose = useCallback(() => {
-    if (!applying) onClose()
-  }, [applying, onClose])
+    if (!busy) onClose()
+  }, [busy, onClose])
 
   useEffect(() => {
     openerRef.current = document.activeElement
@@ -108,25 +110,30 @@ export function UpdateReviewModal({ review, applying = false, onClose, onApply, 
           <div>
             <h2 id="st-update-review-title" className="st-update-review-title">{complete ? 'Updates need attention' : entries.length === 1 ? 'Review update' : 'Review app updates'}</h2>
             <p className="st-update-review-subtitle">
-              {complete
-                ? 'Completed apps will not be updated again.'
-                : verified.length
-                  ? `Confirm once to update ${verified.length} verified ${verified.length === 1 ? 'app' : 'apps'} and start one resolver chat if local edits overlap.`
+              {verified.length
+                ? `Confirm once to update ${verified.length} verified ${verified.length === 1 ? 'app' : 'apps'} and start one resolver chat if local edits overlap.`
+                : complete
+                  ? 'These apps need attention. Completed apps will not be updated again.'
                   : 'No updates could be verified. Nothing will change.'}
             </p>
           </div>
-          <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} disabled={applying} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
+          <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} disabled={busy} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
         </div>
 
         <div className="st-update-review-body">
-          {entries.map(entry => <ReviewEntry key={entry.item.id} review={entry} busy={applying} onRetry={complete ? onRetry : null} />)}
+          {entries.map(entry => <ReviewEntry key={entry.item.id} review={entry} busy={busy} onRetry={onRetry} />)}
         </div>
 
         <div className="st-update-review-actions">
-          <button type="button" className="st-btn st-btn-ghost" onClick={requestClose} disabled={applying}>Not now</button>
-          {!complete && verified.length ? (
-            <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={applying}>
-              {applying ? 'Updating…' : entries.length === 1 ? 'Confirm update' : `Confirm & update · ${verified.length}`}
+          <button type="button" className="st-btn st-btn-ghost" onClick={requestClose} disabled={busy}>Not now</button>
+          {onReviewWithAgent ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={onReviewWithAgent} disabled={busy}>
+              {agentReviewing ? 'Opening agent…' : hasFailure ? 'Ask agent about error' : 'Review with agent'}
+            </button>
+          ) : null}
+          {verified.length ? (
+            <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={busy}>
+              {preparing ? 'Checking…' : applying ? 'Updating…' : entries.length === 1 ? 'Confirm update' : `Confirm & update · ${verified.length}`}
             </button>
           ) : null}
         </div>

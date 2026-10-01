@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { Pause, Play, ChevronLeft, ChevronRight, ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
 import { CatalogCard } from './CatalogCard.jsx'
-import { catalogCollection, newestPublications, libraryCollections } from '../domain.js'
+import { catalogCollection, newestPublications, libraryCollections, bundledSpotlights } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
 
@@ -141,7 +141,7 @@ export function CatalogList({
     : []
   const spotlights = hostedSpotlights.length
     ? hostedSpotlights
-    : discover ? items.filter((item) => listingHero(item)).slice(0, 3) : []
+    : discover ? bundledSpotlights(items) : []
   const [spotlightIndex, setSpotlightIndex] = useState(0)
   const [spotlightHoverPaused, setSpotlightHoverPaused] = useState(false)
   const [spotlightFocusPaused, setSpotlightFocusPaused] = useState(false)
@@ -222,7 +222,7 @@ export function CatalogList({
     />
   )
   const spotlightIds = new Set(spotlights.map((item) => item.id))
-  const pickPool = discover ? items.filter((item) => !spotlightIds.has(item.id)) : []
+  const pickPool = discover ? items.filter((item) => !spotlightIds.has(item.id) && itemManifestId(item) !== 'connect') : []
   const pickRank = new Map(CURATED_PICK_IDS.map((id, index) => [id, index]))
   const picks = discover
     ? [...pickPool].sort((a, b) => {

@@ -170,7 +170,7 @@ test('every curated listing asset is packaged by the App Store', async () => {
     if (item.listing?.hero) referenced.add(item.listing.hero)
     for (const shot of item.listing?.screenshots || []) referenced.add(shot.src)
   }
-  assert.equal(referenced.size, 16)
+  assert.equal(referenced.size, 18)
   for (const filename of referenced) {
     assert.equal(
       manifest.static_assets[`previews/${filename}`],
@@ -525,7 +525,7 @@ test('local publishing is one reviewed action through the inherited GitHub accou
     public_identity: 'github',
   })
   assert.match(calls[0].options.headers['Idempotency-Key'], /^store:publish-local:/)
-  assert.match(publisherSource, /I want this accepted source revision to become public/)
+  assert.match(publisherSource, /want this exact source revision to become public/)
   assert.match(publisherSource, /onPublishLocal/)
   assert.match(publisherSource, /app\.icon_url/)
   assert.doesNotMatch(publisherSource, /\/api\/apps\/\$\{app\.id\}\/icon/)
@@ -603,11 +603,12 @@ test('publisher preview accepts only the latest app after back navigation', asyn
     label: 'second app',
     preview: { name: 'Second listing' },
   }])
-  assert.match(publisherSource, /const requestId = previewGateRef\.current\.begin\(\)/)
+  const requests = publisherSource.match(/const requestId = previewGateRef\.current\.begin\(\)/g)?.length || 0
+  assert.ok(requests >= 1)
   assert.equal(
     publisherSource.match(/if \(!previewGateRef\.current\.isCurrent\(requestId\)\) return/g)?.length,
-    2,
-    'both fulfilled and rejected stale previews must be ignored',
+    requests * 2,
+    'both fulfilled and rejected stale previews must be ignored for every request',
   )
   assert.match(publisherSource, /function closePreview[\s\S]*previewGateRef\.current\.invalidate\(\)/)
 })
@@ -1319,6 +1320,151 @@ test('readErrorDetail formats FastAPI validation payloads', async () => {
   )
 })
 
+test('a not-ready listing opens one agent brief that fixes it without publishing', async () => {
+  const { buildListingAgentMessage } = await bundle()
+  const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
+  const brief = buildListingAgentMessage({
+    app,
+    problem: 'Add a Store listing with a tagline, description, and screenshots before publishing.',
+  })
+  assert.match(brief, /cannot publish Scorekeeper yet/)
+  assert.match(brief, /Add a Store listing with a tagline/)
+  assert.match(brief, /\/data\/apps\/scorekeeper/)
+  assert.match(brief, /"Store listing" in \/data\/shared\/skills\/building-apps\.md/)
+  assert.match(brief, /preview\?app_id=7/)
+  assert.match(brief, /never the owner's own data/)
+  assert.match(brief, /Do not publish/)
+
+  const revise = buildListingAgentMessage({ app, problem: '' })
+  assert.match(revise, /wants to revise the App Store listing of Scorekeeper/)
+})
+
+test('a checklist item hands an agent just that part of the listing', async () => {
+  const { buildListingAgentMessage } = await bundle()
+  const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
+  const brief = buildListingAgentMessage({ app, problem: '', focus: 'screenshots' })
+  assert.match(brief, /one part of the App Store listing of Scorekeeper/)
+  assert.match(brief, /1–5 truthful screenshots/)
+  assert.match(brief, /keep what the owner already wrote/)
+  assert.match(brief, /Do not publish/)
+  const details = buildListingAgentMessage({ app, problem: '', focus: 'details' })
+  assert.match(details, /Inspect the app source/)
+  assert.match(details, /If it has a scheduled job/)
+  assert.doesNotMatch(details, /It is an older app that runs a scheduled job/)
+})
+
+test('chosen listing image previews need no object URL lifetime', async () => {
+  const { prepareListingImage } = await import('../api.js')
+  const oldReader = globalThis.FileReader
+  const oldBitmap = globalThis.createImageBitmap
+  let closed = false
+  globalThis.FileReader = class {
+    readAsDataURL(file) {
+      this.result = `data:${file.type};base64,QUJD`
+      this.onload()
+    }
+  }
+  globalThis.createImageBitmap = async () => ({
+    width: 10, height: 10, close() { closed = true },
+  })
+  try {
+    assert.deepEqual(await prepareListingImage({ size: 3, type: 'image/png' }), {
+      data: 'QUJD', url: 'data:image/png;base64,QUJD',
+    })
+    assert.equal(closed, true)
+  } finally {
+    globalThis.FileReader = oldReader
+    globalThis.createImageBitmap = oldBitmap
+  }
+})
+
+test('an edited listing saves as one whole listing, keeping unchanged images by path', async () => {
+  const { listingDraftFromPreview, listingPayload } = await bundle()
+  const preview = {
+    asset_root: '/api/x/',
+    draft: {
+      tagline: ' Small. ', description: 'Calm.', icon: 'icon.png', hero: 'static/store/h.png',
+      screenshots: [{ src: 'static/store/a.png', alt: 'A', label: '' }, { src: '', alt: 'gone', label: '' }],
+    },
+  }
+  const draft = listingDraftFromPreview(preview, { icon_url: '/icon' })
+  assert.equal(draft.icon.url, '/api/x/icon.png')
+  assert.equal(draft.screenshots[0].url, '/api/x/static/store/a.png')
+  const unchanged = listingPayload(draft)
+  assert.deepEqual(unchanged, {
+    tagline: 'Small.', description: 'Calm.',
+    hero: { path: 'static/store/h.png' },
+    screenshots: [{ path: 'static/store/a.png', alt: 'A' }],
+  })
+  const edited = listingPayload({
+    ...draft, iconChanged: true, icon: { data: 'ICON', url: 'blob:1' }, hero: null,
+    screenshots: [...draft.screenshots, { key: 'n', data: 'SHOT', url: 'blob:2', alt: ' New ', label: 'Cap' }],
+  })
+  assert.deepEqual(edited.icon, { data_base64: 'ICON' })
+  assert.equal(edited.hero, null)
+  assert.deepEqual(edited.screenshots[1], { data_base64: 'SHOT', alt: 'New', label: 'Cap' })
+  const legacy = listingDraftFromPreview({ draft: { screenshots: [] } }, { icon_url: '/icon' })
+  assert.equal(legacy.icon.url, '/icon')
+  assert.equal(listingPayload(legacy).icon, undefined)
+})
+
+test('the publish review lets the owner fill in the listing by hand', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const editor = await readFile(join(root, '..', 'ui', 'ListingEditor.jsx'), 'utf8')
+  assert.match(source, /<ListingChecklist/)
+  assert.match(source, /<ListingEditor/)
+  assert.match(source, /Edit listing/)
+  assert.match(editor, /Save listing/)
+  assert.match(editor, /Ask an agent/)
+  assert.match(editor, /Do it all with an agent/)
+  assert.match(editor, /not your own/)
+})
+
+test('editing and accepting a new listing revision invalidate publish consent', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const showPreview = source.slice(source.indexOf('function showPreview('), source.indexOf('async function prepare('))
+  const saveListing = source.slice(source.indexOf('async function saveListing('), source.indexOf('function closePreview('))
+  assert.match(showPreview, /setConfirmed\(false\)/)
+  assert.match(saveListing, /setConfirmed\(false\)/)
+  assert.match(source, /onClick=\{\(\) => \{ setConfirmed\(false\); setEditing\(true\) \}\}/)
+  assert.match(source, /disabled=\{!confirmed \|\| !localRepositoryValid/)
+})
+
+test('a late image preparation cannot change a different listing draft', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  const editor = await readFile(join(root, '..', 'ui', 'ListingEditor.jsx'), 'utf8')
+  assert.match(source, /key=\{`\$\{candidate\.id\}:\$\{preview\.accepted_commit\}`\}/)
+  assert.match(editor, /useEffect\(\(\) => \(\) => \{ pickSession\.current \+= 1 \}, \[\]\)/)
+  assert.match(editor, /const session = pickSession\.current/)
+  assert.match(editor, /if \(session === pickSession\.current\) apply\(image\)/)
+})
+
+test('the publish review offers a way forward instead of a dead end', async () => {
+  const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
+  assert.match(source, /This app isn’t ready to publish yet/)
+  assert.match(source, /Get it ready with an agent/)
+  assert.match(source, /Revise with an agent/)
+  assert.doesNotMatch(source, /Finish the Store listing first/)
+})
+
+test('readErrorDetail shows a structured error as its sentence, not raw JSON', async () => {
+  const { readErrorDetail } = await bundle()
+  const response = new Response(JSON.stringify({
+    detail: {
+      code: 'listing_incomplete',
+      message: 'Add a Store listing with a tagline, description, and screenshots before publishing.',
+    },
+  }), {
+    status: 409,
+    headers: { 'content-type': 'application/json' },
+  })
+
+  assert.equal(
+    await readErrorDetail(response, 'This app listing could not be prepared.'),
+    'Add a Store listing with a tagline, description, and screenshots before publishing.',
+  )
+})
+
 test('loadInstalledApps retries transient app-list failures', async () => {
   const oldFetch = globalThis.fetch
   let calls = 0
@@ -1755,7 +1901,7 @@ test('individual catalog updates keep a read-only review with bound digests', as
   assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token/)
   assert.ok(indexSource.includes('setUpdateReview(prepared)'))
   assert.match(indexSource, /filter\(entry => entry\.preview\?\.source_digest && !entry\.outcome\)/)
-  assert.match(indexSource, /filter\(entry => !entry\.preview\?\.source_digest\)/)
+  assert.match(indexSource, /filter\(entry => entry\.outcome \|\| !entry\.preview\?\.source_digest\)/)
   assert.ok(indexSource.includes('capabilityDigest: entry.capabilityReview.preview.capability_digest'))
   assert.ok(indexSource.includes('sourceDigest: entry.preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
@@ -1844,7 +1990,7 @@ test('confirmed conflicts are handed to one preserving resolver chat', async () 
   } finally {
     globalThis.fetch = oldFetch
   }
-  assert.match(indexSource, /const conflicts =[\s\S]*createConflictResolverBatch\([\s\S]*'preserve_local'/)
+  assert.match(indexSource, /const newConflicts = \[\][\s\S]*createConflictResolverBatch\([\s\S]*'preserve_local'/)
 })
 
 test('Update all applies verified non-widening releases and reviews wider access', async () => {
@@ -2309,6 +2455,17 @@ test('desktop measure applies to every direct scroll child without a class allow
 
   assert.match(theme, /\.st-scroll > \* \{\s*\n\s*max-width: 840px;\s*\n\s*margin-inline: auto;/)
   assert.doesNotMatch(theme, /\.st-scroll > \.st-[a-z-]+,\s*$/m)
+})
+
+test('app details share the browse rail while keeping prose readable', async () => {
+  const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
+  const theme = await readFile(join(root, '..', 'theme.js'), 'utf8')
+
+  assert.match(detail, /className="st-scroll is-detail"/)
+  assert.match(detail, /className="st-detail-desc-wrap"/)
+  assert.match(theme, /\.st-scroll\.is-detail > \* \{ max-width: 1180px; \}/)
+  assert.match(theme, /\.st-detail-desc \{ max-width: 72ch;/)
+  assert.match(theme, /\.st-detail-footer \{[\s\S]*?max-width: 1180px;/)
 })
 
 test('late detail artwork rules preserve the desktop centering margin', async () => {
