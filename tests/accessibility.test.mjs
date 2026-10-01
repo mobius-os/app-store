@@ -44,7 +44,7 @@ test('App Store preserves its reviewed immersive hold gesture', () => {
 })
 
 test('Browse presents a pausable auto-advancing spotlight while keeping ordinary category rows', () => {
-  assert.match(catalogList, /filter\(\(item\) => listingHero\(item\)\)\.slice\(0, 3\)/)
+  assert.match(catalogList, /discover \? bundledSpotlights\(items\) : \[\]/)
   assert.match(catalogList, /Array\.isArray\(spotlightFeed\?\.items\)/)
   assert.match(catalogList, /hostedSpotlights\.length/)
   assert.match(catalogList, /className="st-spotlight-stage"/)

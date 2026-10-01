@@ -170,7 +170,7 @@ test('every curated listing asset is packaged by the App Store', async () => {
     if (item.listing?.hero) referenced.add(item.listing.hero)
     for (const shot of item.listing?.screenshots || []) referenced.add(shot.src)
   }
-  assert.equal(referenced.size, 16)
+  assert.equal(referenced.size, 18)
   for (const filename of referenced) {
     assert.equal(
       manifest.static_assets[`previews/${filename}`],
