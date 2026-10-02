@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { STORE_SELF } from '../constants.js'
-import { fetchUpdateCheck, installApp, loadUpdateCandidatePreview } from '../api.js'
+import { createConflictResolverChat, fetchUpdateCheck, installApp, loadUpdateCandidatePreview, openChat } from '../api.js'
 import { capabilityDiffNeedsReview } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
@@ -13,8 +13,9 @@ export function SelfUpdateBanner({ appId, token }) {
   const [review, setReview] = useState(null)
   const [showReview, setShowReview] = useState(false)
   const [updateCheck, setUpdateCheck] = useState(null)
-  const [phase, setPhase] = useState('idle')   // idle | updating | done | conflict | error
+  const [phase, setPhase] = useState('idle')   // idle | updating | resolving | done | conflict | error
   const [msg, setMsg] = useState('')
+  const [resolverChatId, setResolverChatId] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -27,17 +28,43 @@ export function SelfUpdateBanner({ appId, token }) {
         }
       })
       .catch(() => {})   // a failed self-check is silent — never block the grid
-    fetchUpdateCheck(appId, token, STORE_SELF.manifest_url)
-      .then(check => { if (!cancelled) setUpdateCheck(check) })
-    return () => { cancelled = true }
+    const checkUpdate = () => fetchUpdateCheck(appId, token, STORE_SELF.manifest_url)
+      .then(check => {
+        if (cancelled || !check) return
+        setUpdateCheck(current => check.pendingUpdateState === 'unknown' && current?.pendingUpdateState === 'needs_resolution'
+          ? current : check)
+        if (check.pendingUpdateState !== 'needs_resolution' && check.pendingUpdateState !== 'unknown') {
+          setPhase(current => current === 'conflict' || current === 'resolving' ? 'idle' : current)
+          setResolverChatId(null)
+        }
+      })
+    checkUpdate()
+    window.addEventListener('focus', checkUpdate)
+    return () => { cancelled = true; window.removeEventListener('focus', checkUpdate) }
   }, [appId, token])
 
   const latest = review?.preview?.manifest
+  const needsResolution = updateCheck?.pendingUpdateState === 'needs_resolution' || phase === 'conflict' || phase === 'resolving'
   const hasUpdate = latest && updateCheck?.available === true
+  const releaseName = latest?.version || updateCheck?.upstreamVersion
   const accessDiff = review?.preview?.capability_diff
   const needsAccessReview = capabilityDiffNeedsReview(accessDiff)
   const previousAccessUnrecorded = accessDiff?.unknown_previous === true
-  if (phase !== 'done' && phase !== 'conflict' && !hasUpdate) return null
+  if (phase !== 'done' && !needsResolution && !hasUpdate) return null
+
+  const onResolve = async () => {
+    if (resolverChatId) return openChat(resolverChatId)
+    setPhase('resolving'); setMsg('')
+    try {
+      const resolver = await createConflictResolverChat(appId, 'preserve_local', token)
+      setResolverChatId(resolver.chat_id)
+      setPhase('conflict')
+      openChat(resolver.chat_id)
+    } catch (e) {
+      setPhase('conflict')
+      setMsg(e.message || 'The resolver agent could not start.')
+    }
+  }
 
   const onUpdate = async () => {
     if (needsAccessReview && !showReview) {
@@ -55,11 +82,8 @@ export function SelfUpdateBanner({ appId, token }) {
         reviewed_upstream_commit: review.candidate.upstream_commit,
       })
       if (result.mode === 'conflict') {
-        const paths = result.conflict_paths?.length
-          ? ` Conflicts: ${result.conflict_paths.join(', ')}.`
-          : ''
+        setUpdateCheck(current => ({ ...current, available: true, pendingUpdateState: 'needs_resolution' }))
         setPhase('conflict')
-        setMsg(`Blocked by local App Store edits.${paths}`)
         return
       }
       setPhase('done')
@@ -83,15 +107,18 @@ export function SelfUpdateBanner({ appId, token }) {
     <div className={`st-banner${showReview ? ' is-reviewing' : ''}`}>
       {phase === 'done' ? (
         <>
-          <div className="st-banner-msg">App Store updated to v{latest.version}. Reload to apply.</div>
+          <div className="st-banner-msg">App Store updated to v{releaseName}. Reload to apply.</div>
           <button className="st-banner-btn" onClick={() => window.location.reload()}>Reload</button>
         </>
-      ) : phase === 'conflict' ? (
+      ) : needsResolution ? (
         <>
           <div className="st-banner-msg">
-            App Store v{latest.version} is available, but the update is blocked. {msg}
+            App Store {releaseName ? `v${releaseName} ` : ''}needs help merging changes. Your current version stays available.
+            {msg ? ` ${msg}` : ''}
           </div>
-          <button className="st-banner-btn" onClick={onUpdate}>Retry</button>
+          <button className="st-banner-btn" disabled={phase === 'resolving'} onClick={onResolve}>
+            {phase === 'resolving' ? 'Starting agent…' : resolverChatId ? 'Open agent' : 'Resolve with agent'}
+          </button>
         </>
       ) : (
         <>
