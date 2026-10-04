@@ -13,9 +13,20 @@ export function SelfUpdateBanner({ appId, token }) {
   const [review, setReview] = useState(null)
   const [showReview, setShowReview] = useState(false)
   const [updateCheck, setUpdateCheck] = useState(null)
-  const [phase, setPhase] = useState('idle')   // idle | updating | resolving | done | conflict | error
+  const [phase, setPhase] = useState('idle')   // idle | updating | resolving | done | error
   const [msg, setMsg] = useState('')
   const [resolverChatId, setResolverChatId] = useState(null)
+  const needsResolution = updateCheck?.pendingUpdateState === 'needs_resolution'
+
+  // A transient unknown check must not erase a known conflict; a confirmed
+  // non-conflict state clears it and forgets the resolver chat.
+  const applyCheck = check => {
+    setUpdateCheck(current => check.pendingUpdateState === 'unknown' && current?.pendingUpdateState === 'needs_resolution'
+      ? current : check)
+    if (check.pendingUpdateState !== 'needs_resolution' && check.pendingUpdateState !== 'unknown') {
+      setResolverChatId(null)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -28,23 +39,23 @@ export function SelfUpdateBanner({ appId, token }) {
         }
       })
       .catch(() => {})   // a failed self-check is silent — never block the grid
-    const checkUpdate = () => fetchUpdateCheck(appId, token, STORE_SELF.manifest_url)
-      .then(check => {
-        if (cancelled || !check) return
-        setUpdateCheck(current => check.pendingUpdateState === 'unknown' && current?.pendingUpdateState === 'needs_resolution'
-          ? current : check)
-        if (check.pendingUpdateState !== 'needs_resolution' && check.pendingUpdateState !== 'unknown') {
-          setPhase(current => current === 'conflict' || current === 'resolving' ? 'idle' : current)
-          setResolverChatId(null)
-        }
-      })
-    checkUpdate()
-    window.addEventListener('focus', checkUpdate)
-    return () => { cancelled = true; window.removeEventListener('focus', checkUpdate) }
+    fetchUpdateCheck(appId, token, STORE_SELF.manifest_url)
+      .then(check => { if (!cancelled && check) applyCheck(check) })
+    return () => { cancelled = true }
   }, [appId, token])
 
+  // Each check fetches the Store's upstream under a source lock, so re-check on
+  // focus only while a conflict is showing, to clear it once it is resolved.
+  useEffect(() => {
+    if (!needsResolution) return
+    let cancelled = false
+    const recheck = () => fetchUpdateCheck(appId, token, STORE_SELF.manifest_url)
+      .then(check => { if (!cancelled && check) applyCheck(check) })
+    window.addEventListener('focus', recheck)
+    return () => { cancelled = true; window.removeEventListener('focus', recheck) }
+  }, [appId, token, needsResolution])
+
   const latest = review?.preview?.manifest
-  const needsResolution = updateCheck?.pendingUpdateState === 'needs_resolution' || phase === 'conflict' || phase === 'resolving'
   const hasUpdate = latest && updateCheck?.available === true
   const releaseName = latest?.version || updateCheck?.upstreamVersion
   const accessDiff = review?.preview?.capability_diff
@@ -58,10 +69,10 @@ export function SelfUpdateBanner({ appId, token }) {
     try {
       const resolver = await createConflictResolverChat(appId, 'preserve_local', token)
       setResolverChatId(resolver.chat_id)
-      setPhase('conflict')
+      setPhase('idle')
       openChat(resolver.chat_id)
     } catch (e) {
-      setPhase('conflict')
+      setPhase('idle')
       setMsg(e.message || 'The resolver agent could not start.')
     }
   }
@@ -83,7 +94,7 @@ export function SelfUpdateBanner({ appId, token }) {
       })
       if (result.mode === 'conflict') {
         setUpdateCheck(current => ({ ...current, available: true, pendingUpdateState: 'needs_resolution' }))
-        setPhase('conflict')
+        setPhase('idle')
         return
       }
       setPhase('done')

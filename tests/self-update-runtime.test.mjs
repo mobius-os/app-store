@@ -157,3 +157,48 @@ test('a transient unknown check keeps the agent offer until resolution is confir
     await view.close()
   }
 })
+
+test('focus does not re-check for a Store update unless a conflict is showing', async () => {
+  let checks = 0
+  const view = await mount(async (url) => {
+    if (String(url).includes('/update-candidate-preview')) return json({ detail: 'offline' }, 503)
+    if (String(url).includes('/update-check')) {
+      checks++
+      if (checks === 1) return json({ update_available: true, pending_update_state: 'needs_resolution' })
+      return json({ update_available: false, pending_update_state: 'none' })
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  const focus = () => act(async () => view.dom.window.dispatchEvent(new view.dom.window.Event('focus')))
+  try {
+    assert.equal(checks, 1)
+    await focus()
+    assert.equal(checks, 2)
+    assert.equal(view.dom.window.document.querySelector('.st-banner'), null)
+    await focus()
+    await focus()
+    assert.equal(checks, 2)
+  } finally {
+    await view.close()
+  }
+})
+
+test('focus never checks for a Store update when nothing is pending', async () => {
+  let checks = 0
+  const view = await mount(async (url) => {
+    if (String(url).includes('/update-candidate-preview')) return json({ detail: 'offline' }, 503)
+    if (String(url).includes('/update-check')) {
+      checks++
+      return json({ update_available: false, pending_update_state: 'none' })
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  try {
+    for (let i = 0; i < 5; i++) {
+      await act(async () => view.dom.window.dispatchEvent(new view.dom.window.Event('focus')))
+    }
+    assert.equal(checks, 1)
+  } finally {
+    await view.close()
+  }
+})
