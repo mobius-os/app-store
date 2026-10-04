@@ -1394,10 +1394,10 @@ export const CSS = `
   min-height: 44px;
   touch-action: manipulation; user-select: none;
 }
-.st-banner-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-banner.is-conflict .st-banner-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 520px) {
-  .st-banner { flex-direction: column; align-items: stretch; }
-  .st-banner-btn { width: 100%; }
+  .st-banner.is-conflict { flex-direction: column; align-items: stretch; }
+  .st-banner.is-conflict .st-banner-btn { width: 100%; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .st-banner-btn:not(:disabled):active { opacity: 0.8; transform: scale(0.97); }

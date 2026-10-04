@@ -44,8 +44,9 @@ export function SelfUpdateBanner({ appId, token }) {
     return () => { cancelled = true }
   }, [appId, token])
 
-  // Each check fetches the Store's upstream under a source lock, so re-check on
-  // focus only while a conflict is showing, to clear it once it is resolved.
+  // While a conflict is showing, re-check on focus so the banner clears once it
+  // is resolved. A check with a pending receipt only reads that receipt (no
+  // upstream fetch), and nothing is re-checked when no conflict is showing.
   useEffect(() => {
     if (!needsResolution) return
     let cancelled = false
@@ -58,6 +59,9 @@ export function SelfUpdateBanner({ appId, token }) {
   const latest = review?.preview?.manifest
   const hasUpdate = latest && updateCheck?.available === true
   const releaseName = latest?.version || updateCheck?.upstreamVersion
+  // A pending conflict belongs to its receipt's version, which can be older
+  // than the newest published release.
+  const conflictVersion = updateCheck?.upstreamVersion || latest?.version
   const accessDiff = review?.preview?.capability_diff
   const needsAccessReview = capabilityDiffNeedsReview(accessDiff)
   const previousAccessUnrecorded = accessDiff?.unknown_previous === true
@@ -115,7 +119,7 @@ export function SelfUpdateBanner({ appId, token }) {
   }
 
   return (
-    <div className={`st-banner${showReview ? ' is-reviewing' : ''}`}>
+    <div className={`st-banner${showReview ? ' is-reviewing' : ''}${phase !== 'done' && needsResolution ? ' is-conflict' : ''}`}>
       {phase === 'done' ? (
         <>
           <div className="st-banner-msg">App Store updated to v{releaseName}. Reload to apply.</div>
@@ -124,7 +128,7 @@ export function SelfUpdateBanner({ appId, token }) {
       ) : needsResolution ? (
         <>
           <div className="st-banner-msg">
-            App Store {releaseName ? `v${releaseName} ` : ''}needs help merging changes. Your current version stays available.
+            App Store {conflictVersion ? `v${conflictVersion} ` : ''}needs help merging changes. Your current version stays available.
             {msg ? ` ${msg}` : ''}
           </div>
           <button className="st-banner-btn" disabled={phase === 'resolving'} onClick={onResolve}>

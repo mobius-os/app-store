@@ -202,3 +202,49 @@ test('focus never checks for a Store update when nothing is pending', async () =
     await view.close()
   }
 })
+
+test('a pending conflict names its receipt version, not a newer published release', async () => {
+  const view = await mount(async (url) => {
+    const path = String(url)
+    if (path.includes('/update-check')) return json({
+      update_available: true, pending_update_state: 'needs_resolution', upstream_version: '1.21.4',
+    })
+    if (path.includes('/update-candidate-preview')) return json({
+      app_id: 1, source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40),
+      capability_preview: {
+        manifest: { version: '1.22.0' }, capability_digest: 'c'.repeat(64),
+        capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
+      },
+    })
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  try {
+    const text = view.dom.window.document.body.textContent
+    assert.match(text, /App Store v1\.21\.4 needs help/)
+    assert.doesNotMatch(text, /1\.22\.0/)
+    assert.ok(view.dom.window.document.querySelector('.st-banner.is-conflict'))
+  } finally {
+    await view.close()
+  }
+})
+
+test('the conflict layout class stays off the existing update banner', async () => {
+  const view = await mount(async (url) => {
+    const path = String(url)
+    if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+    if (path.includes('/update-candidate-preview')) return json({
+      app_id: 1, source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40),
+      capability_preview: {
+        manifest: { version: '1.22.0' }, capability_digest: 'c'.repeat(64),
+        capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
+      },
+    })
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  try {
+    assert.match(view.dom.window.document.body.textContent, /Update App Store/)
+    assert.equal(view.dom.window.document.querySelector('.st-banner').className, 'st-banner')
+  } finally {
+    await view.close()
+  }
+})
