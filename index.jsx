@@ -1,4 +1,5 @@
 import { openDetailEntry, closeDetailEntry } from './store-navigation.js'
+import { readStoreLocation, reportStoreLocation } from './store-location.js'
 import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
 // App Store — thin app shell. The module tree is declared in mobius.json's
 // source_files; the multi-file installer fetches each path and Rolldown bundles
@@ -384,7 +385,15 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
-  const [intentDestination, setIntentDestination] = useState(null)
+  // A place saved by this Store's previous frame is restored like a shell
+  // intent, once the catalog it points into has loaded.
+  const [intentDestination, setIntentDestination] = useState(() => {
+    const location = readStoreLocation(window.mobius?.nav)
+    return location ? { kind: 'location', location } : null
+  })
+  // Report the place only after a saved one is restored; the start screen
+  // would otherwise overwrite it first.
+  const placeRestoredRef = useRef(intentDestination === null)
   const [capabilityReviews, setCapabilityReviews] = useState({})
   const navDetailRef = useRef(null)  // host-owned reversible detail entry
   // B1: preserve the catalog grid's scroll across opening a detail and coming
@@ -1971,8 +1980,31 @@ export default function App({ appId, token }) {
     [displayCatalog, lifecycleById],
   )
 
+  // Declared before the intent effect so a restore never reports the place it
+  // is about to replace.
+  useEffect(() => {
+    if (!placeRestoredRef.current) return
+    reportStoreLocation(window.mobius?.nav, {
+      tab, category, query, activeCollection, detailId: detail?.id,
+    })
+  }, [tab, category, query, activeCollection, detail?.id])
+
   useEffect(() => {
     if (!intentDestination || loadingCatalog) return
+    placeRestoredRef.current = true
+    if (intentDestination.kind === 'location') {
+      const place = intentDestination.location
+      setIntentDestination(null)
+      selectTab(place.tab)
+      setCategory(place.category)
+      setQuery(place.query)
+      if (place.collection) void openCollection(place.collection)
+      const item = place.detail
+        ? [...displayCatalog, ...communityCatalog].find((candidate) => candidate.id === place.detail)
+        : null
+      if (item?.manifest) void openDetail(item)
+      return
+    }
     if (intentDestination.kind === 'updates') {
       setIntentDestination(null)
       closeDetail()
@@ -1997,7 +2029,10 @@ export default function App({ appId, token }) {
     }
     const item = resolution.item
     void openDetail(item)
-  }, [displayCatalog, intentDestination, loadingCatalog, openDetail, closeDetail, selectTab])
+  }, [
+    communityCatalog, displayCatalog, intentDestination, loadingCatalog,
+    openCollection, openDetail, closeDetail, selectTab,
+  ])
 
   // Detail view replaces the main layout when set.
   if (detail) {

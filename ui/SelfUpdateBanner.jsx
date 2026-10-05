@@ -121,10 +121,9 @@ export function SelfUpdateBanner({ appId, token }) {
   return (
     <div className={`st-banner${showReview ? ' is-reviewing' : ''}${phase !== 'done' && needsResolution ? ' is-conflict' : ''}`}>
       {phase === 'done' ? (
-        <>
-          <div className="st-banner-msg">App Store updated to v{releaseName}. Reload to apply.</div>
-          <button className="st-banner-btn" onClick={() => window.location.reload()}>Reload</button>
-        </>
+        // Möbius swaps in the new version by itself, and the Store reopens
+        // where the owner was on platforms that keep its place.
+        <div className="st-banner-msg">App Store updated to v{releaseName}.</div>
       ) : needsResolution ? (
         <>
           <div className="st-banner-msg">

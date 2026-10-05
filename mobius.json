@@ -65,7 +65,8 @@
     "ui/diff/styles.js",
     "LISTING_ART.md",
     "catalog-freshness.js",
-    "store-navigation.js"
+    "store-navigation.js",
+    "store-location.js"
   ],
   "static_assets": {
     "previews/artifacts-screen.png": "listing-assets/artifacts-screen.png",
