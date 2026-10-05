@@ -5,12 +5,16 @@ import {
   CheckCircleFilled, Circle, ImageSquare, Plus, Sparkles, Trash,
 } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useEffect, useId, useRef, useState } from 'react'
+import { LISTING_LIMITS } from '../constants.js'
 import { utf8Length } from '../domain.js'
 
-const TAGLINE_MAX = 120
-const DESCRIPTION_MAX = 4000
-const ALT_MAX = 300
-const MAX_SCREENSHOTS = 5
+const {
+  taglineBytes: TAGLINE_MAX,
+  descriptionBytes: DESCRIPTION_MAX,
+  altBytes: ALT_MAX,
+  captionBytes: CAPTION_MAX,
+  screenshots: MAX_SCREENSHOTS,
+} = LISTING_LIMITS
 
 function Counter({ value, max }) {
   const used = utf8Length(value)
@@ -160,7 +164,7 @@ export function ListingEditor({
                      placeholder="What this shows (required)"
                      onChange={(event) => updateShot(shot.key, { alt: event.target.value })} />
               <input aria-label={`Screenshot ${index + 1}: caption`} value={shot.label}
-                     placeholder="Caption (optional)" maxLength={120}
+                     placeholder="Caption (optional)" maxLength={CAPTION_MAX}
                      onChange={(event) => updateShot(shot.key, { label: event.target.value })} />
             </div>
           ))}

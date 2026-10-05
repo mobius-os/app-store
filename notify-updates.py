@@ -24,6 +24,12 @@ from pathlib import Path
 API = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 TOKEN = os.environ.get("APP_TOKEN", "")
 APP_ID = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else ""
+# Update checks git-fetch each candidate, and the server bounds that fetch by
+# lack of progress rather than wall time, so a slow but healthy check can take
+# well over 30 s. This deadline only stops the job from waiting forever; a
+# check that runs out is "could not check right now" and is skipped. The Store
+# page keeps the same value as UPDATE_CHECK_DEADLINE_MS in api.js.
+UPDATE_CHECK_TIMEOUT_SECONDS = 120
 
 
 def catalog_manifest_urls():
@@ -57,14 +63,14 @@ def catalog_manifest_urls():
   return urls
 
 
-def request(method: str, path: str, body=None):
+def request(method: str, path: str, body=None, timeout: float = 12):
   headers = {"Authorization": f"Bearer {TOKEN}"}
   data = None
   if body is not None:
     data = json.dumps(body, separators=(",", ":")).encode()
     headers["Content-Type"] = "application/json"
   req = urllib.request.Request(API + path, data=data, headers=headers, method=method)
-  with urllib.request.urlopen(req, timeout=12) as response:
+  with urllib.request.urlopen(req, timeout=timeout) as response:
     raw = response.read()
     return json.loads(raw) if raw else None
 
@@ -88,6 +94,7 @@ def available_updates():
       )
       check = request(
         "GET", f"/api/apps/{int(app['id'])}/update-check{query}",
+        timeout=UPDATE_CHECK_TIMEOUT_SECONDS,
       ) or {}
     except (OSError, ValueError, urllib.error.HTTPError):
       return None

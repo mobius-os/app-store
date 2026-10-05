@@ -30,7 +30,7 @@ class UpdateNotifierTests(unittest.TestCase):
     expected_query = urllib.parse.urlencode({"manifest_url": workout_url})
     paths = []
 
-    def request(method, path, body=None):
+    def request(method, path, body=None, timeout=None):
       paths.append(path)
       if path == "/api/apps/":
         return [{
@@ -55,6 +55,32 @@ class UpdateNotifierTests(unittest.TestCase):
       paths,
       ["/api/apps/", f"/api/apps/7/update-check?{expected_query}"],
     )
+
+  def test_update_checks_wait_the_shared_deadline_and_skip_on_timeout(self):
+    timeouts = {}
+
+    def request(method, path, body=None, timeout=None):
+      if path == "/api/apps/":
+        return [
+          {"id": 7, "name": "Slow", "manifest_url": "https://example.test/slow/mobius.json"},
+          {"id": 8, "name": "Ready", "manifest_url": "https://example.test/ready/mobius.json"},
+        ]
+      timeouts[path] = timeout
+      if path.startswith("/api/apps/7/"):
+        raise TimeoutError("timed out")
+      return {"update_available": True, "upstream_version": "2.0.0"}
+
+    with mock.patch.object(notifier, "APP_ID", "39"), mock.patch.object(
+      notifier, "request", side_effect=request,
+    ):
+      self.assertEqual(notifier.available_updates(), [{
+        "id": 8, "name": "Ready", "revision": "2.0.0",
+      }])
+
+    self.assertEqual(
+      set(timeouts.values()), {notifier.UPDATE_CHECK_TIMEOUT_SECONDS},
+    )
+    self.assertGreaterEqual(notifier.UPDATE_CHECK_TIMEOUT_SECONDS, 60)
 
   def test_unchanged_update_set_does_not_repeat_notification(self):
     updates = [{
