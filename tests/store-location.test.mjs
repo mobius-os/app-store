@@ -31,10 +31,13 @@ test('a restored place is validated and anything unknown falls back', () => {
   }), { tab: 'browse', category: 'update', query: 'notes', collection: 'play', detail: 'community:abc-1' })
 })
 
-test('category names and collection IDs come from the Store domain', () => {
-  const catalog = [{ categories: ['Personal Finance', 'Creative'] }]
-  assert.equal(restoredStoreLocation({ tab: 'browse', category: 'personal finance' }, catalog).category, 'Personal Finance')
-  assert.equal(restoredStoreLocation({ tab: 'browse', category: 'nonexistent' }, catalog).category, 'all')
+test('restoration accepts only reachable filters and known collection IDs', () => {
+  for (const category of ['all', 'update', 'setup']) {
+    assert.equal(restoredStoreLocation({ tab: 'library', category }).category, category)
+  }
+  for (const category of ['installed', 'personal finance', 'nonexistent']) {
+    assert.equal(restoredStoreLocation({ tab: 'browse', category }).category, 'all')
+  }
   assert.equal(restoredStoreLocation({ tab: 'browse', collection: 'nonexistent' }).collection, null)
   for (const collection of ['picks', 'arrivals', 'play', 'other-installed']) {
     assert.equal(restoredStoreLocation({ tab: 'browse', collection }).collection, collection)
@@ -153,13 +156,13 @@ function fakeNav(location, { delayed = false } = {}) {
 const selectedTab = dom => dom.window.document.querySelector('[role="tab"][aria-selected="true"]')?.id
 
 test('the Store reopens a saved tab and filter and never reports Browse first', async () => {
-  const nav = fakeNav({ tab: 'library', category: 'installed', query: '', collection: null, detail: null })
+  const nav = fakeNav({ tab: 'library', category: 'setup', query: '', collection: null, detail: null })
   const view = await mountStore(nav)
   try {
     await until(() => nav.reports.length > 0)
     assert.equal(selectedTab(view.dom), 'st-tab-library')
     assert.ok(nav.reports.every(place => place.tab === 'library'), JSON.stringify(nav.reports))
-    assert.equal(nav.reports.at(-1).category, 'installed')
+    assert.equal(nav.reports.at(-1).category, 'setup')
 
     await act(async () => view.dom.window.document.querySelector('#st-tab-browse').click())
     assert.equal(nav.reports.at(-1).tab, 'browse')
@@ -240,7 +243,7 @@ const communityRow = {
 test('a community detail resolves by identity beyond the first catalog page', async () => {
   const target = deferred()
   let requested = false
-  const nav = fakeNav({ tab: 'browse', category: 'personal finance', detail: 'community:beyond-page-one' })
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'community:beyond-page-one' })
   const view = await mountStore(nav, path => {
     if (path === '/api/community/apps/beyond-page-one') { requested = true; return target.promise }
     if (path.startsWith('/api/community/apps?')) return json({
@@ -254,7 +257,7 @@ test('a community detail resolves by identity beyond the first catalog page', as
     await act(async () => target.resolve(json(communityRow)))
     await until(() => nav.reports.at(-1)?.detail === 'community:beyond-page-one')
     assert.deepEqual(nav.opened, ['app-store-detail'])
-    assert.equal(nav.reports.at(-1).category, 'Personal Finance')
+    assert.equal(nav.reports.at(-1).category, 'all')
     assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Distant app')
     assert.ok(nav.reports.every(place => place.detail === 'community:beyond-page-one'))
   } finally { await view.close() }
@@ -273,7 +276,7 @@ test('a removed community target completes with the list fallback', async () => 
 test('installed-only detail waits for its manifest hydration', async () => {
   const manifest = deferred()
   let requested = false
-  const nav = fakeNav({ tab: 'library', category: 'installed', detail: 'other-installed-34' })
+  const nav = fakeNav({ tab: 'library', category: 'setup', detail: 'other-installed-34' })
   const view = await mountStore(nav, path => {
     if (path === '/api/apps/') return json([{
       id: 34, slug: 'linked', name: 'Linked App', version: '1.0.0',
@@ -377,7 +380,7 @@ test('Updates intent closes an owned detail and collection before showing Librar
 })
 
 test('an app intent whose manifest is unavailable searches for the named app without a stranded detail', async () => {
-  const nav = fakeNav({ tab: 'library', category: 'installed' })
+  const nav = fakeNav({ tab: 'library', category: 'setup' })
   const view = await mountStore(nav, path => path.startsWith('/api/proxy?') && path.includes('catalog.json')
     ? json({ schema: 1, apps: [{
       id: 'network-app', name: 'Network app',
@@ -408,4 +411,148 @@ test('an app intent retargets an owned detail without replacing its Back entry',
     await act(async () => nav.entries[0].callbacks.onForward())
     assert.equal(nav.reports.at(-1).detail, 'notes')
   } finally { await view.close() }
+})
+
+test('saved scalars are visible and reported before registry hydration', async () => {
+  const registry = deferred()
+  const nav = fakeNav({ tab: 'library', category: 'setup', query: 'voice' })
+  const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
+  try {
+    assert.equal(selectedTab(view.dom), 'st-tab-library')
+    assert.equal(nav.reports.at(-1)?.category, 'setup')
+    assert.equal(nav.reports.at(-1)?.query, 'voice')
+  } finally { registry.resolve(json({ schema: 1, apps: [] })); await view.close() }
+})
+
+test('owner tab selection cancels a destination waiting for the registry', async () => {
+  const registry = deferred()
+  const nav = fakeNav({ tab: 'library', category: 'setup', detail: 'gone' })
+  const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
+  try {
+    await act(async () => view.dom.window.document.querySelector('#st-tab-publish').click())
+    await act(async () => registry.resolve(json({ schema: 1, apps: [] })))
+    await until(() => nav.reports.length > 0)
+    assert.equal(selectedTab(view.dom), 'st-tab-publish')
+    assert.equal(nav.reports.at(-1).tab, 'publish')
+    assert.deepEqual(nav.opened, [])
+  } finally { await view.close() }
+})
+
+test('opening a card cancels a slow community restore without closing the owner entry', async () => {
+  const target = deferred()
+  let signal
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'community:beyond-page-one' })
+  const view = await mountStore(nav, (path, options) => {
+    if (path === '/api/community/apps/beyond-page-one') { signal = options.signal; return target.promise }
+  })
+  try {
+    await until(() => signal)
+    await act(async () => view.dom.window.document.querySelector('[aria-label="Voice — open details"]').click())
+    const ownerEntry = nav.entries.at(-1)
+    await act(async () => target.resolve(json(communityRow)))
+    await until(() => nav.reports.length > 0)
+    assert.equal(signal.aborted, true)
+    assert.equal(ownerEntry.closed, false)
+    assert.equal(nav.reports.at(-1).detail, 'voice')
+    assert.deepEqual(nav.opened, ['app-store-detail'])
+  } finally { await view.close() }
+})
+
+test('a shell intent for a baked target opens before registry hydration', async () => {
+  const registry = deferred()
+  const nav = fakeNav(undefined)
+  const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
+  try {
+    await view.intent('app:voice')
+    assert.deepEqual(nav.opened, ['app-store-detail'])
+    assert.equal(nav.reports.at(-1)?.detail, 'voice')
+  } finally { registry.resolve(json({ schema: 1, apps: [] })); await view.close() }
+})
+
+test('an installed alias restores its current registry representative and reports the canonical id', async () => {
+  const nav = fakeNav({ tab: 'library', category: 'all', detail: 'other-installed-34' })
+  const view = await mountStore(nav, path => {
+    if (path === '/api/apps/') return json([{
+      id: 34, slug: 'linked', name: 'Linked App', version: '1.0.0',
+      manifest_url: 'https://example.test/linked#manifest-id=linked',
+      source_manifest: { id: 'linked', url: 'https://example.test/linked/mobius.json' },
+    }])
+    if (path.includes('catalog.json')) return json({ schema: 1, apps: [{
+      id: 'linked', name: 'Linked App', manifest_url: 'https://example.test/linked/mobius.json',
+      raw_base: 'https://example.test/linked/',
+    }] })
+    if (path.startsWith('/api/proxy?') && path.includes('example.test')) return json({
+      id: 'linked', name: 'Linked App', version: '1.0.0',
+    })
+  })
+  try {
+    await until(() => nav.reports.length > 0)
+    assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Linked App')
+    assert.equal(nav.reports.at(-1).detail, 'linked')
+  } finally { await view.close() }
+})
+
+test('a loaded community detail survives an unavailable identity endpoint without a refetch', async () => {
+  const registry = deferred()
+  let identityRequests = 0
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'community:beyond-page-one' })
+  const view = await mountStore(nav, path => {
+    if (path.includes('catalog.json')) return registry.promise
+    if (path.startsWith('/api/community/apps?')) return json({ items: [communityRow] })
+    if (path === '/api/community/apps/beyond-page-one') { identityRequests++; return json({}, 503) }
+  })
+  try {
+    await act(async () => registry.resolve(json({ schema: 1, apps: [] })))
+    await until(() => nav.reports.length > 0)
+    assert.equal(identityRequests, 0)
+    assert.equal(nav.reports.at(-1).detail, 'community:beyond-page-one')
+  } finally { await view.close() }
+})
+
+test('owner card selection cancels pending restored ownership before opening its own entry', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'voice' }, { delayed: true })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.entries.length === 1)
+    await act(async () => view.dom.window.document.querySelector('[aria-label="Notes — open details"]').click())
+    assert.equal(nav.entries.length, 2)
+    assert.equal(nav.entries[0].closed, true)
+    assert.equal(nav.entries[1].closed, false)
+    await act(async () => { nav.entries[0].own(); nav.entries[1].own() })
+    await until(() => nav.reports.at(-1)?.detail === 'notes')
+    assert.equal(nav.entries[1].closed, false)
+    assert.equal(nav.reports.some(place => place.detail === 'voice'), false)
+  } finally { await view.close() }
+})
+
+test('Back during collection-to-detail restoration cancels both restore-owned entries', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' }, { delayed: true })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.entries.length === 1)
+    await act(async () => nav.entries[0].own())
+    await until(() => nav.entries.length === 2)
+    await act(async () => nav.entries[0].callbacks.onBack())
+    await act(async () => nav.entries[1].own())
+    await until(() => nav.reports.length > 0)
+    assert.ok(nav.entries.every(entry => entry.closed))
+    assert.equal(nav.reports.at(-1).collection, null)
+    assert.equal(nav.reports.at(-1).detail, null)
+  } finally { await view.close() }
+})
+
+test('a newer shell destination closes only the pending entry created by the old intent', async () => {
+  const registry = deferred()
+  const nav = fakeNav(undefined, { delayed: true })
+  const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
+  try {
+    await view.intent('app:voice')
+    assert.equal(nav.entries.length, 1)
+    await view.intent('app:gone')
+    assert.equal(nav.entries[0].closed, true)
+    await act(async () => nav.entries[0].own())
+    await act(async () => registry.resolve(json({ schema: 1, apps: [] })))
+    await until(() => nav.reports.at(-1)?.detail === null)
+    assert.equal(nav.reports.some(place => place.detail === 'voice'), false)
+  } finally { registry.resolve(json({ schema: 1, apps: [] })); await view.close() }
 })
