@@ -1,4 +1,5 @@
-import { validateManifestUrl } from './domain.js'
+import { LISTING_LIMITS } from './constants.js'
+import { textWithinByteLimit, validateManifestUrl } from './domain.js'
 
 export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
 export const SYSTEM_SETUP_READY_KEY = 'mobius:system-setup-ready:v1'
@@ -340,6 +341,11 @@ export async function loadInstalledApps(token, opts = {}) {
   throw new Error(lastError?.message || 'Installed apps could not be loaded.')
 }
 
+// Browser background probes have a wall-clock deadline and degrade to unknown
+// when it expires. This is independent of the server's Git inactivity bound
+// and notify-updates.py's socket inactivity timeout; neither is a total deadline.
+export const UPDATE_CHECK_DEADLINE_MS = 120_000
+
 // GET /api/apps/{id}/update-check — the backend's git-native "does the app
 // repo's actual content differ from the recorded upstream?" probe. It is
 // authoritative over the client-side semver compare precisely because it
@@ -352,12 +358,17 @@ export async function loadInstalledApps(token, opts = {}) {
 // NEVER throws and NEVER retries: it runs from focus/visibility listeners whose
 // callers have no rejection handler, so a read-only availability probe must
 // degrade to null rather than let a rejection escape and strand the grid.
+// A check that outlives UPDATE_CHECK_DEADLINE_MS is likewise null: the Store
+// could not check right now, which is not an error.
 export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), UPDATE_CHECK_DEADLINE_MS)
   try {
     const query = candidateManifestUrl
       ? `?manifest_url=${encodeURIComponent(validateManifestUrl(candidateManifestUrl))}`
       : ''
     const r = await fetch(`/api/apps/${appId}/update-check${query}`, {
+      signal: controller.signal,
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!r.ok) return null
@@ -374,6 +385,8 @@ export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') 
     }
   } catch {
     return null
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -516,41 +529,37 @@ export async function fetchCatalog(url, token, opts = {}) {
   const raw = body.apps
   const httpsStr = (v) => typeof v === 'string' && /^https:\/\//.test(v)
   const sameHost = (a, b) => { try { return new URL(a).host === new URL(b).host } catch { return false } }
-  const cleanList = (list, limit = 8) => {
+  const cleanString = (value) => typeof value === 'string' ? value.trim() || undefined : undefined
+  const cleanList = (list) => {
     if (!Array.isArray(list)) return []
     const seen = new Set()
     const out = []
     for (const raw of list) {
       if (typeof raw !== 'string') continue
-      const value = raw.trim().replace(/\s+/g, ' ').slice(0, 48)
+      const value = cleanString(raw)
+      if (!value) continue
       const key = value.toLowerCase()
-      if (!value || seen.has(key)) continue
+      if (seen.has(key)) continue
       seen.add(key)
       out.push(value)
-      if (out.length >= limit) break
     }
     return out
-  }
-  const cleanString = (value, max = 140) => {
-    if (typeof value !== 'string') return undefined
-    const out = value.trim().replace(/\s+/g, ' ').slice(0, max)
-    return out || undefined
   }
   const normalizeSetup = (setup) => {
     if (!setup || typeof setup !== 'object' || Array.isArray(setup)) return null
     const scope = ['system', 'app', 'none'].includes(setup.scope) ? setup.scope : 'app'
-    const rawSection = cleanString(setup.section, 32)
+    const rawSection = cleanString(setup.section)
     const section = ['ai-providers', 'background-agents', 'image-generation', 'models'].includes(rawSection)
       ? rawSection
       : (scope === 'system' ? 'background-agents' : '')
-    const fields = cleanList(setup.fields, 6)
+    const fields = cleanList(setup.fields)
     return {
       required: setup.required === true,
       scope,
       section,
-      label: cleanString(setup.label, 48) || (scope === 'system' ? 'System setup' : 'Setup'),
-      description: cleanString(setup.description, 220) || '',
-      action: cleanString(setup.action, 48) || (scope === 'system' ? 'Open Settings' : 'Open app'),
+      label: cleanString(setup.label) || (scope === 'system' ? 'System setup' : 'Setup'),
+      description: cleanString(setup.description) || '',
+      action: cleanString(setup.action) || (scope === 'system' ? 'Open Settings' : 'Open app'),
       fields,
     }
   }
@@ -563,18 +572,18 @@ export async function fetchCatalog(url, token, opts = {}) {
     const hero = cleanAsset(typeof listing.hero === 'string' ? listing.hero : listing.hero?.path)
     const screenshots = []
     if (Array.isArray(listing.screenshots)) {
-      for (const rawShot of listing.screenshots.slice(0, 6)) {
+      for (const rawShot of listing.screenshots.slice(0, LISTING_LIMITS.screenshots)) {
         const src = cleanAsset(typeof rawShot === 'string' ? rawShot : rawShot?.src)
         if (!src) continue
         screenshots.push({
           src,
-          alt: cleanString(rawShot?.alt, 140) || '',
-          label: cleanString(rawShot?.label, 72) || '',
+          alt: textWithinByteLimit(rawShot?.alt, LISTING_LIMITS.altBytes) || '',
+          label: textWithinByteLimit(rawShot?.label, LISTING_LIMITS.captionBytes) || '',
         })
       }
     }
-    const tagline = cleanString(listing.tagline, 96)
-    const description = cleanString(listing.description, 480)
+    const tagline = textWithinByteLimit(listing.tagline, LISTING_LIMITS.taglineBytes)
+    const description = textWithinByteLimit(listing.description, LISTING_LIMITS.descriptionBytes)
     if (!hero && screenshots.length === 0 && !tagline && !description) return null
     return {
       ...(hero ? { hero } : {}),
@@ -605,7 +614,8 @@ export async function fetchCatalog(url, token, opts = {}) {
     const collection = [
       'productivity', 'everyday', 'create', 'explore', 'play', 'developer',
     ].includes(e.collection) ? e.collection : null
-    const summary = cleanString(e.summary, 96)
+    // The catalog summary plays the listing tagline's role, so it shares its bound.
+    const summary = textWithinByteLimit(e.summary, LISTING_LIMITS.taglineBytes)
     const preview = typeof e.preview === 'string' && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(e.preview)
       ? e.preview
       : undefined
@@ -613,7 +623,7 @@ export async function fetchCatalog(url, token, opts = {}) {
     entries.push({
       id: e.id,
       name: cleanString(e.name),
-      description: cleanString(e.description),
+      description: textWithinByteLimit(e.description, LISTING_LIMITS.descriptionBytes),
       ...(summary ? { summary } : {}),
       ...(preview ? { preview } : {}),
       ...(listing ? { listing } : {}),
@@ -622,9 +632,9 @@ export async function fetchCatalog(url, token, opts = {}) {
       raw_base: e.raw_base,
       ...(audience ? { audience } : {}),
       ...(collection ? { collection } : {}),
-      categories: cleanList(e.categories, 6),
-      keywords: cleanList(e.keywords, 16),
-      capabilities: cleanList(e.capabilities, 12),
+      categories: cleanList(e.categories),
+      keywords: cleanList(e.keywords),
+      capabilities: cleanList(e.capabilities),
       setup: normalizeSetup(e.setup),
     })
   }
@@ -773,7 +783,9 @@ export async function readJsonOrThrow(res, fallback) {
 }
 
 // Read-only preview of the currently published candidate. This fetches the
-// incoming release before anything is applied.
+// incoming release before anything is applied. Reviewing an update is
+// user-initiated, so there is deliberately no client deadline: the server
+// bounds its own candidate fetch and the caller shows progress.
 export async function loadUpdateCandidatePreview(appId, manifestUrl, token) {
   const query = manifestUrl
     ? `?manifest_url=${encodeURIComponent(manifestUrl)}`

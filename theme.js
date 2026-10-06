@@ -1943,7 +1943,7 @@ export const CSS = `
 .st-spotlight-slide-copy .st-icon-wrap { width: 60px; height: 60px; border-radius: 15px; box-shadow: 0 12px 30px #0009; }
 .st-spotlight-kicker { display: block; margin-bottom: 7px; color: rgba(255,255,255,.68); font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .st-spotlight-slide-copy h3 { margin: 0 0 7px; font-size: clamp(34px, 5vw, 56px); line-height: .94; letter-spacing: -.05em; }
-.st-spotlight-slide-copy p { margin: 0; max-width: 42ch; color: rgba(255,255,255,.8); font-size: clamp(13px, 1.5vw, 16px); line-height: 1.42; }
+.st-spotlight-slide-copy p { margin: 0; max-width: 42ch; color: rgba(255,255,255,.8); font-size: clamp(13px, 1.5vw, 16px); line-height: 1.42; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
 .st-spotlight-open {
   min-width: 108px; min-height: 44px; padding: 0 16px; border: 1px solid rgba(255,255,255,.3); border-radius: 999px;
   color: white; background: rgba(8,8,10,.5); backdrop-filter: blur(12px);
