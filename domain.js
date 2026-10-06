@@ -1,4 +1,4 @@
-import { PERM_EXPLAIN, TRUSTED_HOSTS } from './constants.js'
+import { CATALOG_COLLECTIONS, PERM_EXPLAIN, TRUSTED_HOSTS } from './constants.js'
 
 export function catalogItemIdFromIntent(intent) {
   if (typeof intent !== 'string') return null
@@ -25,9 +25,16 @@ export function storeDestinationFromMessage(event, expectedOrigin, expectedSourc
   return storeDestinationFromIntent(event.data.intent)
 }
 
-export function resolveCatalogItemIntent(catalog, itemId) {
+export function installedCatalogItemId(appId) {
+  return `other-installed-${appId}`
+}
+
+export function resolveCatalogItemIntent(catalog, itemId, installed = []) {
+  // Installed aliases survive becoming represented by a registry listing.
+  const app = installed.find(row => installedCatalogItemId(row.id) === itemId)
   const item = Array.isArray(catalog)
-    ? catalog.find(candidate => candidate.id === itemId)
+    ? (app && catalog.find(candidate => findInstalled(installed, candidate)?.id === app.id))
+      || catalog.find(candidate => candidate.id === itemId)
     : null
   if (!item) {
     return {
@@ -316,7 +323,7 @@ export function otherInstalledCatalogItems(
     const manifestUrl = app.source_manifest.url
     if (!manifestId || !manifestUrl) continue
     items.push({
-      id: `other-installed-${app.id}`,
+      id: installedCatalogItemId(app.id),
       source_manifest: app.source_manifest,
       collection: 'other-installed',
       manifest_url: manifestUrl,
@@ -801,16 +808,7 @@ export function catalogAudience(item) {
   return isSystemCatalogItem(item) ? 'developer' : 'general'
 }
 
-const CATALOG_COLLECTIONS = new Set([
-  'productivity',
-  'everyday',
-  'create',
-  'explore',
-  'play',
-  'developer',
-  'community',
-  'other-installed',
-])
+const CATALOG_COLLECTION_IDS = new Set(CATALOG_COLLECTIONS.map(({ id }) => id))
 
 // Editorial placement is a discovery lens, while these app identities have a
 // durable owner-facing job: understanding and organizing agent work. Keep the
@@ -826,13 +824,13 @@ export function catalogCollection(item) {
     return 'community'
   }
   if (item?.community && curatedHome) {
-    return CATALOG_COLLECTIONS.has(curatedHome) ? curatedHome : 'community'
+    return CATALOG_COLLECTION_IDS.has(curatedHome) ? curatedHome : 'community'
   }
   if (AGENT_PRODUCTIVITY_IDS.has(String(item?.id || '').toLowerCase())) {
     return 'productivity'
   }
   const curated = String(item?.collection || '').trim().toLowerCase()
-  if (CATALOG_COLLECTIONS.has(curated)) return curated
+  if (CATALOG_COLLECTION_IDS.has(curated)) return curated
 
   const categories = itemCategories(item).map((category) => category.toLowerCase())
   if (catalogAudience(item) === 'developer' || categories.includes('system')) {

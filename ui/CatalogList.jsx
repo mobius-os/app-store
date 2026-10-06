@@ -1,52 +1,10 @@
 import { useEffect, useState, useRef } from 'react'
 import { Pause, Play, ChevronLeft, ChevronRight, ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
+import { CATALOG_COLLECTIONS, EDITORIAL_COLLECTIONS } from '../constants.js'
 import { CatalogCard } from './CatalogCard.jsx'
 import { catalogCollection, newestPublications, libraryCollections, bundledSpotlights } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
-
-const CATALOG_COLLECTIONS = [
-  {
-    id: 'productivity',
-    title: 'Productivity',
-    description: 'Understand how your agent works and keep work organized.',
-  },
-  {
-    id: 'everyday',
-    title: 'Everyday',
-    description: 'Plan your day, stay informed, and build routines that stick.',
-  },
-  {
-    id: 'create',
-    title: 'Create',
-    description: 'Make websites, documents, and interactive ideas with your agent.',
-  },
-  {
-    id: 'explore',
-    title: 'Explore & learn',
-    description: 'Travel the world and learn something new along the way.',
-  },
-  {
-    id: 'play',
-    title: 'Play',
-    description: 'Make some noise or chase a high score.',
-  },
-  {
-    id: 'developer',
-    title: 'Build & run Möbius',
-    description: 'Shape how Möbius thinks, works, and evolves.',
-  },
-  {
-    id: 'community',
-    title: 'From the community',
-    description: 'Open-source apps you can inspect, install, and improve together.',
-  },
-  {
-    id: 'other-installed',
-    title: 'Other installed apps',
-    description: 'Published apps outside the main catalog, with updates checked at their source.',
-  },
-]
 
 const CURATED_PICK_IDS = [
   'pages',
@@ -244,8 +202,9 @@ export function CatalogList({
     }))
     .filter((group) => group.items.length > 0)
   const collections = [
-    {id: 'picks', title: 'Our picks', items: picks},
-    {id: 'arrivals', title: 'New arrivals', description: 'Freshly published, newest first.', items: arrivals},
+    ...EDITORIAL_COLLECTIONS.map(group => ({
+      ...group, items: group.id === 'picks' ? picks : group.id === 'arrivals' ? arrivals : [],
+    })),
     ...groups,
   ]
   const selectedCollection = collections.find(group => group.id === activeCollection)

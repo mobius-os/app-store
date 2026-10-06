@@ -1,4 +1,5 @@
 import { openDetailEntry, closeDetailEntry } from './store-navigation.js'
+import { restoredStoreLocation, storeLocation } from './store-location.js'
 import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
 // App Store — thin app shell. The module tree is declared in mobius.json's
 // source_files; the multi-file installer fetches each path and Rolldown bundles
@@ -67,6 +68,7 @@ import {
   hasConnectedProvider,
   installApp,
   loadCommunityApps,
+  loadCommunityApp,
   loadCommunityReviews,
   loadCommunityIdentity,
   loadEditorialSpotlight,
@@ -327,13 +329,17 @@ function itemIdsSettledByChecks(items, apps, checks) {
 }
 
 export default function App({ appId, token }) {
-  const [tab, setTab] = useState('browse')
-  const [query, setQuery] = useState('')
+  const [savedLocation] = useState(() => {
+    const nav = window.mobius?.nav
+    return typeof nav?.setLocation === 'function' ? restoredStoreLocation(nav.location) : null
+  })
+  const [tab, setTab] = useState(savedLocation?.tab || 'browse')
+  const [query, setQuery] = useState(savedLocation?.query || '')
   const [activeCollection, setActiveCollection] = useState(null)
   const collectionNavRef = useRef(null)
   const shelfScrollRef = useRef({})
   const homeScrollRef = useRef(0)
-  const [category, setCategory] = useState('all')
+  const [category, setCategory] = useState(savedLocation?.category || 'all')
   const [catalog, setCatalog] = useState(() =>
     CATALOG.map(c => ({ ...c, manifest: c.manifest || null, error: null }))
   )
@@ -384,7 +390,22 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
-  const [intentDestination, setIntentDestination] = useState(null)
+  // Only nested destinations need data and host Back ownership. Scalars are
+  // already restored on first paint, without waiting for network hydration.
+  const [intentDestination, setIntentDestination] = useState(() =>
+    savedLocation?.collection || savedLocation?.detail
+      ? savedLocation.collection
+        ? { kind: 'collection', collectionId: savedLocation.collection, itemId: savedLocation.detail, restored: true }
+        : { kind: 'app', itemId: savedLocation.detail, restored: true } : null
+  )
+  // Cancel synchronously before an owner action can reuse a pending Back entry.
+  const cancelDestinationRef = useRef(null)
+  const cancelPendingDestination = useCallback(() => {
+    const cancel = cancelDestinationRef.current
+    cancelDestinationRef.current = null
+    cancel?.()
+    setIntentDestination(null)
+  }, [])
   const [capabilityReviews, setCapabilityReviews] = useState({})
   const navDetailRef = useRef(null)  // host-owned reversible detail entry
   // B1: preserve the catalog grid's scroll across opening a detail and coming
@@ -393,6 +414,7 @@ export default function App({ appId, token }) {
   const gridScrollRef = useRef(null)
   const savedGridScrollRef = useRef(0)
   const selectTab = useCallback((next) => {
+    if (next === 'browse') setCategory('all')
     if (next === tab) return
     collectionNavRef.current?.close()
     collectionNavRef.current = null
@@ -426,6 +448,14 @@ export default function App({ appId, token }) {
   const [agentErrorItemId, setAgentErrorItemId] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
   const [searchOpen, setSearchOpen] = useState(false)
+  const searchVisible = searchOpen || !!query
+  // Covers every control, including assistive clicks, before it can reuse a
+  // restore-owned Back entry. Programmatic restoration dispatches no DOM events.
+  const ownerInteraction = {
+    onPointerDownCapture: cancelPendingDestination,
+    onKeyDownCapture: cancelPendingDestination,
+    onClickCapture: cancelPendingDestination,
+  }
   const searchInputRef = useRef(null)
   // A complete baked snapshot is usable on the very first render. Installed
   // state and the remote registry hydrate independently; neither should make a
@@ -438,6 +468,8 @@ export default function App({ appId, token }) {
   // skeleton for this one local read gives the first real card render its final,
   // browser-cached icon URL on its first meaningful paint.
   const [loadingCatalog, setLoadingCatalog] = useState(true)
+  const [catalogHydrated, setCatalogHydrated] = useState(false)
+  const [catalogLoadError, setCatalogLoadError] = useState(false)
   const [installedLoadError, setInstalledLoadError] = useState('')
   // Seed the foreground debounce at mount so focus/pageshow cannot duplicate
   // the startup check before catalog hydration finishes.
@@ -460,11 +492,14 @@ export default function App({ appId, token }) {
         window.location.origin,
         window.parent,
       )
-      if (destination) setIntentDestination(destination)
+      if (destination) {
+        cancelPendingDestination()
+        setIntentDestination(destination)
+      }
     }
     window.addEventListener('message', onIntent)
     return () => window.removeEventListener('message', onIntent)
-  }, [])
+  }, [cancelPendingDestination])
 
   const clearSettledUpdateArtifacts = useCallback((itemIds) => {
     if (!itemIds?.size) return
@@ -573,8 +608,9 @@ export default function App({ appId, token }) {
         // main is enough. On fetch failure /
         // empty result, the baked CATALOG carries the store untouched.
         const remote = await remoteCatalogPromise
-        const entries = mergeCatalogEntries(CATALOG, remote)
         if (cancelled) return
+        setCatalogLoadError(remote === null)
+        const entries = mergeCatalogEntries(CATALOG, remote)
         // A baked manifest gives every discovery card a fast first paint, but
         // it must not freeze an installed app at the last Store release. Fetch
         // the live manifest for installed apps as well so human-facing release
@@ -604,7 +640,10 @@ export default function App({ appId, token }) {
         void refreshInstalled({ checkAll: true })
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
-        if (!cancelled) setLoadingCatalog(false)
+        if (!cancelled) {
+          setLoadingCatalog(false)
+          setCatalogHydrated(true)
+        }
       }
     }
     load()
@@ -1464,19 +1503,22 @@ export default function App({ appId, token }) {
 
   // Each nested level owns one reversible host entry. No iframe history or
   // timeout fallback: an unowned view would strand the device's Back gesture.
-  const openDetail = useCallback(item => openDetailEntry(navDetailRef, item, {
+  const openDetail = useCallback((item, signal) => openDetailEntry(navDetailRef, item, {
     nav: window.mobius.nav,
     show: setDetail,
+    signal,
+    cancelPendingDestination,
     prepare: target => {
       reviewCapabilities(target)
       if (!navDetailRef.current) savedGridScrollRef.current = gridScrollRef.current?.scrollTop || 0
     },
-  }), [reviewCapabilities])
+  }), [reviewCapabilities, cancelPendingDestination])
 
-  const openCollection = useCallback(async id => {
+  const openCollection = useCallback(async (id, signal) => {
     if (collectionNavRef.current) return
     homeScrollRef.current = gridScrollRef.current?.scrollTop || 0
     const leave = () => {
+      cancelPendingDestination()
       collectionNavRef.current = null
       savedGridScrollRef.current = homeScrollRef.current
       setActiveCollection(null)
@@ -1486,6 +1528,7 @@ export default function App({ appId, token }) {
       onBack: leave,
       onForward: () => {
         setTab('browse')
+        cancelPendingDestination()
         setCategory('all')
         collectionNavRef.current = handle
         savedGridScrollRef.current = 0
@@ -1493,12 +1536,18 @@ export default function App({ appId, token }) {
       },
     })
     collectionNavRef.current = handle
+    const cancel = () => {
+      if (collectionNavRef.current === handle) collectionNavRef.current = null
+      handle.close()
+    }
+    signal?.addEventListener('abort', cancel, { once: true })
     const {status} = await handle.outcome
+    signal?.removeEventListener('abort', cancel)
     if (collectionNavRef.current !== handle) { handle.close(); return }
     if (status !== 'owned') { collectionNavRef.current = null; return }
     savedGridScrollRef.current = 0
     setActiveCollection(id)
-  }, [])
+  }, [cancelPendingDestination])
 
   const closeCollection = useCallback(() => {
     collectionNavRef.current?.close()
@@ -1508,6 +1557,8 @@ export default function App({ appId, token }) {
   }, [])
 
   useEffect(() => () => {
+    cancelDestinationRef.current?.()
+    cancelDestinationRef.current = null
     navDetailRef.current?.handle.close()
     collectionNavRef.current?.close()
   }, [])
@@ -1968,37 +2019,91 @@ export default function App({ appId, token }) {
   )
 
   useEffect(() => {
-    if (!intentDestination || loadingCatalog) return
-    if (intentDestination.kind === 'updates') {
-      setIntentDestination(null)
-      closeDetail()
-      selectTab('library')
-      setCategory('update')
-      setQuery('')
-      return
+    const nav = window.mobius?.nav
+    if (!intentDestination && typeof nav?.setLocation === 'function') {
+      const location = storeLocation({
+        tab, category, query, activeCollection, detailId: detail?.id,
+      })
+      if (location) nav.setLocation(location)
     }
-    const resolution = resolveCatalogItemIntent(displayCatalog, intentDestination.itemId)
-    setIntentDestination(null)
-    if (resolution.action === 'unavailable') {
-      setToast(resolution.toast)
-      return
+  }, [intentDestination, tab, category, query, activeCollection, detail?.id])
+
+  const destinationResolution = useMemo(() =>
+    resolveCatalogItemIntent(displayCatalog, intentDestination?.itemId, installed),
+  [displayCatalog, intentDestination?.itemId, installed])
+
+  useEffect(() => {
+    // An intent is a one-shot command. Metadata refreshes may make a waiting
+    // target ready, but must not restart an ownership request already sent.
+    if (!intentDestination || cancelDestinationRef.current) return
+    const destination = intentDestination
+    const resolution = destinationResolution
+    const lookup = !resolution.item && destination.itemId?.startsWith('community:')
+    if (destination.kind === 'app') {
+      if (loadingCatalog || (!resolution.item && !catalogHydrated)) return
+      if (destination.restored && !lookup && (
+        resolution.item ? !resolution.item.manifest && (!destination.collectionId || !catalogHydrated)
+          : ((!destination.collectionId && (installedLoadError || catalogLoadError))
+          || otherInstalledCatalogSources.some(item => item.id === destination.itemId))
+      )) return
     }
-    selectTab('browse')
-    setCategory('all')
-    if (resolution.action === 'needs-connection') {
-      const item = resolution.item
-      setQuery(item.name || intentDestination.itemId)
-      setToast(resolution.toast)
-      return
+    const controller = new AbortController()
+    const { signal } = controller
+    cancelDestinationRef.current = () => controller.abort()
+    const finish = next => {
+      if (signal.aborted) return
+      cancelDestinationRef.current = null
+      setIntentDestination(next)
     }
-    const item = resolution.item
-    void openDetail(item)
-  }, [displayCatalog, intentDestination, loadingCatalog, openDetail, closeDetail, selectTab])
+    async function openDestination() {
+      if (destination.kind === 'updates') {
+        closeDetail()
+        closeCollection()
+        selectTab('library')
+        setCategory('update')
+        setQuery('')
+      } else if (destination.kind === 'collection') {
+        await openCollection(destination.collectionId, signal)
+        finish(destination.itemId
+          ? { kind: 'app', itemId: destination.itemId, restored: true, collectionId: destination.collectionId }
+          : null)
+        return
+      } else {
+        let item = resolution.item
+        if (lookup) {
+          try {
+            const row = await loadCommunityApp(token, destination.itemId.slice('community:'.length), { signal })
+            item = communityCatalogItems([row]).find(candidate => candidate.id === destination.itemId)
+            if (!item?.manifest && !destination.collectionId) return
+          } catch (error) {
+            if (signal.aborted || (error.status !== 404 && !destination.collectionId)) return
+          }
+        }
+        if (signal.aborted) return
+        if (!destination.restored && resolution.toast) setToast(resolution.toast)
+        if (!destination.restored && resolution.action !== 'unavailable') {
+          selectTab('browse')
+          setCategory('all')
+          if (resolution.action === 'needs-connection') setQuery(resolution.query)
+        }
+        if (item?.manifest) {
+          await openDetail(item, signal)
+          // A retargeted entry may still be awaiting its original host push.
+          await navDetailRef.current?.handle.outcome
+          if (destination.restored && !destination.collectionId && !navDetailRef.current?.owned) return
+        }
+      }
+      finish(null)
+    }
+    void openDestination()
+  }, [intentDestination, destinationResolution, loadingCatalog, catalogHydrated,
+    installedLoadError, catalogLoadError, otherInstalledCatalogSources, token,
+    closeDetail, closeCollection, selectTab, openCollection, openDetail])
 
   // Detail view replaces the main layout when set.
   if (detail) {
     return (
-      <div className="st-root">
+      <div className="st-root" {...ownerInteraction}>
         <style>{CSS}</style>
         <DetailView
           storeAppId={appId}
@@ -2068,7 +2173,7 @@ export default function App({ appId, token }) {
   }
 
   return (
-    <div className="st-root">
+    <div className="st-root" {...ownerInteraction}>
       <style>{CSS}</style>
       <h1 className="st-sr-only">App Store</h1>
       <div className="st-header">
@@ -2124,22 +2229,22 @@ export default function App({ appId, token }) {
               Publish
             </button>
           </div>
-          <div className={`st-header-search${searchOpen ? ' is-open' : ''}`}>
+          <div className={`st-header-search${searchVisible ? ' is-open' : ''}`}>
             <button
               type="button"
               className="st-header-search-toggle"
-              aria-label={searchOpen ? 'Close app search' : 'Search apps'}
-              aria-expanded={searchOpen}
+              aria-label={searchVisible ? 'Close app search' : 'Search apps'}
+              aria-expanded={searchVisible}
               onClick={() => {
-                if (searchOpen && query) setQuery('')
-                setSearchOpen((open) => !open)
+                if (searchVisible) setQuery('')
+                setSearchOpen(!searchVisible)
               }}
             >
-              {searchOpen
+              {searchVisible
                 ? <X width="1em" height="1em" aria-hidden="true" />
                 : <Search width="1em" height="1em" aria-hidden="true" />}
             </button>
-            {searchOpen ? (
+            {searchVisible ? (
               <div className="st-header-search-popover">
                 <label className="st-search-label" htmlFor="st-catalog-search">Search apps</label>
                 <Search width="1em" height="1em" aria-hidden="true" />
@@ -2222,7 +2327,7 @@ export default function App({ appId, token }) {
                     items={tab === 'library' ? libraryCatalog : visibleCatalog}
                     installed={installed}
                     updateChecks={updateChecks}
-                    onPick={(item) => item.manifest && openDetail(item)}
+                    onPick={item => { if (item.manifest) openDetail(item) }}
                     onRetry={retryCatalogItem}
                     onUpdate={handleCatalogUpdate}
                     onOpenInstalled={handleOpenInstalled}
