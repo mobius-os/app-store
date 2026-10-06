@@ -7,7 +7,7 @@ import {
   fetchCatalog, fetchUpdateCheck, loadUpdateCandidatePreview, UPDATE_CHECK_DEADLINE_MS,
 } from '../api.js'
 import { LISTING_LIMITS } from '../constants.js'
-import { textWithinByteLimit, utf8Length } from '../domain.js'
+import { filterCatalog, isSystemCatalogItem, textWithinByteLimit, utf8Length } from '../domain.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -55,10 +55,10 @@ test('catalog text within the platform listing contract reaches the UI whole', a
     })],
   }), () => fetchCatalog('https://raw.example/catalog.json', 'owner-token'))
 
-  assert.equal(item.description, description)
-  assert.equal(item.summary, tagline)
-  assert.equal(item.listing.tagline, tagline)
-  assert.equal(item.listing.description, description)
+  assert.equal(item.description, description.trim())
+  assert.equal(item.summary, tagline.trim())
+  assert.equal(item.listing.tagline, tagline.trim())
+  assert.equal(item.listing.description, description.trim())
   assert.equal(item.listing.screenshots.length, LISTING_LIMITS.screenshots)
   for (const shot of item.listing.screenshots) {
     assert.equal(shot.alt, alt)
@@ -75,11 +75,15 @@ test('the checked-in catalog is never shortened by the Store sanitizer', async (
   const byId = new Map(items.map(item => [item.id, item]))
   for (const entry of registry.apps) {
     const item = byId.get(entry.id)
-    assert.equal(item.description, entry.description, `${entry.id} description`)
-    assert.equal(item.summary, entry.summary, `${entry.id} summary`)
-    if (entry.listing?.tagline) assert.equal(item.listing.tagline, entry.listing.tagline, `${entry.id} tagline`)
-    if (entry.listing?.description) {
-      assert.equal(item.listing.description, entry.listing.description, `${entry.id} listing description`)
+    for (const field of ['name', 'description', 'summary', 'categories', 'keywords', 'capabilities', 'setup', 'listing', 'preview', 'audience', 'collection']) {
+      if (entry[field] === undefined) continue
+      if (field === 'setup' || field === 'listing') {
+        for (const [key, value] of Object.entries(entry[field])) {
+          assert.deepEqual(item[field][key], value, `${entry.id} ${field}.${key}`)
+        }
+      } else if (Array.isArray(entry[field])) {
+        for (const value of entry[field]) assert.ok(item[field].includes(value), `${entry.id} ${field}: ${value}`)
+      } else assert.deepEqual(item[field], entry[field], `${entry.id} ${field}`)
     }
   }
 })
@@ -100,19 +104,19 @@ test('catalog omits over-limit metadata without fabricating shortened copy', asy
       },
     })],
   }), () => fetchCatalog('https://raw.example/catalog.json', 'owner-token'))
-  assert.equal(item.name, undefined)
+  assert.equal(item.name, 'n'.repeat(141))
   assert.equal(item.description, undefined)
   assert.equal(item.summary, undefined)
-  assert.deepEqual(item.categories, ['valid'])
+  assert.deepEqual(item.categories, ['valid', 'x'.repeat(49)])
   assert.equal(item.listing.tagline, undefined)
   assert.equal(item.listing.description, undefined)
   assert.deepEqual(item.listing.screenshots, [{ src: 'shot.png', alt: '', label: '' }])
 })
 
-test('accepted text retains whitespace and UTF-8 boundaries', () => {
+test('accepted text trims padding and retains internal whitespace and UTF-8 boundaries', () => {
   const text = '  café\n\nwith  space '
-  assert.equal(textWithinByteLimit(text, utf8Length(text)), text)
-  assert.equal(textWithinByteLimit(text, utf8Length(text) - 1), undefined)
+  assert.equal(textWithinByteLimit(text, utf8Length(text.trim())), text.trim())
+  assert.equal(textWithinByteLimit(text, utf8Length(text.trim()) - 1), undefined)
   assert.equal(textWithinByteLimit(' ', 10), undefined)
   assert.equal(textWithinByteLimit(42, 10), undefined)
 })
@@ -155,4 +159,27 @@ test('a background update check that outlives its wall-clock deadline is unknown
   } finally {
     mock.timers.reset()
   }
+})
+
+test('catalog search retains every capability string, including Workflows lifecycle', async () => {
+  const registry = JSON.parse(await readFile(join(root, 'catalog.json'), 'utf8'))
+  const items = await withFetch(async () => jsonResponse(registry), () => fetchCatalog('https://raw.example/catalog.json', 'tok'))
+  assert.ok(filterCatalog(items, { query: 'lifecycle' }).some(item => item.id === 'workflows'))
+  for (const entry of registry.apps) {
+    for (const capability of entry.capabilities || []) {
+      assert.ok(filterCatalog(items, { query: capability }).some(item => item.id === entry.id), `${entry.id}: ${capability}`)
+    }
+  }
+})
+
+test('catalog trims and deduplicates categories and setup without guessed non-Latin byte caps', async () => {
+  const name = '界'.repeat(140)
+  const setup = { required: true, scope: 'system', section: ' models ', label: '界'.repeat(48), description: '界'.repeat(220), action: '界'.repeat(48), fields: [' 模型 ', '模型', '界'.repeat(48)] }
+  const [item] = await withFetch(async () => jsonResponse({ schema: 1, apps: [catalogEntry('padded', {
+    name: ` ${name} `, categories: [' System ', 'System', ' system '], setup,
+  })] }), () => fetchCatalog('https://raw.example/catalog.json', 'tok'))
+  assert.equal(item.name, name)
+  assert.deepEqual(item.categories, ['System'])
+  assert.ok(isSystemCatalogItem(item))
+  assert.deepEqual(item.setup, { ...setup, section: 'models', fields: ['模型', '界'.repeat(48)] })
 })

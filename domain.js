@@ -1276,8 +1276,9 @@ export function utf8Length(value) {
 // Invalid external copy is omitted, never rewritten to fit the listing contract.
 // Display-only shortening belongs to cards, not catalog data or detail views.
 export function textWithinByteLimit(value, maxBytes) {
-  if (typeof value !== 'string' || !value.trim()) return undefined
-  return utf8Length(value) <= maxBytes ? value : undefined
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed && utf8Length(trimmed) <= maxBytes ? trimmed : undefined
 }
 
 // The editable listing a Store preview describes, with image URLs resolved

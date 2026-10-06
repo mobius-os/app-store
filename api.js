@@ -529,38 +529,37 @@ export async function fetchCatalog(url, token, opts = {}) {
   const raw = body.apps
   const httpsStr = (v) => typeof v === 'string' && /^https:\/\//.test(v)
   const sameHost = (a, b) => { try { return new URL(a).host === new URL(b).host } catch { return false } }
-  const cleanList = (list, limit = 8) => {
+  const cleanString = (value) => typeof value === 'string' ? value.trim() || undefined : undefined
+  const cleanList = (list) => {
     if (!Array.isArray(list)) return []
     const seen = new Set()
     const out = []
     for (const raw of list) {
       if (typeof raw !== 'string') continue
-      const value = textWithinByteLimit(raw, 48)
+      const value = cleanString(raw)
       if (!value) continue
-      const key = value.trim().toLowerCase()
+      const key = value.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
       out.push(value)
-      if (out.length >= limit) break
     }
     return out
   }
-  const cleanString = (value, max = 140) => textWithinByteLimit(value, max)
   const normalizeSetup = (setup) => {
     if (!setup || typeof setup !== 'object' || Array.isArray(setup)) return null
     const scope = ['system', 'app', 'none'].includes(setup.scope) ? setup.scope : 'app'
-    const rawSection = cleanString(setup.section, 32)
+    const rawSection = cleanString(setup.section)
     const section = ['ai-providers', 'background-agents', 'image-generation', 'models'].includes(rawSection)
       ? rawSection
       : (scope === 'system' ? 'background-agents' : '')
-    const fields = cleanList(setup.fields, 6)
+    const fields = cleanList(setup.fields)
     return {
       required: setup.required === true,
       scope,
       section,
-      label: cleanString(setup.label, 48) || (scope === 'system' ? 'System setup' : 'Setup'),
-      description: cleanString(setup.description, 220) || '',
-      action: cleanString(setup.action, 48) || (scope === 'system' ? 'Open Settings' : 'Open app'),
+      label: cleanString(setup.label) || (scope === 'system' ? 'System setup' : 'Setup'),
+      description: cleanString(setup.description) || '',
+      action: cleanString(setup.action) || (scope === 'system' ? 'Open Settings' : 'Open app'),
       fields,
     }
   }
@@ -633,9 +632,9 @@ export async function fetchCatalog(url, token, opts = {}) {
       raw_base: e.raw_base,
       ...(audience ? { audience } : {}),
       ...(collection ? { collection } : {}),
-      categories: cleanList(e.categories, 6),
-      keywords: cleanList(e.keywords, 16),
-      capabilities: cleanList(e.capabilities, 12),
+      categories: cleanList(e.categories),
+      keywords: cleanList(e.keywords),
+      capabilities: cleanList(e.capabilities),
       setup: normalizeSetup(e.setup),
     })
   }
