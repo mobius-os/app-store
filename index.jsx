@@ -439,11 +439,8 @@ export default function App({ appId, token }) {
   // browser-cached icon URL on its first meaningful paint.
   const [loadingCatalog, setLoadingCatalog] = useState(true)
   const [installedLoadError, setInstalledLoadError] = useState('')
-  // Guard against overlapping refreshes when several visibility/focus
-  // events fire in quick succession (e.g. drawer-close + tab-focus on
-  // mobile fire visibilitychange and focus a frame apart). A simple
-  // boolean is enough — we only care that one refresh is in flight.
-  const refreshingRef = useRef(false)
+  // Concurrent foreground reads share the same installed-app response.
+  const refreshingRef = useRef(null)
   // Last git-native update check. Seeded at mount so the first focus right
   // after open doesn't immediately duplicate the initial check.
   // A focus flap (visibilitychange + focus a frame apart) won't refetch
@@ -455,7 +452,8 @@ export default function App({ appId, token }) {
   // Stamping "now" makes that first focus a reliable no-op until the 50s
   // window elapses; the mount effect re-stamps once catalog hydration lands.
   const lastUpdateCheckRef = useRef(Date.now())
-  const updateCheckingRef = useRef(false)
+  const updateCheckingRef = useRef(null)
+  const managedAppRevisionRef = useRef(0)
 
   useEffect(() => {
     function onIntent(event) {
@@ -489,6 +487,7 @@ export default function App({ appId, token }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
+      const revision = managedAppRevisionRef.current
       try {
         // Start the dynamic registry immediately, but do not put it on the
         // first-paint critical path. The baked snapshot catalog is already a
@@ -506,11 +505,13 @@ export default function App({ appId, token }) {
           }))
         if (cancelled) return
         const apps = installedResult.apps || []
-        if (installedResult.apps) {
-          setInstalled(apps)
-          setInstalledLoadError('')
-        } else {
-          setInstalledLoadError(installedResult.error)
+        if (revision === managedAppRevisionRef.current) {
+          if (installedResult.apps) {
+            setInstalled(apps)
+            setInstalledLoadError('')
+          } else {
+            setInstalledLoadError(installedResult.error)
+          }
         }
         setSetupCompletions(readSetupCompletions())
         setSystemSetupComplete(readSystemSetupReady())
@@ -560,15 +561,19 @@ export default function App({ appId, token }) {
         // ChecksFor never rejects (fetchUpdateCheck degrades to null), so no
         // unhandled rejection escapes; until these land the app remains usable,
         // and when they land they are the sole update authority.
-        const checkRows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
-        fetchUpdateChecksFor(checkRows, token, [
-          ...hydrated,
-          ...communityCatalogRef.current,
-        ]).then((map) => {
-          if (cancelled) return
-          setUpdateChecks((prev) => mergeUpdateChecks(prev, map))
-          clearSettledUpdateArtifacts(itemIdsSettledByChecks(hydrated, apps, map))
-        })
+        // A completion refresh owns any state newer than this mount snapshot.
+        if (revision === managedAppRevisionRef.current) {
+          const checkRows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
+          const request = fetchUpdateChecksFor(checkRows, token, [
+            ...hydrated,
+            ...communityCatalogRef.current,
+          ]).then((map) => {
+            if (cancelled) return
+            setUpdateChecks((prev) => mergeUpdateChecks(prev, map))
+            clearSettledUpdateArtifacts(itemIdsSettledByChecks(hydrated, apps, map))
+          }).finally(() => { updateCheckingRef.current = null })
+          updateCheckingRef.current = request
+        }
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
         if (!cancelled) setLoadingCatalog(false)
@@ -940,26 +945,23 @@ export default function App({ appId, token }) {
     return () => { cancelled = true }
   }, [otherInstalledCatalogSources, token])
 
-  // Returns the fresh installed rows, null if a refresh was already in flight,
-  // or null on a transport failure. A thrown fetch must NOT escape: this runs
-  // from a focus/visibility listener whose `.then()` has no rejection handler,
-  // so an unhandled rejection here would otherwise crash the refresh and could
-  // leave the grid reading "up to date" off a half-applied state. On failure we
-  // keep the prior `installed` state (a stale-but-present list beats blanking).
-  const refreshInstalled = useCallback(async () => {
-    if (refreshingRef.current) return null
-    refreshingRef.current = true
-    try {
-      const apps = await loadInstalledApps(token)
+  // Ordinary foreground reads join the current request. A completion event
+  // must read after any pre-event request, not adopt its potentially stale rows.
+  const refreshInstalled = useCallback(async ({ force = false } = {}) => {
+    if (refreshingRef.current) {
+      if (!force) return refreshingRef.current
+      await refreshingRef.current
+    }
+    const request = loadInstalledApps(token).then(apps => {
       setInstalled(apps)
       setInstalledLoadError('')
       return apps
-    } catch (err) {
+    }).catch(err => {
       setInstalledLoadError(err?.message || 'Installed apps could not be loaded.')
       return null
-    } finally {
-      refreshingRef.current = false
-    }
+    }).finally(() => { refreshingRef.current = null })
+    refreshingRef.current = request
+    return request
   }, [token])
 
   // Check installed app repos on foreground regain. This single git-native
@@ -968,9 +970,12 @@ export default function App({ appId, token }) {
   // GitHub. Catalog metadata refreshes from catalog.json on Store open; the
   // explicit per-card retry remains for a genuinely missing manifest.
   const REHYDRATE_DEBOUNCE_MS = 50_000
-  const refreshUpdateChecks = useCallback(async (installedApps) => {
-    if (updateCheckingRef.current) return
-    if (Date.now() - lastUpdateCheckRef.current < REHYDRATE_DEBOUNCE_MS) return
+  const refreshUpdateChecks = useCallback(async (installedApps, { force = false } = {}) => {
+    if (updateCheckingRef.current) {
+      if (!force) return updateCheckingRef.current
+      await updateCheckingRef.current
+    }
+    if (!force && Date.now() - lastUpdateCheckRef.current < REHYDRATE_DEBOUNCE_MS) return
     const apps = installedApps || []
     // Installed rows are the authoritative target list. This also covers apps
     // that arrived through a shared URL and therefore have no curated entry.
@@ -979,21 +984,19 @@ export default function App({ appId, token }) {
       lastUpdateCheckRef.current = Date.now()
       return
     }
-    updateCheckingRef.current = true
-    try {
-      const checks = await fetchUpdateChecksFor(checkRows, token, [
-        ...catalogRef.current,
-        ...communityCatalogRef.current,
-        ...otherInstalledCatalogRef.current,
-      ])
+    const request = fetchUpdateChecksFor(checkRows, token, [
+      ...catalogRef.current,
+      ...communityCatalogRef.current,
+      ...otherInstalledCatalogRef.current,
+    ]).then(checks => {
       setUpdateChecks(prev => mergeUpdateChecks(prev, checks))
       clearSettledUpdateArtifacts(itemIdsSettledByChecks(
         [...catalogRef.current, ...otherInstalledCatalogRef.current], apps, checks,
       ))
       lastUpdateCheckRef.current = Date.now()
-    } finally {
-      updateCheckingRef.current = false
-    }
+    }).finally(() => { updateCheckingRef.current = null })
+    updateCheckingRef.current = request
+    return request
   }, [appId, token, clearSettledUpdateArtifacts])
 
   const handleRetryInstalled = useCallback(async () => {
@@ -1032,9 +1035,7 @@ export default function App({ appId, token }) {
       if (document.visibilityState !== 'visible') return
       refreshSetupState().catch(() => {})
       refreshInstalled().then(apps => {
-        // refreshInstalled returns null if a refresh was already in flight OR
-        // on a transport failure; the in-flight one will land the rows, and the
-        // update probe is independently debounced, so skipping is safe.
+        // Failed reads preserve the previous list and skip the source check.
         if (apps) return refreshUpdateChecks(apps)
       }).catch(() => {
         // Belt-and-braces: refreshInstalled already swallows its own transport
@@ -1053,6 +1054,37 @@ export default function App({ appId, token }) {
       window.removeEventListener('pageshow', maybeRefresh)
     }
   }, [refreshInstalled, refreshUpdateChecks, refreshSetupState])
+
+  // Installs and resolver updates can finish outside the Store. Treat the
+  // parent's message as an invalidation, never as installed/update state.
+  useEffect(() => {
+    let active = true
+    let pending = false
+    let refreshing = false
+    async function refresh() {
+      refreshing = true
+      try {
+        while (active && pending) {
+          pending = false
+          const apps = await refreshInstalled({ force: true })
+          if (active && apps) await refreshUpdateChecks(apps, { force: true })
+        }
+      } finally {
+        refreshing = false
+      }
+    }
+    function onManagedAppEvent(event) {
+      if (event.source !== window.parent || event.data?.type !== 'moebius:managed-app-event') return
+      managedAppRevisionRef.current += 1
+      pending = true
+      if (!refreshing) refresh().catch(() => {})
+    }
+    window.addEventListener('message', onManagedAppEvent)
+    return () => {
+      active = false
+      window.removeEventListener('message', onManagedAppEvent)
+    }
+  }, [refreshInstalled, refreshUpdateChecks])
 
   // Re-fetch a single catalog manifest. Wired into CatalogCard's
   // "Try again" affordance — replaces the previous behavior where a
