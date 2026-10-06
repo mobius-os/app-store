@@ -1,5 +1,5 @@
 import { LISTING_LIMITS } from './constants.js'
-import { boundText, validateManifestUrl } from './domain.js'
+import { textWithinByteLimit, validateManifestUrl } from './domain.js'
 
 export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
 export const SYSTEM_SETUP_READY_KEY = 'mobius:system-setup-ready:v1'
@@ -341,12 +341,9 @@ export async function loadInstalledApps(token, opts = {}) {
   throw new Error(lastError?.message || 'Installed apps could not be loaded.')
 }
 
-// Background update checks (page load, focus re-checks and the scheduled
-// notifier) share one generous deadline. The server bounds its own git fetch
-// by lack of progress rather than wall time, so a slow but healthy fetch can
-// legitimately take longer than any short client guess; this only stops a
-// background probe from waiting forever. notify-updates.py keeps the same
-// value as UPDATE_CHECK_TIMEOUT_SECONDS.
+// Browser background probes have a wall-clock deadline and degrade to unknown
+// when it expires. This is independent of the server's Git inactivity bound
+// and notify-updates.py's socket inactivity timeout; neither is a total deadline.
 export const UPDATE_CHECK_DEADLINE_MS = 120_000
 
 // GET /api/apps/{id}/update-check — the backend's git-native "does the app
@@ -538,20 +535,17 @@ export async function fetchCatalog(url, token, opts = {}) {
     const out = []
     for (const raw of list) {
       if (typeof raw !== 'string') continue
-      const value = raw.trim().replace(/\s+/g, ' ').slice(0, 48)
-      const key = value.toLowerCase()
-      if (!value || seen.has(key)) continue
+      const value = textWithinByteLimit(raw, 48)
+      if (!value) continue
+      const key = value.trim().toLowerCase()
+      if (seen.has(key)) continue
       seen.add(key)
       out.push(value)
       if (out.length >= limit) break
     }
     return out
   }
-  const cleanString = (value, max = 140) => {
-    if (typeof value !== 'string') return undefined
-    const out = value.trim().replace(/\s+/g, ' ').slice(0, max)
-    return out || undefined
-  }
+  const cleanString = (value, max = 140) => textWithinByteLimit(value, max)
   const normalizeSetup = (setup) => {
     if (!setup || typeof setup !== 'object' || Array.isArray(setup)) return null
     const scope = ['system', 'app', 'none'].includes(setup.scope) ? setup.scope : 'app'
@@ -584,13 +578,13 @@ export async function fetchCatalog(url, token, opts = {}) {
         if (!src) continue
         screenshots.push({
           src,
-          alt: boundText(rawShot?.alt, LISTING_LIMITS.altBytes) || '',
-          label: boundText(rawShot?.label, LISTING_LIMITS.captionBytes) || '',
+          alt: textWithinByteLimit(rawShot?.alt, LISTING_LIMITS.altBytes) || '',
+          label: textWithinByteLimit(rawShot?.label, LISTING_LIMITS.captionBytes) || '',
         })
       }
     }
-    const tagline = boundText(listing.tagline, LISTING_LIMITS.taglineBytes)
-    const description = boundText(listing.description, LISTING_LIMITS.descriptionBytes)
+    const tagline = textWithinByteLimit(listing.tagline, LISTING_LIMITS.taglineBytes)
+    const description = textWithinByteLimit(listing.description, LISTING_LIMITS.descriptionBytes)
     if (!hero && screenshots.length === 0 && !tagline && !description) return null
     return {
       ...(hero ? { hero } : {}),
@@ -622,7 +616,7 @@ export async function fetchCatalog(url, token, opts = {}) {
       'productivity', 'everyday', 'create', 'explore', 'play', 'developer',
     ].includes(e.collection) ? e.collection : null
     // The catalog summary plays the listing tagline's role, so it shares its bound.
-    const summary = boundText(e.summary, LISTING_LIMITS.taglineBytes)
+    const summary = textWithinByteLimit(e.summary, LISTING_LIMITS.taglineBytes)
     const preview = typeof e.preview === 'string' && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(e.preview)
       ? e.preview
       : undefined
@@ -630,7 +624,7 @@ export async function fetchCatalog(url, token, opts = {}) {
     entries.push({
       id: e.id,
       name: cleanString(e.name),
-      description: boundText(e.description, LISTING_LIMITS.descriptionBytes),
+      description: textWithinByteLimit(e.description, LISTING_LIMITS.descriptionBytes),
       ...(summary ? { summary } : {}),
       ...(preview ? { preview } : {}),
       ...(listing ? { listing } : {}),
@@ -792,14 +786,12 @@ export async function readJsonOrThrow(res, fallback) {
 // Read-only preview of the currently published candidate. This fetches the
 // incoming release before anything is applied. Reviewing an update is
 // user-initiated, so there is deliberately no client deadline: the server
-// bounds its own candidate fetch, the caller shows progress, and `signal`
-// lets the person cancel.
-export async function loadUpdateCandidatePreview(appId, manifestUrl, token, { signal } = {}) {
+// bounds its own candidate fetch and the caller shows progress.
+export async function loadUpdateCandidatePreview(appId, manifestUrl, token) {
   const query = manifestUrl
     ? `?manifest_url=${encodeURIComponent(manifestUrl)}`
     : ''
   const res = await fetch(`/api/apps/${appId}/update-candidate-preview${query}`, {
-    signal,
     headers: { Authorization: `Bearer ${token}` },
   })
   return await readJsonOrThrow(res, 'Update changes could not be loaded')

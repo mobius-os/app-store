@@ -7,7 +7,7 @@ import {
   fetchCatalog, fetchUpdateCheck, loadUpdateCandidatePreview, UPDATE_CHECK_DEADLINE_MS,
 } from '../api.js'
 import { LISTING_LIMITS } from '../constants.js'
-import { boundText, utf8Length } from '../domain.js'
+import { textWithinByteLimit, utf8Length } from '../domain.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -41,8 +41,8 @@ function words(bytes, word = 'listing') {
 }
 
 test('catalog text within the platform listing contract reaches the UI whole', async () => {
-  const description = words(3990)
-  const tagline = words(118, 'café')
+  const description = `  ${words(3950)}\n\nUnchanged  paragraphs. `
+  const tagline = ` ${words(110, 'café')}  `
   const alt = words(298)
   const label = words(118)
   const screenshots = Array.from({ length: 6 }, (_, index) => ({
@@ -73,33 +73,51 @@ test('the checked-in catalog is never shortened by the Store sanitizer', async (
     () => fetchCatalog('https://raw.example/catalog.json', 'owner-token'),
   )
   const byId = new Map(items.map(item => [item.id, item]))
-  const normalize = value => value?.trim().replace(/\s+/g, ' ') || undefined
   for (const entry of registry.apps) {
     const item = byId.get(entry.id)
-    assert.equal(item.description, normalize(entry.description), `${entry.id} description`)
-    assert.equal(item.summary, normalize(entry.summary), `${entry.id} summary`)
-    if (entry.listing?.tagline) assert.equal(item.listing.tagline, normalize(entry.listing.tagline), `${entry.id} tagline`)
+    assert.equal(item.description, entry.description, `${entry.id} description`)
+    assert.equal(item.summary, entry.summary, `${entry.id} summary`)
+    if (entry.listing?.tagline) assert.equal(item.listing.tagline, entry.listing.tagline, `${entry.id} tagline`)
     if (entry.listing?.description) {
-      assert.equal(item.listing.description, normalize(entry.listing.description), `${entry.id} listing description`)
+      assert.equal(item.listing.description, entry.listing.description, `${entry.id} listing description`)
     }
   }
 })
 
-test('text over the listing contract ends at a whole word within the byte budget', () => {
-  const source = words(5000, 'naïve')
-  const bounded = boundText(source, LISTING_LIMITS.descriptionBytes)
-  assert.ok(utf8Length(bounded) <= LISTING_LIMITS.descriptionBytes)
-  assert.ok(bounded.endsWith('…'))
-  const kept = bounded.slice(0, -1)
-  assert.ok(source.startsWith(kept))
-  assert.equal(source[kept.length], ' ', 'the cut falls between words')
-
-  assert.equal(boundText('  short   text ', 10), 'short text')
-  assert.equal(boundText('x'.repeat(20), 10), undefined, 'one oversized token is dropped, not split')
-  assert.equal(boundText(42, 10), undefined)
+test('catalog omits over-limit metadata without fabricating shortened copy', async () => {
+  const tooLong = bytes => 'é'.repeat(Math.floor(bytes / 2) + 1)
+  const [item] = await withFetch(async () => jsonResponse({
+    schema: 1,
+    apps: [catalogEntry('invalid', {
+      name: 'n'.repeat(141),
+      description: tooLong(LISTING_LIMITS.descriptionBytes),
+      summary: tooLong(LISTING_LIMITS.taglineBytes),
+      categories: ['valid', 'x'.repeat(49)],
+      listing: {
+        tagline: tooLong(LISTING_LIMITS.taglineBytes),
+        description: tooLong(LISTING_LIMITS.descriptionBytes),
+        screenshots: [{ src: 'shot.png', alt: tooLong(LISTING_LIMITS.altBytes), label: tooLong(LISTING_LIMITS.captionBytes) }],
+      },
+    })],
+  }), () => fetchCatalog('https://raw.example/catalog.json', 'owner-token'))
+  assert.equal(item.name, undefined)
+  assert.equal(item.description, undefined)
+  assert.equal(item.summary, undefined)
+  assert.deepEqual(item.categories, ['valid'])
+  assert.equal(item.listing.tagline, undefined)
+  assert.equal(item.listing.description, undefined)
+  assert.deepEqual(item.listing.screenshots, [{ src: 'shot.png', alt: '', label: '' }])
 })
 
-test('reviewing an update has no client deadline and can be cancelled by the caller', async () => {
+test('accepted text retains whitespace and UTF-8 boundaries', () => {
+  const text = '  café\n\nwith  space '
+  assert.equal(textWithinByteLimit(text, utf8Length(text)), text)
+  assert.equal(textWithinByteLimit(text, utf8Length(text) - 1), undefined)
+  assert.equal(textWithinByteLimit(' ', 10), undefined)
+  assert.equal(textWithinByteLimit(42, 10), undefined)
+})
+
+test('reviewing an update has no client deadline', async () => {
   mock.timers.enable({ apis: ['setTimeout'] })
   try {
     const seen = []
@@ -113,19 +131,12 @@ test('reviewing an update has no client deadline and can be cancelled by the cal
     mock.timers.tick(30 * 60 * 1000)
     respond(jsonResponse({ source_digest: 'digest' }))
     assert.deepEqual(await pending, { source_digest: 'digest' })
-
-    const controller = new AbortController()
-    await withFetch(async (url, init) => {
-      assert.equal(init.signal, controller.signal)
-      return jsonResponse({})
-    }, () => loadUpdateCandidatePreview(7, '', 'owner-token', { signal: controller.signal }))
   } finally {
     mock.timers.reset()
   }
 })
 
-test('a background update check that outlives the shared deadline is unknown, not an error', async () => {
-  assert.ok(UPDATE_CHECK_DEADLINE_MS >= 60_000, 'the deadline outlasts a slow but progressing fetch')
+test('a background update check that outlives its wall-clock deadline is unknown, not an error', async () => {
   mock.timers.enable({ apis: ['setTimeout'] })
   try {
     let signal
@@ -144,11 +155,4 @@ test('a background update check that outlives the shared deadline is unknown, no
   } finally {
     mock.timers.reset()
   }
-})
-
-test('the Store and its scheduled notifier share one update-check deadline', async () => {
-  const notifier = await readFile(join(root, 'notify-updates.py'), 'utf8')
-  const match = /^UPDATE_CHECK_TIMEOUT_SECONDS = (\d+)$/m.exec(notifier)
-  assert.ok(match, 'notify-updates.py names its update-check deadline')
-  assert.equal(Number(match[1]) * 1000, UPDATE_CHECK_DEADLINE_MS)
 })

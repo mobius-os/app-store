@@ -1273,24 +1273,11 @@ export function utf8Length(value) {
   return new TextEncoder().encode(String(value || '')).length
 }
 
-// Bound untrusted text to a UTF-8 byte budget without cutting a word. Text
-// within the budget comes back whole; longer text ends after the last whole
-// word that fits, followed by an ellipsis.
-export function boundText(value, maxBytes) {
-  if (typeof value !== 'string') return undefined
-  const text = value.trim().replace(/\s+/g, ' ')
-  if (!text) return undefined
-  if (utf8Length(text) <= maxBytes) return text
-  const budget = maxBytes - utf8Length('…')
-  const words = []
-  let used = 0
-  for (const word of text.split(' ')) {
-    const next = used + (words.length ? 1 : 0) + utf8Length(word)
-    if (next > budget) break
-    words.push(word)
-    used = next
-  }
-  return words.length ? `${words.join(' ')}…` : undefined
+// Invalid external copy is omitted, never rewritten to fit the listing contract.
+// Display-only shortening belongs to cards, not catalog data or detail views.
+export function textWithinByteLimit(value, maxBytes) {
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  return utf8Length(value) <= maxBytes ? value : undefined
 }
 
 // The editable listing a Store preview describes, with image URLs resolved
