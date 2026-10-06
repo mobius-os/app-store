@@ -699,10 +699,6 @@ test('catalog app intents preserve origin checks and resolve one safe action', a
     action: 'unavailable',
     toast: { kind: 'error', message: 'That app is not available in this catalog.' },
   })
-
-  const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
-  assert.match(source, /setQuery\(item\.name \|\| intentDestination\.itemId\)/)
-  assert.match(source, /void openDetail\(item\)/)
 })
 
 test('live catalog metadata preserves baked snapshots and appends new entries', async () => {

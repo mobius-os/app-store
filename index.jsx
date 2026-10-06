@@ -1,5 +1,5 @@
 import { openDetailEntry, closeDetailEntry } from './store-navigation.js'
-import { readStoreLocation, reportStoreLocation } from './store-location.js'
+import { restoredStoreLocation, storeLocation } from './store-location.js'
 import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
 // App Store — thin app shell. The module tree is declared in mobius.json's
 // source_files; the multi-file installer fetches each path and Rolldown bundles
@@ -68,6 +68,7 @@ import {
   hasConnectedProvider,
   installApp,
   loadCommunityApps,
+  loadCommunityApp,
   loadCommunityReviews,
   loadCommunityIdentity,
   loadEditorialSpotlight,
@@ -388,12 +389,12 @@ export default function App({ appId, token }) {
   // A place saved by this Store's previous frame is restored like a shell
   // intent, once the catalog it points into has loaded.
   const [intentDestination, setIntentDestination] = useState(() => {
-    const location = readStoreLocation(window.mobius?.nav)
-    return location ? { kind: 'location', location } : null
+    const nav = window.mobius?.nav
+    const location = typeof nav?.setLocation === 'function' ? restoredStoreLocation(nav.location) : null
+    // Category membership is checked again against the hydrated catalog.
+    return location
+      ? { kind: 'location', location: { ...location, category: nav.location.category } } : null
   })
-  // Report the place only after a saved one is restored; the start screen
-  // would otherwise overwrite it first.
-  const placeRestoredRef = useRef(intentDestination === null)
   const [capabilityReviews, setCapabilityReviews] = useState({})
   const navDetailRef = useRef(null)  // host-owned reversible detail entry
   // B1: preserve the catalog grid's scroll across opening a detail and coming
@@ -447,6 +448,7 @@ export default function App({ appId, token }) {
   // skeleton for this one local read gives the first real card render its final,
   // browser-cached icon URL on its first meaningful paint.
   const [loadingCatalog, setLoadingCatalog] = useState(true)
+  const [catalogHydrated, setCatalogHydrated] = useState(false)
   const [installedLoadError, setInstalledLoadError] = useState('')
   // Guard against overlapping refreshes when several visibility/focus
   // events fire in quick succession (e.g. drawer-close + tab-focus on
@@ -580,7 +582,10 @@ export default function App({ appId, token }) {
         })
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
-        if (!cancelled) setLoadingCatalog(false)
+        if (!cancelled) {
+          setLoadingCatalog(false)
+          setCatalogHydrated(true)
+        }
       }
     }
     load()
@@ -1980,59 +1985,98 @@ export default function App({ appId, token }) {
     [displayCatalog, lifecycleById],
   )
 
-  // Declared before the intent effect so a restore never reports the place it
-  // is about to replace.
   useEffect(() => {
-    if (!placeRestoredRef.current) return
-    reportStoreLocation(window.mobius?.nav, {
-      tab, category, query, activeCollection, detailId: detail?.id,
-    })
-  }, [tab, category, query, activeCollection, detail?.id])
+    const nav = window.mobius?.nav
+    if (!intentDestination && typeof nav?.setLocation === 'function') {
+      nav.setLocation(storeLocation({
+        tab, category, query, activeCollection, detailId: detail?.id,
+      }))
+    }
+  }, [intentDestination, tab, category, query, activeCollection, detail?.id])
+
+  const destinationItemId = intentDestination?.kind === 'location'
+    ? intentDestination.location.detail : intentDestination?.itemId
+  const destinationItem = displayCatalog.find(item => item.id === destinationItemId)
+  // First paint is not hydration: a target absent from the baked catalog may
+  // still arrive from the registry or an installed-only manifest fetch.
+  const destinationReady = !loadingCatalog && catalogHydrated && (
+    !otherInstalledCatalogSources.some(item => item.id === destinationItemId)
+    || !!destinationItem
+  )
 
   useEffect(() => {
-    if (!intentDestination || loadingCatalog) return
-    placeRestoredRef.current = true
-    if (intentDestination.kind === 'location') {
-      const place = intentDestination.location
+    if (!intentDestination || !destinationReady) return
+    let cancelled = false
+    let completed = false
+    const previousDetailEntry = navDetailRef.current
+    const previousCollectionHandle = collectionNavRef.current
+    const controller = new AbortController()
+    async function restore() {
+      if (intentDestination.kind !== 'app') {
+        closeDetail()
+        closeCollection()
+      }
+      if (intentDestination.kind === 'location') {
+        const saved = intentDestination.location
+        let item = destinationItem
+        if (typeof saved.detail === 'string' && saved.detail.startsWith('community:')) {
+          try {
+            const row = await loadCommunityApp(token, saved.detail.slice('community:'.length), {
+              signal: controller.signal,
+            })
+            item = communityCatalogItems([row]).find(candidate => candidate.id === saved.detail)
+          } catch {
+            item = null
+          }
+        }
+        if (cancelled) return
+        const place = restoredStoreLocation(saved, [...displayCatalog, ...(item ? [item] : [])])
+        selectTab(place.tab)
+        setCategory(place.category)
+        setQuery(place.query)
+        if (place.collection) await openCollection(place.collection)
+        if (cancelled) return
+        if (item?.manifest) await openDetail(item)
+      } else if (intentDestination.kind === 'updates') {
+        selectTab('library')
+        setCategory('update')
+        setQuery('')
+      } else {
+        const resolution = resolveCatalogItemIntent(displayCatalog, intentDestination.itemId)
+        if (resolution.action === 'unavailable') {
+          setToast(resolution.toast)
+        } else {
+          selectTab('browse')
+          setCategory('all')
+          if (resolution.action === 'needs-connection') {
+            setQuery(resolution.query)
+            setToast(resolution.toast)
+          } else {
+            await openDetail(resolution.item)
+            // Retargeting an existing pending entry keeps its Back history;
+            // its original open still owns the eventual visibility change.
+            if (!cancelled) await navDetailRef.current?.handle.outcome
+          }
+        }
+      }
+      if (cancelled) return
+      completed = true
       setIntentDestination(null)
-      selectTab(place.tab)
-      setCategory(place.category)
-      setQuery(place.query)
-      if (place.collection) void openCollection(place.collection)
-      const item = place.detail
-        ? [...displayCatalog, ...communityCatalog].find((candidate) => candidate.id === place.detail)
-        : null
-      if (item?.manifest) void openDetail(item)
-      return
     }
-    if (intentDestination.kind === 'updates') {
-      setIntentDestination(null)
-      closeDetail()
-      selectTab('library')
-      setCategory('update')
-      setQuery('')
-      return
+    void restore()
+    return () => {
+      cancelled = true
+      controller.abort()
+      if (!completed) {
+        if (navDetailRef.current !== previousDetailEntry) closeDetail()
+        if (collectionNavRef.current !== previousCollectionHandle) closeCollection()
+      }
     }
-    const resolution = resolveCatalogItemIntent(displayCatalog, intentDestination.itemId)
-    setIntentDestination(null)
-    if (resolution.action === 'unavailable') {
-      setToast(resolution.toast)
-      return
-    }
-    selectTab('browse')
-    setCategory('all')
-    if (resolution.action === 'needs-connection') {
-      const item = resolution.item
-      setQuery(item.name || intentDestination.itemId)
-      setToast(resolution.toast)
-      return
-    }
-    const item = resolution.item
-    void openDetail(item)
-  }, [
-    communityCatalog, displayCatalog, intentDestination, loadingCatalog,
-    openCollection, openDetail, closeDetail, selectTab,
-  ])
+    // A destination is a one-shot command against the ready catalog snapshot.
+    // Its own scalar changes and background catalog refreshes must not restart
+    // pending host ownership. Only a new destination or readiness cancels it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intentDestination, destinationReady, token, openCollection, openDetail, closeCollection, closeDetail])
 
   // Detail view replaces the main layout when set.
   if (detail) {

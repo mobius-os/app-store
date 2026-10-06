@@ -1,8 +1,12 @@
+import { CATALOG, CATALOG_COLLECTIONS, EDITORIAL_COLLECTIONS } from './constants.js'
+import { collectCategories } from './domain.js'
+
 // The Store's place (tab, filters, open collection or detail), reported to the
 // Möbius shell so a frame reload — a Store self-update, cache eviction or shell
 // reload — reopens where the owner was. Platforms without
 // window.mobius.nav.setLocation keep the previous start-at-Browse behavior.
 
+const COLLECTION_IDS = new Set([...CATALOG_COLLECTIONS, ...EDITORIAL_COLLECTIONS].map(({ id }) => id))
 const TABS = new Set(['browse', 'library', 'publish'])
 const QUERY_MAX = 200
 const ID = /^[a-z0-9][a-z0-9:._-]{0,127}$/i
@@ -21,22 +25,18 @@ export function storeLocation({ tab, category, query, activeCollection, detailId
 
 // The saved value is app data that came back through the shell: accept only
 // the known shape and fall back to the start view for anything else.
-export function restoredStoreLocation(value) {
+export function restoredStoreLocation(value, items = CATALOG) {
   if (!value || typeof value !== 'object' || !TABS.has(value.tab)) return null
+  const categories = ['all', 'update', 'setup', 'installed', ...collectCategories(items)]
+  const category = typeof value.category === 'string'
+    ? categories.find(candidate => candidate.toLowerCase() === value.category.toLowerCase())
+    : null
   return {
     tab: value.tab,
-    category: idOrNull(value.category) || 'all',
+    category: category || 'all',
     query: typeof value.query === 'string' ? value.query.slice(0, QUERY_MAX) : '',
-    collection: value.tab === 'browse' ? idOrNull(value.collection) : null,
+    collection: value.tab === 'browse' && COLLECTION_IDS.has(value.collection)
+      ? value.collection : null,
     detail: idOrNull(value.detail),
   }
-}
-
-export function readStoreLocation(nav) {
-  return typeof nav?.setLocation === 'function' ? restoredStoreLocation(nav.location) : null
-}
-
-export function reportStoreLocation(nav, place) {
-  // Bounded fields keep this far below the platform's 4 KiB location limit.
-  if (typeof nav?.setLocation === 'function') nav.setLocation(storeLocation(place))
 }

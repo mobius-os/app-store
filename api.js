@@ -55,8 +55,9 @@ export async function loadCommunityApps(token, { query = '', limit = 50, offset 
   return communityResponse(response, 'Community apps could not be loaded.')
 }
 
-export async function loadCommunityApp(token, appId) {
+export async function loadCommunityApp(token, appId, { signal } = {}) {
   const response = await fetch(`/api/community/apps/${encodeURIComponent(appId)}`, {
+    signal,
     headers: communityHeaders(token),
   })
   return communityResponse(response, 'This app could not be refreshed.')

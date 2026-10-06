@@ -7,12 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import {
-  readStoreLocation,
-  reportStoreLocation,
-  restoredStoreLocation,
-  storeLocation,
-} from '../store-location.js'
+import { restoredStoreLocation, storeLocation } from '../store-location.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-store-location')
@@ -36,13 +31,36 @@ test('a restored place is validated and anything unknown falls back', () => {
   }), { tab: 'browse', category: 'update', query: 'notes', collection: 'play', detail: 'community:abc-1' })
 })
 
-test('platforms without the location contract neither restore nor report', () => {
-  assert.equal(readStoreLocation({ location: { tab: 'library' } }), null)
-  assert.equal(readStoreLocation(undefined), null)
-  assert.doesNotThrow(() => reportStoreLocation({ open() {} }, { tab: 'browse' }))
+test('category names and collection IDs come from the Store domain', () => {
+  const catalog = [{ categories: ['Personal Finance', 'Creative'] }]
+  assert.equal(restoredStoreLocation({ tab: 'browse', category: 'personal finance' }, catalog).category, 'Personal Finance')
+  assert.equal(restoredStoreLocation({ tab: 'browse', category: 'nonexistent' }, catalog).category, 'all')
+  assert.equal(restoredStoreLocation({ tab: 'browse', collection: 'nonexistent' }).collection, null)
+  for (const collection of ['picks', 'arrivals', 'play', 'other-installed']) {
+    assert.equal(restoredStoreLocation({ tab: 'browse', collection }).collection, collection)
+  }
 })
 
-async function mountStore(nav) {
+const json = (value, status = 200) => new Response(JSON.stringify(value), {
+  status, headers: { 'content-type': 'application/json' },
+})
+const deferred = () => {
+  let resolve
+  const promise = new Promise(finish => { resolve = finish })
+  return { promise, resolve }
+}
+
+// Flush React and actual task queues until the observable contract completes.
+// A timeout is a failure bound, not an assumed network/ownership duration.
+async function until(condition, description = 'Store completion') {
+  const deadline = Date.now() + 5000
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, `Timed out waiting for ${description}`)
+    await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
+  }
+}
+
+async function mountStore(nav, respond = () => undefined) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://store.test/' })
   const old = {
     window: globalThis.window, document: globalThis.document, HTMLElement: globalThis.HTMLElement,
@@ -60,13 +78,13 @@ async function mountStore(nav) {
     matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {},
   })
   dom.window.mobius = { signal() {}, nav }
-  const json = (value, status = 200) => new Response(JSON.stringify(value), {
-    status, headers: { 'content-type': 'application/json' },
-  })
   const { MANIFEST_SNAPSHOTS } = await import('../manifest-snapshots.js')
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options = {}) => {
     const path = String(url)
+    const response = respond(path, options)
+    if (response !== undefined) return response
     if (path === '/api/apps/') return json([])
+    if (path.startsWith('/api/community/apps?')) return json({ items: [] })
     if (path.startsWith('/api/proxy?')) {
       const remote = decodeURIComponent(path.split('url=')[1] || '')
       if (remote.endsWith('/catalog.json')) return json({ schema: 1, apps: [] })
@@ -91,10 +109,14 @@ async function mountStore(nav) {
   const { default: App } = await import(pathToFileURL(output).href)
   const root = createRoot(dom.window.document.getElementById('root'))
   await act(async () => root.render(React.createElement(App, { appId: 39, token: 'tok' })))
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
   return {
     dom,
-    async settle() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) }) },
+    async intent(intent) {
+      await act(async () => dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+        origin: dom.window.location.origin, source: dom.window.parent,
+        data: { type: 'moebius:app-intent', intent },
+      })))
+    },
     async close() {
       await act(async () => root.unmount())
       Object.assign(globalThis, old)
@@ -104,15 +126,25 @@ async function mountStore(nav) {
   }
 }
 
-function fakeNav(location) {
+function fakeNav(location, { delayed = false } = {}) {
   const nav = {
     location,
     reports: [],
     opened: [],
+    entries: [],
     setLocation(value) { nav.reports.push(value) },
-    open(label) {
+    open(label, callbacks) {
       nav.opened.push(label)
-      return { outcome: Promise.resolve({ status: 'owned' }), ready: Promise.resolve(true), close() {} }
+      const result = deferred()
+      const entry = {
+        label, callbacks, outcome: result.promise, closed: false,
+        own() { result.resolve({ status: 'owned' }) },
+        reject() { result.resolve({ status: 'rejected' }) },
+        close() { entry.closed = true; result.resolve({ status: 'cancelled' }) },
+      }
+      nav.entries.push(entry)
+      if (!delayed) entry.own()
+      return entry
     },
   }
   return nav
@@ -124,8 +156,8 @@ test('the Store reopens a saved tab and filter and never reports Browse first', 
   const nav = fakeNav({ tab: 'library', category: 'installed', query: '', collection: null, detail: null })
   const view = await mountStore(nav)
   try {
+    await until(() => nav.reports.length > 0)
     assert.equal(selectedTab(view.dom), 'st-tab-library')
-    assert.ok(nav.reports.length > 0)
     assert.ok(nav.reports.every(place => place.tab === 'library'), JSON.stringify(nav.reports))
     assert.equal(nav.reports.at(-1).category, 'installed')
 
@@ -140,7 +172,7 @@ test('the Store reopens a saved detail page with a real Back entry', async () =>
   const nav = fakeNav({ tab: 'browse', category: 'all', query: '', collection: null, detail: 'voice' })
   const view = await mountStore(nav)
   try {
-    await view.settle()
+    await until(() => nav.reports.at(-1)?.detail === 'voice')
     assert.deepEqual(nav.opened, ['app-store-detail'])
     assert.equal(nav.reports.at(-1).detail, 'voice')
     assert.equal(nav.reports.some(place => place.detail === null), false, JSON.stringify(nav.reports))
@@ -159,4 +191,221 @@ test('without the platform contract the Store starts at Browse as before', async
   } finally {
     await view.close()
   }
+})
+
+test('delayed collection ownership precedes detail ownership and Back unwinds both levels', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' }, { delayed: true })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.entries.length === 1, 'collection request')
+    assert.deepEqual(nav.opened, ['app-store-collection'])
+    assert.deepEqual(nav.reports, [])
+    await act(async () => nav.entries[0].own())
+    await until(() => nav.entries.length === 2, 'detail request')
+    assert.equal(view.dom.window.document.querySelector('.st-collection-heading h2')?.textContent, 'Play')
+    assert.deepEqual(nav.reports, [])
+    await act(async () => nav.entries[1].own())
+    await until(() => nav.reports.at(-1)?.detail === 'voice', 'full restore')
+    assert.ok(nav.reports.every(place => place.collection === 'play' && place.detail === 'voice'))
+    await act(async () => nav.entries[1].callbacks.onBack())
+    assert.equal(nav.reports.at(-1).detail, null)
+    assert.equal(nav.reports.at(-1).collection, 'play')
+    assert.equal(view.dom.window.document.querySelector('.st-collection-heading h2')?.textContent, 'Play')
+    await act(async () => nav.entries[0].callbacks.onBack())
+    assert.equal(nav.reports.at(-1).collection, null)
+  } finally { await view.close() }
+})
+
+test('a missing detail falls back only after remote registry hydration finishes', async () => {
+  const registry = deferred()
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'gone', collection: 'nonexistent' })
+  const view = await mountStore(nav, path => path.startsWith('/api/proxy?') && path.includes('catalog.json')
+    ? registry.promise : undefined)
+  try {
+    assert.deepEqual(nav.reports, [])
+    await act(async () => registry.resolve(json({ schema: 1, apps: [] })))
+    await until(() => nav.reports.length > 0)
+    assert.deepEqual(nav.opened, [])
+    assert.equal(nav.reports.at(-1).detail, null)
+    assert.equal(nav.reports.at(-1).collection, null)
+  } finally { await view.close() }
+})
+
+const communityRow = {
+  id: 'beyond-page-one', name: 'Distant app', categories: ['Personal Finance'],
+  latest_revision: { id: 'revision', manifest_url: 'https://example.test/distant/mobius.json', raw_base: 'https://example.test/distant/' },
+  manifest: { id: 'distant', name: 'Distant app', version: '1.0.0', description: 'A shared app.' },
+}
+
+test('a community detail resolves by identity beyond the first catalog page', async () => {
+  const target = deferred()
+  let requested = false
+  const nav = fakeNav({ tab: 'browse', category: 'personal finance', detail: 'community:beyond-page-one' })
+  const view = await mountStore(nav, path => {
+    if (path === '/api/community/apps/beyond-page-one') { requested = true; return target.promise }
+    if (path.startsWith('/api/community/apps?')) return json({
+      items: Array.from({ length: 24 }, (_, index) => ({ ...communityRow, id: `first-page-${index}` })),
+      next_offset: 24,
+    })
+  })
+  try {
+    await until(() => requested, 'identity lookup')
+    assert.deepEqual(nav.reports, [])
+    await act(async () => target.resolve(json(communityRow)))
+    await until(() => nav.reports.at(-1)?.detail === 'community:beyond-page-one')
+    assert.deepEqual(nav.opened, ['app-store-detail'])
+    assert.equal(nav.reports.at(-1).category, 'Personal Finance')
+    assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Distant app')
+    assert.ok(nav.reports.every(place => place.detail === 'community:beyond-page-one'))
+  } finally { await view.close() }
+})
+
+test('a removed community target completes with the list fallback', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'community:removed' })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.reports.length > 0)
+    assert.deepEqual(nav.opened, [])
+    assert.equal(nav.reports.at(-1).detail, null)
+  } finally { await view.close() }
+})
+
+test('installed-only detail waits for its manifest hydration', async () => {
+  const manifest = deferred()
+  let requested = false
+  const nav = fakeNav({ tab: 'library', category: 'installed', detail: 'other-installed-34' })
+  const view = await mountStore(nav, path => {
+    if (path === '/api/apps/') return json([{
+      id: 34, slug: 'linked', name: 'Linked App', version: '1.0.0',
+      manifest_url: 'https://example.test/linked#manifest-id=linked',
+      source_manifest: { id: 'linked', url: 'https://example.test/linked/mobius.json' },
+    }])
+    if (path.startsWith('/api/proxy?') && path.includes('example.test')) { requested = true; return manifest.promise.then(value => json(value)) }
+  })
+  try {
+    await until(() => requested, 'installed manifest lookup')
+    assert.deepEqual(nav.reports, [])
+    await act(async () => manifest.resolve({ id: 'linked', name: 'Hydrated app', version: '2.0.0' }))
+    await until(() => nav.reports.at(-1)?.detail === 'other-installed-34')
+    assert.deepEqual(nav.opened, ['app-store-detail'])
+    assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Hydrated app')
+  } finally { await view.close() }
+})
+
+test('a newer intent cancels pending collection ownership and never opens the stale detail', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' }, { delayed: true })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.entries.length === 1)
+    await view.intent('updates')
+    await until(() => nav.reports.at(-1)?.tab === 'library')
+    assert.equal(nav.entries[0].closed, true)
+    await act(async () => nav.entries[0].own())
+    assert.deepEqual(nav.opened, ['app-store-collection'])
+    assert.equal(nav.reports.at(-1).collection, null)
+    assert.equal(nav.reports.at(-1).detail, null)
+    assert.equal(nav.reports.at(-1).category, 'update')
+  } finally { await view.close() }
+})
+
+test('a newer detail intent cancels stale ownership before opening its own entry', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'voice' }, { delayed: true })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.entries.length === 1)
+    await view.intent('app:notes')
+    await until(() => nav.entries.length === 2)
+    assert.equal(nav.entries[0].closed, true)
+    assert.deepEqual(nav.reports, [])
+    await act(async () => nav.entries[1].own())
+    await until(() => nav.reports.at(-1)?.detail === 'notes')
+    assert.ok(nav.reports.every(place => place.detail === 'notes'))
+  } finally { await view.close() }
+})
+
+test('superseding a community lookup aborts it and ignores a late response', async () => {
+  const target = deferred()
+  let signal
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'community:beyond-page-one' })
+  const view = await mountStore(nav, (path, options) => {
+    if (path === '/api/community/apps/beyond-page-one') { signal = options.signal; return target.promise }
+  })
+  try {
+    await until(() => signal)
+    await view.intent('updates')
+    await until(() => nav.reports.at(-1)?.tab === 'library')
+    assert.equal(signal.aborted, true)
+    await act(async () => target.resolve(json(communityRow)))
+    assert.deepEqual(nav.opened, [])
+    assert.equal(nav.reports.at(-1).detail, null)
+  } finally { await view.close() }
+})
+
+test('unmount closes pending restored ownership without reporting an incomplete place', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'voice' }, { delayed: true })
+  const view = await mountStore(nav)
+  await until(() => nav.entries.length === 1)
+  await view.close()
+  assert.equal(nav.entries[0].closed, true)
+  assert.deepEqual(nav.reports, [])
+})
+
+test('rejected ownership reports a completed fallback rather than hanging restoration', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'voice' }, { delayed: true })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.entries.length === 1)
+    await act(async () => nav.entries[0].reject())
+    await until(() => nav.reports.length > 0)
+    assert.equal(nav.reports.at(-1).detail, null)
+  } finally { await view.close() }
+})
+
+test('Updates intent closes an owned detail and collection before showing Library', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.reports.at(-1)?.detail === 'voice')
+    await view.intent('updates')
+    await until(() => nav.reports.at(-1)?.tab === 'library')
+    assert.ok(nav.entries.every(entry => entry.closed))
+    assert.equal(selectedTab(view.dom), 'st-tab-library')
+    assert.equal(nav.reports.at(-1).detail, null)
+    assert.equal(nav.reports.at(-1).collection, null)
+    assert.equal(nav.reports.at(-1).category, 'update')
+  } finally { await view.close() }
+})
+
+test('an app intent whose manifest is unavailable searches for the named app without a stranded detail', async () => {
+  const nav = fakeNav({ tab: 'library', category: 'installed' })
+  const view = await mountStore(nav, path => path.startsWith('/api/proxy?') && path.includes('catalog.json')
+    ? json({ schema: 1, apps: [{
+      id: 'network-app', name: 'Network app',
+      manifest_url: 'https://example.test/network/mobius.json', raw_base: 'https://example.test/network/',
+    }] }) : undefined)
+  try {
+    await until(() => nav.reports.at(-1)?.tab === 'library')
+    await view.intent('app:network-app')
+    await until(() => nav.reports.at(-1)?.query === 'Network app')
+    assert.equal(selectedTab(view.dom), 'st-tab-browse')
+    assert.deepEqual(nav.opened, [])
+    assert.equal(nav.reports.at(-1).detail, null)
+  } finally { await view.close() }
+})
+
+
+test('an app intent retargets an owned detail without replacing its Back entry', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'voice' })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.reports.at(-1)?.detail === 'voice')
+    await view.intent('app:notes')
+    await until(() => nav.reports.at(-1)?.detail === 'notes')
+    assert.deepEqual(nav.opened, ['app-store-detail'])
+    assert.equal(nav.entries[0].closed, false)
+    await act(async () => nav.entries[0].callbacks.onBack())
+    assert.equal(nav.reports.at(-1).detail, null)
+    await act(async () => nav.entries[0].callbacks.onForward())
+    assert.equal(nav.reports.at(-1).detail, 'notes')
+  } finally { await view.close() }
 })
