@@ -439,21 +439,16 @@ export default function App({ appId, token }) {
   // browser-cached icon URL on its first meaningful paint.
   const [loadingCatalog, setLoadingCatalog] = useState(true)
   const [installedLoadError, setInstalledLoadError] = useState('')
-  // Concurrent foreground reads share the same installed-app response.
-  const refreshingRef = useRef(null)
-  // Last git-native update check. Seeded at mount so the first focus right
-  // after open doesn't immediately duplicate the initial check.
-  // A focus flap (visibilitychange + focus a frame apart) won't refetch
-  // either: the second event lands well inside the debounce window.
-  // Seed with mount time, not 0: the focus/pageshow listeners bind a frame
-  // before the async mount hydration finishes, so a focus firing in that gap
-  // would otherwise read a 0 timestamp, clear the debounce, and fire a
-  // redundant duplicate update check alongside the in-flight mount one.
-  // Stamping "now" makes that first focus a reliable no-op until the 50s
-  // window elapses; the mount effect re-stamps once catalog hydration lands.
+  // Seed the foreground debounce at mount so focus/pageshow cannot duplicate
+  // the startup check before catalog hydration finishes.
   const lastUpdateCheckRef = useRef(Date.now())
-  const updateCheckingRef = useRef(null)
-  const managedAppRevisionRef = useRef(0)
+  const refreshGenerationRef = useRef(0)
+  // Targeted refreshes supersede only their own checks, not other apps in an
+  // older startup/focus round. All reads draw from the same generation counter.
+  const checkGenerationsRef = useRef(new Map())
+  const catalogReadyRef = useRef(false)
+  const pendingCheckIdsRef = useRef(new Set())
+  const fullCheckPendingRef = useRef(false)
 
   useEffect(() => {
     function onIntent(event) {
@@ -478,6 +473,51 @@ export default function App({ appId, token }) {
     setUpdateNotice(prev => (prev && itemIds.has(prev.itemId) ? null : prev))
   }, [])
 
+  // Work belongs to the next authoritative read, not to an in-flight request.
+  // One generation counter orders installed reads and each app's check answers;
+  // a newer read never joins or waits for an older one.
+  const refreshInstalled = useCallback(async ({ checkAll = false } = {}) => {
+    if (checkAll) fullCheckPendingRef.current = true
+    const generation = ++refreshGenerationRef.current
+    const checkGenerations = checkGenerationsRef.current
+    const pendingIds = pendingCheckIdsRef.current
+    const invalidatedIds = fullCheckPendingRef.current
+      ? new Set([...checkGenerations.keys(), ...pendingIds]) : pendingIds
+    for (const id of invalidatedIds) checkGenerations.set(id, generation)
+    try {
+      const apps = await loadInstalledApps(token)
+      if (generation !== refreshGenerationRef.current) return null
+      setInstalled(apps)
+      setInstalledLoadError('')
+      const fullCheck = fullCheckPendingRef.current
+      if (catalogReadyRef.current && (fullCheck || (pendingIds.size && document.visibilityState === 'visible'))) {
+        const rows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
+          .filter(app => fullCheck || pendingIds.has(String(app.id)))
+        // Consume the work only after a current read can launch its checks.
+        // Unrelated answers from older rounds remain useful and can still land.
+        fullCheckPendingRef.current = false
+        pendingIds.clear()
+        for (const app of rows) checkGenerations.set(String(app.id), generation)
+        if (fullCheck) lastUpdateCheckRef.current = Date.now()
+        const checks = await fetchUpdateChecksFor(rows, token, [
+          ...catalogRef.current, ...communityCatalogRef.current, ...otherInstalledCatalogRef.current,
+        ])
+        const currentChecks = Object.fromEntries(Object.entries(checks)
+          .filter(([id]) => checkGenerations.get(id) === generation))
+        setUpdateChecks(prev => mergeUpdateChecks(prev, currentChecks))
+        clearSettledUpdateArtifacts(itemIdsSettledByChecks(
+          [...catalogRef.current, ...otherInstalledCatalogRef.current], apps, currentChecks,
+        ))
+      }
+      return apps
+    } catch (err) {
+      if (generation === refreshGenerationRef.current) {
+        setInstalledLoadError(err?.message || 'Installed apps could not be loaded.')
+      }
+      return null
+    }
+  }, [appId, token, clearSettledUpdateArtifacts])
+
   // Initial fetch: catalog manifests + installed apps.
   // Every await is guarded so a single failing network call can't leave the
   // grid stuck on the skeleton: loadInstalledApps rejects (not just returns
@@ -487,7 +527,6 @@ export default function App({ appId, token }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const revision = managedAppRevisionRef.current
       try {
         // Start the dynamic registry immediately, but do not put it on the
         // first-paint critical path. The baked snapshot catalog is already a
@@ -497,22 +536,8 @@ export default function App({ appId, token }) {
         const remoteCatalogPromise = fetchCatalog(CATALOG_URL, token)
           .catch(() => null)
         const providerStatusPromise = loadProviderStatus(token)
-        const installedResult = await loadInstalledApps(token)
-          .then((apps) => ({ apps, error: '' }))
-          .catch((err) => ({
-            apps: null,
-            error: err?.message || 'Installed apps could not be loaded.',
-          }))
+        const apps = await refreshInstalled() || []
         if (cancelled) return
-        const apps = installedResult.apps || []
-        if (revision === managedAppRevisionRef.current) {
-          if (installedResult.apps) {
-            setInstalled(apps)
-            setInstalledLoadError('')
-          } else {
-            setInstalledLoadError(installedResult.error)
-          }
-        }
         setSetupCompletions(readSetupCompletions())
         setSystemSetupComplete(readSystemSetupReady())
         if (CATALOG.every((entry) => entry.manifest)) {
@@ -553,35 +578,28 @@ export default function App({ appId, token }) {
           },
         )
         if (cancelled) return
+        catalogRef.current = hydrated
+        catalogReadyRef.current = true
         setCatalog(hydrated)
         lastUpdateCheckRef.current = Date.now()
-        // Git-native update-checks for every manifest-backed app. Fire-and-
-        // forget on purpose: a slow or absent (404) endpoint must never gate the
-        // skeleton clear in `finally`, so we do NOT await it here. fetchUpdate
-        // ChecksFor never rejects (fetchUpdateCheck degrades to null), so no
-        // unhandled rejection escapes; until these land the app remains usable,
-        // and when they land they are the sole update authority.
-        // A completion refresh owns any state newer than this mount snapshot.
-        if (revision === managedAppRevisionRef.current) {
-          const checkRows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
-          const request = fetchUpdateChecksFor(checkRows, token, [
-            ...hydrated,
-            ...communityCatalogRef.current,
-          ]).then((map) => {
-            if (cancelled) return
-            setUpdateChecks((prev) => mergeUpdateChecks(prev, map))
-            clearSettledUpdateArtifacts(itemIdsSettledByChecks(hydrated, apps, map))
-          }).finally(() => { updateCheckingRef.current = null })
-          updateCheckingRef.current = request
-        }
+        // Always run the startup check with the live catalog and a fresh
+        // installed list, even if an event superseded the first-paint read.
+        void refreshInstalled({ checkAll: true })
         window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
         if (!cancelled) setLoadingCatalog(false)
       }
     }
     load()
-    return () => { cancelled = true }
-  }, [appId, token, clearSettledUpdateArtifacts])
+    return () => {
+      cancelled = true
+      refreshGenerationRef.current += 1
+      checkGenerationsRef.current.clear()
+      catalogReadyRef.current = false
+      pendingCheckIdsRef.current.clear()
+      fullCheckPendingRef.current = false
+    }
+  }, [appId, token, refreshInstalled])
 
   const communityRequestRef = useRef(0)
   const communityAbortRef = useRef(null)
@@ -945,64 +963,8 @@ export default function App({ appId, token }) {
     return () => { cancelled = true }
   }, [otherInstalledCatalogSources, token])
 
-  // Ordinary foreground reads join the current request. A completion event
-  // must read after any pre-event request, not adopt its potentially stale rows.
-  const refreshInstalled = useCallback(async ({ force = false } = {}) => {
-    if (refreshingRef.current) {
-      if (!force) return refreshingRef.current
-      await refreshingRef.current
-    }
-    const request = loadInstalledApps(token).then(apps => {
-      setInstalled(apps)
-      setInstalledLoadError('')
-      return apps
-    }).catch(err => {
-      setInstalledLoadError(err?.message || 'Installed apps could not be loaded.')
-      return null
-    }).finally(() => { refreshingRef.current = null })
-    refreshingRef.current = request
-    return request
-  }, [token])
-
-  // Check installed app repos on foreground regain. This single git-native
-  // probe is authoritative even when a release forgot to bump mobius.json,
-  // and avoids repeatedly downloading/parsing every installed manifest from
-  // GitHub. Catalog metadata refreshes from catalog.json on Store open; the
-  // explicit per-card retry remains for a genuinely missing manifest.
   const REHYDRATE_DEBOUNCE_MS = 50_000
-  const refreshUpdateChecks = useCallback(async (installedApps, { force = false } = {}) => {
-    if (updateCheckingRef.current) {
-      if (!force) return updateCheckingRef.current
-      await updateCheckingRef.current
-    }
-    if (!force && Date.now() - lastUpdateCheckRef.current < REHYDRATE_DEBOUNCE_MS) return
-    const apps = installedApps || []
-    // Installed rows are the authoritative target list. This also covers apps
-    // that arrived through a shared URL and therefore have no curated entry.
-    const checkRows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
-    if (checkRows.length === 0) {
-      lastUpdateCheckRef.current = Date.now()
-      return
-    }
-    const request = fetchUpdateChecksFor(checkRows, token, [
-      ...catalogRef.current,
-      ...communityCatalogRef.current,
-      ...otherInstalledCatalogRef.current,
-    ]).then(checks => {
-      setUpdateChecks(prev => mergeUpdateChecks(prev, checks))
-      clearSettledUpdateArtifacts(itemIdsSettledByChecks(
-        [...catalogRef.current, ...otherInstalledCatalogRef.current], apps, checks,
-      ))
-      lastUpdateCheckRef.current = Date.now()
-    }).finally(() => { updateCheckingRef.current = null })
-    updateCheckingRef.current = request
-    return request
-  }, [appId, token, clearSettledUpdateArtifacts])
-
-  const handleRetryInstalled = useCallback(async () => {
-    const apps = await refreshInstalled()
-    if (apps) await refreshUpdateChecks(apps)
-  }, [refreshInstalled, refreshUpdateChecks])
+  const handleRetryInstalled = useCallback(() => refreshInstalled({ checkAll: true }), [refreshInstalled])
 
   const refreshSetupState = useCallback(async () => {
     setSetupCompletions(readSetupCompletions())
@@ -1020,71 +982,50 @@ export default function App({ appId, token }) {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  // The drawer-delete path lives in the shell, not here — when the user
-  // uninstalls from the drawer and navigates back, our `installed`
-  // state still shows the deleted row as "Installed" until something
-  // re-fetches /api/apps/. Subscribe to the same trio of events the
-  // storage shim already uses to drain its outbox: visibilitychange +
-  // focus + pageshow. Polling would be wasteful — these three cover
-  // every realistic path back into a foregrounded App Store iframe
-  // (drawer dismiss, tab refocus, mobile bfcache restore). On the same
-  // events we also run the debounced git-native update probe so a release
-  // pushed while the iframe stayed mounted shows up as an Update.
-  useEffect(() => {
-    function maybeRefresh() {
-      if (document.visibilityState !== 'visible') return
-      refreshSetupState().catch(() => {})
-      refreshInstalled().then(apps => {
-        // Failed reads preserve the previous list and skip the source check.
-        if (apps) return refreshUpdateChecks(apps)
-      }).catch(() => {
-        // Belt-and-braces: refreshInstalled already swallows its own transport
-        // errors and refreshUpdateChecks degrades per-app failures, but
-        // this runs from a listener with no outer handler — never let a stray
-        // rejection escape as an unhandled promise. The prior state is kept; a
-        // later focus/visibility event retries.
-      })
-    }
-    document.addEventListener('visibilitychange', maybeRefresh)
-    window.addEventListener('focus', maybeRefresh)
-    window.addEventListener('pageshow', maybeRefresh)
-    return () => {
-      document.removeEventListener('visibilitychange', maybeRefresh)
-      window.removeEventListener('focus', maybeRefresh)
-      window.removeEventListener('pageshow', maybeRefresh)
-    }
-  }, [refreshInstalled, refreshUpdateChecks, refreshSetupState])
-
-  // Installs and resolver updates can finish outside the Store. Treat the
-  // parent's message as an invalidation, never as installed/update state.
+  // Parent events only invalidate IDs; installed state always comes from the
+  // API. Coalesce a message burst in one microtask and defer hidden-frame work
+  // until foreground return. No polling, and no waiting for older requests.
   useEffect(() => {
     let active = true
-    let pending = false
-    let refreshing = false
-    async function refresh() {
-      refreshing = true
-      try {
-        while (active && pending) {
-          pending = false
-          const apps = await refreshInstalled({ force: true })
-          if (active && apps) await refreshUpdateChecks(apps, { force: true })
-        }
-      } finally {
-        refreshing = false
-      }
+    let queued = false
+    let foreground = false
+    function scheduleRefresh() {
+      if (queued || document.visibilityState !== 'visible') return
+      queued = true
+      queueMicrotask(() => {
+        queued = false
+        if (!active || document.visibilityState !== 'visible') return
+        const checkAll = !pendingCheckIdsRef.current.size && foreground
+          && Date.now() - lastUpdateCheckRef.current >= REHYDRATE_DEBOUNCE_MS
+        foreground = false
+        void refreshInstalled({ checkAll })
+      })
+    }
+    function onForeground() {
+      if (document.visibilityState !== 'visible') return
+      foreground = true
+      refreshSetupState().catch(() => {})
+      scheduleRefresh()
     }
     function onManagedAppEvent(event) {
       if (event.source !== window.parent || event.data?.type !== 'moebius:managed-app-event') return
-      managedAppRevisionRef.current += 1
-      pending = true
-      if (!refreshing) refresh().catch(() => {})
+      const id = event.data.event?.appId
+      if (typeof id !== 'string' && typeof id !== 'number') return
+      pendingCheckIdsRef.current.add(String(id))
+      scheduleRefresh()
     }
     window.addEventListener('message', onManagedAppEvent)
+    document.addEventListener('visibilitychange', onForeground)
+    window.addEventListener('focus', onForeground)
+    window.addEventListener('pageshow', onForeground)
     return () => {
       active = false
       window.removeEventListener('message', onManagedAppEvent)
+      document.removeEventListener('visibilitychange', onForeground)
+      window.removeEventListener('focus', onForeground)
+      window.removeEventListener('pageshow', onForeground)
     }
-  }, [refreshInstalled, refreshUpdateChecks])
+  }, [refreshInstalled, refreshSetupState])
 
   // Re-fetch a single catalog manifest. Wired into CatalogCard's
   // "Try again" affordance — replaces the previous behavior where a
@@ -1206,6 +1147,9 @@ export default function App({ appId, token }) {
         update_app_id: _opts.updateAppId,
         reviewed_upstream_commit: _opts.upstreamCommit,
       })
+      // A local mutation is newer than any background probe already in flight.
+      // Invalidate only this app's answer; unrelated checks can still finish.
+      if (result.id) checkGenerationsRef.current.set(String(result.id), ++refreshGenerationRef.current)
       const isConflict = result.mode === 'conflict'
       const isSeamlessUpdate = result.mode === 'update' &&
         (result.divergence === 'fast_forward' || result.divergence === 'none')
@@ -1476,6 +1420,7 @@ export default function App({ appId, token }) {
         const text = await r.text()
         throw new Error(`Uninstall failed: ${r.status} ${text}`)
       }
+      checkGenerationsRef.current.set(String(app.id), ++refreshGenerationRef.current)
       await refreshInstalled()
       window.mobius?.signal?.('app_uninstalled', { slug: app.slug || app.id })
       setToast({ kind: 'success', message: `${app.name} uninstalled.` })
