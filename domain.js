@@ -25,9 +25,16 @@ export function storeDestinationFromMessage(event, expectedOrigin, expectedSourc
   return storeDestinationFromIntent(event.data.intent)
 }
 
-export function resolveCatalogItemIntent(catalog, itemId) {
+export function installedCatalogItemId(appId) {
+  return `other-installed-${appId}`
+}
+
+export function resolveCatalogItemIntent(catalog, itemId, installed = []) {
+  // Installed aliases survive becoming represented by a registry listing.
+  const app = installed.find(row => installedCatalogItemId(row.id) === itemId)
   const item = Array.isArray(catalog)
-    ? catalog.find(candidate => candidate.id === itemId)
+    ? (app && catalog.find(candidate => findInstalled(installed, candidate)?.id === app.id))
+      || catalog.find(candidate => candidate.id === itemId)
     : null
   if (!item) {
     return {
@@ -316,7 +323,7 @@ export function otherInstalledCatalogItems(
     const manifestUrl = app.source_manifest.url
     if (!manifestId || !manifestUrl) continue
     items.push({
-      id: `other-installed-${app.id}`,
+      id: installedCatalogItemId(app.id),
       source_manifest: app.source_manifest,
       collection: 'other-installed',
       manifest_url: manifestUrl,
