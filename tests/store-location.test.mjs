@@ -353,17 +353,26 @@ test('unmount closes pending restored ownership without reporting an incomplete 
   assert.deepEqual(nav.reports, [])
 })
 
-test('rejected ownership preserves the saved target until owner navigation', async () => {
-  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'voice' }, { delayed: true })
-  const view = await mountStore(nav)
-  try {
-    await until(() => nav.entries.length === 1)
-    await act(async () => nav.entries[0].reject())
-    assert.deepEqual(nav.reports, [])
-    await act(async () => view.dom.window.document.querySelector('#st-tab-library').click())
-    assert.equal(nav.reports.at(-1).detail, null)
-  } finally { await view.close() }
-})
+for (const collection of [null, 'play']) {
+  test(`refused detail ownership ${collection ? 'leaves the collection visible and finishes' : 'preserves the saved place'}`, async () => {
+    const nav = fakeNav({ tab: 'browse', collection, detail: 'voice' }, { delayed: true })
+    const view = await mountStore(nav)
+    try {
+      await until(() => nav.entries.length === 1)
+      if (collection) {
+        await act(async () => nav.entries[0].own())
+        await until(() => nav.entries.length === 2)
+      }
+      await act(async () => nav.entries.at(-1).reject())
+      if (!collection) assert.deepEqual(nav.reports, [])
+      else assert.equal(nav.reports.at(-1)?.collection, 'play')
+      await act(async () => view.dom.window.document.querySelector('.st-brand-name')
+        .dispatchEvent(new view.dom.window.Event('pointerdown', { bubbles: true })))
+      assert.equal(nav.reports.at(-1).collection, collection)
+      if (collection) assert.equal(nav.entries[0].closed, false)
+    } finally { await view.close() }
+  })
+}
 
 test('Updates intent closes an owned detail and collection before showing Library', async () => {
   const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' })
@@ -459,16 +468,23 @@ test('opening a card cancels a slow community restore without closing the owner 
   } finally { await view.close() }
 })
 
-test('a shell intent for a baked target opens before registry hydration', async () => {
-  const registry = deferred()
-  const nav = fakeNav(undefined)
-  const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
-  try {
-    await view.intent('app:voice')
-    assert.deepEqual(nav.opened, ['app-store-detail'])
-    assert.equal(nav.reports.at(-1)?.detail, 'voice')
-  } finally { registry.resolve(json({ schema: 1, apps: [] })); await view.close() }
-})
+for (const restored of [false, true]) {
+  test(`a ${restored ? 'restored detail' : 'shell app intent'} waits for installed identity, not registry hydration`, async () => {
+    const registry = deferred(), apps = deferred()
+    const nav = fakeNav(restored ? { tab: 'browse', detail: 'voice' } : undefined)
+    const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise
+      : path === '/api/apps/' ? apps.promise : undefined)
+    try {
+      if (!restored) await view.intent('app:voice')
+      assert.deepEqual(nav.opened, [])
+      const source_manifest = { id: 'voice', url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json' }
+      await act(async () => apps.resolve(json([{ id: 12, slug: 'voice', source_manifest }])))
+      await until(() => nav.reports.at(-1)?.detail === 'voice')
+      assert.deepEqual(nav.opened, ['app-store-detail'])
+      assert.equal(view.dom.window.document.querySelector('.st-detail-cta')?.textContent.trim(), 'Open App')
+    } finally { registry.resolve(json({ schema: 1, apps: [] })); apps.resolve(json([])); await view.close() }
+  })
+}
 
 test('an installed alias restores its current registry representative and reports the canonical id', async () => {
   const nav = fakeNav({ tab: 'library', category: 'all', detail: 'other-installed-34' })
@@ -531,7 +547,7 @@ test('owner card selection cancels pending restored ownership before opening its
   } finally { await view.close() }
 })
 
-test('Back during collection-to-detail restoration cancels both restore-owned entries', async () => {
+test('collection Back cancels a pending detail without undoing owned history', async () => {
   const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' }, { delayed: true })
   const view = await mountStore(nav)
   try {
@@ -541,26 +557,11 @@ test('Back during collection-to-detail restoration cancels both restore-owned en
     await act(async () => nav.entries[0].callbacks.onBack())
     await act(async () => nav.entries[1].own())
     await until(() => nav.reports.length > 0)
-    assert.ok(nav.entries.every(entry => entry.closed))
+    assert.equal(nav.entries[0].closed, false)
+    assert.equal(nav.entries[1].closed, true)
     assert.equal(nav.reports.at(-1).collection, null)
     assert.equal(nav.reports.at(-1).detail, null)
   } finally { await view.close() }
-})
-
-test('a newer shell destination closes only the pending entry created by the old intent', async () => {
-  const registry = deferred()
-  const nav = fakeNav(undefined, { delayed: true })
-  const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
-  try {
-    await view.intent('app:voice')
-    assert.equal(nav.entries.length, 1)
-    await view.intent('app:gone')
-    assert.equal(nav.entries[0].closed, true)
-    await act(async () => nav.entries[0].own())
-    await act(async () => registry.resolve(json({ schema: 1, apps: [] })))
-    await until(() => nav.reports.at(-1)?.detail === null)
-    assert.equal(nav.reports.some(place => place.detail === 'voice'), false)
-  } finally { registry.resolve(json({ schema: 1, apps: [] })); await view.close() }
 })
 
 test('a saved Browse query is visible and can be cleared in one click', async () => {
@@ -729,27 +730,31 @@ test('an installed-list failure preserves a saved installed alias until backgrou
   } finally { await view.close() }
 })
 
-test('a saved target without a manifest is preserved instead of reported as missing', async () => {
-  const manifest = deferred()
-  let requested = false
-  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'network-app' })
-  const view = await mountStore(nav, path => {
-    if (path.includes('catalog.json')) return json({ schema: 1, apps: [{
-      id: 'network-app', name: 'Network app', manifest_url: 'https://example.test/network/mobius.json',
-      raw_base: 'https://example.test/network/',
-    }] })
-    if (path.startsWith('/api/proxy?') && path.includes('example.test')) { requested = true; return manifest.promise }
+for (const collection of [null, 'play']) {
+  test(`a failed detail manifest ${collection ? 'leaves the collection visible' : 'preserves the saved place'}`, async () => {
+    const manifest = deferred()
+    let requested = false
+    const nav = fakeNav({ tab: 'browse', category: 'all', collection, detail: 'network-app' })
+    const view = await mountStore(nav, path => {
+      if (path.includes('catalog.json')) return json({ schema: 1, apps: [{
+        id: 'network-app', name: 'Network app', manifest_url: 'https://example.test/network/mobius.json',
+        raw_base: 'https://example.test/network/',
+      }] })
+      if (path.startsWith('/api/proxy?') && path.includes('example.test')) { requested = true; return manifest.promise }
+    })
+    try {
+      await until(() => requested)
+      await act(async () => manifest.resolve(json({}, 404)))
+      await until(() => collection ? nav.reports.at(-1)?.collection === collection
+        : view.dom.window.document.querySelector('.st-card.is-error'))
+      if (collection) assert.equal(nav.reports.at(-1)?.collection, collection)
+      else assert.deepEqual(nav.reports, [])
+      assert.deepEqual(nav.opened, collection ? ['app-store-collection'] : [])
+      await act(async () => view.dom.window.document.querySelector('#st-tab-library').click())
+      assert.equal(nav.reports.at(-1).detail, null)
+    } finally { await view.close() }
   })
-  try {
-    await until(() => requested)
-    await act(async () => manifest.resolve(json({}, 404)))
-    await until(() => view.dom.window.document.querySelector('.st-card.is-error'))
-    assert.deepEqual(nav.reports, [])
-    assert.deepEqual(nav.opened, [])
-    await act(async () => view.dom.window.document.querySelector('#st-tab-library').click())
-    assert.equal(nav.reports.at(-1).detail, null)
-  } finally { await view.close() }
-})
+}
 
 for (const row of [{ ...communityRow, manifest: null }, {}]) {
   test(`an incomplete community response preserves the saved target (${row.id || 'malformed'})`, async () => {
@@ -792,4 +797,19 @@ test('opening an oversized community detail does not report a replacement bookma
     assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Distant app')
     assert.equal(nav.reports.length, reportsBefore)
   } finally { await view.close() }
+})
+
+test('detail host Back cancels a waiting app intent', async () => {
+  const registry = deferred()
+  const nav = fakeNav({ tab: 'browse', detail: 'voice' })
+  const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
+  try {
+    await until(() => nav.reports.at(-1)?.detail === 'voice')
+    await view.intent('app:remote-target')
+    await act(async () => nav.entries[0].callbacks.onBack())
+    assert.equal(nav.reports.at(-1).detail, null)
+    await act(async () => registry.resolve(json({ schema: 1, apps: [{ id: 'remote-target', name: 'Remote',
+      manifest_url: 'https://example.test/remote/mobius.json', raw_base: 'https://example.test/remote/' }] })))
+    assert.deepEqual(nav.opened, ['app-store-detail'])
+  } finally { registry.resolve(json({ schema: 1, apps: [] })); await view.close() }
 })

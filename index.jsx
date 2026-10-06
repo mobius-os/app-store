@@ -394,7 +394,9 @@ export default function App({ appId, token }) {
   // already restored on first paint, without waiting for network hydration.
   const [intentDestination, setIntentDestination] = useState(() =>
     savedLocation?.collection || savedLocation?.detail
-      ? { kind: 'location', location: { collection: savedLocation.collection, detail: savedLocation.detail } } : null
+      ? savedLocation.collection
+        ? { kind: 'collection', collectionId: savedLocation.collection, itemId: savedLocation.detail, restored: true }
+        : { kind: 'app', itemId: savedLocation.detail, restored: true } : null
   )
   // Cancel synchronously before an owner action can reuse a pending Back entry.
   const cancelDestinationRef = useRef(null)
@@ -1505,16 +1507,18 @@ export default function App({ appId, token }) {
 
   // Each nested level owns one reversible host entry. No iframe history or
   // timeout fallback: an unowned view would strand the device's Back gesture.
-  const openDetail = useCallback(item => openDetailEntry(navDetailRef, item, {
+  const openDetail = useCallback((item, signal) => openDetailEntry(navDetailRef, item, {
     nav: window.mobius.nav,
     show: setDetail,
+    signal,
+    cancelPendingDestination,
     prepare: target => {
       reviewCapabilities(target)
       if (!navDetailRef.current) savedGridScrollRef.current = gridScrollRef.current?.scrollTop || 0
     },
-  }), [reviewCapabilities])
+  }), [reviewCapabilities, cancelPendingDestination])
 
-  const openCollection = useCallback(async id => {
+  const openCollection = useCallback(async (id, signal) => {
     if (collectionNavRef.current) return
     homeScrollRef.current = gridScrollRef.current?.scrollTop || 0
     const leave = () => {
@@ -1536,7 +1540,13 @@ export default function App({ appId, token }) {
       },
     })
     collectionNavRef.current = handle
+    const cancel = () => {
+      if (collectionNavRef.current === handle) collectionNavRef.current = null
+      handle.close()
+    }
+    signal?.addEventListener('abort', cancel, { once: true })
     const {status} = await handle.outcome
+    signal?.removeEventListener('abort', cancel)
     if (collectionNavRef.current !== handle) { handle.close(); return }
     if (status !== 'owned') { collectionNavRef.current = null; return }
     savedGridScrollRef.current = 0
@@ -1551,6 +1561,8 @@ export default function App({ appId, token }) {
   }, [])
 
   useEffect(() => () => {
+    cancelDestinationRef.current?.()
+    cancelDestinationRef.current = null
     navDetailRef.current?.handle.close()
     collectionNavRef.current?.close()
   }, [])
@@ -2020,121 +2032,77 @@ export default function App({ appId, token }) {
     }
   }, [intentDestination, tab, category, query, activeCollection, detail?.id])
 
-  const destinationItemId = intentDestination?.kind === 'location'
-    ? intentDestination.location.detail : intentDestination?.itemId
-  const destinationResolution = resolveCatalogItemIntent(displayCatalog, destinationItemId, installed)
-  const destinationItem = destinationResolution.item
-  // Collections need no catalog data. Known targets can open immediately;
-  // absence is meaningful only after registry and installed hydration settle.
-  const destinationReady = !!(!destinationItemId || destinationItem || catalogHydrated)
-  const communityDestination = destinationItemId?.startsWith('community:')
-  const locationTargetPending = !!(intentDestination?.kind === 'location' && destinationItemId && (
-    destinationItem ? !destinationItem.manifest : !communityDestination && (
-      !!installedLoadError || catalogLoadError
-      || otherInstalledCatalogSources.some(item => item.id === destinationItemId)
-    )
-  ))
-  // Retry an unresolved restore when its target becomes usable, not on every
-  // background metadata refresh while Back ownership is pending.
-  const locationTargetAvailable = intentDestination?.kind === 'location' && !!destinationItem?.manifest
+  const destinationResolution = useMemo(() =>
+    resolveCatalogItemIntent(displayCatalog, intentDestination?.itemId, installed),
+  [displayCatalog, intentDestination?.itemId, installed])
 
   useEffect(() => {
-    if (!intentDestination || !destinationReady || locationTargetPending) return
-    let cancelled = false
-    let completed = false
-    let restoredDetailEntry = null
-    let restoredCollectionHandle = null
+    // An intent is a one-shot command. Metadata refreshes may make a waiting
+    // target ready, but must not restart an ownership request already sent.
+    if (!intentDestination || cancelDestinationRef.current) return
+    const destination = intentDestination
+    const resolution = destinationResolution
+    const lookup = !resolution.item && destination.itemId?.startsWith('community:')
+    if (destination.kind === 'app') {
+      if (loadingCatalog || (!resolution.item && !catalogHydrated)) return
+      if (destination.restored && !lookup && (
+        resolution.item ? !resolution.item.manifest && (!destination.collectionId || !catalogHydrated)
+          : ((!destination.collectionId && (installedLoadError || catalogLoadError))
+          || otherInstalledCatalogSources.some(item => item.id === destination.itemId))
+      )) return
+    }
     const controller = new AbortController()
-    async function restore() {
-      if (intentDestination.kind === 'updates') {
+    const { signal } = controller
+    cancelDestinationRef.current = () => controller.abort()
+    const finish = next => {
+      if (signal.aborted) return
+      cancelDestinationRef.current = null
+      setIntentDestination(next)
+    }
+    async function openDestination() {
+      if (destination.kind === 'updates') {
         closeDetail()
         closeCollection()
-      }
-      if (intentDestination.kind === 'location') {
-        const saved = intentDestination.location
-        let item = destinationItem
-        if (!item && typeof saved.detail === 'string' && saved.detail.startsWith('community:')) {
-          try {
-            const row = await loadCommunityApp(token, saved.detail.slice('community:'.length), {
-              signal: controller.signal,
-            })
-            item = communityCatalogItems([row]).find(candidate => candidate.id === saved.detail)
-            if (!item?.manifest) return
-          } catch (error) {
-            // Only an authoritative not-found can retire the saved target.
-            if (error.status !== 404) return
-          }
-        }
-        if (cancelled || (item && !item.manifest)) return
-        if (saved.collection) {
-          const opening = openCollection(saved.collection)
-          restoredCollectionHandle = collectionNavRef.current
-          await opening
-          if (collectionNavRef.current !== restoredCollectionHandle) return
-        }
-        if (cancelled) return
-        if (item?.manifest) {
-          const opening = openDetail(item)
-          restoredDetailEntry = navDetailRef.current
-          await opening
-          if (!restoredDetailEntry?.owned) return
-        }
-      } else if (intentDestination.kind === 'updates') {
         selectTab('library')
         setCategory('update')
         setQuery('')
+      } else if (destination.kind === 'collection') {
+        await openCollection(destination.collectionId, signal)
+        finish(destination.itemId
+          ? { kind: 'app', itemId: destination.itemId, restored: true, collectionId: destination.collectionId }
+          : null)
+        return
       } else {
-        const resolution = destinationResolution
-        if (resolution.action === 'unavailable') {
-          setToast(resolution.toast)
-        } else {
-          selectTab('browse')
-          setCategory('all')
-          if (resolution.action === 'needs-connection') {
-            setQuery(resolution.query)
-            setToast(resolution.toast)
-          } else {
-            const existingEntry = navDetailRef.current
-            const opening = openDetail(resolution.item)
-            if (!existingEntry) restoredDetailEntry = navDetailRef.current
-            await opening
-            // Retargeting an existing pending entry keeps its Back history;
-            // its original open still owns the eventual visibility change.
-            if (!cancelled) await navDetailRef.current?.handle.outcome
+        let item = resolution.item
+        if (lookup) {
+          try {
+            const row = await loadCommunityApp(token, destination.itemId.slice('community:'.length), { signal })
+            item = communityCatalogItems([row]).find(candidate => candidate.id === destination.itemId)
+            if (!item?.manifest && !destination.collectionId) return
+          } catch (error) {
+            if (signal.aborted || (error.status !== 404 && !destination.collectionId)) return
           }
         }
-      }
-      if (cancelled) return
-      completed = true
-      setIntentDestination(null)
-    }
-    const cancel = () => {
-      if (cancelled) return
-      cancelled = true
-      controller.abort()
-      if (cancelDestinationRef.current === cancel) cancelDestinationRef.current = null
-      if (!completed) {
-        restoredDetailEntry?.handle.close()
-        if (restoredDetailEntry && navDetailRef.current === restoredDetailEntry) {
-          navDetailRef.current = null
-          setDetail(null)
+        if (signal.aborted) return
+        if (!destination.restored && resolution.toast) setToast(resolution.toast)
+        if (!destination.restored && resolution.action !== 'unavailable') {
+          selectTab('browse')
+          setCategory('all')
+          if (resolution.action === 'needs-connection') setQuery(resolution.query)
         }
-        restoredCollectionHandle?.close()
-        if (restoredCollectionHandle && collectionNavRef.current === restoredCollectionHandle) {
-          collectionNavRef.current = null
-          savedGridScrollRef.current = homeScrollRef.current
-          setActiveCollection(null)
+        if (item?.manifest) {
+          await openDetail(item, signal)
+          // A retargeted entry may still be awaiting its original host push.
+          await navDetailRef.current?.handle.outcome
+          if (destination.restored && !destination.collectionId && !navDetailRef.current?.owned) return
         }
       }
+      finish(null)
     }
-    cancelDestinationRef.current = cancel
-    void restore()
-    return cancel
-    // A destination is a one-shot command against the ready catalog snapshot.
-    // Its own scalar changes and background catalog refreshes must not restart
-    // pending host ownership. Only a new destination or readiness cancels it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intentDestination, destinationReady, locationTargetPending, locationTargetAvailable, token, openCollection, openDetail, closeCollection, closeDetail])
+    void openDestination()
+  }, [intentDestination, destinationResolution, loadingCatalog, catalogHydrated,
+    installedLoadError, catalogLoadError, otherInstalledCatalogSources, token,
+    closeDetail, closeCollection, selectTab, openCollection, openDetail])
 
   // Detail view replaces the main layout when set.
   if (detail) {

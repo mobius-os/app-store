@@ -203,7 +203,7 @@ export function CatalogList({
     .filter((group) => group.items.length > 0)
   const collections = [
     ...EDITORIAL_COLLECTIONS.map(group => ({
-      ...group, items: group.id === 'picks' ? picks : arrivals,
+      ...group, items: group.id === 'picks' ? picks : group.id === 'arrivals' ? arrivals : [],
     })),
     ...groups,
   ]
