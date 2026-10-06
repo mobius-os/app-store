@@ -1271,6 +1271,14 @@ export function utf8Length(value) {
   return new TextEncoder().encode(String(value || '')).length
 }
 
+// Invalid external copy is omitted, never rewritten to fit the listing contract.
+// Display-only shortening belongs to cards, not catalog data or detail views.
+export function textWithinByteLimit(value, maxBytes) {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed && utf8Length(trimmed) <= maxBytes ? trimmed : undefined
+}
+
 // The editable listing a Store preview describes, with image URLs resolved
 // against the accepted revision. Uploaded images carry their bytes instead.
 export function listingDraftFromPreview(preview, app) {

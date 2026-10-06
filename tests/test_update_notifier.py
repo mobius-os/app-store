@@ -30,7 +30,7 @@ class UpdateNotifierTests(unittest.TestCase):
     expected_query = urllib.parse.urlencode({"manifest_url": workout_url})
     paths = []
 
-    def request(method, path, body=None):
+    def request(method, path, body=None, socket_timeout=None):
       paths.append(path)
       if path == "/api/apps/":
         return [{
@@ -54,6 +54,38 @@ class UpdateNotifierTests(unittest.TestCase):
     self.assertEqual(
       paths,
       ["/api/apps/", f"/api/apps/7/update-check?{expected_query}"],
+    )
+
+  def test_request_passes_socket_timeout_to_urlopen(self):
+    response = mock.MagicMock()
+    response.__enter__.return_value.read.return_value = b'{}'
+    with mock.patch.object(notifier.urllib.request, "urlopen", return_value=response) as urlopen:
+      self.assertEqual(notifier.request("GET", "/api/apps/", socket_timeout=23), {})
+    self.assertEqual(urlopen.call_args.kwargs, {"timeout": 23})
+
+  def test_update_checks_use_socket_timeout_and_skip_stalled_probes(self):
+    timeouts = {}
+
+    def request(method, path, body=None, socket_timeout=None):
+      if path == "/api/apps/":
+        return [
+          {"id": 7, "name": "Slow", "manifest_url": "https://example.test/slow/mobius.json"},
+          {"id": 8, "name": "Ready", "manifest_url": "https://example.test/ready/mobius.json"},
+        ]
+      timeouts[path] = socket_timeout
+      if path.startswith("/api/apps/7/"):
+        raise TimeoutError("timed out")
+      return {"update_available": True, "upstream_version": "2.0.0"}
+
+    with mock.patch.object(notifier, "APP_ID", "39"), mock.patch.object(
+      notifier, "request", side_effect=request,
+    ):
+      self.assertEqual(notifier.available_updates(), [{
+        "id": 8, "name": "Ready", "revision": "2.0.0",
+      }])
+
+    self.assertEqual(
+      set(timeouts.values()), {notifier.UPDATE_CHECK_SOCKET_TIMEOUT_SECONDS},
     )
 
   def test_unchanged_update_set_does_not_repeat_notification(self):

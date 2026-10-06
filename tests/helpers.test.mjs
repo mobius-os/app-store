@@ -154,7 +154,7 @@ test('catalog listing artwork is bounded and sanitized before it reaches the UI'
         alt: 'Voice screen',
         label: 'Choose a voice',
       }],
-      tagline: 'A private voice for your agent.',
+      tagline: 'A private voice   for your agent.',
       featured: true,
     })
   } finally {

@@ -5,16 +5,20 @@ import {
   CheckCircleFilled, Circle, ImageSquare, Plus, Sparkles, Trash,
 } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useEffect, useId, useRef, useState } from 'react'
+import { LISTING_LIMITS } from '../constants.js'
 import { utf8Length } from '../domain.js'
 
-const TAGLINE_MAX = 120
-const DESCRIPTION_MAX = 4000
-const ALT_MAX = 300
-const MAX_SCREENSHOTS = 5
+const {
+  taglineBytes: TAGLINE_MAX,
+  descriptionBytes: DESCRIPTION_MAX,
+  altBytes: ALT_MAX,
+  captionBytes: CAPTION_MAX,
+  screenshots: MAX_SCREENSHOTS,
+} = LISTING_LIMITS
 
-function Counter({ value, max }) {
-  const used = utf8Length(value)
-  return <span className={`st-edit-count${used > max ? ' is-over' : ''}`}>{used}/{max}</span>
+function Counter({ value, max, id }) {
+  const used = utf8Length(value.trim())
+  return <span id={id} className={`st-edit-count${used > max ? ' is-over' : ''}`}>{used}/{max} bytes</span>
 }
 
 // A real file input inside its label, visually hidden: keyboard, screen
@@ -109,9 +113,9 @@ export function ListingEditor({
     screenshots: current.screenshots.map((shot) => (shot.key === key ? { ...shot, ...patch } : shot)),
   }))
   const shots = draft.screenshots
-  const overLimit = utf8Length(draft.tagline) > TAGLINE_MAX
-    || utf8Length(draft.description) > DESCRIPTION_MAX
-    || shots.some((shot) => utf8Length(shot.alt) > ALT_MAX)
+  const overLimit = utf8Length(draft.tagline.trim()) > TAGLINE_MAX
+    || utf8Length(draft.description.trim()) > DESCRIPTION_MAX
+    || shots.some((shot) => utf8Length(shot.alt.trim()) > ALT_MAX || utf8Length(shot.label.trim()) > CAPTION_MAX)
 
   return (
     <form className="st-listing-editor" onSubmit={(event) => { event.preventDefault(); onSave() }}>
@@ -156,12 +160,20 @@ export function ListingEditor({
                   <Trash width="16" height="16" aria-hidden="true" />
                 </button>
               </div>
-              <input aria-label={`Screenshot ${index + 1}: what it shows`} value={shot.alt}
-                     placeholder="What this shows (required)"
-                     onChange={(event) => updateShot(shot.key, { alt: event.target.value })} />
-              <input aria-label={`Screenshot ${index + 1}: caption`} value={shot.label}
-                     placeholder="Caption (optional)" maxLength={120}
-                     onChange={(event) => updateShot(shot.key, { label: event.target.value })} />
+              <label className="st-edit-field" htmlFor={`${ids}-${index}-alt`}>
+                <span className="st-edit-label">What it shows <Counter id={`${ids}-${index}-alt-count`} value={shot.alt} max={ALT_MAX} /></span>
+                <input id={`${ids}-${index}-alt`} aria-label={`Screenshot ${index + 1}: what it shows`} value={shot.alt}
+                       aria-describedby={`${ids}-${index}-alt-count`} aria-invalid={utf8Length(shot.alt.trim()) > ALT_MAX}
+                       placeholder="What this shows (required)"
+                       onChange={(event) => updateShot(shot.key, { alt: event.target.value })} />
+              </label>
+              <label className="st-edit-field" htmlFor={`${ids}-${index}-caption`}>
+                <span className="st-edit-label">Caption <Counter id={`${ids}-${index}-caption-count`} value={shot.label} max={CAPTION_MAX} /></span>
+                <input id={`${ids}-${index}-caption`} aria-label={`Screenshot ${index + 1}: caption`} value={shot.label}
+                       aria-describedby={`${ids}-${index}-caption-count`} aria-invalid={utf8Length(shot.label.trim()) > CAPTION_MAX}
+                       placeholder="Caption (optional)"
+                       onChange={(event) => updateShot(shot.key, { label: event.target.value })} />
+              </label>
             </div>
           ))}
           {shots.length < MAX_SCREENSHOTS ? (

@@ -23,6 +23,17 @@ export const STORE_SELF = {
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
 }
 
+// The platform's Store listing contract, in UTF-8 bytes as the publisher
+// checks it. Catalog text is bounded here, never at a display width: cards and
+// banners shorten it when they render, and the detail view shows it whole.
+export const LISTING_LIMITS = Object.freeze({
+  taglineBytes: 120,
+  descriptionBytes: 4000,
+  altBytes: 300,
+  captionBytes: 120,
+  screenshots: 5,
+})
+
 // Hosts we recognize as common public manifest sources. The paste-a-URL
 // flow silently trusts these; anything else triggers a soft warning in
 // the install confirm modal. This is UX-only — the backend's SSRF

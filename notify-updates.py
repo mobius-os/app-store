@@ -24,6 +24,10 @@ from pathlib import Path
 API = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 TOKEN = os.environ.get("APP_TOKEN", "")
 APP_ID = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else ""
+# urlopen's timeout bounds socket inactivity, not total request duration. It
+# allows progress to continue beyond this value and is independent of api.js's
+# browser wall-clock deadline. A stalled probe is unknown and gets skipped.
+UPDATE_CHECK_SOCKET_TIMEOUT_SECONDS = 120
 
 
 def catalog_manifest_urls():
@@ -57,14 +61,14 @@ def catalog_manifest_urls():
   return urls
 
 
-def request(method: str, path: str, body=None):
+def request(method: str, path: str, body=None, socket_timeout: float = 12):
   headers = {"Authorization": f"Bearer {TOKEN}"}
   data = None
   if body is not None:
     data = json.dumps(body, separators=(",", ":")).encode()
     headers["Content-Type"] = "application/json"
   req = urllib.request.Request(API + path, data=data, headers=headers, method=method)
-  with urllib.request.urlopen(req, timeout=12) as response:
+  with urllib.request.urlopen(req, timeout=socket_timeout) as response:
     raw = response.read()
     return json.loads(raw) if raw else None
 
@@ -88,6 +92,7 @@ def available_updates():
       )
       check = request(
         "GET", f"/api/apps/{int(app['id'])}/update-check{query}",
+        socket_timeout=UPDATE_CHECK_SOCKET_TIMEOUT_SECONDS,
       ) or {}
     except (OSError, ValueError, urllib.error.HTTPError):
       return None
