@@ -115,7 +115,7 @@ export function ListingEditor({
   const shots = draft.screenshots
   const overLimit = utf8Length(draft.tagline) > TAGLINE_MAX
     || utf8Length(draft.description) > DESCRIPTION_MAX
-    || shots.some((shot) => utf8Length(shot.alt) > ALT_MAX)
+    || shots.some((shot) => utf8Length(shot.alt) > ALT_MAX || utf8Length(shot.label) > CAPTION_MAX)
 
   return (
     <form className="st-listing-editor" onSubmit={(event) => { event.preventDefault(); onSave() }}>
@@ -164,7 +164,7 @@ export function ListingEditor({
                      placeholder="What this shows (required)"
                      onChange={(event) => updateShot(shot.key, { alt: event.target.value })} />
               <input aria-label={`Screenshot ${index + 1}: caption`} value={shot.label}
-                     placeholder="Caption (optional)" maxLength={CAPTION_MAX}
+                     placeholder="Caption (optional)"
                      onChange={(event) => updateShot(shot.key, { label: event.target.value })} />
             </div>
           ))}

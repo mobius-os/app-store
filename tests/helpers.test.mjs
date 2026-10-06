@@ -2908,3 +2908,9 @@ test('review prompts that need an account or handle hand off to Möbius · You',
   assert.match(appSource, /onLogInToMobiusYou=\{logInToMobiusYou\}/)
   assert.match(detailSource, /onLogInToMobiusYou=\{onLogInToMobiusYou\}/)
 })
+
+test('listing editor validates screenshot captions in UTF-8 bytes, not characters', async () => {
+  const editor = await readFile(join(root, '..', 'ui', 'ListingEditor.jsx'), 'utf8')
+  assert.match(editor, /utf8Length\(shot\.label\) > CAPTION_MAX/)
+  assert.doesNotMatch(editor, /maxLength=\{CAPTION_MAX\}/)
+})
