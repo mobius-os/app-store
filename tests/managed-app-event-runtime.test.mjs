@@ -49,7 +49,9 @@ async function mount(fetchApps, { catalog = [], hidden = false } = {}) {
   const parent = {}
   Object.defineProperty(dom.window, 'parent', { value: parent })
   Object.defineProperty(dom.window.document, 'visibilityState', { value: 'hidden', configurable: true })
-  dom.window.mobius = { signal() {} }
+  const signals = []
+  const manifests = []
+  dom.window.mobius = { signal(name, data) { signals.push({ name, data }) } }
   dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   dom.window.HTMLElement.prototype.scrollIntoView = () => {}
   Object.assign(globalThis, {
@@ -58,11 +60,12 @@ async function mount(fetchApps, { catalog = [], hidden = false } = {}) {
     IS_REACT_ACT_ENVIRONMENT: true,
     fetch: async (url, options = {}) => {
       const path = String(url)
-      if (path === '/api/apps/' || path === '/api/apps/install' || path.startsWith('/api/apps/11/update-candidate-preview')
+      if (path === '/api/apps/' || path === '/api/apps/install' || (/^\/api\/apps\/\d+\/update-candidate-preview/.test(path) && !path.startsWith('/api/apps/999/'))
         || (/^\/api\/apps\/\d+\/update-check/.test(path) && !path.startsWith('/api/apps/999/'))) return fetchApps(path, options)
       if (path.startsWith('/api/proxy?')) {
         const remote = decodeURIComponent(path.split('url=')[1] || '')
         if (remote.endsWith('/catalog.json')) return json({ schema: 1, apps: catalog })
+        manifests.push(remote)
         if (remote.includes('app-voice')) return json(MANIFEST_SNAPSHOTS.voice)
         if (remote.includes('app-maps')) return json(MANIFEST_SNAPSHOTS.maps)
       }
@@ -74,7 +77,11 @@ async function mount(fetchApps, { catalog = [], hidden = false } = {}) {
   await act(async () => root.render(React.createElement(App, { appId: 999, token: 'tok' })))
   Object.defineProperty(dom.window.document, 'visibilityState', { value: hidden ? 'hidden' : 'visible', configurable: true })
   return {
-    dom,
+    dom, signals, manifests,
+    async foreground() {
+      Object.defineProperty(dom.window.document, 'visibilityState', { value: 'visible', configurable: true })
+      await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')))
+    },
     async message({ source = parent, type = 'moebius:managed-app-event', appId = '11' } = {}) {
       await act(async () => dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
         source, origin: 'https://shell.test', data: { type, event: { type: 'app_updated', appId } },
@@ -384,4 +391,182 @@ test('a local update supersedes an older background check without waiting for it
     await act(async () => releaseCheck())
     assert.equal(view.voiceAction(), 'Open Voice', 'the pre-install resolver answer cannot undo local success')
   } finally { await act(async () => releaseCheck?.()); await view.close() }
+})
+
+const preview = id => json({
+  app_id: id, upstream_version: '2.0.0', upstream_diff: '', source_digest: 'a'.repeat(64),
+  upstream_commit: 'b'.repeat(40), capability_preview: {
+    capability_digest: 'c'.repeat(64), capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
+  },
+})
+const updateResult = id => json({
+  id, slug: id === 11 ? 'voice' : 'maps', name: id === 11 ? 'Voice' : 'Maps',
+  version: '2.0.0', mode: 'update', divergence: 'fast_forward',
+})
+async function confirmVoiceUpdate(view) {
+  await view.library()
+  const update = view.dom.window.document.querySelector('button[aria-label="Update Voice"]')
+  assert.ok(update)
+  await act(async () => update.click())
+  const confirm = view.dom.window.document.querySelector('.st-update-review-actions button.st-btn-primary')
+  assert.ok(confirm)
+  await act(async () => confirm.click())
+}
+
+for (const event of ['completion', 'focus', 'failed older read']) {
+  test(`load follows the latest read after ${event}, before painting cards, hydrating manifests, or signaling ready`, async () => {
+    const releases = []
+    let reads = 0
+    const view = await mount(async path => {
+      if (path === '/api/apps/') {
+        if (++reads <= 2) {
+          const response = reads === 1 && event === 'failed older read' ? json({}, 403) : json(installed())
+          return new Promise(resolve => { releases.push(() => resolve(response)) })
+        }
+        return json(installed())
+      }
+      return json({ update_available: false, pending_update_state: 'none' })
+    })
+    try {
+      if (event !== 'focus') await view.message()
+      else await view.foreground()
+      assert.equal(reads, 2)
+      await act(async () => releases[0]())
+      assert.equal(view.voiceAction(), undefined, 'older read must not dismiss the first-paint skeleton')
+      assert.equal(view.signals.some(signal => signal.name === 'app_ready'), false)
+      await act(async () => releases[1]())
+      await view.library()
+      assert.equal(view.voiceAction(), 'Open Voice')
+      assert.ok(view.manifests.some(url => url.includes('app-voice')), 'installed apps get a live manifest')
+      assert.deepEqual(view.signals.filter(signal => signal.name === 'app_ready'), [{ name: 'app_ready', data: { installed_count: 1 } }])
+    } finally { await act(async () => releases.forEach(release => release())); await view.close() }
+  })
+}
+
+test('a successful Store update with an interleaved completion read has no false refresh error', async () => {
+  let updated = false
+  let releaseRead
+  let held = false
+  const view = await mount(async path => {
+    if (path === '/api/apps/') {
+      if (updated && !held) { held = true; return new Promise(resolve => { releaseRead = () => resolve(json(installed('2.0.0'))) }) }
+      return json(installed(updated ? '2.0.0' : '1.0.0'))
+    }
+    if (path.includes('/update-candidate-preview')) return preview(11)
+    if (path === '/api/apps/install') { updated = true; return updateResult(11) }
+    return json({ update_available: !updated, pending_update_state: 'none' })
+  })
+  try {
+    await confirmVoiceUpdate(view)
+    assert.ok(releaseRead)
+    await view.message()
+    await act(async () => releaseRead())
+    assert.equal(view.voiceAction(), 'Open Voice')
+    assert.match(view.dom.window.document.querySelector('.st-toast-msg')?.textContent || '', /1 app was updated/)
+    assert.doesNotMatch(view.dom.window.document.querySelector('.st-toast-msg')?.textContent || '', /could not be refreshed/)
+  } finally { await act(async () => releaseRead?.()); await view.close() }
+})
+
+test('a due foreground full check includes pending event IDs and unrelated apps', async () => {
+  const calls = []
+  const now = Date.now
+  let time = now()
+  Date.now = () => time
+  const rows = [...installed(), { ...installed()[0], id: 12, slug: 'other' }]
+  let view
+  try {
+    view = await mount(async path => {
+      if (path === '/api/apps/') return json(rows)
+      calls.push(Number(path.match(/apps\/(\d+)/)[1]))
+      return json({ update_available: false, pending_update_state: 'none' })
+    })
+    calls.length = 0
+    Object.defineProperty(view.dom.window.document, 'visibilityState', { value: 'hidden', configurable: true })
+    await view.message()
+    time += 50_001
+    await view.foreground()
+    assert.deepEqual(calls.sort(), [11, 12], 'pending IDs are covered by, not a reason to skip, the due full check')
+  } finally { Date.now = now; await view?.close() }
+})
+
+test('due foreground checks reuse the in-flight full round while events replace only their own answers', async () => {
+  const now = Date.now
+  let time = now()
+  Date.now = () => time
+  const releases = []
+  const calls = []
+  const rows = [...installed(), { ...installed()[0], id: 12, slug: 'other' }]
+  let view
+  try {
+    view = await mount(async path => {
+      if (path === '/api/apps/') return json(rows)
+      calls.push(Number(path.match(/apps\/(\d+)/)[1]))
+      if (calls.length <= 2) return new Promise(resolve => { releases.push(() => resolve(json({ update_available: true, pending_update_state: 'needs_resolution' }))) })
+      return json({ update_available: false, pending_update_state: 'none' })
+    })
+    time += 50_001
+    await view.foreground()
+    assert.deepEqual(calls, [11, 12], 'a slow startup round is reused, never duplicated')
+    await view.message()
+    assert.deepEqual(calls, [11, 12, 11], 'events still bypass the older probe for their app')
+    time += 50_001
+    await view.foreground()
+    assert.deepEqual(calls, [11, 12, 11])
+    await act(async () => releases.forEach(release => release()))
+    await view.library()
+    assert.equal(view.voiceAction(), 'Open Voice', 'reused rounds cannot overwrite the event answer')
+    time += 50_001
+    await view.foreground()
+    assert.deepEqual(calls, [11, 12, 11, 11, 12], 'a fresh full round can start after completion')
+  } finally { Date.now = now; await act(async () => releases.forEach(release => release())); await view?.close() }
+})
+
+test('a local install stamp does not discard an authoritative installed read in flight', async () => {
+  const mapsUrl = 'https://raw.githubusercontent.com/mobius-os/app-maps/main/mobius.json'
+  const rows = [...installed(), { id: 12, slug: 'maps', name: 'Maps', manifest_url: mapsUrl, source_manifest: { id: 'maps', url: mapsUrl } }]
+  let holdRead = false
+  let releaseRead
+  let releaseInstall
+  let installs = 0
+  const view = await mount(async (path, options) => {
+    if (path === '/api/apps/') {
+      if (holdRead) { holdRead = false; return new Promise(resolve => { releaseRead = () => resolve(json(installed('2.0.0'))) }) }
+      return json(rows)
+    }
+    if (path.includes('/update-candidate-preview')) return preview(Number(path.match(/apps\/(\d+)/)[1]))
+    if (path === '/api/apps/install') {
+      const id = JSON.parse(options.body).update_app_id
+      if (++installs === 2) return new Promise(resolve => { releaseInstall = () => resolve(updateResult(id)) })
+      return updateResult(id)
+    }
+    return json({ update_available: true, pending_update_state: 'none' })
+  })
+  try {
+    await view.library()
+    holdRead = true
+    await view.foreground()
+    assert.ok(releaseRead)
+    const updateAll = view.dom.window.document.querySelector('button[aria-label^="Update all"]')
+    assert.ok(updateAll)
+    await act(async () => updateAll.click())
+    await act(async () => view.dom.window.document.querySelector('.st-update-review-actions button.st-btn-primary').click())
+    assert.ok(releaseInstall, 'first install completed; the batch is waiting on its sibling')
+    await act(async () => releaseRead())
+    assert.equal(Boolean(view.dom.window.document.querySelector('button[aria-label$=" Maps"]')), false, 'the installed read is applied despite the intervening local install stamp')
+    await act(async () => releaseInstall())
+  } finally { await act(async () => { releaseRead?.(); releaseInstall?.() }); await view.close() }
+})
+
+test('a genuinely failed latest installed read still reports the refresh failure after an update', async () => {
+  let updated = false
+  const view = await mount(async path => {
+    if (path === '/api/apps/') return updated ? json({}, 403) : json(installed())
+    if (path.includes('/update-candidate-preview')) return preview(11)
+    if (path === '/api/apps/install') { updated = true; return updateResult(11) }
+    return json({ update_available: true, pending_update_state: 'none' })
+  })
+  try {
+    await confirmVoiceUpdate(view)
+    assert.match(view.dom.window.document.querySelector('.st-toast-msg')?.textContent || '', /1 app was updated. The app list could not be refreshed yet/)
+  } finally { await view.close() }
 })

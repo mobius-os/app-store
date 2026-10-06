@@ -442,10 +442,13 @@ export default function App({ appId, token }) {
   // Seed the foreground debounce at mount so focus/pageshow cannot duplicate
   // the startup check before catalog hydration finishes.
   const lastUpdateCheckRef = useRef(Date.now())
-  const refreshGenerationRef = useRef(0)
-  // Targeted refreshes supersede only their own checks, not other apps in an
-  // older startup/focus round. All reads draw from the same generation counter.
+  const installedReadGenerationRef = useRef(0)
+  const latestInstalledReadRef = useRef(null)
+  // Local mutations and targeted events supersede only their own check answers,
+  // independently of installed reads and unrelated probes in a full round.
+  const checkGenerationRef = useRef(0)
   const checkGenerationsRef = useRef(new Map())
+  const fullCheckRoundRef = useRef(null)
   const catalogReadyRef = useRef(false)
   const pendingCheckIdsRef = useRef(new Set())
   const fullCheckPendingRef = useRef(false)
@@ -473,50 +476,64 @@ export default function App({ appId, token }) {
     setUpdateNotice(prev => (prev && itemIds.has(prev.itemId) ? null : prev))
   }, [])
 
-  // Work belongs to the next authoritative read, not to an in-flight request.
-  // One generation counter orders installed reads and each app's check answers;
-  // a newer read never joins or waits for an older one.
-  const refreshInstalled = useCallback(async ({ checkAll = false } = {}) => {
-    if (checkAll) fullCheckPendingRef.current = true
-    const generation = ++refreshGenerationRef.current
-    const checkGenerations = checkGenerationsRef.current
+  const refreshUpdateChecks = useCallback((apps) => {
     const pendingIds = pendingCheckIdsRef.current
-    const invalidatedIds = fullCheckPendingRef.current
-      ? new Set([...checkGenerations.keys(), ...pendingIds]) : pendingIds
-    for (const id of invalidatedIds) checkGenerations.set(id, generation)
-    try {
-      const apps = await loadInstalledApps(token)
-      if (generation !== refreshGenerationRef.current) return null
+    const fullCheck = fullCheckPendingRef.current
+    if (!catalogReadyRef.current || (!fullCheck && document.visibilityState !== 'visible')) return
+    fullCheckPendingRef.current = false
+    // Reuse a slow full round, but still let events replace only their own
+    // probes immediately. Never invalidate unrelated answers in that round.
+    const startFullCheck = fullCheck && !fullCheckRoundRef.current
+    if (!startFullCheck && !pendingIds.size) return fullCheckRoundRef.current
+    const rows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
+      .filter(app => startFullCheck || pendingIds.has(String(app.id)))
+    pendingIds.clear()
+    const generation = ++checkGenerationRef.current
+    for (const app of rows) checkGenerationsRef.current.set(String(app.id), generation)
+    const round = fetchUpdateChecksFor(rows, token, [
+      ...catalogRef.current, ...communityCatalogRef.current, ...otherInstalledCatalogRef.current,
+    ]).then(checks => {
+      const currentChecks = Object.fromEntries(Object.entries(checks)
+        .filter(([id]) => checkGenerationsRef.current.get(id) === generation))
+      setUpdateChecks(prev => mergeUpdateChecks(prev, currentChecks))
+      clearSettledUpdateArtifacts(itemIdsSettledByChecks(
+        [...catalogRef.current, ...otherInstalledCatalogRef.current], apps, currentChecks,
+      ))
+    }).finally(() => {
+      if (fullCheckRoundRef.current === round) fullCheckRoundRef.current = null
+    })
+    if (startFullCheck) {
+      lastUpdateCheckRef.current = Date.now()
+      fullCheckRoundRef.current = round
+    }
+    return round
+  }, [appId, token, clearSettledUpdateArtifacts])
+
+  // Every caller follows the latest authoritative read. Supersession is not a
+  // failure, and a newer read never waits for an older read or background checks.
+  const refreshInstalled = useCallback(({ checkAll = false } = {}) => {
+    if (checkAll) fullCheckPendingRef.current = true
+    const generation = ++installedReadGenerationRef.current
+    const invalidation = ++checkGenerationRef.current
+    for (const id of pendingCheckIdsRef.current) checkGenerationsRef.current.set(id, invalidation)
+    const read = (async () => {
+      let apps
+      try {
+        apps = await loadInstalledApps(token)
+      } catch (err) {
+        if (generation !== installedReadGenerationRef.current) return latestInstalledReadRef.current
+        setInstalledLoadError(err?.message || 'Installed apps could not be loaded.')
+        return null
+      }
+      if (generation !== installedReadGenerationRef.current) return latestInstalledReadRef.current
       setInstalled(apps)
       setInstalledLoadError('')
-      const fullCheck = fullCheckPendingRef.current
-      if (catalogReadyRef.current && (fullCheck || (pendingIds.size && document.visibilityState === 'visible'))) {
-        const rows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
-          .filter(app => fullCheck || pendingIds.has(String(app.id)))
-        // Consume the work only after a current read can launch its checks.
-        // Unrelated answers from older rounds remain useful and can still land.
-        fullCheckPendingRef.current = false
-        pendingIds.clear()
-        for (const app of rows) checkGenerations.set(String(app.id), generation)
-        if (fullCheck) lastUpdateCheckRef.current = Date.now()
-        const checks = await fetchUpdateChecksFor(rows, token, [
-          ...catalogRef.current, ...communityCatalogRef.current, ...otherInstalledCatalogRef.current,
-        ])
-        const currentChecks = Object.fromEntries(Object.entries(checks)
-          .filter(([id]) => checkGenerations.get(id) === generation))
-        setUpdateChecks(prev => mergeUpdateChecks(prev, currentChecks))
-        clearSettledUpdateArtifacts(itemIdsSettledByChecks(
-          [...catalogRef.current, ...otherInstalledCatalogRef.current], apps, currentChecks,
-        ))
-      }
+      void refreshUpdateChecks(apps)
       return apps
-    } catch (err) {
-      if (generation === refreshGenerationRef.current) {
-        setInstalledLoadError(err?.message || 'Installed apps could not be loaded.')
-      }
-      return null
-    }
-  }, [appId, token, clearSettledUpdateArtifacts])
+    })()
+    latestInstalledReadRef.current = read
+    return read
+  }, [token, refreshUpdateChecks])
 
   // Initial fetch: catalog manifests + installed apps.
   // Every await is guarded so a single failing network call can't leave the
@@ -593,7 +610,9 @@ export default function App({ appId, token }) {
     load()
     return () => {
       cancelled = true
-      refreshGenerationRef.current += 1
+      installedReadGenerationRef.current += 1
+      latestInstalledReadRef.current = null
+      fullCheckRoundRef.current = null
       checkGenerationsRef.current.clear()
       catalogReadyRef.current = false
       pendingCheckIdsRef.current.clear()
@@ -995,7 +1014,7 @@ export default function App({ appId, token }) {
       queueMicrotask(() => {
         queued = false
         if (!active || document.visibilityState !== 'visible') return
-        const checkAll = !pendingCheckIdsRef.current.size && foreground
+        const checkAll = foreground
           && Date.now() - lastUpdateCheckRef.current >= REHYDRATE_DEBOUNCE_MS
         foreground = false
         void refreshInstalled({ checkAll })
@@ -1149,7 +1168,7 @@ export default function App({ appId, token }) {
       })
       // A local mutation is newer than any background probe already in flight.
       // Invalidate only this app's answer; unrelated checks can still finish.
-      if (result.id) checkGenerationsRef.current.set(String(result.id), ++refreshGenerationRef.current)
+      if (result.id) checkGenerationsRef.current.set(String(result.id), ++checkGenerationRef.current)
       const isConflict = result.mode === 'conflict'
       const isSeamlessUpdate = result.mode === 'update' &&
         (result.divergence === 'fast_forward' || result.divergence === 'none')
@@ -1420,7 +1439,7 @@ export default function App({ appId, token }) {
         const text = await r.text()
         throw new Error(`Uninstall failed: ${r.status} ${text}`)
       }
-      checkGenerationsRef.current.set(String(app.id), ++refreshGenerationRef.current)
+      checkGenerationsRef.current.set(String(app.id), ++checkGenerationRef.current)
       await refreshInstalled()
       window.mobius?.signal?.('app_uninstalled', { slug: app.slug || app.id })
       setToast({ kind: 'success', message: `${app.name} uninstalled.` })
