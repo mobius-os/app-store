@@ -4,7 +4,7 @@ import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, isTrustedHost
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
-import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
+import { CatalogStoreImage, StoreImage, catalogAssetUrl } from './StoreImage.jsx'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -111,7 +111,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const verifiedCommunityInstall = communityIdentityLinked
     && communityFeedback?.review_eligibility === 'eligible'
   const previewUrl = item.preview && storeAppId
-    ? `/app-assets/by-id/${encodeURIComponent(storeAppId)}/previews/${encodeURIComponent(item.preview)}`
+    ? catalogAssetUrl(storeAppId, item.preview)
     : ''
   const catalogListing = !item.community && item.listing && typeof item.listing === 'object'
     ? item.listing

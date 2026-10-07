@@ -92,11 +92,26 @@ export function catalogAssetFilename(value) {
   return CATALOG_ASSET_RE.test(filename) ? filename : ''
 }
 
+// Catalogs (bundled and hosted) name curated artwork by its original .png
+// filename. This package ships those files re-encoded as WebP, so map the
+// known names to the packaged file; unknown names pass through unchanged.
+const PACKAGED_WEBP_ASSETS = new Set([
+  'artifacts-screen', 'beat-machine-hero', 'beat-machine-screen', 'connect-hero',
+  'connect-screen', 'connections-screen', 'cuberun-screen', 'habits-screen',
+  'maps-hero', 'maps-screen', 'news-screen', 'notes-screen', 'skills-screen',
+  'tandem-screen', 'tasks-screen', 'voice-hero', 'voice-screen', 'workflows-screen',
+])
+
+export function packagedCatalogAssetName(filename) {
+  const match = /^(.+)\.png$/i.exec(filename)
+  return match && PACKAGED_WEBP_ASSETS.has(match[1]) ? `${match[1]}.webp` : filename
+}
+
 export function catalogAssetUrl(storeAppId, filename) {
   const id = Number(storeAppId)
   const safeFilename = catalogAssetFilename(filename)
   if (!Number.isInteger(id) || id <= 0 || !safeFilename) return ''
-  return `/app-assets/by-id/${id}/previews/${encodeURIComponent(safeFilename)}`
+  return `/app-assets/by-id/${id}/previews/${encodeURIComponent(packagedCatalogAssetName(safeFilename))}`
 }
 
 // Curated official artwork belongs to the App Store package rather than the

@@ -118,7 +118,8 @@ test('store artwork resolves only through the accepted manifest mapping', async 
   assert.equal(catalogAssetFilename('voice-screen.png'), 'voice-screen.png')
   assert.equal(catalogAssetFilename('../identity-screen.png'), '')
   assert.equal(catalogAssetFilename('https://attacker.test/hero.png'), '')
-  assert.equal(catalogAssetUrl(39, 'voice-screen.png'), '/app-assets/by-id/39/previews/voice-screen.png')
+  assert.equal(catalogAssetUrl(39, 'voice-screen.png'), '/app-assets/by-id/39/previews/voice-screen.webp')
+  assert.equal(catalogAssetUrl(39, 'community-shot.png'), '/app-assets/by-id/39/previews/community-shot.png')
   assert.equal(catalogAssetUrl(39, '../identity-screen.png'), '')
   assert.equal(catalogAssetUrl('not-an-app', 'voice-screen.png'), '')
   assert.match(imageSource, /URL\.revokeObjectURL\(objectUrl\)/)
@@ -173,8 +174,8 @@ test('every curated listing asset is packaged by the App Store', async () => {
   assert.equal(referenced.size, 18)
   for (const filename of referenced) {
     assert.equal(
-      manifest.static_assets[`previews/${filename}`],
-      `listing-assets/${filename}`,
+      manifest.static_assets[`previews/${filename.replace(/\.png$/, '.webp')}`],
+      `listing-assets/${filename.replace(/\.png$/, '.webp')}`,
       `${filename} is missing from static_assets`,
     )
   }
