@@ -10,6 +10,10 @@ Browse keeps app cards compact and reserves accepted screenshots for each app's 
 
 Included screenshots: artifacts, beat-machine, connect, connections, cuberun, habits, maps, news, notes, skills, tandem, tasks, voice, workflows.
 
+## Format
+
+Curated artwork ships as WebP, at most 1600 px wide. The bundled and hosted catalogs keep naming it by its original `.png` filename so Store versions that still package the PNGs keep resolving it; `PACKAGED_WEBP_ASSETS` in `ui/StoreImage.jsx` maps those names to the packaged `.webp`. New curated art adds its `.webp` file, its `static_assets` entry, and its name to that set.
+
 ## Deliberate exclusions
 
 A listing can ship without a screenshot. Do not replace these exclusions with captures from a real owner account:
@@ -32,3 +36,7 @@ Recapture an excluded app only with a truthful fixture or an app-owned demo/empt
 Connect's conceptual hero is generated artwork, not a product screenshot. Its screenshot is the real applied app rendered with isolated browser-only fictional "Demo workstation" and "Demo server" data and demo output. No saved machines, pairings, addresses, or real command output were used in listing media. Production Connect data and permissions were not changed for the capture.
 
 New Store asset mappings must be accepted through the explicit local-package choice before they are served; ordinary source Apply preserves reviewed metadata. No hosted editorial publication is part of this local change.
+
+## Encoding
+
+Listing artwork ships as WebP, at most 1600 px wide (quality 80). Catalogs keep naming each file by its original `.png` filename; `packagedCatalogAssetName` in `ui/StoreImage.jsx` maps those known names to the packaged `.webp` file.
