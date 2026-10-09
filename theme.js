@@ -1908,7 +1908,7 @@ export const CSS = `
   background: color-mix(in srgb, var(--text) 24%, transparent);
   transition: transform 150ms ease, background 150ms ease;
 }
-.st-spotlight-pagination button.is-active span { transform: scaleX(3.4); background: var(--accent); }
+.st-spotlight-pagination button.is-active span { transform: scale(1.3); background: var(--accent); }
 .st-spotlight-pagination button:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
 .st-spotlight-pagination .st-spotlight-toggle {
   margin-left: 4px; border: 1px solid var(--border); color: var(--muted);
