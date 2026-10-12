@@ -1897,8 +1897,13 @@ test('individual catalog updates keep a read-only review with bound digests', as
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token/)
   assert.ok(indexSource.includes('setUpdateReview(prepared)'))
-  assert.match(indexSource, /filter\(entry => entry\.preview\?\.source_digest && !entry\.outcome\)/)
-  assert.match(indexSource, /filter\(entry => entry\.outcome \|\| !entry\.preview\?\.source_digest\)/)
+  // The install loop takes exactly the confirmable entries; every other entry
+  // is reported, so a blocked one never installs.
+  assert.match(indexSource, /reviews\.filter\(updateEntryConfirmable\)/)
+  assert.match(indexSource, /filter\(entry => !updateEntryConfirmable\(entry\)\)/)
+  const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
+  assert.match(modalSource, /entries\.filter\(updateEntryConfirmable\)/)
+  assert.match(indexSource, /const blocker = updatePreviewBlocker\(candidate\)/)
   assert.ok(indexSource.includes('capabilityDigest: entry.capabilityReview.preview.capability_digest'))
   assert.ok(indexSource.includes('sourceDigest: entry.preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
@@ -2904,4 +2909,26 @@ test('review prompts that need an account or handle hand off to Möbius · You',
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   assert.match(appSource, /onLogInToMobiusYou=\{logInToMobiusYou\}/)
   assert.match(detailSource, /onLogInToMobiusYou=\{onLogInToMobiusYou\}/)
+})
+
+test('an unresolved conflict blocks its update while clean updates stay confirmable', async () => {
+  const { updateEntryConfirmable, updatePreviewBlocker } = await import(
+    pathToFileURL(join(root, '..', 'domain.js'))
+  )
+  const digest = 'a'.repeat(64)
+  const conflicted = { pending_update_state: 'needs_resolution', source_digest: digest }
+  assert.match(updatePreviewBlocker(conflicted), /unresolved merge conflict/)
+  for (const state of ['none', 'replay_pending', 'unknown', undefined]) {
+    assert.equal(updatePreviewBlocker({ pending_update_state: state, source_digest: digest }), '')
+  }
+
+  const clean = { preview: { source_digest: digest }, previewError: '' }
+  const blocked = { preview: conflicted, previewError: updatePreviewBlocker(conflicted) }
+  const unverified = { preview: null, previewError: 'This update could not be checked.' }
+  const done = { preview: { source_digest: digest }, outcome: { ok: true } }
+
+  // Conflict-only review: nothing to confirm or install.
+  assert.deepEqual([blocked].filter(updateEntryConfirmable), [])
+  // Mixed batch: only the clean update is confirmable; the conflict is not.
+  assert.deepEqual([clean, blocked, unverified, done].filter(updateEntryConfirmable), [clean])
 })

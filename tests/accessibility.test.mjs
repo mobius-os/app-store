@@ -18,7 +18,7 @@ test('update review restores its opener independently of busy-state effects', ()
 })
 
 test('retry preserves sibling update outcomes and requires a fresh confirmation', () => {
-  assert.match(app, /\.filter\(entry => entry\.outcome \|\| !entry\.preview\?\.source_digest\)/)
+  assert.match(app, /\.filter\(entry => !updateEntryConfirmable\(entry\)\)/)
   assert.match(app, /current\.entries\.map\(entry => entry\.item\.id === item\.id \? prepared : entry\)/)
   assert.match(app, /applyingUpdateRef\.current = true/)
   assert.match(app, /if \(!updateReview \|\| busy \|\| applyingUpdateRef\.current \|\| checkingUpdateRef\.current\) return/)

@@ -57,6 +57,8 @@ import {
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
   updateCandidateUrlsByInstalledId,
+  updateEntryConfirmable,
+  updatePreviewBlocker,
 } from './domain.js'
 import {
   createAppChat,
@@ -1570,16 +1572,13 @@ export default function App({ appId, token }) {
     const candidate = await loadUpdateCandidatePreview(
       installedApp.id, updateItem.manifest_url, token,
     )
-    // If the preview reveals a pending merge conflict, surface a clear error
-    // instead of letting the install attempt silently re-trigger the resolver.
-    // (needs_resolution: resolution work remains; replay_pending: install will
-    // succeed on retry once the resolver has committed its answer.)
-    if (candidate.pending_update_state === 'needs_resolution') {
+    const blocker = updatePreviewBlocker(candidate)
+    if (blocker) {
       return {
         item: updateItem,
         installedApp,
         preview: candidate,
-        previewError: 'This update has an unresolved merge conflict — use "Resolve in chat" to fix it before applying.',
+        previewError: blocker,
         capabilityReview: { status: 'error', preview: null, error: '' },
       }
     }
@@ -1637,18 +1636,14 @@ export default function App({ appId, token }) {
   const handleApplyReviewedUpdate = useCallback(async () => {
     if (!updateReview || busy || applyingUpdateRef.current || checkingUpdateRef.current) return
     const reviews = updateReview.entries || [updateReview]
-    // Exclude entries that failed preview (no source_digest), already have an
-    // outcome, or carry a previewError (e.g. needs_resolution conflict state).
-    const entries = reviews.filter(
-      entry => entry.preview?.source_digest && !entry.outcome && !entry.previewError,
-    )
+    const entries = reviews.filter(updateEntryConfirmable)
     if (!entries.length) return
 
     applyingUpdateRef.current = true
     setBusy(true)
     setBusyActionKind('batch_update')
     let issues = reviews
-      .filter(entry => entry.outcome || !entry.preview?.source_digest || entry.previewError)
+      .filter(entry => !updateEntryConfirmable(entry))
       .map(entry => entry.outcome ? entry : {
         ...entry, outcome: { error: entry.previewError || 'This update could not be verified.' },
       })
