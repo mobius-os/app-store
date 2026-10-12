@@ -21,6 +21,8 @@ import {
   buildUpdateFailureMessage,
   buildUpdateReviewMessage,
   buildListingAgentMessage,
+  buildPublishCheckMessage,
+  buildPublishFixMessage,
   listingDraftFromPreview,
   listingPayload,
   utf8Length,
@@ -35,6 +37,7 @@ import {
   communityCatalogItems,
   communityPublicationStatus,
   communityPublicationsByLocalApp,
+  publicationViewerHandle,
   communityRepositoryUrl,
   filterCatalog,
   findInstalled,
@@ -360,6 +363,7 @@ export default function App({ appId, token }) {
   const [publicationError, setPublicationError] = useState('')
   const [publicationStates, setPublicationStates] = useState({})
   const [publicationStatesError, setPublicationStatesError] = useState('')
+  const [publisherHandle, setPublisherHandle] = useState('')
   const [communityActionBusy, setCommunityActionBusy] = useState(false)
   const [communityActionError, setCommunityActionError] = useState({ key: '', message: '' })
   // Retry an old interrupted install receipt once when its detail opens.
@@ -390,6 +394,7 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
+  const [detailFocus, setDetailFocus] = useState('')
   // Only nested destinations need data and host Back ownership. Scalars are
   // already restored on first paint, without waiting for network hydration.
   const [intentDestination, setIntentDestination] = useState(() =>
@@ -703,6 +708,7 @@ export default function App({ appId, token }) {
     try {
       const payload = await loadCommunityPublications(token)
       setPublicationStates(communityPublicationsByLocalApp(payload))
+      setPublisherHandle(publicationViewerHandle(payload))
       setPublicationStatesError('')
     } catch (error) {
       setPublicationStatesError(error?.message || 'Publication status is unavailable right now.')
@@ -726,6 +732,7 @@ export default function App({ appId, token }) {
       }
       if (publicationsResult.status === 'fulfilled') {
         setPublicationStates(communityPublicationsByLocalApp(publicationsResult.value))
+        setPublisherHandle(publicationViewerHandle(publicationsResult.value))
         setPublicationStatesError('')
       } else {
         setPublicationStatesError(publicationsResult.reason?.message || 'Publication status is unavailable right now.')
@@ -943,6 +950,7 @@ export default function App({ appId, token }) {
     setCommunityActionError({ key: feedbackKey, message: '' })
     try {
       const result = await saveCommunityReview(token, feedback.id, stars, body)
+      refreshPublicationStates()
       updateCommunityFeedback(feedback.id, (current) => ({
         ...current,
         user_review: result.user_review || null,
@@ -975,7 +983,7 @@ export default function App({ appId, token }) {
     } finally {
       setCommunityActionBusy(false)
     }
-  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityFeedback])
+  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityFeedback, refreshPublicationStates])
 
   const handleUploadSpotlightArtwork = useCallback(
     (file) => uploadEditorialArtwork(token, file),
@@ -1570,6 +1578,16 @@ export default function App({ appId, token }) {
     const candidate = await loadUpdateCandidatePreview(
       installedApp.id, updateItem.manifest_url, token,
     )
+    // Preserve the unresolved-conflict guard also tracked in app-store #91.
+    if (candidate.pending_update_state === 'needs_resolution') {
+      return {
+        item: updateItem,
+        installedApp,
+        preview: candidate,
+        previewError: 'This update has an unresolved merge conflict — use "Resolve in chat" to fix it before applying.',
+        capabilityReview: { status: 'error', preview: null, error: '' },
+      }
+    }
     const capabilityPreview = candidate.capability_preview
     const capabilityReview = {
       status: capabilityDiffNeedsReview(capabilityPreview.capability_diff)
@@ -1624,18 +1642,21 @@ export default function App({ appId, token }) {
   const handleApplyReviewedUpdate = useCallback(async () => {
     if (!updateReview || busy || applyingUpdateRef.current || checkingUpdateRef.current) return
     const reviews = updateReview.entries || [updateReview]
-    const entries = reviews.filter(entry => entry.preview?.source_digest && !entry.outcome)
+    const entries = reviews.filter(
+      entry => entry.preview?.source_digest && !entry.outcome && !entry.previewError,
+    )
     if (!entries.length) return
 
     applyingUpdateRef.current = true
     setBusy(true)
     setBusyActionKind('batch_update')
     let issues = reviews
-      .filter(entry => entry.outcome || !entry.preview?.source_digest)
+      .filter(entry => !entry.outcome?.ok && (entry.outcome || !entry.preview?.source_digest || entry.previewError))
       .map(entry => entry.outcome ? entry : {
         ...entry, outcome: { error: entry.previewError || 'This update could not be verified.' },
       })
     let completed = 0
+    const updatedEntries = reviews.filter(entry => entry.outcome?.ok)
     const newConflicts = []
     try {
       for (let index = 0; index < entries.length; index += 1) {
@@ -1655,8 +1676,10 @@ export default function App({ appId, token }) {
           updateAppId: entry.preview.app_id,
           upstreamCommit: entry.preview.upstream_commit,
         })
-        if (outcome?.ok) completed += 1
-        else {
+        if (outcome?.ok) {
+          completed += 1
+          updatedEntries.push({ ...entry, outcome })
+        } else {
           issues.push({ ...entry, outcome: outcome || { error: 'This update could not be completed.' } })
           if (outcome?.conflict && outcome.result?.id) newConflicts.push(outcome.result.id)
         }
@@ -1674,7 +1697,7 @@ export default function App({ appId, token }) {
             : entry)
         }
       }
-      setUpdateReview(issues.length ? { entries: issues } : null)
+      setUpdateReview({ entries: [...updatedEntries, ...issues] })
       const refreshError = await refreshInstalled() ? '' : ' The app list could not be refreshed yet.'
       setToast({
         kind: issues.length || refreshError ? 'error' : 'success',
@@ -1768,6 +1791,47 @@ export default function App({ appId, token }) {
       return false
     }
   }, [token])
+
+  // The creator-run agent check: an owner-visible agent reads the exact
+  // accepted revision and writes its verdict into this Store's storage, which
+  // the Publish tab follows live.
+  const handlePublishCheck = useCallback(async (app, acceptedCommit) => {
+    if (!app?.id || !acceptedCommit) return false
+    try {
+      const chat = await createAppChat(`Check ${app.name || app.slug} before publishing`, token, { ownerVisible: true })
+      await seedChatMessage(chat.id, buildPublishCheckMessage({ app, acceptedCommit, storeAppId: appId }), token)
+      setToast({
+        kind: 'success',
+        message: `Your agent is checking ${app.name || app.slug}. The result appears here.`,
+        action: { label: 'View work', onClick: () => openChat(chat.id) },
+      })
+      return true
+    } catch (error) {
+      setToast({ kind: 'error', message: error.message || 'Could not start the agent check.' })
+      return false
+    }
+  }, [appId, token])
+
+  const handlePublishFix = useCallback(async (app, issues) => {
+    if (!app?.id) return false
+    try {
+      const chat = await createAppChat(`Fix ${app.name || app.slug} before publishing`, token, { ownerVisible: true })
+      await seedChatMessage(chat.id, buildPublishFixMessage({ app, issues }), token)
+      setToast({
+        kind: 'success',
+        message: `An agent is fixing ${app.name || app.slug}. Check again when it's done.`,
+        action: { label: 'View work', onClick: () => openChat(chat.id) },
+      })
+      return true
+    } catch (error) {
+      setToast({ kind: 'error', message: error.message || 'Could not open an agent chat.' })
+      return false
+    }
+  }, [token])
+
+  const loadPublisherReviews = useCallback((communityAppId) => (
+    loadCommunityReviews(token, communityAppId)
+  ), [token])
 
   const handleAskAgentAboutError = useCallback(async (item, error) => {
     if (!item || !error || agentErrorItemId) return
@@ -2108,6 +2172,7 @@ export default function App({ appId, token }) {
         <DetailView
           storeAppId={appId}
           item={detail}
+          focusSection={detailFocus}
           capabilityReview={capabilityReviews[detail.id]}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
           installed={installed}
@@ -2327,7 +2392,9 @@ export default function App({ appId, token }) {
                     items={tab === 'library' ? libraryCatalog : visibleCatalog}
                     installed={installed}
                     updateChecks={updateChecks}
-                    onPick={item => { if (item.manifest) openDetail(item) }}
+                    onPick={item => { if (item.manifest) { setDetailFocus(''); openDetail(item) } }}
+                    pickOpensApp={tab === 'library'}
+                    onRateApp={tab === 'library' ? (item => { if (item.manifest) { setDetailFocus('reviews'); openDetail(item) } }) : undefined}
                     onRetry={retryCatalogItem}
                     onUpdate={handleCatalogUpdate}
                     onOpenInstalled={handleOpenInstalled}
@@ -2376,11 +2443,20 @@ export default function App({ appId, token }) {
             onSaveListing={(localAppId, listing) => saveLocalListing(token, localAppId, listing)}
             onPrepareImage={prepareListingImage}
             onListingAgent={handleListingAgent}
+            onRunCheck={handlePublishCheck}
+            onFixCheck={handlePublishFix}
+            onLoadReviews={loadPublisherReviews}
+            onViewInStore={(communityId) => {
+              cancelPendingDestination()
+              setDetailFocus('')
+              setIntentDestination({ kind: 'app', itemId: `community:${communityId}` })
+            }}
             onRegisterRepository={handleRegisterCommunity}
             publishingId={publishingId}
             publication={publication}
             publicationError={publicationError}
             publicationStates={publicationStates}
+            publisherHandle={publisherHandle}
             publicationStatesError={publicationStatesError}
             onRefreshPublicationStates={refreshPublicationStates}
             onNavigate={() => {

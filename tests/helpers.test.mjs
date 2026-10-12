@@ -1897,13 +1897,13 @@ test('individual catalog updates keep a read-only review with bound digests', as
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token/)
   assert.ok(indexSource.includes('setUpdateReview(prepared)'))
-  assert.match(indexSource, /filter\(entry => entry\.preview\?\.source_digest && !entry\.outcome\)/)
-  assert.match(indexSource, /filter\(entry => entry\.outcome \|\| !entry\.preview\?\.source_digest\)/)
+  assert.ok(indexSource.includes('entry => entry.preview?.source_digest && !entry.outcome && !entry.previewError'))
+  assert.match(indexSource, /filter\(entry => !entry\.outcome\?\.ok && \(entry\.outcome \|\| !entry\.preview\?\.source_digest \|\| entry\.previewError\)\)/)
   assert.ok(indexSource.includes('capabilityDigest: entry.capabilityReview.preview.capability_digest'))
   assert.ok(indexSource.includes('sourceDigest: entry.preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
   assert.ok(indexSource.includes('reviewed_source_digest: _opts.sourceDigest'))
-  assert.match(indexSource, /setUpdateReview\(issues\.length[\s\S]*await refreshInstalled\(\)/)
+  assert.match(indexSource, /setUpdateReview\(\{ entries: \[\.\.\.updatedEntries, \.\.\.issues\] \}\)[\s\S]*await refreshInstalled\(\)/)
 })
 
 test('candidate review requests the exact catalog manifest selected by the user', async () => {

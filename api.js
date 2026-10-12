@@ -127,7 +127,26 @@ export async function loadCommunityPublications(token, { limit = 100, offset = 0
   const response = await fetch(`/api/community/publications?${params}`, {
     headers: communityHeaders(token),
   })
-  return communityResponse(response, 'Publication status could not be loaded.')
+  const payload = await communityResponse(response, 'Publication status could not be loaded.')
+  // Ratings belong to the public app, not its publication/release record.
+  // Read the same aggregate as the listing; never average a paginated review list.
+  const items = await Promise.all((payload.items || []).map(async (row) => {
+    if (!row.community_app_id || row.status !== 'live') return row
+    try {
+      const app = await loadCommunityApp(token, row.community_app_id)
+      return { ...row,
+        // Published release facts come from the public listing, never local edits
+        // or the publication record's last status-change timestamp.
+        published_version: typeof app.manifest?.version === 'string' ? app.manifest.version : '',
+        published_at: app.latest_revision?.created_at || '',
+        stats: { ...row.stats, rating_average: app.rating_average, rating_count: app.rating_count },
+      }
+    } catch {
+      // A single unavailable listing must not hide the owner's other apps.
+      return row
+    }
+  }))
+  return { ...payload, items }
 }
 
 export async function loadLocalPublicationPreview(token, appId) {
@@ -135,7 +154,24 @@ export async function loadLocalPublicationPreview(token, appId) {
   const response = await fetch(`/api/community/publications/github/preview?${params}`, {
     headers: communityHeaders(token),
   })
-  return communityResponse(response, 'This app listing could not be prepared.')
+  return normalizePublicationPreview(
+    await communityResponse(response, 'This app listing could not be prepared.'),
+  )
+}
+
+// New previews include an editable draft even when the listing is unfinished.
+// Older previews contain only a validated listing; preserve its fields too.
+export function normalizePublicationPreview(preview) {
+  if (!preview || typeof preview !== 'object') return preview
+  return {
+    ...preview,
+    ready: typeof preview.ready === 'boolean' ? preview.ready : !!preview.listing,
+    draft: preview.draft || { ...preview.listing, hero: preview.listing?.hero?.path || '' },
+    checklist: Array.isArray(preview.checklist) ? preview.checklist : [],
+    // `asset_base` points at the revision's static/ folder while listing
+    // paths are repository-relative (`static/store/…`); the root is its parent.
+    asset_root: preview.asset_root || String(preview.asset_base || '').replace(/static\/$/, ''),
+  }
 }
 
 export async function saveLocalListing(token, appId, listing) {

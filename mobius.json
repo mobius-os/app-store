@@ -66,7 +66,9 @@
     "LISTING_ART.md",
     "catalog-freshness.js",
     "store-navigation.js",
-    "store-location.js"
+    "store-location.js",
+    "ui/PublishCheck.jsx",
+    "ui/PublishedApps.jsx"
   ],
   "static_assets": {
     "previews/artifacts-screen.webp": "listing-assets/artifacts-screen.webp",

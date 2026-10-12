@@ -1,8 +1,16 @@
 /* PublisherTab turns an accepted local app revision into one reviewable public listing. */
-import { FileUpload, Search } from '@openai/apps-sdk-ui/components/Icon'
-import React, { useRef, useState } from 'react'
-import { listingDraftFromPreview, listingPayload } from '../domain.js'
+import { ChevronLeft, FileUpload, Search } from '@openai/apps-sdk-ui/components/Icon'
+import React, { useEffect, useRef, useState } from 'react'
+import {
+  listingDraftFromPreview,
+  listingPayload,
+  parsePublishCheck,
+  publishCheckKey,
+  publishCheckState,
+} from '../domain.js'
 import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
+import { PublishCheck } from './PublishCheck.jsx'
+import { PublishedAppPage, YourAppsList } from './PublishedApps.jsx'
 import { SpotlightEditor } from './SpotlightEditor.jsx'
 
 // Preview preparation crosses an async boundary while the owner can navigate
@@ -31,6 +39,14 @@ function publishableApps(installed) {
     && app?.slug !== 'app-store'
     && (!app?.manifest_url || app?.hosted_publication)
   ))
+}
+
+// Apps this owner has already published (or is publishing) from this Möbius.
+function publishedEntries(installed, publicationStates) {
+  return (installed || [])
+    .filter((app) => app?.id && (publicationStates[app.id] || app.hosted_publication))
+    .map((app) => ({ app, state: publicationStates[app.id] || null }))
+    .sort((left, right) => String(left.app.name || '').localeCompare(String(right.app.name || '')))
 }
 
 function publicationLabel(state, hosted) {
@@ -64,6 +80,7 @@ export function PublisherTab({
   contributeAvailable,
   onOpenContributions,
   publicationStates = {},
+  publisherHandle = '',
   publicationStatesError,
   onRefreshPublicationStates,
   onLogInToMobiusYou,
@@ -73,6 +90,11 @@ export function PublisherTab({
   token,
   onUploadSpotlightArtwork,
   onPublishSpotlight,
+  onLoadReviews,
+  onViewInStore,
+
+  onRunCheck,
+  onFixCheck,
 }) {
   const apps = publishableApps(installed).sort((left, right) => (
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
@@ -96,11 +118,81 @@ export function PublisherTab({
   const [repository, setRepository] = useState('')
   const [commitSha, setCommitSha] = useState('')
   const [appQuery, setAppQuery] = useState('')
+  // home: your published apps · choose: pick an app to publish · app: one published app
+  const [view, setView] = useState('home')
+  const [openAppId, setOpenAppId] = useState(null)
+  const [checkRaw, setCheckRaw] = useState(null)
+  // { commit, prior } for the check the owner most recently asked for; prior is
+  // the stored result at that moment, so any new write ends the wait.
+  const [checkRequest, setCheckRequest] = useState(null)
+  const [checkBusy, setCheckBusy] = useState(false)
   const previewGateRef = useRef(null)
   if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
   const commitValid = /^[0-9a-fA-F]{40,64}$/.test(commitSha.trim())
   const localRepositoryValid = /^[A-Za-z0-9_.-]{1,100}$/.test(localRepositoryName.trim())
+  const published = publishedEntries(installed, publicationStates)
+  useEffect(() => { onRefreshPublicationStates() }, [onRefreshPublicationStates])
+  const openEntry = published.find((entry) => entry.app.id === openAppId) || null
+  const acceptedCommit = String(preview?.accepted_commit || '')
+  const check = candidate ? parsePublishCheck(checkRaw, candidate.id) : null
+  const checkState = publishCheckState(
+    check, acceptedCommit,
+    !!checkRequest && checkRequest.commit === acceptedCommit && JSON.stringify(checkRaw ?? null) === checkRequest.prior,
+  )
+
+  // The agent writes its verdict into the Store's own storage; follow that key
+  // live for the app being published.
+  useEffect(() => {
+    setCheckRaw(null)
+    const store = typeof window !== 'undefined' ? window.mobius?.storage : null
+    if (!candidate?.id || !store) return undefined
+    const key = publishCheckKey(candidate.id)
+    let cancelled = false
+    store.get(key).then((value) => { if (!cancelled) setCheckRaw(value) }).catch(() => {})
+    const unsubscribe = typeof store.subscribe === 'function'
+      ? store.subscribe(key, (value) => { if (!cancelled) setCheckRaw(value) })
+      : null
+    return () => { cancelled = true; if (typeof unsubscribe === 'function') unsubscribe() }
+  }, [candidate?.id])
+
+  // App storage only notifies on this frame's own writes and on re-reads, so
+  // while the agent works, re-read its result every few seconds (visible only).
+  useEffect(() => {
+    const store = typeof window !== 'undefined' ? window.mobius?.storage : null
+    if (checkState !== 'running' || !candidate?.id || !store) return undefined
+    const key = publishCheckKey(candidate.id)
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      if (Date.now() - startedAt > 20 * 60 * 1000) { window.clearInterval(timer); return }
+      if (window.mobius?.visible === false) return
+      store.get(key).then((value) => setCheckRaw(value)).catch(() => {})
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [checkState, candidate?.id])
+
+  async function runCheck() {
+    if (!candidate || !acceptedCommit || checkBusy) return
+    setCheckBusy(true)
+    try {
+      const prior = JSON.stringify(checkRaw ?? null)
+      const ok = await onRunCheck?.(candidate, acceptedCommit)
+      if (ok) setCheckRequest({ commit: acceptedCommit, prior })
+    } finally {
+      setCheckBusy(false)
+    }
+  }
+
+  async function fixCheck(issues) {
+    if (!candidate || checkBusy) return
+    setCheckBusy(true)
+    try {
+      await onFixCheck?.(candidate, issues)
+    } finally {
+      setCheckBusy(false)
+    }
+  }
+
   const visibleApps = apps.filter((app) => {
     const needle = appQuery.trim().toLowerCase()
     return !needle || `${app.name || ''} ${app.slug || ''}`.toLowerCase().includes(needle)
@@ -144,7 +236,7 @@ export function PublisherTab({
     setSaveError('')
     setConfirmed(false)
     try {
-      await onSaveListing?.(app.id, listingPayload(draft))
+      await onSaveListing?.(app.id, { ...listingPayload(draft), expected_commit: preview.accepted_commit })
       const result = await onPreviewLocal?.(app.id)
       if (!previewGateRef.current.isCurrent(requestId)) return
       showPreview(app, result)
@@ -212,29 +304,38 @@ export function PublisherTab({
 
   return (
     <div className={`st-publisher${candidate ? ' is-reviewing' : ''}`}>
-      <section className="st-publish-heading">
-        <div>
-          <h2>Publish an app</h2>
-          <p>Shape the public listing, check the exact source revision, then release when it is ready.</p>
-          <ol className="st-publish-path" aria-label="Publishing steps">
-            <li>Choose an app</li><li>Review its listing</li><li>Publish this version</li>
-          </ol>
-        </div>
-        <div className="st-publish-heading-actions">
-          {!signedIn ? (
-            <button type="button" className="st-publish-connection st-publish-connection-action"
-                    onClick={() => onLogInToMobiusYou?.()}>
-              Log in to Möbius · You
-            </button>
-          ) : null}
-          {signedIn && githubReady ? <span className="st-publish-account">Publishing as {githubLogin}</span> : null}
-          {contributeAvailable ? (
-            <button type="button" className="st-btn st-btn-ghost" onClick={() => onOpenContributions?.()}>
-              Open contributions
-            </button>
-          ) : null}
-        </div>
-      </section>
+      {!candidate && view !== 'app' ? (
+        <section className="st-publish-heading">
+          <div>
+            {view === 'choose' ? (
+              <button type="button" className="st-back-btn" onClick={() => setView('home')}>
+                <ChevronLeft width="16" height="16" aria-hidden="true" />Your apps
+              </button>
+            ) : null}
+            <h2>{view === 'choose' ? 'Publish an app' : 'Your apps'}</h2>
+            {view === 'choose' ? <p>Pick one of the apps you built on this Möbius.</p> : null}
+          </div>
+          <div className="st-publish-heading-actions">
+            {!signedIn ? (
+              <button type="button" className="st-publish-connection st-publish-connection-action"
+                      onClick={() => onLogInToMobiusYou?.()}>
+                Log in to Möbius · You
+              </button>
+            ) : null}
+            {signedIn && githubReady ? <span className="st-publish-account">Publishing as {publisherHandle || githubLogin}</span> : null}
+            {contributeAvailable ? (
+              <button type="button" className="st-btn st-btn-ghost" onClick={() => onOpenContributions?.()}>
+                Open contributions
+              </button>
+            ) : null}
+            {view === 'home' ? (
+              <button type="button" className="st-btn st-btn-primary" onClick={() => setView('choose')}>
+                Publish an app
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {publication ? (
         <div className="st-publish-result" role="status">
@@ -274,7 +375,7 @@ export function PublisherTab({
         </div>
       ) : null}
 
-      {!candidate && spotlightFeed?.viewer?.can_edit ? (
+      {!candidate && view === 'home' && spotlightFeed?.viewer?.can_edit ? (
         <SpotlightEditor
           catalog={catalog}
           feed={spotlightFeed}
@@ -357,12 +458,14 @@ export function PublisherTab({
                            onChange={(event) => setLocalRepositoryName(event.target.value)} disabled={!!publishingId} />
                   </div>
                 </label>
+                <PublishCheck state={checkState} check={check} busy={checkBusy}
+                              onRun={runCheck} onFix={fixCheck} />
                 <label className="st-publish-consent">
                   <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
                   <span>I’ve reviewed this listing and want this exact source revision to become public.</span>
                 </label>
                 <button type="button" className="st-btn st-btn-primary"
-                        disabled={!confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady}
+                        disabled={!confirmed || !localRepositoryValid || checkState !== 'ready' || !!publishingId || !signedIn || !githubReady}
                         onClick={async () => {
                           const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim())
                           if (ok) closePreview({ force: true })
@@ -396,10 +499,31 @@ export function PublisherTab({
             </div>
           )}
         </section>
+      ) : view === 'app' && openEntry ? (
+        <PublishedAppPage
+          app={openEntry.app}
+          state={openEntry.state}
+          onBack={() => { setView('home'); setOpenAppId(null) }}
+          onPublishUpdate={() => prepare(openEntry.app)}
+          publishDisabled={!!publishingId || !signedIn || !githubReady}
+          onLoadReviews={onLoadReviews}
+          onViewInStore={onViewInStore}
+        />
+      ) : view !== 'choose' ? (
+        published.length ? (
+          <YourAppsList entries={published}
+                        onOpen={(app) => { setOpenAppId(app.id); setView('app'); onNavigate?.() }} />
+        ) : (
+          <div className="st-empty">
+            <div className="st-empty-title">You haven’t published an app yet</div>
+            <p className="st-empty-text">Pick one of your apps and share it with everyone on Möbius.</p>
+            <button type="button" className="st-btn st-btn-primary" onClick={() => setView('choose')}>Publish an app</button>
+          </div>
+        )
       ) : (
         <>
           <div className="st-publish-list-head">
-            <div><h3>Choose an app</h3><p>{apps.length} local {apps.length === 1 ? 'app' : 'apps'} can be prepared for publishing.</p></div>
+            <div><p>{apps.length} {apps.length === 1 ? 'app' : 'apps'} on this Möbius can be published.</p></div>
             <label className="st-publish-search">
               <span className="st-sr-only">Search your apps</span>
               <Search width="17" height="17" aria-hidden="true" />
@@ -416,7 +540,7 @@ export function PublisherTab({
         </>
       )}
 
-      {!candidate ? (
+      {!candidate && view === 'choose' ? (
         <details className="st-publish-advanced">
           <summary><span>Already on GitHub?</span><small>List one exact commit</small></summary>
           <section className="st-publish-review" aria-labelledby="st-register-release-title">
