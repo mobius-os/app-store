@@ -135,9 +135,10 @@ export async function loadCommunityPublications(token, { limit = 100, offset = 0
 // have rendered, so many apps never burst requests and one slow listing never
 // holds the others. A read that fails or hangs past the timeout reports
 // `unavailable` rather than looking like "no ratings". A listing read in the
-// last minute is reused across tab visits unless `force` asks for a re-read
-// (for example after the owner's own review), and only the newest read of an
-// app may report, so a slow older response never overwrites newer facts.
+// last minute is reused across tab visits, and a caller asking for an app
+// already being read joins that read. Only `force` (for example after the
+// owner's own review) starts a new read: it aborts the one in progress, and
+// only the newest read of an app may report, so older facts never win.
 const PUBLICATION_LISTING_CONCURRENCY = 4
 const PUBLICATION_LISTING_TIMEOUT_MS = 15_000
 const PUBLICATION_LISTING_FRESH_MS = 60_000
@@ -150,29 +151,47 @@ export function createPublicationListingReader(token, onListing, {
 } = {}) {
   const generation = new Map()
   const readyAt = new Map()
+  // The queued or running read of each app: { id, turn, controller, settled }.
+  const pending = new Map()
   const queue = []
   let active = 0
 
-  async function readOne(id) {
+  async function readOne(id, signal) {
     try {
-      return publicationListingFacts(await loadCommunityApp(token, id, { signal: AbortSignal.timeout(timeoutMs) }))
+      return publicationListingFacts(await loadCommunityApp(token, id, { signal }))
     } catch {
       return { status: 'unavailable' }
     }
   }
 
+  function finish(job) {
+    if (pending.get(job.id) === job) pending.delete(job.id)
+    job.done()
+  }
+
   function pump() {
     while (active < concurrency && queue.length) {
-      const { id, turn, done } = queue.shift()
-      if (generation.get(id) !== turn) { done(); continue }
+      const job = queue.shift()
+      if (job.controller.signal.aborted) { finish(job); continue }
       active += 1
-      readOne(id).then((listing) => {
-        if (generation.get(id) !== turn) return
-        if (listing.status === 'ready') readyAt.set(id, now())
-        else readyAt.delete(id)
-        onListing(id, listing)
-      }).finally(() => { active -= 1; done(); pump() })
+      const timer = setTimeout(() => job.controller.abort(), timeoutMs)
+      readOne(job.id, job.controller.signal).then((listing) => {
+        if (generation.get(job.id) !== job.turn) return
+        if (listing.status === 'ready') readyAt.set(job.id, now())
+        else readyAt.delete(job.id)
+        onListing(job.id, listing)
+      }).finally(() => { clearTimeout(timer); active -= 1; finish(job); pump() })
     }
+  }
+
+  function schedule(id) {
+    const turn = (generation.get(id) || 0) + 1
+    generation.set(id, turn)
+    const job = { id, turn, controller: new AbortController() }
+    job.settled = new Promise((done) => { job.done = done })
+    pending.set(id, job)
+    queue.push(job)
+    return job.settled
   }
 
   return function read(rows, { force = false } = {}) {
@@ -180,11 +199,12 @@ export function createPublicationListingReader(token, onListing, {
       .filter((row) => row?.status === 'live' && typeof row.community_app_id === 'string' && row.community_app_id)
       .map((row) => row.community_app_id))]
       .filter((id) => force || !(now() - (readyAt.get(id) ?? -Infinity) < freshMs))
-    const settled = ids.map((id) => new Promise((done) => {
-      const turn = (generation.get(id) || 0) + 1
-      generation.set(id, turn)
-      queue.push({ id, turn, done })
-    }))
+    const settled = ids.map((id) => {
+      const current = pending.get(id)
+      if (current && !force) return current.settled
+      current?.controller.abort()
+      return schedule(id)
+    })
     pump()
     return Promise.all(settled)
   }

@@ -104,8 +104,8 @@ test('a hung listing read ends as unavailable instead of loading forever', async
   globalThis.fetch = (url, { signal }) => new Promise((_, reject) => {
     signal.addEventListener('abort', () => reject(signal.reason))
   })
-  // Node's AbortSignal.timeout timer is unref'd, so with only the hung read
-  // pending the test runner would exit before the timeout fires.
+  // Keep the runner alive while only the hung read is pending, whatever timer
+  // the reader uses for its timeout.
   const keepAlive = setInterval(() => {}, 1000)
   try {
     const listings = {}
@@ -116,6 +116,33 @@ test('a hung listing read ends as unavailable instead of loading forever', async
     clearInterval(keepAlive)
     globalThis.fetch = original
   }
+})
+
+test('callers asking for a listing already being read join it; only a forced read replaces it', async () => {
+  const { createPublicationListingReader } = await import('../api.js')
+  const original = globalThis.fetch
+  const requests = []
+  globalThis.fetch = (url, { signal }) => new Promise((resolve, reject) => {
+    requests.push({ resolve, signal })
+    signal.addEventListener('abort', () => reject(signal.reason))
+  })
+  const tick = () => new Promise((resolve) => setImmediate(resolve))
+  try {
+    const reported = []
+    const read = createPublicationListingReader('test', (id, listing) => reported.push(listing.rating_average))
+    const row = [{ status: 'live', community_app_id: 'app_x' }]
+    const first = read(row)
+    const joined = [read(row), read(row)]
+    await tick()
+    assert.equal(requests.length, 1, 'two more tab visits during the read share it')
+    const forced = read(row, { force: true })
+    await tick()
+    assert.equal(requests.length, 2)
+    assert.equal(requests[0].signal.aborted, true, 'the superseded read is aborted and frees its slot')
+    requests[1].resolve(Response.json({ rating_average: 5, rating_count: 2 }))
+    await Promise.all([first, ...joined, forced])
+    assert.deepEqual(reported, [5], 'only the forced read reports')
+  } finally { globalThis.fetch = original }
 })
 
 test('fresh listings are reused across visits and a superseded read cannot overwrite newer facts', async () => {
