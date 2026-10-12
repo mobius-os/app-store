@@ -103,12 +103,18 @@ test('a hung listing read ends as unavailable instead of loading forever', async
   globalThis.fetch = (url, { signal }) => new Promise((_, reject) => {
     signal.addEventListener('abort', () => reject(signal.reason))
   })
+  // Node's AbortSignal.timeout timer is unref'd, so with only the hung read
+  // pending the test runner would exit before the timeout fires.
+  const keepAlive = setInterval(() => {}, 1000)
   try {
     const listings = {}
     await createPublicationListingReader('test', (id, listing) => { listings[id] = listing }, { timeoutMs: 20 })(
       [{ status: 'live', community_app_id: 'slow' }])
     assert.deepEqual(listings.slow, { status: 'unavailable' })
-  } finally { globalThis.fetch = original }
+  } finally {
+    clearInterval(keepAlive)
+    globalThis.fetch = original
+  }
 })
 
 test('fresh listings are reused across visits and a superseded read cannot overwrite newer facts', async () => {
