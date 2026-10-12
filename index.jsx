@@ -1574,6 +1574,17 @@ export default function App({ appId, token }) {
     )
     const blocker = updatePreviewBlocker(candidate)
     if (blocker) {
+      // The update-check that offered "Update" was stale. The preview is newer
+      // than any probe in flight, so record the conflict and let the card
+      // offer "Resolve in chat" instead of another Update that hits it again.
+      checkGenerationsRef.current.set(String(installedApp.id), ++checkGenerationRef.current)
+      setUpdateChecks(prev => mergeUpdateChecks(prev, {
+        [installedApp.id]: {
+          ...prev[installedApp.id],
+          available: true,
+          pendingUpdateState: 'needs_resolution',
+        },
+      }))
       return {
         item: updateItem,
         installedApp,
@@ -1734,6 +1745,20 @@ export default function App({ appId, token }) {
       setCheckingUpdateItemId(null)
     }
   }, [busy, prepareCatalogUpdate, updateReview])
+
+  // A conflict-blocked review entry hands off to the same resolver the card's
+  // "Resolve in chat" starts. The entry leaves the review; any siblings stay.
+  const resolveReviewedConflict = (entry) => {
+    if (busy || !entry?.installedApp) return
+    const itemId = entry.item.id
+    setUpdateReview(current => {
+      const remaining = current?.entries?.filter(other => other.item.id !== itemId) || []
+      return remaining.length ? { entries: remaining } : null
+    })
+    void handleReviewUpdate(updateNotice?.kind === 'conflict' && updateNotice.itemId === itemId
+      ? updateNotice
+      : { kind: 'conflict', itemId, appId: entry.installedApp.id })
+  }
 
   const handleAgentUpdateReview = useCallback(async () => {
     if (!updateReview || busy || agentReviewingUpdate) return
@@ -2175,6 +2200,7 @@ export default function App({ appId, token }) {
             onClose={() => !busy && setUpdateReview(null)}
             onApply={handleApplyReviewedUpdate}
             onRetry={retryReviewedUpdate}
+            onResolve={resolveReviewedConflict}
             agentReviewing={agentReviewingUpdate}
             onReviewWithAgent={handleAgentUpdateReview}
           />
@@ -2429,6 +2455,7 @@ export default function App({ appId, token }) {
           onClose={() => !busy && setUpdateReview(null)}
           onApply={handleApplyReviewedUpdate}
           onRetry={retryReviewedUpdate}
+          onResolve={resolveReviewedConflict}
           agentReviewing={agentReviewingUpdate}
           onReviewWithAgent={handleAgentUpdateReview}
         />

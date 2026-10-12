@@ -143,3 +143,76 @@ test('App gates repeated batch confirmation synchronously', async () => {
     await rm(buildDir, { recursive: true, force: true })
   }
 })
+
+test('a stale update-check meets a conflict-blocked preview: card and review both route to Resolve in chat', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://store.test/' })
+  const old = { window: globalThis.window, document: globalThis.document, HTMLElement: globalThis.HTMLElement, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT, fetch: globalThis.fetch, ResizeObserver: globalThis.ResizeObserver }
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
+  dom.window.ResizeObserver = globalThis.ResizeObserver
+  dom.window.HTMLElement.prototype.scrollIntoView = () => {}
+  dom.window.mobius = { signal() {} }
+  dom.window.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} })
+  const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+  const installed = [{ id: 11, slug: 'voice', name: 'Voice', manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main#manifest-id=voice', source_manifest: { id: 'voice', url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json' }, manifest: { id: 'voice', name: 'Voice', version: '1.0.0' } }]
+  const { MANIFEST_SNAPSHOTS } = await import('../manifest-snapshots.js')
+  const posts = []
+  const openedChats = []
+  dom.window.addEventListener('message', event => { if (event.data?.type === 'moebius:open-chat') openedChats.push(event.data.chatId) })
+  globalThis.fetch = async (url, options = {}) => {
+    const path = String(url)
+    if (options.method === 'POST') posts.push(path)
+    if (path === '/api/apps/') return json(installed)
+    // The update-check answer predates the conflict; only the preview knows.
+    if (/^\/api\/apps\/11\/update-check/.test(path)) return json({ update_available: true, pending_update_state: 'none' })
+    if (/^\/api\/apps\/11\/update-candidate-preview/.test(path)) return json({ app_id: 11, upstream_version: '2.0.0', upstream_diff: '', source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40), pending_update_state: 'needs_resolution', capability_preview: { capability_digest: 'c'.repeat(64), capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] } } })
+    if (path === '/api/apps/11/conflict-resolver-chat') return json({ chat_id: 'resolver-chat' })
+    if (path.startsWith('/api/proxy?')) {
+      const remote = decodeURIComponent(path.split('url=')[1] || '')
+      if (remote.endsWith('/catalog.json')) return json({ schema: 1, apps: [] })
+      if (remote.includes('app-voice')) return json(MANIFEST_SNAPSHOTS.voice)
+      return json({}, 404)
+    }
+    return json({}, 404)
+  }
+  const requireFromFrontend = createRequire(join(frontend, 'package.json'))
+  const { rolldown } = await import(pathToFileURL(requireFromFrontend.resolve('rolldown')).href)
+  await mkdir(buildDir, { recursive: true })
+  const build = await rolldown({ input: join(here, '..', 'index.jsx'), platform: 'node', tsconfig: false, external: ['react', 'react/jsx-runtime'], resolve: { alias: { '@openai/apps-sdk-ui/components/Icon': join(here, 'runtime-icon-stub.mjs') } }, transform: { jsx: 'react-jsx' } })
+  const output = join(buildDir, 'app-conflict.mjs')
+  await build.write({ file: output, format: 'es' })
+  await build.close()
+  const { default: App } = await import(pathToFileURL(output).href)
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const doc = dom.window.document
+  const cardAction = () => doc.querySelector('.st-card-status-row button[aria-label$=" Voice"]')
+  try {
+    await act(async () => root.render(React.createElement(App, { appId: 999, token: 'tok' })))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+    await act(async () => doc.querySelector('#st-tab-library').click())
+    assert.equal(cardAction()?.getAttribute('aria-label'), 'Update Voice', 'the stale check offers an update')
+    await act(async () => { cardAction().click(); await new Promise(resolve => setTimeout(resolve, 20)) })
+
+    const modal = doc.querySelector('.st-update-review')
+    assert.ok(modal, 'the update review opens')
+    assert.match(modal.textContent, /unresolved merge conflict/)
+    const modalButtons = [...modal.querySelectorAll('button')].map(button => button.textContent)
+    assert.ok(!modalButtons.includes('Try again'), 'retrying would only meet the same conflict')
+    assert.ok(!modalButtons.includes('Retry'), 'no capability retry for a blocked entry either')
+    assert.doesNotMatch(modal.textContent, /Access changes|Access review/)
+    assert.equal(modal.querySelector('.st-update-review-actions button.st-btn-primary'), null, 'nothing can be confirmed')
+    assert.equal(cardAction()?.getAttribute('aria-label'), 'Resolve in chat Voice', 'the card behind the review flips too')
+
+    const resolve = [...modal.querySelectorAll('.st-update-review-section button')].find(button => button.textContent === 'Resolve in chat')
+    assert.ok(resolve, modalButtons.join(' | '))
+    await act(async () => { resolve.click(); await new Promise(resolve => setTimeout(resolve, 20)) })
+    assert.deepEqual(posts, ['/api/apps/11/conflict-resolver-chat'], 'resolving starts the resolver and installs nothing')
+    assert.deepEqual(openedChats, ['resolver-chat'])
+    assert.equal(doc.querySelector('.st-update-review'), null, 'the handed-off entry leaves the review')
+  } finally {
+    await act(async () => root.unmount())
+    Object.assign(globalThis, old)
+    dom.window.close()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})

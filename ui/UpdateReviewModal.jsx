@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { X } from '@openai/apps-sdk-ui/components/Icon'
-import { capabilityDiffNeedsReview, updateEntryConfirmable } from '../domain.js'
+import { capabilityDiffNeedsReview, updateEntryConfirmable, updateEntryNeedsResolution } from '../domain.js'
 import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
 import FileDiffList from './diff/FileDiffList.jsx'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
-function ReviewEntry({ review, busy, onRetry }) {
+function ReviewEntry({ review, busy, onRetry, onResolve }) {
   const preview = review.preview || {}
   const files = useMemo(
     () => parseUnifiedDiff(typeof preview.upstream_diff === 'string' ? preview.upstream_diff : ''),
@@ -13,7 +13,10 @@ function ReviewEntry({ review, busy, onRetry }) {
   )
   const insertions = files.reduce((sum, file) => sum + (file.insertions || 0), 0)
   const deletions = files.reduce((sum, file) => sum + (file.deletions || 0), 0)
-  const capabilitiesChanged = capabilityDiffNeedsReview(
+  const needsResolution = updateEntryNeedsResolution(review)
+  // A conflict-blocked entry has no capability review to retry; resolving it
+  // in chat comes first.
+  const capabilitiesChanged = !needsResolution && capabilityDiffNeedsReview(
     review.capabilityReview?.preview?.capability_diff,
   )
   const name = review.item.manifest?.name || review.item.id
@@ -39,12 +42,16 @@ function ReviewEntry({ review, busy, onRetry }) {
           <div className="st-update-review-error-text">
             {error || 'Local changes overlap this update.'}
           </div>
-          {conflict && !review.outcome?.resolverError
-            ? 'An agent is reconciling the update while the current app stays live.'
-            : onRetry
-              ? 'Nothing else will change until you try again.'
-              : 'This app is not included in the confirmed updates.'}
-          {onRetry && (!conflict || review.outcome?.resolverError) ? (
+          {needsResolution
+            ? 'Your current app stays live and is not included in the confirmed updates.'
+            : conflict && !review.outcome?.resolverError
+              ? 'An agent is reconciling the update while the current app stays live.'
+              : onRetry
+                ? 'Nothing else will change until you try again.'
+                : 'This app is not included in the confirmed updates.'}
+          {needsResolution ? (
+            onResolve ? <div><button type="button" className="st-btn st-btn-secondary" onClick={() => onResolve(review)} disabled={busy}>Resolve in chat</button></div> : null
+          ) : onRetry && (!conflict || review.outcome?.resolverError) ? (
             <div><button type="button" className="st-btn st-btn-secondary" onClick={() => onRetry(review.item)} disabled={busy}>Try again</button></div>
           ) : null}
         </div>
@@ -64,7 +71,7 @@ function ReviewEntry({ review, busy, onRetry }) {
   )
 }
 
-export function UpdateReviewModal({ review, applying = false, preparing = false, agentReviewing = false, onClose, onApply, onRetry, onReviewWithAgent }) {
+export function UpdateReviewModal({ review, applying = false, preparing = false, agentReviewing = false, onClose, onApply, onRetry, onResolve, onReviewWithAgent }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
   const openerRef = useRef(null)
@@ -114,14 +121,16 @@ export function UpdateReviewModal({ review, applying = false, preparing = false,
                 ? `Confirm once to update ${verified.length} verified ${verified.length === 1 ? 'app' : 'apps'} and start one resolver chat if local edits overlap.`
                 : complete
                   ? 'These apps need attention. Completed apps will not be updated again.'
-                  : 'No updates could be verified. Nothing will change.'}
+                  : entries.every(updateEntryNeedsResolution)
+                    ? 'Local changes must be reconciled before updating. Nothing will change.'
+                    : 'No updates could be verified. Nothing will change.'}
             </p>
           </div>
           <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} disabled={busy} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
         </div>
 
         <div className="st-update-review-body">
-          {entries.map(entry => <ReviewEntry key={entry.item.id} review={entry} busy={busy} onRetry={onRetry} />)}
+          {entries.map(entry => <ReviewEntry key={entry.item.id} review={entry} busy={busy} onRetry={onRetry} onResolve={onResolve} />)}
         </div>
 
         <div className="st-update-review-actions">

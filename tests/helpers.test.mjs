@@ -1903,7 +1903,6 @@ test('individual catalog updates keep a read-only review with bound digests', as
   assert.match(indexSource, /filter\(entry => !updateEntryConfirmable\(entry\)\)/)
   const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
   assert.match(modalSource, /entries\.filter\(updateEntryConfirmable\)/)
-  assert.match(indexSource, /const blocker = updatePreviewBlocker\(candidate\)/)
   assert.ok(indexSource.includes('capabilityDigest: entry.capabilityReview.preview.capability_digest'))
   assert.ok(indexSource.includes('sourceDigest: entry.preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
@@ -2912,7 +2911,7 @@ test('review prompts that need an account or handle hand off to Möbius · You',
 })
 
 test('an unresolved conflict blocks its update while clean updates stay confirmable', async () => {
-  const { updateEntryConfirmable, updatePreviewBlocker } = await import(
+  const { updateEntryConfirmable, updateEntryNeedsResolution, updatePreviewBlocker } = await import(
     pathToFileURL(join(root, '..', 'domain.js'))
   )
   const digest = 'a'.repeat(64)
@@ -2931,4 +2930,6 @@ test('an unresolved conflict blocks its update while clean updates stay confirma
   assert.deepEqual([blocked].filter(updateEntryConfirmable), [])
   // Mixed batch: only the clean update is confirmable; the conflict is not.
   assert.deepEqual([clean, blocked, unverified, done].filter(updateEntryConfirmable), [clean])
+  // Only the conflict is resolved in chat; other failures keep their retry.
+  assert.deepEqual([clean, blocked, unverified, done].filter(updateEntryNeedsResolution), [blocked])
 })
