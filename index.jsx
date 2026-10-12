@@ -57,6 +57,8 @@ import {
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
   updateCandidateUrlsByInstalledId,
+  updateEntryConfirmable,
+  updatePreviewBlocker,
 } from './domain.js'
 import {
   createAppChat,
@@ -1570,6 +1572,27 @@ export default function App({ appId, token }) {
     const candidate = await loadUpdateCandidatePreview(
       installedApp.id, updateItem.manifest_url, token,
     )
+    const blocker = updatePreviewBlocker(candidate)
+    if (blocker) {
+      // The update-check that offered "Update" was stale. The preview is newer
+      // than any probe in flight, so record the conflict and let the card
+      // offer "Resolve in chat" instead of another Update that hits it again.
+      checkGenerationsRef.current.set(String(installedApp.id), ++checkGenerationRef.current)
+      setUpdateChecks(prev => mergeUpdateChecks(prev, {
+        [installedApp.id]: {
+          ...prev[installedApp.id],
+          available: true,
+          pendingUpdateState: 'needs_resolution',
+        },
+      }))
+      return {
+        item: updateItem,
+        installedApp,
+        preview: candidate,
+        previewError: blocker,
+        capabilityReview: { status: 'error', preview: null, error: '' },
+      }
+    }
     const capabilityPreview = candidate.capability_preview
     const capabilityReview = {
       status: capabilityDiffNeedsReview(capabilityPreview.capability_diff)
@@ -1624,14 +1647,14 @@ export default function App({ appId, token }) {
   const handleApplyReviewedUpdate = useCallback(async () => {
     if (!updateReview || busy || applyingUpdateRef.current || checkingUpdateRef.current) return
     const reviews = updateReview.entries || [updateReview]
-    const entries = reviews.filter(entry => entry.preview?.source_digest && !entry.outcome)
+    const entries = reviews.filter(updateEntryConfirmable)
     if (!entries.length) return
 
     applyingUpdateRef.current = true
     setBusy(true)
     setBusyActionKind('batch_update')
     let issues = reviews
-      .filter(entry => entry.outcome || !entry.preview?.source_digest)
+      .filter(entry => !updateEntryConfirmable(entry))
       .map(entry => entry.outcome ? entry : {
         ...entry, outcome: { error: entry.previewError || 'This update could not be verified.' },
       })
@@ -1722,6 +1745,20 @@ export default function App({ appId, token }) {
       setCheckingUpdateItemId(null)
     }
   }, [busy, prepareCatalogUpdate, updateReview])
+
+  // A conflict-blocked review entry hands off to the same resolver the card's
+  // "Resolve in chat" starts. The entry leaves the review; any siblings stay.
+  const resolveReviewedConflict = (entry) => {
+    if (busy || !entry?.installedApp) return
+    const itemId = entry.item.id
+    setUpdateReview(current => {
+      const remaining = current?.entries?.filter(other => other.item.id !== itemId) || []
+      return remaining.length ? { entries: remaining } : null
+    })
+    void handleReviewUpdate(updateNotice?.kind === 'conflict' && updateNotice.itemId === itemId
+      ? updateNotice
+      : { kind: 'conflict', itemId, appId: entry.installedApp.id })
+  }
 
   const handleAgentUpdateReview = useCallback(async () => {
     if (!updateReview || busy || agentReviewingUpdate) return
@@ -2163,6 +2200,7 @@ export default function App({ appId, token }) {
             onClose={() => !busy && setUpdateReview(null)}
             onApply={handleApplyReviewedUpdate}
             onRetry={retryReviewedUpdate}
+            onResolve={resolveReviewedConflict}
             agentReviewing={agentReviewingUpdate}
             onReviewWithAgent={handleAgentUpdateReview}
           />
@@ -2417,6 +2455,7 @@ export default function App({ appId, token }) {
           onClose={() => !busy && setUpdateReview(null)}
           onApply={handleApplyReviewedUpdate}
           onRetry={retryReviewedUpdate}
+          onResolve={resolveReviewedConflict}
           agentReviewing={agentReviewingUpdate}
           onReviewWithAgent={handleAgentUpdateReview}
         />

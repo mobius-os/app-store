@@ -604,6 +604,27 @@ export function capabilityDiffNeedsReview(diff) {
   )
 }
 
+// A reviewed update the owner can confirm: verified source, not yet attempted,
+// and not blocked while previewing (for example by an unresolved conflict).
+// The review modal's count and the install loop share this one rule.
+export function updateEntryConfirmable(entry) {
+  return Boolean(entry?.preview?.source_digest && !entry.outcome && !entry.previewError)
+}
+
+// An unresolved merge conflict blocks installing a candidate: installing would
+// only reopen the resolver. A replay_pending update installs normally.
+export function updatePreviewBlocker(candidate) {
+  return candidate?.pending_update_state === 'needs_resolution'
+    ? 'This update has an unresolved merge conflict. Use "Resolve in chat" to fix it before applying.'
+    : ''
+}
+
+// A conflict-blocked entry is resolved in chat, never retried: checking the
+// same candidate again only meets the same conflict.
+export function updateEntryNeedsResolution(entry) {
+  return Boolean(updatePreviewBlocker(entry?.preview))
+}
+
 // "Update all" applies every exact, non-widening candidate immediately.
 // Anything that widens access or cannot be verified stays on the individual
 // review path rather than being silently approved by the batch action.
