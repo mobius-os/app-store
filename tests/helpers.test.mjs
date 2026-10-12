@@ -1424,7 +1424,8 @@ test('editing and accepting a new listing revision invalidate publish consent', 
   assert.match(showPreview, /setConfirmed\(false\)/)
   assert.match(saveListing, /setConfirmed\(false\)/)
   assert.match(source, /onClick=\{\(\) => \{ setConfirmed\(false\); setEditing\(true\) \}\}/)
-  assert.match(source, /disabled=\{!confirmed \|\| !localRepositoryValid/)
+  assert.match(source, /const publishDisabled = !confirmed \|\| !localRepositoryValid/)
+  assert.equal(source.match(/disabled=\{publishDisabled\}/g)?.length, 2, 'Publish and Publish anyway both need consent')
 })
 
 test('a late image preparation cannot change a different listing draft', async () => {
@@ -1897,8 +1898,8 @@ test('individual catalog updates keep a read-only review with bound digests', as
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token/)
   assert.ok(indexSource.includes('setUpdateReview(prepared)'))
-  assert.ok(indexSource.includes('entry => entry.preview?.source_digest && !entry.outcome && !entry.previewError'))
-  assert.match(indexSource, /filter\(entry => !entry\.outcome\?\.ok && \(entry\.outcome \|\| !entry\.preview\?\.source_digest \|\| entry\.previewError\)\)/)
+  assert.match(indexSource, /filter\(entry => entry\.preview\?\.source_digest && !entry\.outcome\)/)
+  assert.match(indexSource, /filter\(entry => !entry\.outcome\?\.ok && \(entry\.outcome \|\| !entry\.preview\?\.source_digest\)\)/)
   assert.ok(indexSource.includes('capabilityDigest: entry.capabilityReview.preview.capability_digest'))
   assert.ok(indexSource.includes('sourceDigest: entry.preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))

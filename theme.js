@@ -2214,6 +2214,8 @@ export const CSS = `
 .st-mine-num { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; white-space: nowrap; }
 .st-mine-num b { font-size: 22px; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .st-mine-num small { color: var(--muted); font-size: 12px; line-height: 16px; min-height: 16px; }
+.st-mine-num.is-wide { grid-column: span 2; }
+.st-mine-num.is-wide small { white-space: normal; }
 .st-mine-chevron { color: var(--muted); }
 .st-mine-page { display: flex; flex-direction: column; gap: 6px; }
 .st-mine-page > .st-back-btn { align-self: flex-start; }
@@ -2244,6 +2246,7 @@ export const CSS = `
 .st-check-mark { flex: 0 0 auto; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border); }
 .st-check.is-ready .st-check-mark { border: 0; background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
 .st-check.is-must_fix .st-check-mark { border: 0; background: color-mix(in srgb, var(--red, #f0776a) 18%, transparent); color: var(--red, #f0776a); }
+.st-check.is-error .st-check-mark { border: 0; background: color-mix(in srgb, var(--orange, #e8b45a) 18%, transparent); color: var(--orange, #e8b45a); }
 .st-check.is-running .st-check-mark { border-color: var(--accent); border-top-color: transparent; animation: st-check-spin .9s linear infinite; }
 @keyframes st-check-spin { to { transform: rotate(360deg); } }
 .st-check-issues { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -2254,6 +2257,9 @@ export const CSS = `
 .st-check-issues details[open] summary { margin-bottom: 4px; }
 .st-check-issues span { display: block; color: var(--muted); margin-top: 2px; }
 .st-check-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.st-publish-anyway { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid color-mix(in srgb, var(--orange, #e8b45a) 45%, var(--border)); border-radius: 14px; }
+.st-publish-anyway strong { font-size: 14px; }
+.st-publish-anyway > span { color: var(--muted); font-size: 13px; line-height: 1.45; }
 @media (max-width: 640px) {
   .st-mine-row { grid-template-columns: 44px minmax(0, 1fr) 16px; gap: 16px; padding: 18px; min-height: 88px; }
   .st-mine-num { display: none; }

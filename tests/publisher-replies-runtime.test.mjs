@@ -32,7 +32,7 @@ test('reviews and ratings remain visible while all publisher reply UI is removed
   let root = createRoot(dom.window.document.getElementById('root'))
   const review = { id: `rvw_${'a'.repeat(32)}`, stars: 4, author_handle: 'reader', review_text: 'Useful app',
     reply: { text: 'Legacy reply remains stored but hidden' } }
-  const props = { app: { id: 42, name: 'Test app' }, state: { community_app_id: 'app_12345678',
+  const props = { app: { id: 42, name: 'Test app' }, state: { status: 'live', community_app_id: 'app_12345678',
     stats: { rating_average: 4, rating_count: 1, review_count: 1 } },
     onLoadReviews: async () => ({ items: [review] }) }
   const text = () => dom.window.document.body.textContent

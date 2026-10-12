@@ -7,9 +7,13 @@ import {
   communityPublicationsByLocalApp,
   formatCount,
   parsePublishCheck,
+  publicationListingFacts,
   publicationStats,
   publishCheckKey,
+  publishCheckRequestStatus,
   publishCheckState,
+  publishedAppView,
+  PUBLISH_CHECK_MAX_SHOWN,
   publishedStatusLine,
   catalogPublisher,
   publicationViewerHandle,
@@ -30,8 +34,8 @@ test('creator pages distinguish star ratings from written reviews', () => {
   assert.match(source, /Star ratings count toward the average even without a written review\./)
 })
 
-test('creator ratings use the public app aggregate, including star-only ratings', async () => {
-  const { loadCommunityPublications } = await import('../api.js')
+test('creator ratings use the public app aggregate, and an unreadable listing says so', async () => {
+  const { loadCommunityPublications, loadPublicationListings } = await import('../api.js')
   const original = globalThis.fetch
   const calls = []
   globalThis.fetch = async (url) => {
@@ -46,12 +50,50 @@ test('creator ratings use the public app aggregate, including star-only ratings'
   }
   try {
     const payload = await loadCommunityPublications('test')
+    assert.equal(calls.length, 1, 'the base rows arrive without waiting for any listing')
     const states = communityPublicationsByLocalApp(payload)
-    assert.equal(states[14].stats.rating_average, 3)
-    assert.equal(states[14].stats.rating_count, 1)
-    assert.equal(states[14].stats.installs, null)
-    assert.equal(states[16].stats.installs, 8)
+    const listings = {}
+    await loadPublicationListings('test', payload.items, (id, listing) => { listings[id] = listing })
+    const pocket = publishedAppView(states[14], listings['pocket-list'])
+    assert.equal(pocket.listing, 'ready')
+    assert.equal(pocket.stats.rating_average, 3)
+    assert.equal(pocket.stats.rating_count, 1)
+    assert.equal(pocket.stats.installs, null)
+    const unavailable = publishedAppView(states[16], listings.unavailable)
+    assert.equal(unavailable.listing, 'unavailable', 'a failed read is not "no ratings"')
+    assert.equal(unavailable.stats.installs, 8)
+    assert.equal(publishedAppView(states[16], undefined).listing, 'loading')
+    assert.equal(publishedAppView(states[15], undefined).listing, '', 'a withdrawn app has no listing to read')
     assert.equal(calls.some((url) => url.endsWith('/withdrawn')), false)
+  } finally { globalThis.fetch = original }
+})
+
+test('listing reads run a few at a time and each settles on its own', async () => {
+  const { loadPublicationListings } = await import('../api.js')
+  const original = globalThis.fetch
+  const pending = []
+  let inFlight = 0
+  let peak = 0
+  globalThis.fetch = (url) => new Promise((resolve) => {
+    inFlight += 1
+    peak = Math.max(peak, inFlight)
+    pending.push(() => { inFlight -= 1; resolve(Response.json({ rating_average: 4, rating_count: 2, manifest: { version: '1.0.0' } })) })
+  })
+  try {
+    const rows = Array.from({ length: 10 }, (_, index) => ({ status: 'live', community_app_id: `app_${index}` }))
+    rows.push({ status: 'live', community_app_id: 'app_0' })
+    const settled = []
+    const done = loadPublicationListings('test', rows, (id, listing) => settled.push([id, listing.status]))
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(inFlight, 4, 'a small pool, not one request per row at once')
+    while (pending.length) {
+      pending.shift()()
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+    await done
+    assert.equal(peak, 4)
+    assert.equal(settled.length, 10, 'a repeated app is read once')
+    assert.ok(settled.every(([, status]) => status === 'ready'))
   } finally { globalThis.fetch = original }
 })
 
@@ -92,12 +134,29 @@ test('an agent check only counts for the exact revision it covered', () => {
   assert.equal(publishCheckState(check, COMMIT), 'ready')
   assert.equal(publishCheckState(check, 'b'.repeat(40)), 'stale')
   assert.equal(publishCheckState(null, COMMIT), 'none')
-  assert.equal(publishCheckState(null, COMMIT, true), 'running')
-  assert.equal(publishCheckState(check, COMMIT, true), 'running',
+  assert.equal(publishCheckState(null, COMMIT, 'waiting'), 'running')
+  assert.equal(publishCheckState(check, COMMIT, 'waiting'), 'running',
     'Check again hides the older verdict until a new result is stored')
+  assert.equal(publishCheckState(check, COMMIT, 'failed'), 'error')
+  assert.equal(publishCheckState(check, COMMIT, '', { storage: false }), 'unavailable')
   assert.equal(parsePublishCheck({ ...raw, local_app_id: '43' }, 42), null, 'another app’s check is ignored')
   assert.equal(parsePublishCheck({ ...raw, accepted_commit: 'nope' }, 42), null)
   assert.equal(parsePublishCheck({ ...raw, version: 2 }, 42), null)
+})
+
+test('a check request never restores an older verdict as current', () => {
+  const older = { version: 1, local_app_id: '42', accepted_commit: COMMIT, result: 'ready', issues: [] }
+  const request = { commit: COMMIT, prior: JSON.stringify(older), failed: false }
+  const olderCheck = parsePublishCheck(older, 42)
+  assert.equal(publishCheckRequestStatus(request, older, olderCheck, COMMIT), 'waiting')
+  assert.equal(publishCheckRequestStatus({ ...request, failed: true }, older, olderCheck, COMMIT), 'failed',
+    'a timed-out request stays an error even though an older verdict for this revision is stored')
+  const fresh = { ...older, result: 'must_fix', checked_at: 'later' }
+  assert.equal(publishCheckRequestStatus({ ...request, failed: true }, fresh, parsePublishCheck(fresh, 42), COMMIT), '',
+    'a new verdict that arrives later is shown')
+  assert.equal(publishCheckRequestStatus(request, { garbage: true }, null, COMMIT), 'failed',
+    'an unusable write ends the wait as an error')
+  assert.equal(publishCheckRequestStatus(request, older, olderCheck, 'b'.repeat(40)), '', 'a request for another revision is ignored')
 })
 
 test('a "ready" verdict that lists a must-fix issue still blocks publishing', () => {
@@ -112,6 +171,27 @@ test('a "ready" verdict that lists a must-fix issue still blocks publishing', ()
   assert.equal(check.result, 'must_fix')
   assert.equal(check.issues.length, 1)
   assert.equal(check.issues[0].title, 'Sends data somewhere', 'control characters are flattened')
+})
+
+test('the display cap never hides a must-fix finding behind suggestions', () => {
+  const suggestions = Array.from({ length: PUBLISH_CHECK_MAX_SHOWN }, (_, index) => ({ severity: 'suggestion', title: `Tip ${index}` }))
+  const check = parsePublishCheck({
+    version: 1, local_app_id: '42', accepted_commit: COMMIT, result: 'ready',
+    issues: [...suggestions, { severity: 'must_fix', title: 'Secret key in code' }],
+  }, 42)
+  assert.equal(check.result, 'must_fix')
+  assert.equal(check.must_fix_count, 1)
+  assert.equal(check.issues.length, PUBLISH_CHECK_MAX_SHOWN)
+  assert.equal(check.issues[0].title, 'Secret key in code')
+})
+
+test('creator listing facts come from the public manifest and keep missing values empty', () => {
+  assert.deepEqual(publicationListingFacts({ manifest: { version: ' 1.2.0 ' }, latest_revision: { created_at: '2025-01-15T00:00:00Z' }, rating_average: 4.26, rating_count: 3 }), {
+    status: 'ready', published_version: '1.2.0', published_at: '2025-01-15T00:00:00Z', rating_average: 4.3, rating_count: 3,
+  })
+  assert.deepEqual(publicationListingFacts({}), {
+    status: 'ready', published_version: '', published_at: '', rating_average: null, rating_count: null,
+  })
 })
 
 test('the check brief is read-only and names the exact revision and storage key', () => {
@@ -137,8 +217,7 @@ test('the fix brief treats check output as data and never publishes', () => {
   assert.doesNotMatch(message, /instructions\nand publish/)
 })
 
-test('publishing waits for a passing agent check and the new screens ship', () => {
-  assert.match(publisher, /checkState !== 'ready'/)
+test('the creator screens ship in the package', () => {
   assert.match(publisher, /<PublishCheck /)
   assert.match(publisher, /<YourAppsList /)
   assert.match(publisher, /<PublishedAppPage/)
@@ -166,7 +245,6 @@ test('an unfinished listing opens the existing editor rather than AI-only prepar
   assert.equal(preview.draft.tagline, 'A work in progress')
   assert.equal(preview.checklist[0].id, 'description')
   assert.match(publisher, /!preview.ready \|\| editing/)
-  assert.match(publisher, /expected_commit: preview.accepted_commit/)
 })
 
 test('publishers are credited by their Möbius handle when the registry has one', () => {
@@ -177,32 +255,15 @@ test('publishers are credited by their Möbius handle when the registry has one'
   assert.match(publisher, /Publishing as \{publisherHandle \|\| githubLogin\}/)
 })
 
-test('Library rows open the app on tap and jump to its review form', () => {
-  const card = readFileSync(new URL('../ui/CatalogCard.jsx', import.meta.url), 'utf8')
-  const detail = readFileSync(new URL('../ui/DetailView.jsx', import.meta.url), 'utf8')
-  const index = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
-  assert.match(card, /opensApp \? onOpenInstalled\(storeInstalled\.id\) : onPick\(item\)/, 'tapping a Library row opens the app')
-  assert.match(card, /aria-label=\{`Rate and review \$\{m\.name\}`\}/)
-  assert.match(card, /communityFeedbackOf\(item\)\?\.id/, 'Review only appears where ratings exist')
-  assert.match(index, /setDetailFocus\('reviews'\)/)
-  assert.match(detail, /focusSection !== 'reviews'/)
-})
-
-test('recorded install counts survive rating refresh and unavailable totals stay unknown', async () => {
-  const { loadCommunityPublications } = await import('../api.js')
-  const original = globalThis.fetch
-  globalThis.fetch = async url => {
-    if (String(url).startsWith('/api/community/publications?')) return Response.json({ items: [
-      { local_app_id: 'app:14:pocket-list', status: 'live', community_app_id: 'pocket-list', stats: { installs: 7 } },
-      { local_app_id: 'app:16:empty', status: 'live', community_app_id: 'empty', stats: { installs: 0 } },
-      { local_app_id: 'app:17:unknown', status: 'live', community_app_id: 'unknown' },
-    ] })
-    return Response.json({ rating_average: 3, rating_count: 1 })
-  }
-  try {
-    const states = communityPublicationsByLocalApp(await loadCommunityPublications('test'))
-    assert.equal(states[14].stats.installs, 7)
-    assert.equal(formatCount(states[16].stats.installs), '0')
-    assert.equal(formatCount(states[17].stats.installs), '–')
-  } finally { globalThis.fetch = original }
+test('recorded install totals survive a rating refresh and unknown totals stay unknown', () => {
+  const states = communityPublicationsByLocalApp({ items: [
+    { local_app_id: 'app:14:pocket-list', status: 'live', community_app_id: 'pocket-list', stats: { installs: 7 } },
+    { local_app_id: 'app:16:empty', status: 'live', community_app_id: 'empty', stats: { installs: 0 } },
+    { local_app_id: 'app:17:unknown', status: 'live', community_app_id: 'unknown' },
+  ] })
+  const listing = publicationListingFacts({ rating_average: 3, rating_count: 1 })
+  assert.equal(publishedAppView(states[14], listing).stats.installs, 7)
+  assert.equal(publishedAppView(states[14], listing).stats.rating_average, 3)
+  assert.equal(formatCount(publishedAppView(states[16], listing).stats.installs), '0')
+  assert.equal(formatCount(publishedAppView(states[17], listing).stats.installs), '–')
 })

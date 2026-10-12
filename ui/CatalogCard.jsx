@@ -71,9 +71,12 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   const storeInstalled = lifecycle.installedApp
   const cardVariant = lifecycle.cardVariant
   const canOpenInstalledApp = !!storeInstalled && typeof onOpenInstalled === 'function'
-  // In the Library, tapping an installed app launches it; details stay one
-  // step away through Review or Browse.
-  const opensApp = pickOpensApp && canOpenInstalledApp
+  // In the Library, tapping a ready installed app launches it. A row with an
+  // update, conflict, retry or unfinished setup opens its details instead, so
+  // it never silently launches the old version. Details stays on every row
+  // for uninstall, setup and permissions.
+  const opensApp = pickOpensApp && canOpenInstalledApp &&
+    lifecycle.actionKind === 'open' && !lifecycle.setupNeedsAttention
   const canRetryInstalled = typeof onRetryInstalled === 'function'
   const canResolveUpdate = lifecycle.actionKind !== 'resolve' || !!lifecycle.resolutionNotice
   const isActionable =
@@ -193,6 +196,13 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
         <div className="st-card-byline">{catalogPublisher(item)}</div>
       ) : null}
       <div className="st-card-status-row">
+        {pickOpensApp ? (
+          <button type="button" className="st-card-secondary"
+                  onClick={() => onPick(item)}
+                  aria-label={`${m.name} details`}>
+            Details
+          </button>
+        ) : null}
         {layout === 'list' && storeInstalled && typeof onRateApp === 'function' && communityFeedbackOf(item)?.id ? (
           <button type="button" className="st-card-secondary"
                   onClick={() => onRateApp(item)}

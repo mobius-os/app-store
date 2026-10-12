@@ -1,5 +1,5 @@
 import { LISTING_LIMITS } from './constants.js'
-import { textWithinByteLimit, validateManifestUrl } from './domain.js'
+import { publicationListingFacts, textWithinByteLimit, validateManifestUrl } from './domain.js'
 
 export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
 export const SYSTEM_SETUP_READY_KEY = 'mobius:system-setup-ready:v1'
@@ -127,26 +127,32 @@ export async function loadCommunityPublications(token, { limit = 100, offset = 0
   const response = await fetch(`/api/community/publications?${params}`, {
     headers: communityHeaders(token),
   })
-  const payload = await communityResponse(response, 'Publication status could not be loaded.')
-  // Ratings belong to the public app, not its publication/release record.
-  // Read the same aggregate as the listing; never average a paginated review list.
-  const items = await Promise.all((payload.items || []).map(async (row) => {
-    if (!row.community_app_id || row.status !== 'live') return row
-    try {
-      const app = await loadCommunityApp(token, row.community_app_id)
-      return { ...row,
-        // Published release facts come from the public listing, never local edits
-        // or the publication record's last status-change timestamp.
-        published_version: typeof app.manifest?.version === 'string' ? app.manifest.version : '',
-        published_at: app.latest_revision?.created_at || '',
-        stats: { ...row.stats, rating_average: app.rating_average, rating_count: app.rating_count },
+  return communityResponse(response, 'Publication status could not be loaded.')
+}
+
+// Ratings and release facts live on each public listing. Read them a few at a
+// time after the base rows have rendered, so many apps never burst requests and
+// one slow listing never holds the others. A failed read reports `unavailable`
+// rather than looking like "no ratings".
+const PUBLICATION_LISTING_CONCURRENCY = 4
+
+export async function loadPublicationListings(token, rows, onListing, { concurrency = PUBLICATION_LISTING_CONCURRENCY } = {}) {
+  const ids = [...new Set((rows || [])
+    .filter((row) => row?.status === 'live' && typeof row.community_app_id === 'string' && row.community_app_id)
+    .map((row) => row.community_app_id))]
+  async function worker() {
+    while (ids.length) {
+      const id = ids.shift()
+      let listing
+      try {
+        listing = publicationListingFacts(await loadCommunityApp(token, id))
+      } catch {
+        listing = { status: 'unavailable' }
       }
-    } catch {
-      // A single unavailable listing must not hide the owner's other apps.
-      return row
+      onListing(id, listing)
     }
-  }))
-  return { ...payload, items }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker))
 }
 
 export async function loadLocalPublicationPreview(token, appId) {

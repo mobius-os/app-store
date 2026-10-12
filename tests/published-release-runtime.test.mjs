@@ -7,8 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { loadCommunityPublications } from '../api.js'
-import { communityPublicationsByLocalApp } from '../domain.js'
+import { loadCommunityPublications, loadPublicationListings } from '../api.js'
+import { communityPublicationsByLocalApp, publishedAppView } from '../domain.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-published-release')
@@ -18,7 +18,10 @@ test('release details use the public manifest and revision date, not publication
     ? { items: [{ local_app_id: 'app:14:pocket-list', status: 'live', community_app_id: 'app_pocket-list', updated_at: '2026-10-12T00:00:00Z' }] }
     : { manifest: { version: '0.1.0' }, latest_revision: { created_at: '2025-01-15T00:00:00Z' }, rating_average: 3, rating_count: 1 })
   try {
-    const state = communityPublicationsByLocalApp(await loadCommunityPublications('test'))[14]
+    const payload = await loadCommunityPublications('test')
+    const listings = {}
+    await loadPublicationListings('test', payload.items, (id, listing) => { listings[id] = listing })
+    const state = publishedAppView(communityPublicationsByLocalApp(payload)[14], listings['app_pocket-list'])
     assert.equal(state.published_version, '0.1.0')
     assert.equal(state.published_at, '2025-01-15T00:00:00Z')
     const unknown = communityPublicationsByLocalApp({ items: [{ local_app_id: 'app:14', updated_at: '2026-10-12' }] })[14]
@@ -55,7 +58,8 @@ test('creator release details and public-listing action handle known, missing an
     await act(async () => view.click()); assert.deepEqual(calls, ['app_pocket-list'])
     await act(async () => root.render(React.createElement(PublishedAppPage, { ...props,
       state: { status: 'withdrawn', community_app_id: 'app_pocket-list', published_at: 'not a date' } })))
-    assert.equal(dom.window.document.querySelector('.st-mine-numbers b').textContent, '–')
+    assert.equal(dom.window.document.querySelector('.st-mine-numbers'), null, 'a withdrawn app shows no blank stats')
+    assert.match(dom.window.document.body.textContent, /Installs and ratings appear while the app is live/)
     assert.equal(dom.window.document.querySelector('time'), null)
     assert.match(dom.window.document.querySelector('.st-mine-release').textContent, /Not available/)
     assert.equal([...dom.window.document.querySelectorAll('button')].some(b => b.textContent === 'View in Store'), false)
@@ -64,6 +68,11 @@ test('creator release details and public-listing action handle known, missing an
       state: { status: 'live', community_app_id: 'app_example' } })))
     assert.equal(dom.window.document.querySelectorAll('.st-mine-numbers b')[2].textContent, '–', 'one page is not a total')
     assert.match(dom.window.document.body.textContent, /Showing the latest reviews, not the full total/)
+    await act(async () => root.render(React.createElement(PublishedAppPage, { ...props,
+      state: { status: 'live', community_app_id: 'app_example', listing: 'unavailable', stats: { installs: 3 } } })))
+    assert.equal(dom.window.document.querySelectorAll('.st-mine-numbers b')[1].textContent, 'Unavailable',
+      'an unreadable listing is not shown as "no ratings"')
+    assert.match(dom.window.document.body.textContent, /ratings and release details are unavailable/)
 
   } finally {
     await act(async () => root.unmount()); Object.assign(globalThis, old); dom.window.close()

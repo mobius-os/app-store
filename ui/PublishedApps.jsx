@@ -31,6 +31,14 @@ function Stars({ value }) {
   )
 }
 
+// A rating from the public listing: a value, "…" while loading, or an honest
+// "Unavailable" when the listing could not be read.
+function ratingText(state) {
+  if (state?.listing === 'loading') return '…'
+  if (state?.listing === 'unavailable') return 'Unavailable'
+  return state?.stats?.rating_average ?? '–'
+}
+
 function RatingCount({ count }) {
   if (!Number.isInteger(count)) return null
   return <span>{formatCount(count)} {count === 1 ? 'rating' : 'ratings'}</span>
@@ -39,24 +47,26 @@ function RatingCount({ count }) {
 export function YourAppsList({ entries, onOpen }) {
   return (
     <ul className="st-mine-list" aria-label="Your published apps">
-      {entries.map(({ app, state }) => {
-        const stats = state?.stats
-
-        return (
-          <li key={app.id}>
+      {entries.map(({ app, state }) => (
+        <li key={app.id}>
           <button type="button" className="st-mine-row" onClick={() => onOpen(app)}>
             <AppIcon app={app} />
             <span className="st-mine-copy">
               <strong>{app.name}</strong>
               <StatusLine state={state} hosted={app.hosted_publication} />
             </span>
-            <span className="st-mine-num"><b>{formatCount(stats?.installs)}</b><small>Installs</small></span>
-            <span className="st-mine-num"><b>{stats?.rating_average ?? '–'}</b><small>Average Rating</small></span>
+            {state?.status === 'live' ? (
+              <>
+                <span className="st-mine-num"><b>{formatCount(state.stats?.installs)}</b><small>Installs</small></span>
+                <span className="st-mine-num"><b>{ratingText(state)}</b><small>Average Rating</small></span>
+              </>
+            ) : (
+              <span className="st-mine-num is-wide"><small>Stats appear while the app is live</small></span>
+            )}
             <ChevronRight width="16" height="16" aria-hidden="true" className="st-mine-chevron" />
           </button>
-          </li>
-        )
-      })}
+        </li>
+      ))}
     </ul>
   )
 }
@@ -65,6 +75,8 @@ export function PublishedAppPage({
   app, state, onBack, onPublishUpdate, publishDisabled, onLoadReviews, onViewInStore,
 }) {
   const stats = state?.stats
+  const live = state?.status === 'live'
+  const listingUnavailable = state?.listing === 'unavailable'
   const communityId = state?.community_app_id || ''
   const publishedDate = state?.published_at ? new Date(state.published_at) : null
   const dateKnown = publishedDate && Number.isFinite(publishedDate.getTime())
@@ -111,14 +123,21 @@ export function PublishedAppPage({
       </header>
 
       <dl className="st-mine-release">
-        <div><dt>Published version</dt><dd>{state?.published_version || 'Not available'}</dd></div>
+        <div><dt>Published version</dt><dd>{state?.published_version || (state?.listing === 'loading' ? 'Loading…' : 'Not available')}</dd></div>
         <div><dt>Last published</dt><dd>{dateKnown ? <time dateTime={publishedDate.toISOString()} title={publishedDate.toLocaleString('en')}>{publishedDate.toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' })}</time> : 'Not available'}</dd></div>
       </dl>
-      <div className="st-mine-numbers">
-        <div><b>{formatCount(stats?.installs)}</b><span>installs</span></div>
-        <div><b>{stats?.rating_average ?? '–'}</b><span>average rating</span><RatingCount count={stats?.rating_count} /></div>
-        <div><b>{formatCount(stats?.review_count ?? (reviews && !hasMoreReviews ? written.length : null))}</b><span>written reviews</span></div>
-      </div>
+      {listingUnavailable ? (
+        <p className="st-mine-status is-warning" role="status">The public listing couldn’t be read right now, so ratings and release details are unavailable.</p>
+      ) : null}
+      {live ? (
+        <div className="st-mine-numbers">
+          <div><b>{formatCount(stats?.installs)}</b><span>installs</span></div>
+          <div><b>{ratingText(state)}</b><span>average rating</span><RatingCount count={stats?.rating_count} /></div>
+          <div><b>{formatCount(stats?.review_count ?? (reviews && !hasMoreReviews ? written.length : null))}</b><span>written reviews</span></div>
+        </div>
+      ) : (
+        <p className="st-mine-status">Installs and ratings appear while the app is live.</p>
+      )}
 
       <h3 className="st-mine-section">Written reviews</h3>
       {hasMoreReviews ? <p className="st-mine-status">Showing the latest reviews, not the full total.</p> : null}

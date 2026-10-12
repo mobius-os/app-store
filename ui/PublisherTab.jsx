@@ -5,8 +5,12 @@ import {
   listingDraftFromPreview,
   listingPayload,
   parsePublishCheck,
+  PUBLISH_CHECK_POLL_MS,
+  PUBLISH_CHECK_TIMEOUT_MS,
   publishCheckKey,
+  publishCheckRequestStatus,
   publishCheckState,
+  publishedAppView,
 } from '../domain.js'
 import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
 import { PublishCheck } from './PublishCheck.jsx'
@@ -42,11 +46,22 @@ function publishableApps(installed) {
 }
 
 // Apps this owner has already published (or is publishing) from this Möbius.
-function publishedEntries(installed, publicationStates) {
+function publishedEntries(installed, publicationStates, publicationListings) {
   return (installed || [])
     .filter((app) => app?.id && (publicationStates[app.id] || app.hosted_publication))
-    .map((app) => ({ app, state: publicationStates[app.id] || null }))
+    .map((app) => {
+      const state = publicationStates[app.id] || null
+      return { app, state: publishedAppView(state, publicationListings[state?.community_app_id]) }
+    })
     .sort((left, right) => String(left.app.name || '').localeCompare(String(right.app.name || '')))
+}
+
+// Why "Publish anyway" needs a second confirmation for each check state.
+const UNCHECKED_REASON = {
+  none: 'Your agent hasn’t checked this version.',
+  running: 'Your agent hasn’t finished checking this version.',
+  error: 'The agent check for this version didn’t finish.',
+  stale: 'The last agent check was for an older version.',
 }
 
 function publicationLabel(state, hosted) {
@@ -80,6 +95,7 @@ export function PublisherTab({
   contributeAvailable,
   onOpenContributions,
   publicationStates = {},
+  publicationListings = {},
   publisherHandle = '',
   publicationStatesError,
   onRefreshPublicationStates,
@@ -92,7 +108,6 @@ export function PublisherTab({
   onPublishSpotlight,
   onLoadReviews,
   onViewInStore,
-
   onRunCheck,
   onFixCheck,
 }) {
@@ -122,30 +137,40 @@ export function PublisherTab({
   const [view, setView] = useState('home')
   const [openAppId, setOpenAppId] = useState(null)
   const [checkRaw, setCheckRaw] = useState(null)
-  // { commit, prior } for the check the owner most recently asked for; prior is
-  // the stored result at that moment, so any new write ends the wait.
+  // { commit, prior, startedAt, failed } for the check the owner most recently
+  // asked for; see publishCheckRequestStatus.
   const [checkRequest, setCheckRequest] = useState(null)
   const [checkBusy, setCheckBusy] = useState(false)
+  const [confirmingAnyway, setConfirmingAnyway] = useState(false)
   const previewGateRef = useRef(null)
   if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
   const commitValid = /^[0-9a-fA-F]{40,64}$/.test(commitSha.trim())
   const localRepositoryValid = /^[A-Za-z0-9_.-]{1,100}$/.test(localRepositoryName.trim())
-  const published = publishedEntries(installed, publicationStates)
+  const published = publishedEntries(installed, publicationStates, publicationListings)
   useEffect(() => { onRefreshPublicationStates() }, [onRefreshPublicationStates])
   const openEntry = published.find((entry) => entry.app.id === openAppId) || null
   const acceptedCommit = String(preview?.accepted_commit || '')
+  // Checks live in this Store's app storage; without it there is nothing to
+  // check with, and publishing stays available.
+  const checkStorage = typeof window !== 'undefined' ? window.mobius?.storage || null : null
   const check = candidate ? parsePublishCheck(checkRaw, candidate.id) : null
   const checkState = publishCheckState(
     check, acceptedCommit,
-    !!checkRequest && checkRequest.commit === acceptedCommit && JSON.stringify(checkRaw ?? null) === checkRequest.prior,
+    publishCheckRequestStatus(checkRequest, checkRaw, check, acceptedCommit),
+    { storage: !!checkStorage },
   )
+  // The check is the owner's own AI opinion, not a Store gate: without a
+  // passing verdict, publishing asks for one explicit extra confirmation.
+  const checkPassed = checkState === 'ready' || checkState === 'unavailable'
+  const publishDisabled = !confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady
+  useEffect(() => { setConfirmingAnyway(false) }, [checkState, candidate?.id])
 
   // The agent writes its verdict into the Store's own storage; follow that key
   // live for the app being published.
   useEffect(() => {
     setCheckRaw(null)
-    const store = typeof window !== 'undefined' ? window.mobius?.storage : null
+    const store = checkStorage
     if (!candidate?.id || !store) return undefined
     const key = publishCheckKey(candidate.id)
     let cancelled = false
@@ -154,22 +179,28 @@ export function PublisherTab({
       ? store.subscribe(key, (value) => { if (!cancelled) setCheckRaw(value) })
       : null
     return () => { cancelled = true; if (typeof unsubscribe === 'function') unsubscribe() }
-  }, [candidate?.id])
+  }, [candidate?.id, checkStorage])
 
   // App storage only notifies on this frame's own writes and on re-reads, so
-  // while the agent works, re-read its result every few seconds (visible only).
+  // while the agent works, re-read its result (visible only). A request that
+  // outlives the timeout fails into a retryable error.
   useEffect(() => {
-    const store = typeof window !== 'undefined' ? window.mobius?.storage : null
-    if (checkState !== 'running' || !candidate?.id || !store) return undefined
+    if (checkState !== 'running' || !candidate?.id || !checkStorage) return undefined
     const key = publishCheckKey(candidate.id)
-    const startedAt = Date.now()
-    const timer = window.setInterval(() => {
-      if (Date.now() - startedAt > 20 * 60 * 1000) { window.clearInterval(timer); return }
+    const request = checkRequest
+    let cancelled = false
+    const poll = setInterval(() => {
       if (window.mobius?.visible === false) return
-      store.get(key).then((value) => setCheckRaw(value)).catch(() => {})
-    }, 4000)
-    return () => window.clearInterval(timer)
-  }, [checkState, candidate?.id])
+      checkStorage.get(key).then((value) => { if (!cancelled) setCheckRaw(value) }).catch(() => {})
+    }, PUBLISH_CHECK_POLL_MS)
+    const expire = setTimeout(() => stopWaiting(request),
+      Math.max(0, request.startedAt + PUBLISH_CHECK_TIMEOUT_MS - Date.now()))
+    return () => { cancelled = true; clearInterval(poll); clearTimeout(expire) }
+  }, [checkState, candidate?.id, checkRequest, checkStorage])
+
+  function stopWaiting(request) {
+    setCheckRequest((current) => (current && current === request ? { ...current, failed: true } : current))
+  }
 
   async function runCheck() {
     if (!candidate || !acceptedCommit || checkBusy) return
@@ -177,10 +208,15 @@ export function PublisherTab({
     try {
       const prior = JSON.stringify(checkRaw ?? null)
       const ok = await onRunCheck?.(candidate, acceptedCommit)
-      if (ok) setCheckRequest({ commit: acceptedCommit, prior })
+      if (ok) setCheckRequest({ commit: acceptedCommit, prior, startedAt: Date.now(), failed: false })
     } finally {
       setCheckBusy(false)
     }
+  }
+
+  async function publish() {
+    const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim())
+    if (ok) closePreview({ force: true })
   }
 
   async function fixCheck(issues) {
@@ -236,9 +272,20 @@ export function PublisherTab({
     setSaveError('')
     setConfirmed(false)
     try {
-      await onSaveListing?.(app.id, { ...listingPayload(draft), expected_commit: preview.accepted_commit })
-      const result = await onPreviewLocal?.(app.id)
+      // Saving writes the listing onto whichever revision is accepted now, and
+      // the save route has no expected-revision guard. Re-read first so a
+      // draft from an older revision never silently replaces a newer one; the
+      // owner keeps their edits and saves again knowingly.
+      const latest = await onPreviewLocal?.(app.id)
+      const moved = String(latest?.accepted_commit || '') !== String(preview?.accepted_commit || '')
+      if (!moved) await onSaveListing?.(app.id, listingPayload(draft))
+      const result = moved ? latest : await onPreviewLocal?.(app.id)
       if (!previewGateRef.current.isCurrent(requestId)) return
+      if (moved) {
+        setPreview(result || null)
+        setSaveError('This app changed since you opened its listing. Your edits are kept: check them, then save again to use them on the new version.')
+        return
+      }
       showPreview(app, result)
     } catch (error) {
       if (!previewGateRef.current.isCurrent(requestId)) return
@@ -459,19 +506,36 @@ export function PublisherTab({
                   </div>
                 </label>
                 <PublishCheck state={checkState} check={check} busy={checkBusy}
-                              onRun={runCheck} onFix={fixCheck} />
+                              onRun={runCheck} onFix={fixCheck} onStop={() => stopWaiting(checkRequest)} />
                 <label className="st-publish-consent">
                   <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
                   <span>I’ve reviewed this listing and want this exact source revision to become public.</span>
                 </label>
-                <button type="button" className="st-btn st-btn-primary"
-                        disabled={!confirmed || !localRepositoryValid || checkState !== 'ready' || !!publishingId || !signedIn || !githubReady}
-                        onClick={async () => {
-                          const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim())
-                          if (ok) closePreview({ force: true })
-                        }}>
-                  {publishingId === candidate.id ? 'Publishing…' : 'Publish app'}
-                </button>
+                {confirmingAnyway && !checkPassed ? (
+                  <div className="st-publish-anyway" role="group" aria-labelledby="st-publish-anyway-title">
+                    <strong id="st-publish-anyway-title">Publish without a passing agent check?</strong>
+                    <span>
+                      {checkState === 'must_fix'
+                        ? `Your agent flagged ${check?.must_fix_count || 0} ${check?.must_fix_count === 1 ? 'thing' : 'things'} to fix.`
+                        : UNCHECKED_REASON[checkState]}
+                      {' '}The check is an AI opinion, so the decision is yours.
+                    </span>
+                    <div className="st-check-actions">
+                      <button type="button" className="st-btn st-btn-ghost" disabled={!!publishingId}
+                              onClick={() => setConfirmingAnyway(false)}>
+                        Keep reviewing
+                      </button>
+                      <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled} onClick={publish}>
+                        {publishingId === candidate.id ? 'Publishing…' : 'Publish anyway'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled}
+                          onClick={checkPassed ? publish : () => setConfirmingAnyway(true)}>
+                    {publishingId === candidate.id ? 'Publishing…' : checkPassed ? 'Publish app' : 'Publish anyway…'}
+                  </button>
+                )}
                 <div className="st-listing-revise">
                   <button type="button" className="st-btn st-btn-secondary"
                           disabled={!!publishingId} onClick={() => { setConfirmed(false); setEditing(true) }}>

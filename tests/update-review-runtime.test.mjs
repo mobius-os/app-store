@@ -176,10 +176,13 @@ test('update review leads with verified changes and keeps technical details coll
     assert.ok(dom.window.document.querySelector('button.st-btn-primary'))
     await act(async () => { details.open = true; details.dispatchEvent(new dom.window.Event('toggle')) })
     assert.equal(details.open, true)
-    const blocked = { ...reviewed('Local edits'), previewError: 'Resolve first' }
-    blocked.preview.pending_update_state = 'needs_resolution'
-    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: blocked })))
+    const overlapping = reviewed('Local edits', { conflict: true })
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: overlapping })))
     assert.match(dom.window.document.body.textContent, /Local edits need review/)
+    assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
+    const unverified = { ...reviewed('Unchecked'), preview: null, previewError: 'This update could not be checked.' }
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: unverified })))
+    assert.match(dom.window.document.body.textContent, /Could not update/)
     assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
     await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: reviewed('Pocket List', { ok: true }) })))
     assert.match(dom.window.document.body.textContent, /Update results/)

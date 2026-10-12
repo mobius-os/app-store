@@ -14,18 +14,28 @@ function ReviewEntry({ review, busy, onRetry }) {
   const added = files.filter(file => file.status === 'A' || file.status === 'C').length
   const removed = files.filter(file => file.status === 'D').length
   const changed = files.length - added - removed
-  const capabilitiesChanged = capabilityDiffNeedsReview(review.capabilityReview?.preview?.capability_diff)
+  const capabilitiesChanged = capabilityDiffNeedsReview(
+    review.capabilityReview?.preview?.capability_diff,
+  )
   const name = review.item.manifest?.name || review.item.id
   const version = preview.upstream_version || review.item.manifest?.version || 'latest'
-  const conflict = review.outcome?.conflict || preview.pending_update_state === 'needs_resolution'
+  const conflict = review.outcome?.conflict
   const updated = review.outcome?.ok === true
   const error = updated ? '' : review.previewError || review.outcome?.resolverError || review.outcome?.error ||
     (review.outcome && !conflict ? 'This update could not be completed.' : '')
-  const ready = !!preview.source_digest && !review.outcome && !review.previewError
+  const ready = !!preview.source_digest && !review.outcome
   const resolving = review.outcome?.conflict && !review.outcome?.resolverError
-  const status = updated ? 'Updated' : conflict ? 'Local edits need review' : error || !ready ? 'Could not update' : capabilitiesChanged ? 'Access review required' : 'Ready to update'
+  const status = updated ? 'Updated'
+    : conflict ? 'Local edits need review'
+      : error || !ready ? 'Could not update'
+        : capabilitiesChanged ? 'Access review required'
+          : 'Ready to update'
   const tone = updated ? 'success' : conflict ? 'attention' : error || !ready ? 'error' : 'ready'
-  const changes = [added ? `${added} added` : '', changed ? `${changed} changed` : '', removed ? `${removed} removed` : ''].filter(Boolean).join(' · ')
+  const changes = [
+    added ? `${added} added` : '',
+    changed ? `${changed} changed` : '',
+    removed ? `${removed} removed` : '',
+  ].filter(Boolean).join(' · ')
 
   return (
     <section className="st-update-review-section">
@@ -34,18 +44,36 @@ function ReviewEntry({ review, busy, onRetry }) {
         <span className={`st-update-status is-${tone}`}>{status}</span>
       </div>
       {updated ? (
-        <div className="st-update-review-notice is-success" role="status">This app was updated. No further action is needed.</div>
+        <div className="st-update-review-notice is-success" role="status">
+          This app was updated. No further action is needed.
+        </div>
       ) : error || conflict || !ready ? (
         <div className="st-update-review-notice is-error" role="alert">
-          <div className="st-update-review-error-text">{error || (conflict ? 'Your local edits overlap this update.' : 'This update could not be verified.')}</div>
-          <p>{resolving ? 'An agent is reviewing the overlap. Your current app stays live.' : conflict ? 'Resolve the local edits before updating. Your current app stays live.' : 'Your current app stays unchanged. Recheck the update before trying again.'}</p>
-          {onRetry && !resolving ? <button type="button" className="st-btn st-btn-secondary" onClick={() => onRetry(review.item)} disabled={busy}>Try again</button> : null}
+          <div className="st-update-review-error-text">
+            {error || (conflict ? 'Your local edits overlap this update.' : 'This update could not be verified.')}
+          </div>
+          <p>
+            {resolving
+              ? 'An agent is reviewing the overlap. Your current app stays live.'
+              : conflict
+                ? 'Resolve the local edits before updating. Your current app stays live.'
+                : 'Your current app stays unchanged. Recheck the update before trying again.'}
+          </p>
+          {onRetry && !resolving ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={() => onRetry(review.item)} disabled={busy}>Try again</button>
+          ) : null}
         </div>
       ) : (
         <div className="st-update-change-summary">
           <h4>What changed</h4>
-          <p>{files.length ? `${files.length} ${files.length === 1 ? 'file' : 'files'} in this preview: ${changes}.` : 'No source-file changes to show. This release may update app settings or artwork.'}</p>
-          <p className="st-update-summary-note">{capabilitiesChanged ? 'Review the access changes below before confirming.' : 'No new access is requested.'}</p>
+          <p>
+            {files.length
+              ? `${files.length} ${files.length === 1 ? 'file' : 'files'} in this preview: ${changes}.`
+              : 'No source-file changes to show. This release may update app settings or artwork.'}
+          </p>
+          <p className="st-update-summary-note">
+            {capabilitiesChanged ? 'Review the access changes below before confirming.' : 'No new access is requested.'}
+          </p>
         </div>
       )}
       {!updated && files.length > 0 ? (
@@ -54,7 +82,12 @@ function ReviewEntry({ review, busy, onRetry }) {
           <FileDiffList files={files} />
         </details>
       ) : null}
-      {!updated && capabilitiesChanged ? <div><h3>{review.capabilityReview?.preview?.capability_diff?.unknown_previous ? 'Access review' : 'Access changes'}</h3><CapabilityContract review={review.capabilityReview} isInstalled /></div> : null}
+      {!updated && capabilitiesChanged ? (
+        <div>
+          <h3>{review.capabilityReview?.preview?.capability_diff?.unknown_previous ? 'Access review' : 'Access changes'}</h3>
+          <CapabilityContract review={review.capabilityReview} isInstalled />
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -64,14 +97,12 @@ export function UpdateReviewModal({ review, applying = false, preparing = false,
   const closeRef = useRef(null)
   const openerRef = useRef(null)
   const entries = review.entries || [review]
-  // Exclude preview-error entries (e.g. needs_resolution conflict) so they
-  // never appear as confirmable — they show an error message instead.
-  const verified = entries.filter(
-    entry => entry.preview?.source_digest && !entry.outcome && !entry.previewError,
-  )
+  const verified = entries.filter(entry => entry.preview?.source_digest && !entry.outcome)
   const complete = entries.some(entry => entry.outcome)
   const updatedCount = entries.filter(entry => entry.outcome?.ok).length
-  const attentionCount = entries.filter(entry => !entry.outcome?.ok && (entry.outcome || entry.previewError || !entry.preview?.source_digest)).length
+  const attentionCount = entries.filter(entry => (
+    !entry.outcome?.ok && (entry.outcome || !entry.preview?.source_digest)
+  )).length
   const allUpdated = updatedCount === entries.length
   const busy = applying || preparing || agentReviewing
   const hasFailure = entries.some(entry => entry.previewError || entry.outcome?.error || entry.outcome?.resolverError)

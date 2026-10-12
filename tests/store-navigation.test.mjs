@@ -41,3 +41,12 @@ test('rejected or cancelled ownership never renders a stranded detail',async()=>
   cancelled.own();await second
   assert.equal(cancelled.shown,null);assert.equal(cancelled.current.current,null)
 })
+test('a requested detail focus belongs to that open and never leaks into later details',async()=>{
+  const h=harness(),shown=[],first=app('first'),second=app('second')
+  h.context.show=(item,focus='')=>shown.push([item?.id??null,focus])
+  const pending=openDetailEntry(h.current,first,{...h.context,focus:'reviews'});h.own();await pending
+  await openDetailEntry(h.current,second,h.context)
+  h.back();h.forward()
+  closeDetailEntry(h.current,h.context.show)
+  assert.deepEqual(shown,[['first','reviews'],['second',''],[null,''],['second',''],[null,'']])
+})
