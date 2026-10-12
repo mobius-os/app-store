@@ -1,8 +1,8 @@
 // Each history entry keeps its current detail target, including retargeting
 // while host ownership is pending. Forward reconstructs that same target.
-// `focus` (for example 'reviews') belongs to the open that asked for it. Every
-// show states its focus, so a later open, retarget, Back or Forward never
-// inherits an earlier jump to the rating form.
+// `focus` (for example 'reviews') belongs to the entry that asked for it:
+// Forward restores that same entry and its focus, while every other open or
+// retarget states its own, so an unrelated detail never inherits the jump.
 export async function openDetailEntry(current, item, { nav, show, prepare, signal, focus = '', cancelPendingDestination = () => {} }) {
   if (!item?.manifest) return
   prepare(item)
@@ -15,7 +15,7 @@ export async function openDetailEntry(current, item, { nav, show, prepare, signa
   const entry = { item, focus, handle: null, owned: false }
   entry.handle = nav.open('app-store-detail', {
     onBack: () => { cancelPendingDestination(); current.current = null; show(null) },
-    onForward: () => { cancelPendingDestination(); current.current = entry; show(entry.item) },
+    onForward: () => { cancelPendingDestination(); current.current = entry; show(entry.item, entry.focus) },
   })
   current.current = entry
   const cancel = () => {

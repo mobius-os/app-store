@@ -1502,6 +1502,10 @@ const CHECK_TEXT_LIMIT = { title: 160, detail: 600, path: 200, fix: 300 }
 // The panel lists at most this many findings. The verdict is derived from
 // every finding first, so the cap can never hide a must-fix issue.
 export const PUBLISH_CHECK_MAX_SHOWN = 20
+// A real check reports a handful of findings. A stored result with more than
+// this is rejected before any normalization, so a huge or hostile write cannot
+// stall the panel, and no truncation can hide a must-fix finding.
+export const PUBLISH_CHECK_MAX_ISSUES = 200
 // An agent check normally takes a minute or two. Storage only notifies this
 // frame of its own writes, so re-read every few seconds while waiting, and
 // after 20 minutes stop and offer a retry instead of waiting forever.
@@ -1529,7 +1533,9 @@ export function parsePublishCheck(raw, localAppId) {
   if (String(raw.local_app_id) !== String(localAppId)) return null
   if (!/^[0-9a-f]{40,64}$/.test(String(raw.accepted_commit || ''))) return null
   if (raw.result !== 'ready' && raw.result !== 'must_fix') return null
-  const all = (Array.isArray(raw.issues) ? raw.issues : []).map(publishCheckIssue).filter(Boolean)
+  const rawIssues = Array.isArray(raw.issues) ? raw.issues : []
+  if (rawIssues.length > PUBLISH_CHECK_MAX_ISSUES) return null
+  const all = rawIssues.map(publishCheckIssue).filter(Boolean)
   const mustFix = all.filter((issue) => issue.severity === 'must_fix')
   return {
     accepted_commit: raw.accepted_commit,
@@ -1544,12 +1550,15 @@ export function parsePublishCheck(raw, localAppId) {
 }
 
 // Where the owner's latest check request stands. `request` is
-// { commit, prior, failed } where prior is the stored result when it was asked
-// for: any different write ends the wait. A new write that is not a usable
-// verdict for this revision fails the request rather than showing an older
-// verdict as current.
+// { appId, commit, prior, failed } where prior is the stored result when it
+// was asked for: any different write ends the wait. A new write that is not a
+// usable verdict for this revision fails the request rather than showing an
+// older verdict as current.
 export function publishCheckRequestStatus(request, raw, check, acceptedCommit) {
   if (!request || request.commit !== acceptedCommit) return ''
+  // `undefined` means storage has not been read yet for this app (it was just
+  // reopened); that is not a new write, so keep waiting rather than failing.
+  if (raw === undefined) return request.failed ? 'failed' : 'waiting'
   const changed = JSON.stringify(raw ?? null) !== request.prior
   if (changed && check?.accepted_commit === acceptedCommit) return ''
   return request.failed || changed ? 'failed' : 'waiting'

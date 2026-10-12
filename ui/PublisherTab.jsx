@@ -56,12 +56,13 @@ function publishedEntries(installed, publicationStates, publicationListings) {
     .sort((left, right) => String(left.app.name || '').localeCompare(String(right.app.name || '')))
 }
 
-// Why "Publish anyway" needs a second confirmation for each check state.
+// Why publishing without a passing verdict takes one more confirmation.
 const UNCHECKED_REASON = {
   none: 'Your agent hasn’t checked this version.',
   running: 'Your agent hasn’t finished checking this version.',
   error: 'The agent check for this version didn’t finish.',
   stale: 'The last agent check was for an older version.',
+  unavailable: 'Agent checks aren’t available on this Möbius.',
 }
 
 function publicationLabel(state, hosted) {
@@ -136,12 +137,17 @@ export function PublisherTab({
   // home: your published apps · choose: pick an app to publish · app: one published app
   const [view, setView] = useState('home')
   const [openAppId, setOpenAppId] = useState(null)
-  const [checkRaw, setCheckRaw] = useState(null)
-  // { commit, prior, startedAt, failed } for the check the owner most recently
-  // asked for; see publishCheckRequestStatus.
+  // The stored check result; undefined until storage is read for this app.
+  const [checkRaw, setCheckRaw] = useState(undefined)
+  // { appId, commit, prior, startedAt, failed } for the check the owner most
+  // recently asked for; see publishCheckRequestStatus. It belongs to one app,
+  // so reopening that app mid-check resumes waiting.
   const [checkRequest, setCheckRequest] = useState(null)
   const [checkBusy, setCheckBusy] = useState(false)
   const [confirmingAnyway, setConfirmingAnyway] = useState(false)
+  const publishTriggerRef = useRef(null)
+  const confirmHeadingRef = useRef(null)
+  const restorePublishFocusRef = useRef(false)
   const previewGateRef = useRef(null)
   if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
@@ -157,24 +163,32 @@ export function PublisherTab({
   const check = candidate ? parsePublishCheck(checkRaw, candidate.id) : null
   const checkState = publishCheckState(
     check, acceptedCommit,
-    publishCheckRequestStatus(checkRequest, checkRaw, check, acceptedCommit),
+    publishCheckRequestStatus(checkRequest?.appId === candidate?.id ? checkRequest : null, checkRaw, check, acceptedCommit),
     { storage: !!checkStorage },
   )
   // The check is the owner's own AI opinion, not a Store gate: without a
   // passing verdict, publishing asks for one explicit extra confirmation.
-  const checkPassed = checkState === 'ready' || checkState === 'unavailable'
+  const checkPassed = checkState === 'ready'
   const publishDisabled = !confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady
   useEffect(() => { setConfirmingAnyway(false) }, [checkState, candidate?.id])
+  // The confirmation replaces the Publish button: move focus into it, and back
+  // to the button when the owner keeps reviewing.
+  useEffect(() => {
+    if (confirmingAnyway) confirmHeadingRef.current?.focus()
+    else if (restorePublishFocusRef.current) publishTriggerRef.current?.focus()
+    restorePublishFocusRef.current = false
+  }, [confirmingAnyway])
 
   // The agent writes its verdict into the Store's own storage; follow that key
   // live for the app being published.
   useEffect(() => {
-    setCheckRaw(null)
+    setCheckRaw(undefined)
     const store = checkStorage
     if (!candidate?.id || !store) return undefined
     const key = publishCheckKey(candidate.id)
     let cancelled = false
-    store.get(key).then((value) => { if (!cancelled) setCheckRaw(value) }).catch(() => {})
+    store.get(key).then((value) => { if (!cancelled) setCheckRaw(value ?? null) })
+      .catch(() => { if (!cancelled) setCheckRaw(null) })
     const unsubscribe = typeof store.subscribe === 'function'
       ? store.subscribe(key, (value) => { if (!cancelled) setCheckRaw(value) })
       : null
@@ -191,7 +205,7 @@ export function PublisherTab({
     let cancelled = false
     const poll = setInterval(() => {
       if (window.mobius?.visible === false) return
-      checkStorage.get(key).then((value) => { if (!cancelled) setCheckRaw(value) }).catch(() => {})
+      checkStorage.get(key).then((value) => { if (!cancelled) setCheckRaw(value ?? null) }).catch(() => {})
     }, PUBLISH_CHECK_POLL_MS)
     const expire = setTimeout(() => stopWaiting(request),
       Math.max(0, request.startedAt + PUBLISH_CHECK_TIMEOUT_MS - Date.now()))
@@ -203,19 +217,20 @@ export function PublisherTab({
   }
 
   async function runCheck() {
-    if (!candidate || !acceptedCommit || checkBusy) return
+    // The prior result must be known, or an older verdict could later look new.
+    if (!candidate || !acceptedCommit || checkBusy || checkRaw === undefined) return
     setCheckBusy(true)
     try {
-      const prior = JSON.stringify(checkRaw ?? null)
+      const prior = JSON.stringify(checkRaw)
       const ok = await onRunCheck?.(candidate, acceptedCommit)
-      if (ok) setCheckRequest({ commit: acceptedCommit, prior, startedAt: Date.now(), failed: false })
+      if (ok) setCheckRequest({ appId: candidate.id, commit: acceptedCommit, prior, startedAt: Date.now(), failed: false })
     } finally {
       setCheckBusy(false)
     }
   }
 
   async function publish() {
-    const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim())
+    const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim(), acceptedCommit)
     if (ok) closePreview({ force: true })
   }
 
@@ -277,9 +292,16 @@ export function PublisherTab({
       // draft from an older revision never silently replaces a newer one; the
       // owner keeps their edits and saves again knowingly.
       const latest = await onPreviewLocal?.(app.id)
-      const moved = String(latest?.accepted_commit || '') !== String(preview?.accepted_commit || '')
-      if (!moved) await onSaveListing?.(app.id, listingPayload(draft))
-      const result = moved ? latest : await onPreviewLocal?.(app.id)
+      const saved = listingPayload(draft)
+      const movedBefore = String(latest?.accepted_commit || '') !== String(preview?.accepted_commit || '')
+      if (!movedBefore) await onSaveListing?.(app.id, saved)
+      const result = movedBefore ? latest : await onPreviewLocal?.(app.id)
+      // A save is itself a new accepted revision, so its commit cannot show
+      // whether another one landed in between. The text that must survive can:
+      // if it did not, keep the draft and say so instead of reporting success.
+      const kept = String(result?.draft?.tagline ?? '').trim() === saved.tagline
+        && String(result?.draft?.description ?? '').trim() === saved.description
+      const moved = movedBefore || !kept
       if (!previewGateRef.current.isCurrent(requestId)) return
       if (moved) {
         setPreview(result || null)
@@ -388,6 +410,9 @@ export function PublisherTab({
         <div className="st-publish-result" role="status">
           <strong>{publication.name || 'Your app'} is {publication.status === 'live' ? 'live' : 'submitted'}</strong>
           <span>{publication.status === 'live' ? 'The exact release is now available in Browse.' : 'Checks are running.'}</span>
+          {publication.revision_moved ? (
+            <span className="st-publish-result-warning">The app changed after you reviewed it, so a newer version than the one you reviewed was published. Check the public listing.</span>
+          ) : null}
           {(publication.repository_url || publication.github?.url) ? (
             <a href={publication.repository_url || publication.github.url} target="_blank" rel="noopener noreferrer">Open source</a>
           ) : null}
@@ -512,28 +537,33 @@ export function PublisherTab({
                   <span>I’ve reviewed this listing and want this exact source revision to become public.</span>
                 </label>
                 {confirmingAnyway && !checkPassed ? (
-                  <div className="st-publish-anyway" role="group" aria-labelledby="st-publish-anyway-title">
-                    <strong id="st-publish-anyway-title">Publish without a passing agent check?</strong>
-                    <span>
+                  <div className="st-publish-anyway" role="group" aria-labelledby="st-publish-anyway-title"
+                       aria-describedby="st-publish-anyway-reason">
+                    <strong id="st-publish-anyway-title" ref={confirmHeadingRef} tabIndex={-1}>
+                      {checkState === 'must_fix' ? 'Publish without fixing it?' : 'Publish without a check?'}
+                    </strong>
+                    <span id="st-publish-anyway-reason">
                       {checkState === 'must_fix'
                         ? `Your agent flagged ${check?.must_fix_count || 0} ${check?.must_fix_count === 1 ? 'thing' : 'things'} to fix.`
                         : UNCHECKED_REASON[checkState]}
-                      {' '}The check is an AI opinion, so the decision is yours.
+                      {' '}The check is optional advice from your agent, so the decision is yours.
                     </span>
                     <div className="st-check-actions">
                       <button type="button" className="st-btn st-btn-ghost" disabled={!!publishingId}
-                              onClick={() => setConfirmingAnyway(false)}>
+                              onClick={() => { restorePublishFocusRef.current = true; setConfirmingAnyway(false) }}>
                         Keep reviewing
                       </button>
                       <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled} onClick={publish}>
-                        {publishingId === candidate.id ? 'Publishing…' : 'Publish anyway'}
+                        {publishingId === candidate.id ? 'Publishing…' : checkState === 'must_fix' ? 'Publish anyway' : 'Publish'}
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled}
+                  <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled} ref={publishTriggerRef}
                           onClick={checkPassed ? publish : () => setConfirmingAnyway(true)}>
-                    {publishingId === candidate.id ? 'Publishing…' : checkPassed ? 'Publish app' : 'Publish anyway…'}
+                    {publishingId === candidate.id ? 'Publishing…'
+                      : checkState === 'must_fix' ? 'Publish anyway…'
+                        : checkPassed ? 'Publish app' : 'Publish…'}
                   </button>
                 )}
                 <div className="st-listing-revise">

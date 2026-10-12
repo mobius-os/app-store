@@ -78,7 +78,7 @@ import {
   loadLocalGithubIdentity,
   loadCommunityPublications,
   loadLocalPublicationPreview,
-  loadPublicationListings,
+  createPublicationListingReader,
   prepareListingImage,
   saveLocalListing,
   loadInstalledApps,
@@ -366,7 +366,7 @@ export default function App({ appId, token }) {
   const [publicationStatesError, setPublicationStatesError] = useState('')
   const [publisherHandle, setPublisherHandle] = useState('')
   // Public listing facts (ratings, release) per community app id; see
-  // loadPublicationListings.
+  // createPublicationListingReader.
   const [publicationListings, setPublicationListings] = useState({})
   const [communityActionBusy, setCommunityActionBusy] = useState(false)
   const [communityActionError, setCommunityActionError] = useState({ key: '', message: '' })
@@ -714,8 +714,8 @@ export default function App({ appId, token }) {
     }
   }, [token, query, communityOffset])
 
-  const refreshPublicationListings = useCallback((rows) => loadPublicationListings(
-    token, rows, (id, listing) => setPublicationListings((current) => ({ ...current, [id]: listing })),
+  const refreshPublicationListings = useMemo(() => createPublicationListingReader(
+    token, (id, listing) => setPublicationListings((current) => ({ ...current, [id]: listing })),
   ), [token])
 
   const showPublications = useCallback((payload) => {
@@ -844,7 +844,7 @@ export default function App({ appId, token }) {
     }
   }, [publishingId, refreshCommunity, refreshPublicationStates, token])
 
-  const handlePublishLocal = useCallback(async (localAppId, repositoryName) => {
+  const handlePublishLocal = useCallback(async (localAppId, repositoryName, reviewedCommit = '') => {
     if (publishingId) return false
     setPublishingId(localAppId)
     setPublication(null)
@@ -859,6 +859,9 @@ export default function App({ appId, token }) {
         repository_url: communityRepositoryUrl(listed?.repository_url || (
           githubIdentity?.login ? `https://github.com/${githubIdentity.login}/${repositoryName}` : ''
         )),
+        // Publishing takes whatever revision is accepted at that moment.
+        revision_moved: !!(reviewedCommit && result?.published_commit
+          && result.published_commit !== String(reviewedCommit).toLowerCase()),
       })
       await Promise.allSettled([refreshCommunity(), refreshPublicationStates()])
       return true
@@ -968,7 +971,7 @@ export default function App({ appId, token }) {
       const result = await saveCommunityReview(token, feedback.id, stars, body)
       // Only this app's rating changed; re-read its listing if it is one of yours.
       if (Object.values(publicationStates).some((state) => state.community_app_id === feedback.id)) {
-        refreshPublicationListings([{ status: 'live', community_app_id: feedback.id }])
+        refreshPublicationListings([{ status: 'live', community_app_id: feedback.id }], { force: true })
       }
       updateCommunityFeedback(feedback.id, (current) => ({
         ...current,

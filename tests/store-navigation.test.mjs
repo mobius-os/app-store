@@ -50,3 +50,10 @@ test('a requested detail focus belongs to that open and never leaks into later d
   closeDetailEntry(h.current,h.context.show)
   assert.deepEqual(shown,[['first','reviews'],['second',''],[null,''],['second',''],[null,'']])
 })
+test('Back then Forward restores a detail opened at its reviews',async()=>{
+  const h=harness(),shown=[]
+  h.context.show=(item,focus='')=>shown.push([item?.id??null,focus])
+  const pending=openDetailEntry(h.current,app('rated'),{...h.context,focus:'reviews'});h.own();await pending
+  h.back();h.forward()
+  assert.deepEqual(shown,[['rated','reviews'],[null,''],['rated','reviews']])
+})

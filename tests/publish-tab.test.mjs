@@ -13,6 +13,7 @@ import {
   publishCheckRequestStatus,
   publishCheckState,
   publishedAppView,
+  PUBLISH_CHECK_MAX_ISSUES,
   PUBLISH_CHECK_MAX_SHOWN,
   publishedStatusLine,
   catalogPublisher,
@@ -35,7 +36,7 @@ test('creator pages distinguish star ratings from written reviews', () => {
 })
 
 test('creator ratings use the public app aggregate, and an unreadable listing says so', async () => {
-  const { loadCommunityPublications, loadPublicationListings } = await import('../api.js')
+  const { createPublicationListingReader, loadCommunityPublications } = await import('../api.js')
   const original = globalThis.fetch
   const calls = []
   globalThis.fetch = async (url) => {
@@ -53,7 +54,7 @@ test('creator ratings use the public app aggregate, and an unreadable listing sa
     assert.equal(calls.length, 1, 'the base rows arrive without waiting for any listing')
     const states = communityPublicationsByLocalApp(payload)
     const listings = {}
-    await loadPublicationListings('test', payload.items, (id, listing) => { listings[id] = listing })
+    await createPublicationListingReader('test', (id, listing) => { listings[id] = listing })(payload.items)
     const pocket = publishedAppView(states[14], listings['pocket-list'])
     assert.equal(pocket.listing, 'ready')
     assert.equal(pocket.stats.rating_average, 3)
@@ -68,32 +69,91 @@ test('creator ratings use the public app aggregate, and an unreadable listing sa
   } finally { globalThis.fetch = original }
 })
 
-test('listing reads run a few at a time and each settles on its own', async () => {
-  const { loadPublicationListings } = await import('../api.js')
+test('listing reads share one small pool across refreshes and each settles on its own', async () => {
+  const { createPublicationListingReader } = await import('../api.js')
   const original = globalThis.fetch
   const pending = []
   let inFlight = 0
   let peak = 0
-  globalThis.fetch = (url) => new Promise((resolve) => {
+  globalThis.fetch = () => new Promise((resolve) => {
     inFlight += 1
     peak = Math.max(peak, inFlight)
     pending.push(() => { inFlight -= 1; resolve(Response.json({ rating_average: 4, rating_count: 2, manifest: { version: '1.0.0' } })) })
   })
+  const tick = () => new Promise((resolve) => setImmediate(resolve))
   try {
-    const rows = Array.from({ length: 10 }, (_, index) => ({ status: 'live', community_app_id: `app_${index}` }))
-    rows.push({ status: 'live', community_app_id: 'app_0' })
+    const rows = (prefix, count) => Array.from({ length: count }, (_, index) => ({ status: 'live', community_app_id: `${prefix}_${index}` }))
     const settled = []
-    const done = loadPublicationListings('test', rows, (id, listing) => settled.push([id, listing.status]))
-    await new Promise((resolve) => setImmediate(resolve))
-    assert.equal(inFlight, 4, 'a small pool, not one request per row at once')
-    while (pending.length) {
-      pending.shift()()
-      await new Promise((resolve) => setImmediate(resolve))
-    }
-    await done
+    const read = createPublicationListingReader('test', (id, listing) => settled.push([id, listing.status]))
+    const first = read([...rows('a', 6), { status: 'live', community_app_id: 'a_0' }])
+    const second = read(rows('b', 4))
+    await tick()
+    assert.equal(inFlight, 4, 'one pool for every caller, not one request per row')
+    while (pending.length) { pending.shift()(); await tick() }
+    await Promise.all([first, second])
     assert.equal(peak, 4)
     assert.equal(settled.length, 10, 'a repeated app is read once')
     assert.ok(settled.every(([, status]) => status === 'ready'))
+  } finally { globalThis.fetch = original }
+})
+
+test('a hung listing read ends as unavailable instead of loading forever', async () => {
+  const { createPublicationListingReader } = await import('../api.js')
+  const original = globalThis.fetch
+  globalThis.fetch = (url, { signal }) => new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason))
+  })
+  try {
+    const listings = {}
+    await createPublicationListingReader('test', (id, listing) => { listings[id] = listing }, { timeoutMs: 20 })(
+      [{ status: 'live', community_app_id: 'slow' }])
+    assert.deepEqual(listings.slow, { status: 'unavailable' })
+  } finally { globalThis.fetch = original }
+})
+
+test('fresh listings are reused across visits and a superseded read cannot overwrite newer facts', async () => {
+  const { createPublicationListingReader } = await import('../api.js')
+  const original = globalThis.fetch
+  const answers = []
+  let calls = 0
+  globalThis.fetch = () => { calls += 1; return new Promise((resolve) => answers.push(resolve)) }
+  const tick = () => new Promise((resolve) => setImmediate(resolve))
+  let clock = 0
+  try {
+    const reported = []
+    const read = createPublicationListingReader('test', (id, listing) => reported.push(listing.rating_average), { now: () => clock })
+    const row = [{ status: 'live', community_app_id: 'app_x' }]
+    const older = read(row)
+    await tick()
+    const newer = read(row, { force: true }) // e.g. the owner just rated it
+    await tick()
+    assert.equal(calls, 2)
+    answers[1](Response.json({ rating_average: 5, rating_count: 2 }))
+    await tick()
+    answers[0](Response.json({ rating_average: 3, rating_count: 1 }))
+    await Promise.all([older, newer])
+    assert.deepEqual(reported, [5], 'the slower, older response is ignored')
+    clock = 30_000
+    await read(row)
+    assert.equal(calls, 2, 'a listing read in the last minute is reused')
+    clock = 61_000
+    const later = read(row)
+    await tick()
+    assert.equal(calls, 3, 'an older listing is read again')
+    answers[2](Response.json({ rating_average: 4, rating_count: 3 }))
+    await later
+  } finally { globalThis.fetch = original }
+})
+
+test('publishing reports which accepted revision it actually published', async () => {
+  const { publishLocalAppToGithub } = await import('../api.js')
+  const original = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({ status: 'live' }), {
+    headers: { 'content-type': 'application/json', 'X-Mobius-Accepted-Source-Commit': 'B'.repeat(40) },
+  })
+  try {
+    const result = await publishLocalAppToGithub('test', 42, 'pocket-list')
+    assert.equal(result.published_commit, 'b'.repeat(40))
   } finally { globalThis.fetch = original }
 })
 
@@ -171,6 +231,19 @@ test('a "ready" verdict that lists a must-fix issue still blocks publishing', ()
   assert.equal(check.result, 'must_fix')
   assert.equal(check.issues.length, 1)
   assert.equal(check.issues[0].title, 'Sends data somewhere', 'control characters are flattened')
+})
+
+test('an oversized stored result is rejected before it is normalized', () => {
+  const issue = { severity: 'suggestion', title: 'Tip' }
+  const base = { version: 1, local_app_id: '42', accepted_commit: COMMIT, result: 'ready' }
+  assert.ok(parsePublishCheck({ ...base, issues: Array(PUBLISH_CHECK_MAX_ISSUES).fill(issue) }, 42))
+  let touched = 0
+  const hostile = new Proxy(Array(PUBLISH_CHECK_MAX_ISSUES + 1).fill(issue), {
+    get(target, key) { if (/^\d+$/.test(String(key))) touched += 1; return target[key] },
+  })
+  assert.equal(parsePublishCheck({ ...base, issues: hostile }, 42), null,
+    'too many findings is not a trustworthy "ready", and none of them is read')
+  assert.equal(touched, 0)
 })
 
 test('the display cap never hides a must-fix finding behind suggestions', () => {

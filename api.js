@@ -130,29 +130,64 @@ export async function loadCommunityPublications(token, { limit = 100, offset = 0
   return communityResponse(response, 'Publication status could not be loaded.')
 }
 
-// Ratings and release facts live on each public listing. Read them a few at a
-// time after the base rows have rendered, so many apps never burst requests and
-// one slow listing never holds the others. A failed read reports `unavailable`
-// rather than looking like "no ratings".
+// Ratings and release facts live on each public listing. One reader per
+// session reads them a few at a time across all callers, after the base rows
+// have rendered, so many apps never burst requests and one slow listing never
+// holds the others. A read that fails or hangs past the timeout reports
+// `unavailable` rather than looking like "no ratings". A listing read in the
+// last minute is reused across tab visits unless `force` asks for a re-read
+// (for example after the owner's own review), and only the newest read of an
+// app may report, so a slow older response never overwrites newer facts.
 const PUBLICATION_LISTING_CONCURRENCY = 4
+const PUBLICATION_LISTING_TIMEOUT_MS = 15_000
+const PUBLICATION_LISTING_FRESH_MS = 60_000
 
-export async function loadPublicationListings(token, rows, onListing, { concurrency = PUBLICATION_LISTING_CONCURRENCY } = {}) {
-  const ids = [...new Set((rows || [])
-    .filter((row) => row?.status === 'live' && typeof row.community_app_id === 'string' && row.community_app_id)
-    .map((row) => row.community_app_id))]
-  async function worker() {
-    while (ids.length) {
-      const id = ids.shift()
-      let listing
-      try {
-        listing = publicationListingFacts(await loadCommunityApp(token, id))
-      } catch {
-        listing = { status: 'unavailable' }
-      }
-      onListing(id, listing)
+export function createPublicationListingReader(token, onListing, {
+  concurrency = PUBLICATION_LISTING_CONCURRENCY,
+  timeoutMs = PUBLICATION_LISTING_TIMEOUT_MS,
+  freshMs = PUBLICATION_LISTING_FRESH_MS,
+  now = () => Date.now(),
+} = {}) {
+  const generation = new Map()
+  const readyAt = new Map()
+  const queue = []
+  let active = 0
+
+  async function readOne(id) {
+    try {
+      return publicationListingFacts(await loadCommunityApp(token, id, { signal: AbortSignal.timeout(timeoutMs) }))
+    } catch {
+      return { status: 'unavailable' }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker))
+
+  function pump() {
+    while (active < concurrency && queue.length) {
+      const { id, turn, done } = queue.shift()
+      if (generation.get(id) !== turn) { done(); continue }
+      active += 1
+      readOne(id).then((listing) => {
+        if (generation.get(id) !== turn) return
+        if (listing.status === 'ready') readyAt.set(id, now())
+        else readyAt.delete(id)
+        onListing(id, listing)
+      }).finally(() => { active -= 1; done(); pump() })
+    }
+  }
+
+  return function read(rows, { force = false } = {}) {
+    const ids = [...new Set((rows || [])
+      .filter((row) => row?.status === 'live' && typeof row.community_app_id === 'string' && row.community_app_id)
+      .map((row) => row.community_app_id))]
+      .filter((id) => force || !(now() - (readyAt.get(id) ?? -Infinity) < freshMs))
+    const settled = ids.map((id) => new Promise((done) => {
+      const turn = (generation.get(id) || 0) + 1
+      generation.set(id, turn)
+      queue.push({ id, turn, done })
+    }))
+    pump()
+    return Promise.all(settled)
+  }
 }
 
 export async function loadLocalPublicationPreview(token, appId) {
@@ -256,7 +291,11 @@ export async function publishLocalAppToGithub(token, appId, repositoryName) {
       public_identity: 'github',
     }),
   })
-  return communityResponse(response, 'This local app could not be published.')
+  const payload = await communityResponse(response, 'This local app could not be published.')
+  // The route names the accepted revision it actually published; the request
+  // cannot pin one, so callers compare it with the revision the owner reviewed.
+  const published = response.headers.get('X-Mobius-Accepted-Source-Commit') || payload?.accepted_commit || ''
+  return { ...payload, published_commit: String(published).toLowerCase() }
 }
 
 export async function saveCommunityReview(token, appId, stars, reviewText = null) {

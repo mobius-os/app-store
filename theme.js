@@ -2259,6 +2259,9 @@ export const CSS = `
 .st-check-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .st-publish-anyway { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid color-mix(in srgb, var(--orange, #e8b45a) 45%, var(--border)); border-radius: 14px; }
 .st-publish-anyway strong { font-size: 14px; }
+.st-publish-anyway strong:focus { outline: none; }
+.st-publish-anyway strong:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.st-publish-result .st-publish-result-warning { color: var(--orange, #e8b45a); }
 .st-publish-anyway > span { color: var(--muted); font-size: 13px; line-height: 1.45; }
 @media (max-width: 640px) {
   .st-mine-row { grid-template-columns: 44px minmax(0, 1fr) 16px; gap: 16px; padding: 18px; min-height: 88px; }

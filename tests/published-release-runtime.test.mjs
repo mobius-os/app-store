@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { loadCommunityPublications, loadPublicationListings } from '../api.js'
+import { createPublicationListingReader, loadCommunityPublications } from '../api.js'
 import { communityPublicationsByLocalApp, publishedAppView } from '../domain.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -20,7 +20,7 @@ test('release details use the public manifest and revision date, not publication
   try {
     const payload = await loadCommunityPublications('test')
     const listings = {}
-    await loadPublicationListings('test', payload.items, (id, listing) => { listings[id] = listing })
+    await createPublicationListingReader('test', (id, listing) => { listings[id] = listing })(payload.items)
     const state = publishedAppView(communityPublicationsByLocalApp(payload)[14], listings['app_pocket-list'])
     assert.equal(state.published_version, '0.1.0')
     assert.equal(state.published_at, '2025-01-15T00:00:00Z')
