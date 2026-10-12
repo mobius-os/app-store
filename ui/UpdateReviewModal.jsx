@@ -69,7 +69,11 @@ export function UpdateReviewModal({ review, applying = false, preparing = false,
   const closeRef = useRef(null)
   const openerRef = useRef(null)
   const entries = review.entries || [review]
-  const verified = entries.filter(entry => entry.preview?.source_digest && !entry.outcome)
+  // Exclude preview-error entries (e.g. needs_resolution conflict) so they
+  // never appear as confirmable — they show an error message instead.
+  const verified = entries.filter(
+    entry => entry.preview?.source_digest && !entry.outcome && !entry.previewError,
+  )
   const complete = entries.some(entry => entry.outcome)
   const busy = applying || preparing || agentReviewing
   const hasFailure = entries.some(entry => entry.previewError || entry.outcome?.error || entry.outcome?.resolverError)

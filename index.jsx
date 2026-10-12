@@ -1570,6 +1570,19 @@ export default function App({ appId, token }) {
     const candidate = await loadUpdateCandidatePreview(
       installedApp.id, updateItem.manifest_url, token,
     )
+    // If the preview reveals a pending merge conflict, surface a clear error
+    // instead of letting the install attempt silently re-trigger the resolver.
+    // (needs_resolution: resolution work remains; replay_pending: install will
+    // succeed on retry once the resolver has committed its answer.)
+    if (candidate.pending_update_state === 'needs_resolution') {
+      return {
+        item: updateItem,
+        installedApp,
+        preview: candidate,
+        previewError: 'This update has an unresolved merge conflict — use "Resolve in chat" to fix it before applying.',
+        capabilityReview: { status: 'error', preview: null, error: '' },
+      }
+    }
     const capabilityPreview = candidate.capability_preview
     const capabilityReview = {
       status: capabilityDiffNeedsReview(capabilityPreview.capability_diff)
@@ -1624,14 +1637,18 @@ export default function App({ appId, token }) {
   const handleApplyReviewedUpdate = useCallback(async () => {
     if (!updateReview || busy || applyingUpdateRef.current || checkingUpdateRef.current) return
     const reviews = updateReview.entries || [updateReview]
-    const entries = reviews.filter(entry => entry.preview?.source_digest && !entry.outcome)
+    // Exclude entries that failed preview (no source_digest), already have an
+    // outcome, or carry a previewError (e.g. needs_resolution conflict state).
+    const entries = reviews.filter(
+      entry => entry.preview?.source_digest && !entry.outcome && !entry.previewError,
+    )
     if (!entries.length) return
 
     applyingUpdateRef.current = true
     setBusy(true)
     setBusyActionKind('batch_update')
     let issues = reviews
-      .filter(entry => entry.outcome || !entry.preview?.source_digest)
+      .filter(entry => entry.outcome || !entry.preview?.source_digest || entry.previewError)
       .map(entry => entry.outcome ? entry : {
         ...entry, outcome: { error: entry.previewError || 'This update could not be verified.' },
       })
