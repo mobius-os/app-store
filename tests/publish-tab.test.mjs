@@ -13,6 +13,7 @@ import {
   publishCheckRequestStatus,
   publishCheckState,
   publishedAppView,
+  savedListingSurvived,
   PUBLISH_CHECK_MAX_ISSUES,
   PUBLISH_CHECK_MAX_SHOWN,
   publishedStatusLine,
@@ -345,4 +346,27 @@ test('recorded install totals survive a rating refresh and unknown totals stay u
   assert.equal(publishedAppView(states[14], listing).stats.rating_average, 3)
   assert.equal(formatCount(publishedAppView(states[16], listing).stats.installs), '0')
   assert.equal(formatCount(publishedAppView(states[17], listing).stats.installs), '–')
+})
+
+test('save verification compares every saved listing field, not only the text', () => {
+  const kept = 'static/store/0123456789abcdef.png'
+  const sent = {
+    tagline: 'Lists', description: 'A list app', icon: { data_base64: 'AAAA' },
+    hero: { path: 'art/banner.png' },
+    screenshots: [{ path: kept, alt: 'Home' }, { data_base64: 'BBBB', alt: 'Edit', label: 'Editing' }],
+  }
+  const readBack = {
+    tagline: 'Lists', description: 'A list app', icon: 'icon.png', hero: 'static/store/fedcba9876543210.png',
+    screenshots: [{ src: kept, alt: 'Home', label: '' }, { src: 'static/store/1111111111111111.webp', alt: 'Edit', label: 'Editing' }],
+  }
+  assert.equal(savedListingSurvived(sent, readBack), true, 'moved and uploaded art lands under static/store')
+  const changed = (patch) => savedListingSurvived(sent, { ...readBack, ...patch })
+  assert.equal(changed({ screenshots: readBack.screenshots.slice(0, 1) }), false, 'a dropped screenshot')
+  assert.equal(changed({ screenshots: [{ ...readBack.screenshots[0], src: 'static/store/2222222222222222.png' }, readBack.screenshots[1]] }), false, 'a replaced kept screenshot')
+  assert.equal(changed({ screenshots: [readBack.screenshots[0], { ...readBack.screenshots[1], alt: 'Other' }] }), false, 'changed alt text')
+  assert.equal(changed({ screenshots: [readBack.screenshots[0], { ...readBack.screenshots[1], label: '' }] }), false, 'a lost caption')
+  assert.equal(changed({ hero: '' }), false, 'a removed banner')
+  assert.equal(changed({ icon: '' }), false, 'an uploaded icon that is gone')
+  assert.equal(savedListingSurvived({ ...sent, hero: null }, readBack), false, 'a banner that should have been removed')
+  assert.equal(savedListingSurvived(sent, null), false)
 })

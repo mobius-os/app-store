@@ -1354,6 +1354,37 @@ export function listingPayload(draft) {
   }
 }
 
+// The save route stores uploaded art under content-addressed names in
+// static/store/ and moves kept art there too, so art is compared by where it
+// must land: a kept static/store/ file keeps its exact path, and any other
+// image must occupy the same slot under static/store/.
+const STORE_ART_DIR = 'static/store/'
+
+function savedArtSurvived(sent, readBack) {
+  const path = typeof readBack === 'string' ? readBack : ''
+  if (!sent) return !path
+  if (sent.path?.startsWith(STORE_ART_DIR)) return path === sent.path
+  return path.startsWith(STORE_ART_DIR)
+}
+
+// Whether a listing read back after saving still holds every field that
+// listingPayload sent. A mismatch means another revision replaced part of it.
+export function savedListingSurvived(sent, draft) {
+  if (!sent || !draft) return false
+  const shots = Array.isArray(draft.screenshots) ? draft.screenshots : []
+  const text = (value) => (typeof value === 'string' ? value.trim() : '')
+  return text(draft.tagline) === sent.tagline
+    && text(draft.description) === sent.description
+    && (!sent.icon || !!text(draft.icon))
+    && savedArtSurvived(sent.hero, draft.hero)
+    && shots.length === sent.screenshots.length
+    && sent.screenshots.every((shot, index) => (
+      savedArtSurvived(shot, shots[index]?.src)
+        && text(shots[index]?.alt) === shot.alt
+        && text(shots[index]?.label) === (shot.label || '')
+    ))
+}
+
 export function buildConflictResolveMessage({ item, result, preview }) {
   const name = safeInline(result.name || item.manifest?.name || item.id)
   const slug = safeInline(result.slug || item.manifest?.id || item.id, 64)

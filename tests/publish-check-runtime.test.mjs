@@ -12,10 +12,10 @@ const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-publish-check')
 const COMMIT = 'a'.repeat(40)
 const app = { id: 42, name: 'Pocket List', slug: 'pocket-list', source_dir: '/data/apps/pocket-list' }
-const readyPreview = (commit = COMMIT, tagline = 'Lists') => ({
+const readyPreview = (commit = COMMIT, tagline = 'Lists', screenshots = []) => ({
   ready: true, accepted_commit: commit, name: 'Pocket List', icon_url: '', repository_name: 'pocket-list',
-  listing: { tagline, description: 'A list app', screenshots: [] },
-  draft: { tagline, description: 'A list app', screenshots: [] }, checklist: [],
+  listing: { tagline, description: 'A list app', screenshots },
+  draft: { tagline, description: 'A list app', screenshots }, checklist: [],
 })
 const verdict = (result, issues = []) => ({ version: 1, local_app_id: '42', accepted_commit: COMMIT, result, issues })
 
@@ -247,4 +247,38 @@ test('a release that published a newer revision than the one reviewed says so', 
   try {
     assert.match(view.text(), /a newer version than the one you reviewed was published/)
   } finally { await view.close() }
+})
+
+test('a save whose screenshots did not survive keeps the draft and says so', async () => {
+  const shot = { src: 'static/store/0123456789abcdef.png', alt: 'The list screen', label: '' }
+  let saved = null
+  const view = await openReleasePanel({ props: {
+    // The text survives, but another revision dropped the screenshot.
+    onPreviewLocal: async () => readyPreview(saved ? 'd'.repeat(40) : COMMIT, saved?.tagline || 'Lists', saved ? [] : [shot]),
+    onSaveListing: async (_id, payload) => { saved = payload },
+  } })
+  try {
+    await typeTagline(view, 'My new tagline')
+    await view.click('Save listing')
+    assert.deepEqual(saved.screenshots, [{ path: shot.src, alt: shot.alt }])
+    assert.match(view.text(), /This app changed since you opened its listing/)
+    assert.equal(view.doc.querySelector('.st-edit-field > input').value, 'My new tagline')
+  } finally { await view.close() }
+})
+
+test('focus returns to Publish when a verdict closes the confirmation', async () => {
+  const stored = {}
+  const view = await openReleasePanel({ stored })
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: Date.now() })
+  try {
+    await view.click('Check with agent')
+    await view.consent()
+    await view.click('Publish…')
+    assert.equal(view.doc.activeElement, view.doc.getElementById('st-publish-anyway-title'))
+    stored['publish-checks/42.json'] = verdict('ready')
+    await act(async () => { mock.timers.tick(5000) })
+    await view.settle()
+    assert.equal(view.doc.getElementById('st-publish-anyway-title'), null, 'the passing verdict closes the confirmation')
+    assert.equal(view.doc.activeElement, view.button('Publish app'), 'focus moves to the Publish button, not the page')
+  } finally { mock.timers.reset(); await view.close() }
 })

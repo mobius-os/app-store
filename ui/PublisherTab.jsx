@@ -11,6 +11,7 @@ import {
   publishCheckRequestStatus,
   publishCheckState,
   publishedAppView,
+  savedListingSurvived,
 } from '../domain.js'
 import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
 import { PublishCheck } from './PublishCheck.jsx'
@@ -147,7 +148,7 @@ export function PublisherTab({
   const [confirmingAnyway, setConfirmingAnyway] = useState(false)
   const publishTriggerRef = useRef(null)
   const confirmHeadingRef = useRef(null)
-  const restorePublishFocusRef = useRef(false)
+  const confirmShownRef = useRef(false)
   const previewGateRef = useRef(null)
   if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
@@ -172,12 +173,17 @@ export function PublisherTab({
   const publishDisabled = !confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady
   useEffect(() => { setConfirmingAnyway(false) }, [checkState, candidate?.id])
   // The confirmation replaces the Publish button: move focus into it, and back
-  // to the button when the owner keeps reviewing.
+  // to the button whenever it closes (Keep reviewing, or a verdict arriving)
+  // while focus was inside it and so fell back to the page.
+  const confirmShown = confirmingAnyway && !checkPassed
   useEffect(() => {
-    if (confirmingAnyway) confirmHeadingRef.current?.focus()
-    else if (restorePublishFocusRef.current) publishTriggerRef.current?.focus()
-    restorePublishFocusRef.current = false
-  }, [confirmingAnyway])
+    if (confirmShown) confirmHeadingRef.current?.focus()
+    else if (confirmShownRef.current) {
+      const active = document.activeElement
+      if (!active || active === document.body) publishTriggerRef.current?.focus()
+    }
+    confirmShownRef.current = confirmShown
+  }, [confirmShown])
 
   // The agent writes its verdict into the Store's own storage; follow that key
   // live for the app being published.
@@ -297,11 +303,10 @@ export function PublisherTab({
       if (!movedBefore) await onSaveListing?.(app.id, saved)
       const result = movedBefore ? latest : await onPreviewLocal?.(app.id)
       // A save is itself a new accepted revision, so its commit cannot show
-      // whether another one landed in between. The text that must survive can:
-      // if it did not, keep the draft and say so instead of reporting success.
-      const kept = String(result?.draft?.tagline ?? '').trim() === saved.tagline
-        && String(result?.draft?.description ?? '').trim() === saved.description
-      const moved = movedBefore || !kept
+      // whether another one landed in between. The listing that must survive
+      // can: if any saved field did not, keep the draft and say so instead of
+      // reporting success.
+      const moved = movedBefore || !savedListingSurvived(saved, result?.draft)
       if (!previewGateRef.current.isCurrent(requestId)) return
       if (moved) {
         setPreview(result || null)
@@ -536,7 +541,7 @@ export function PublisherTab({
                   <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
                   <span>I’ve reviewed this listing and want this exact source revision to become public.</span>
                 </label>
-                {confirmingAnyway && !checkPassed ? (
+                {confirmShown ? (
                   <div className="st-publish-anyway" role="group" aria-labelledby="st-publish-anyway-title"
                        aria-describedby="st-publish-anyway-reason">
                     <strong id="st-publish-anyway-title" ref={confirmHeadingRef} tabIndex={-1}>
@@ -550,7 +555,7 @@ export function PublisherTab({
                     </span>
                     <div className="st-check-actions">
                       <button type="button" className="st-btn st-btn-ghost" disabled={!!publishingId}
-                              onClick={() => { restorePublishFocusRef.current = true; setConfirmingAnyway(false) }}>
+                              onClick={() => setConfirmingAnyway(false)}>
                         Keep reviewing
                       </button>
                       <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled} onClick={publish}>
