@@ -42,7 +42,7 @@ function installed(version = '1.0.0') {
   }]
 }
 
-async function mount(fetchApps, { catalog = [], hidden = false } = {}) {
+async function mount(fetchApps, { catalog = [], hidden = false, catalogGate = null } = {}) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://store.test/' })
   const keys = ['window', 'document', 'HTMLElement', 'ResizeObserver', 'fetch', 'IS_REACT_ACT_ENVIRONMENT']
   const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
@@ -87,7 +87,10 @@ async function mount(fetchApps, { catalog = [], hidden = false } = {}) {
         || (/^\/api\/apps\/\d+\/update-check/.test(path) && !path.startsWith('/api/apps/999/'))) return fetchApps(path, options)
       if (path.startsWith('/api/proxy?')) {
         const remote = decodeURIComponent(path.split('url=')[1] || '')
-        if (remote.endsWith('/catalog.json')) return json({ schema: 1, apps: catalog })
+        if (remote.endsWith('/catalog.json')) {
+          await catalogGate
+          return json({ schema: 1, apps: catalog })
+        }
         manifests.push(remote)
         if (remote.includes('app-voice')) return json(MANIFEST_SNAPSHOTS.voice)
         if (remote.includes('app-maps')) return json(MANIFEST_SNAPSHOTS.maps)
@@ -465,6 +468,25 @@ for (const event of ['completion', 'focus', 'failed older read']) {
     } finally { await act(async () => releases.forEach(release => release())); await view.close() }
   })
 }
+
+test('ready is signalled once installed apps are painted, without waiting for the remote catalog', async () => {
+  let releaseCatalog
+  const catalogGate = new Promise(resolve => { releaseCatalog = resolve })
+  const view = await mount(async path => {
+    if (path === '/api/apps/') return json(installed())
+    return json({ update_available: false, pending_update_state: 'none' })
+  }, { catalogGate })
+  try {
+    await view.library()
+    assert.equal(view.voiceAction(), 'Open Voice', 'the baked catalog painted with installed state')
+    assert.equal(view.manifests.some(url => url.includes('app-voice') && url.endsWith('mobius.json')), false, 'the remote registry is still loading')
+    assert.deepEqual(view.signals.filter(signal => signal.name === 'app_ready'), [{ name: 'app_ready', data: { installed_count: 1 } }])
+    await act(async () => releaseCatalog())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+    assert.ok(view.manifests.some(url => url.includes('app-voice') && url.endsWith('mobius.json')), 'hydration continued after ready')
+    assert.equal(view.signals.filter(signal => signal.name === 'app_ready').length, 1, 'ready is signalled once')
+  } finally { releaseCatalog(); await view.close() }
+})
 
 test('a successful Store update with an interleaved completion read has no false refresh error', async () => {
   let updated = false

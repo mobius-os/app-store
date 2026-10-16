@@ -669,7 +669,6 @@ export default function App({ appId, token }) {
         // Always run the startup check with the live catalog and a fresh
         // installed list, even if an event superseded the first-paint read.
         void refreshInstalled({ checkAll: true })
-        window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
         if (!cancelled) {
           setLoadingCatalog(false)
@@ -689,6 +688,16 @@ export default function App({ appId, token }) {
       fullCheckPendingRef.current = false
     }
   }, [appId, token, refreshInstalled])
+
+  // Reflection counts real opens from app_ready, so it fires once the first
+  // usable catalog has painted, not after the background registry refresh,
+  // which a slow upstream can hold open long after the Store is in use.
+  const appReadySignalledRef = useRef(false)
+  useEffect(() => {
+    if (loadingCatalog || appReadySignalledRef.current) return
+    appReadySignalledRef.current = true
+    window.mobius?.signal?.('app_ready', { installed_count: installed.length })
+  }, [loadingCatalog, installed.length])
 
   const communityRequestRef = useRef(0)
   const communityAbortRef = useRef(null)
