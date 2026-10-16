@@ -36,7 +36,7 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
@@ -106,6 +106,13 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
     ? sourceAvailabilityStatus(item.community.cache)
     : null
   const communityFeedback = communityFeedbackOf(item)
+  // Library's Review action opens the app straight at its ratings form.
+  useEffect(() => {
+    if (focusSection !== 'reviews' || !communityFeedback?.id) return
+    const target = document.getElementById('st-community-feedback-title')
+    target?.closest('section')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    target?.closest('section')?.querySelector('.st-rating-picker button:not(:disabled), button')?.focus({ preventScroll: true })
+  }, [focusSection, item?.id, communityFeedback?.id])
   // The service decides eligibility per app from any verified install, so an
   // owner who reviewed and later uninstalled can still edit their review.
   const verifiedCommunityInstall = communityIdentityLinked

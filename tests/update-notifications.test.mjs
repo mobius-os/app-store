@@ -8,6 +8,7 @@ import {
 
 test('the update notification intent opens the Store update destination', () => {
   assert.deepEqual(storeDestinationFromIntent('updates'), { kind: 'updates' })
+  assert.equal(storeDestinationFromIntent('update:42'), null)
   assert.deepEqual(storeDestinationFromIntent(' app:Voice '), {
     kind: 'app', itemId: 'voice',
   })

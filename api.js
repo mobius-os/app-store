@@ -1,5 +1,5 @@
 import { LISTING_LIMITS } from './constants.js'
-import { textWithinByteLimit, validateManifestUrl } from './domain.js'
+import { publicationListingFacts, textWithinByteLimit, validateManifestUrl } from './domain.js'
 
 export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
 export const SYSTEM_SETUP_READY_KEY = 'mobius:system-setup-ready:v1'
@@ -130,12 +130,109 @@ export async function loadCommunityPublications(token, { limit = 100, offset = 0
   return communityResponse(response, 'Publication status could not be loaded.')
 }
 
+// Ratings and release facts live on each public listing. One reader per
+// session reads them a few at a time across all callers, after the base rows
+// have rendered, so many apps never burst requests and one slow listing never
+// holds the others. A read that fails or hangs past the timeout reports
+// `unavailable` rather than looking like "no ratings". A listing read in the
+// last minute is reused across tab visits, and a caller asking for an app
+// already being read joins that read. Only `force` (for example after the
+// owner's own review) starts a new read: it aborts the one in progress, and
+// only the newest read of an app may report, so older facts never win.
+const PUBLICATION_LISTING_CONCURRENCY = 4
+const PUBLICATION_LISTING_TIMEOUT_MS = 15_000
+const PUBLICATION_LISTING_FRESH_MS = 60_000
+
+export function createPublicationListingReader(token, onListing, {
+  concurrency = PUBLICATION_LISTING_CONCURRENCY,
+  timeoutMs = PUBLICATION_LISTING_TIMEOUT_MS,
+  freshMs = PUBLICATION_LISTING_FRESH_MS,
+  now = () => Date.now(),
+} = {}) {
+  const generation = new Map()
+  const readyAt = new Map()
+  // The queued or running read of each app: { id, turn, controller, settled }.
+  const pending = new Map()
+  const queue = []
+  let active = 0
+
+  async function readOne(id, signal) {
+    try {
+      return publicationListingFacts(await loadCommunityApp(token, id, { signal }))
+    } catch {
+      return { status: 'unavailable' }
+    }
+  }
+
+  function finish(job) {
+    if (pending.get(job.id) === job) pending.delete(job.id)
+    job.done()
+  }
+
+  function pump() {
+    while (active < concurrency && queue.length) {
+      const job = queue.shift()
+      if (job.controller.signal.aborted) { finish(job); continue }
+      active += 1
+      const timer = setTimeout(() => job.controller.abort(), timeoutMs)
+      readOne(job.id, job.controller.signal).then((listing) => {
+        if (generation.get(job.id) !== job.turn) return
+        if (listing.status === 'ready') readyAt.set(job.id, now())
+        else readyAt.delete(job.id)
+        onListing(job.id, listing)
+      }).finally(() => { clearTimeout(timer); active -= 1; finish(job); pump() })
+    }
+  }
+
+  function schedule(id) {
+    const turn = (generation.get(id) || 0) + 1
+    generation.set(id, turn)
+    const job = { id, turn, controller: new AbortController() }
+    job.settled = new Promise((done) => { job.done = done })
+    pending.set(id, job)
+    queue.push(job)
+    return job.settled
+  }
+
+  return function read(rows, { force = false } = {}) {
+    const ids = [...new Set((rows || [])
+      .filter((row) => row?.status === 'live' && typeof row.community_app_id === 'string' && row.community_app_id)
+      .map((row) => row.community_app_id))]
+      .filter((id) => force || !(now() - (readyAt.get(id) ?? -Infinity) < freshMs))
+    const settled = ids.map((id) => {
+      const current = pending.get(id)
+      if (current && !force) return current.settled
+      current?.controller.abort()
+      return schedule(id)
+    })
+    pump()
+    return Promise.all(settled)
+  }
+}
+
 export async function loadLocalPublicationPreview(token, appId) {
   const params = new URLSearchParams({ app_id: String(appId) })
   const response = await fetch(`/api/community/publications/github/preview?${params}`, {
     headers: communityHeaders(token),
   })
-  return communityResponse(response, 'This app listing could not be prepared.')
+  return normalizePublicationPreview(
+    await communityResponse(response, 'This app listing could not be prepared.'),
+  )
+}
+
+// New previews include an editable draft even when the listing is unfinished.
+// Older previews contain only a validated listing; preserve its fields too.
+export function normalizePublicationPreview(preview) {
+  if (!preview || typeof preview !== 'object') return preview
+  return {
+    ...preview,
+    ready: typeof preview.ready === 'boolean' ? preview.ready : !!preview.listing,
+    draft: preview.draft || { ...preview.listing, hero: preview.listing?.hero?.path || '' },
+    checklist: Array.isArray(preview.checklist) ? preview.checklist : [],
+    // `asset_base` points at the revision's static/ folder while listing
+    // paths are repository-relative (`static/store/…`); the root is its parent.
+    asset_root: preview.asset_root || String(preview.asset_base || '').replace(/static\/$/, ''),
+  }
 }
 
 export async function saveLocalListing(token, appId, listing) {
@@ -214,7 +311,11 @@ export async function publishLocalAppToGithub(token, appId, repositoryName) {
       public_identity: 'github',
     }),
   })
-  return communityResponse(response, 'This local app could not be published.')
+  const payload = await communityResponse(response, 'This local app could not be published.')
+  // The route names the accepted revision it actually published; the request
+  // cannot pin one, so callers compare it with the revision the owner reviewed.
+  const published = response.headers.get('X-Mobius-Accepted-Source-Commit') || payload?.accepted_commit || ''
+  return { ...payload, published_commit: String(published).toLowerCase() }
 }
 
 export async function saveCommunityReview(token, appId, stars, reviewText = null) {

@@ -1,8 +1,21 @@
 /* PublisherTab turns an accepted local app revision into one reviewable public listing. */
-import { FileUpload, Search } from '@openai/apps-sdk-ui/components/Icon'
-import React, { useRef, useState } from 'react'
-import { listingDraftFromPreview, listingPayload } from '../domain.js'
+import { ChevronLeft, FileUpload, Search } from '@openai/apps-sdk-ui/components/Icon'
+import React, { useEffect, useRef, useState } from 'react'
+import {
+  listingDraftFromPreview,
+  listingPayload,
+  parsePublishCheck,
+  PUBLISH_CHECK_POLL_MS,
+  PUBLISH_CHECK_TIMEOUT_MS,
+  publishCheckKey,
+  publishCheckRequestStatus,
+  publishCheckState,
+  publishedAppView,
+  savedListingSurvived,
+} from '../domain.js'
 import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
+import { PublishCheck } from './PublishCheck.jsx'
+import { PublishedAppPage, YourAppsList } from './PublishedApps.jsx'
 import { SpotlightEditor } from './SpotlightEditor.jsx'
 
 // Preview preparation crosses an async boundary while the owner can navigate
@@ -31,6 +44,26 @@ function publishableApps(installed) {
     && app?.slug !== 'app-store'
     && (!app?.manifest_url || app?.hosted_publication)
   ))
+}
+
+// Apps this owner has already published (or is publishing) from this Möbius.
+function publishedEntries(installed, publicationStates, publicationListings) {
+  return (installed || [])
+    .filter((app) => app?.id && (publicationStates[app.id] || app.hosted_publication))
+    .map((app) => {
+      const state = publicationStates[app.id] || null
+      return { app, state: publishedAppView(state, publicationListings[state?.community_app_id]) }
+    })
+    .sort((left, right) => String(left.app.name || '').localeCompare(String(right.app.name || '')))
+}
+
+// Why publishing without a passing verdict takes one more confirmation.
+const UNCHECKED_REASON = {
+  none: 'Your agent hasn’t checked this version.',
+  running: 'Your agent hasn’t finished checking this version.',
+  error: 'The agent check for this version didn’t finish.',
+  stale: 'The last agent check was for an older version.',
+  unavailable: 'Agent checks aren’t available on this Möbius.',
 }
 
 function publicationLabel(state, hosted) {
@@ -64,6 +97,8 @@ export function PublisherTab({
   contributeAvailable,
   onOpenContributions,
   publicationStates = {},
+  publicationListings = {},
+  publisherHandle = '',
   publicationStatesError,
   onRefreshPublicationStates,
   onLogInToMobiusYou,
@@ -73,6 +108,10 @@ export function PublisherTab({
   token,
   onUploadSpotlightArtwork,
   onPublishSpotlight,
+  onLoadReviews,
+  onViewInStore,
+  onRunCheck,
+  onFixCheck,
 }) {
   const apps = publishableApps(installed).sort((left, right) => (
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
@@ -96,11 +135,121 @@ export function PublisherTab({
   const [repository, setRepository] = useState('')
   const [commitSha, setCommitSha] = useState('')
   const [appQuery, setAppQuery] = useState('')
+  // home: your published apps · choose: pick an app to publish · app: one published app
+  const [view, setView] = useState('home')
+  const [openAppId, setOpenAppId] = useState(null)
+  // The stored check result; undefined until storage is read for this app.
+  const [checkRaw, setCheckRaw] = useState(undefined)
+  // { appId, commit, prior, startedAt, failed } for the check the owner most
+  // recently asked for; see publishCheckRequestStatus. It belongs to one app,
+  // so reopening that app mid-check resumes waiting.
+  const [checkRequest, setCheckRequest] = useState(null)
+  const [checkBusy, setCheckBusy] = useState(false)
+  const [confirmingAnyway, setConfirmingAnyway] = useState(false)
+  const publishTriggerRef = useRef(null)
+  const confirmHeadingRef = useRef(null)
+  const confirmShownRef = useRef(false)
   const previewGateRef = useRef(null)
   if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
   const commitValid = /^[0-9a-fA-F]{40,64}$/.test(commitSha.trim())
   const localRepositoryValid = /^[A-Za-z0-9_.-]{1,100}$/.test(localRepositoryName.trim())
+  const published = publishedEntries(installed, publicationStates, publicationListings)
+  useEffect(() => { onRefreshPublicationStates() }, [onRefreshPublicationStates])
+  const openEntry = published.find((entry) => entry.app.id === openAppId) || null
+  const acceptedCommit = String(preview?.accepted_commit || '')
+  // Checks live in this Store's app storage; without it there is nothing to
+  // check with, and publishing stays available.
+  const checkStorage = typeof window !== 'undefined' ? window.mobius?.storage || null : null
+  const check = candidate ? parsePublishCheck(checkRaw, candidate.id) : null
+  const checkState = publishCheckState(
+    check, acceptedCommit,
+    publishCheckRequestStatus(checkRequest?.appId === candidate?.id ? checkRequest : null, checkRaw, check, acceptedCommit),
+    { storage: !!checkStorage },
+  )
+  // The check is the owner's own AI opinion, not a Store gate: without a
+  // passing verdict, publishing asks for one explicit extra confirmation.
+  const checkPassed = checkState === 'ready'
+  const publishDisabled = !confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady
+  useEffect(() => { setConfirmingAnyway(false) }, [checkState, candidate?.id])
+  // The confirmation replaces the Publish button: move focus into it, and back
+  // to the button whenever it closes (Keep reviewing, or a verdict arriving)
+  // while focus was inside it and so fell back to the page.
+  const confirmShown = confirmingAnyway && !checkPassed
+  useEffect(() => {
+    if (confirmShown) confirmHeadingRef.current?.focus()
+    else if (confirmShownRef.current) {
+      const active = document.activeElement
+      if (!active || active === document.body) publishTriggerRef.current?.focus()
+    }
+    confirmShownRef.current = confirmShown
+  }, [confirmShown])
+
+  // The agent writes its verdict into the Store's own storage; follow that key
+  // live for the app being published.
+  useEffect(() => {
+    setCheckRaw(undefined)
+    const store = checkStorage
+    if (!candidate?.id || !store) return undefined
+    const key = publishCheckKey(candidate.id)
+    let cancelled = false
+    store.get(key).then((value) => { if (!cancelled) setCheckRaw(value ?? null) })
+      .catch(() => { if (!cancelled) setCheckRaw(null) })
+    const unsubscribe = typeof store.subscribe === 'function'
+      ? store.subscribe(key, (value) => { if (!cancelled) setCheckRaw(value) })
+      : null
+    return () => { cancelled = true; if (typeof unsubscribe === 'function') unsubscribe() }
+  }, [candidate?.id, checkStorage])
+
+  // App storage only notifies on this frame's own writes and on re-reads, so
+  // while the agent works, re-read its result (visible only). A request that
+  // outlives the timeout fails into a retryable error.
+  useEffect(() => {
+    if (checkState !== 'running' || !candidate?.id || !checkStorage) return undefined
+    const key = publishCheckKey(candidate.id)
+    const request = checkRequest
+    let cancelled = false
+    const poll = setInterval(() => {
+      if (window.mobius?.visible === false) return
+      checkStorage.get(key).then((value) => { if (!cancelled) setCheckRaw(value ?? null) }).catch(() => {})
+    }, PUBLISH_CHECK_POLL_MS)
+    const expire = setTimeout(() => stopWaiting(request),
+      Math.max(0, request.startedAt + PUBLISH_CHECK_TIMEOUT_MS - Date.now()))
+    return () => { cancelled = true; clearInterval(poll); clearTimeout(expire) }
+  }, [checkState, candidate?.id, checkRequest, checkStorage])
+
+  function stopWaiting(request) {
+    setCheckRequest((current) => (current && current === request ? { ...current, failed: true } : current))
+  }
+
+  async function runCheck() {
+    // The prior result must be known, or an older verdict could later look new.
+    if (!candidate || !acceptedCommit || checkBusy || checkRaw === undefined) return
+    setCheckBusy(true)
+    try {
+      const prior = JSON.stringify(checkRaw)
+      const ok = await onRunCheck?.(candidate, acceptedCommit)
+      if (ok) setCheckRequest({ appId: candidate.id, commit: acceptedCommit, prior, startedAt: Date.now(), failed: false })
+    } finally {
+      setCheckBusy(false)
+    }
+  }
+
+  async function publish() {
+    const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim(), acceptedCommit)
+    if (ok) closePreview({ force: true })
+  }
+
+  async function fixCheck(issues) {
+    if (!candidate || checkBusy) return
+    setCheckBusy(true)
+    try {
+      await onFixCheck?.(candidate, issues)
+    } finally {
+      setCheckBusy(false)
+    }
+  }
+
   const visibleApps = apps.filter((app) => {
     const needle = appQuery.trim().toLowerCase()
     return !needle || `${app.name || ''} ${app.slug || ''}`.toLowerCase().includes(needle)
@@ -144,9 +293,26 @@ export function PublisherTab({
     setSaveError('')
     setConfirmed(false)
     try {
-      await onSaveListing?.(app.id, listingPayload(draft))
-      const result = await onPreviewLocal?.(app.id)
+      // Saving writes the listing onto whichever revision is accepted now, and
+      // the save route has no expected-revision guard. Re-read first so a
+      // draft from an older revision never silently replaces a newer one; the
+      // owner keeps their edits and saves again knowingly.
+      const latest = await onPreviewLocal?.(app.id)
+      const saved = listingPayload(draft)
+      const movedBefore = String(latest?.accepted_commit || '') !== String(preview?.accepted_commit || '')
+      if (!movedBefore) await onSaveListing?.(app.id, saved)
+      const result = movedBefore ? latest : await onPreviewLocal?.(app.id)
+      // A save is itself a new accepted revision, so its commit cannot show
+      // whether another one landed in between. The listing that must survive
+      // can: if any saved field did not, keep the draft and say so instead of
+      // reporting success.
+      const moved = movedBefore || !savedListingSurvived(saved, result?.draft)
       if (!previewGateRef.current.isCurrent(requestId)) return
+      if (moved) {
+        setPreview(result || null)
+        setSaveError('This app changed since you opened its listing. Your edits are kept: check them, then save again to use them on the new version.')
+        return
+      }
       showPreview(app, result)
     } catch (error) {
       if (!previewGateRef.current.isCurrent(requestId)) return
@@ -212,34 +378,46 @@ export function PublisherTab({
 
   return (
     <div className={`st-publisher${candidate ? ' is-reviewing' : ''}`}>
-      <section className="st-publish-heading">
-        <div>
-          <h2>Publish an app</h2>
-          <p>Shape the public listing, check the exact source revision, then release when it is ready.</p>
-          <ol className="st-publish-path" aria-label="Publishing steps">
-            <li>Choose an app</li><li>Review its listing</li><li>Publish this version</li>
-          </ol>
-        </div>
-        <div className="st-publish-heading-actions">
-          {!signedIn ? (
-            <button type="button" className="st-publish-connection st-publish-connection-action"
-                    onClick={() => onLogInToMobiusYou?.()}>
-              Log in to Möbius · You
-            </button>
-          ) : null}
-          {signedIn && githubReady ? <span className="st-publish-account">Publishing as {githubLogin}</span> : null}
-          {contributeAvailable ? (
-            <button type="button" className="st-btn st-btn-ghost" onClick={() => onOpenContributions?.()}>
-              Open contributions
-            </button>
-          ) : null}
-        </div>
-      </section>
+      {!candidate && view !== 'app' ? (
+        <section className="st-publish-heading">
+          <div>
+            {view === 'choose' ? (
+              <button type="button" className="st-back-btn" onClick={() => setView('home')}>
+                <ChevronLeft width="16" height="16" aria-hidden="true" />Your apps
+              </button>
+            ) : null}
+            <h2>{view === 'choose' ? 'Publish an app' : 'Your apps'}</h2>
+            {view === 'choose' ? <p>Pick one of the apps you built on this Möbius.</p> : null}
+          </div>
+          <div className="st-publish-heading-actions">
+            {!signedIn ? (
+              <button type="button" className="st-publish-connection st-publish-connection-action"
+                      onClick={() => onLogInToMobiusYou?.()}>
+                Log in to Möbius · You
+              </button>
+            ) : null}
+            {signedIn && githubReady ? <span className="st-publish-account">Publishing as {publisherHandle || githubLogin}</span> : null}
+            {contributeAvailable ? (
+              <button type="button" className="st-btn st-btn-ghost" onClick={() => onOpenContributions?.()}>
+                Open contributions
+              </button>
+            ) : null}
+            {view === 'home' ? (
+              <button type="button" className="st-btn st-btn-primary" onClick={() => setView('choose')}>
+                Publish an app
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {publication ? (
         <div className="st-publish-result" role="status">
           <strong>{publication.name || 'Your app'} is {publication.status === 'live' ? 'live' : 'submitted'}</strong>
           <span>{publication.status === 'live' ? 'The exact release is now available in Browse.' : 'Checks are running.'}</span>
+          {publication.revision_moved ? (
+            <span className="st-publish-result-warning">The app changed after you reviewed it, so a newer version than the one you reviewed was published. Check the public listing.</span>
+          ) : null}
           {(publication.repository_url || publication.github?.url) ? (
             <a href={publication.repository_url || publication.github.url} target="_blank" rel="noopener noreferrer">Open source</a>
           ) : null}
@@ -274,7 +452,7 @@ export function PublisherTab({
         </div>
       ) : null}
 
-      {!candidate && spotlightFeed?.viewer?.can_edit ? (
+      {!candidate && view === 'home' && spotlightFeed?.viewer?.can_edit ? (
         <SpotlightEditor
           catalog={catalog}
           feed={spotlightFeed}
@@ -357,18 +535,42 @@ export function PublisherTab({
                            onChange={(event) => setLocalRepositoryName(event.target.value)} disabled={!!publishingId} />
                   </div>
                 </label>
+                <PublishCheck state={checkState} check={check} busy={checkBusy}
+                              onRun={runCheck} onFix={fixCheck} onStop={() => stopWaiting(checkRequest)} />
                 <label className="st-publish-consent">
                   <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
                   <span>I’ve reviewed this listing and want this exact source revision to become public.</span>
                 </label>
-                <button type="button" className="st-btn st-btn-primary"
-                        disabled={!confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady}
-                        onClick={async () => {
-                          const ok = await onPublishLocal?.(candidate.id, localRepositoryName.trim())
-                          if (ok) closePreview({ force: true })
-                        }}>
-                  {publishingId === candidate.id ? 'Publishing…' : 'Publish app'}
-                </button>
+                {confirmShown ? (
+                  <div className="st-publish-anyway" role="group" aria-labelledby="st-publish-anyway-title"
+                       aria-describedby="st-publish-anyway-reason">
+                    <strong id="st-publish-anyway-title" ref={confirmHeadingRef} tabIndex={-1}>
+                      {checkState === 'must_fix' ? 'Publish without fixing it?' : 'Publish without a check?'}
+                    </strong>
+                    <span id="st-publish-anyway-reason">
+                      {checkState === 'must_fix'
+                        ? `Your agent flagged ${check?.must_fix_count || 0} ${check?.must_fix_count === 1 ? 'thing' : 'things'} to fix.`
+                        : UNCHECKED_REASON[checkState]}
+                      {' '}The check is optional advice from your agent, so the decision is yours.
+                    </span>
+                    <div className="st-check-actions">
+                      <button type="button" className="st-btn st-btn-ghost" disabled={!!publishingId}
+                              onClick={() => setConfirmingAnyway(false)}>
+                        Keep reviewing
+                      </button>
+                      <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled} onClick={publish}>
+                        {publishingId === candidate.id ? 'Publishing…' : checkState === 'must_fix' ? 'Publish anyway' : 'Publish'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled} ref={publishTriggerRef}
+                          onClick={checkPassed ? publish : () => setConfirmingAnyway(true)}>
+                    {publishingId === candidate.id ? 'Publishing…'
+                      : checkState === 'must_fix' ? 'Publish anyway…'
+                        : checkPassed ? 'Publish app' : 'Publish…'}
+                  </button>
+                )}
                 <div className="st-listing-revise">
                   <button type="button" className="st-btn st-btn-secondary"
                           disabled={!!publishingId} onClick={() => { setConfirmed(false); setEditing(true) }}>
@@ -396,10 +598,31 @@ export function PublisherTab({
             </div>
           )}
         </section>
+      ) : view === 'app' && openEntry ? (
+        <PublishedAppPage
+          app={openEntry.app}
+          state={openEntry.state}
+          onBack={() => { setView('home'); setOpenAppId(null) }}
+          onPublishUpdate={() => prepare(openEntry.app)}
+          publishDisabled={!!publishingId || !signedIn || !githubReady}
+          onLoadReviews={onLoadReviews}
+          onViewInStore={onViewInStore}
+        />
+      ) : view !== 'choose' ? (
+        published.length ? (
+          <YourAppsList entries={published}
+                        onOpen={(app) => { setOpenAppId(app.id); setView('app'); onNavigate?.() }} />
+        ) : (
+          <div className="st-empty">
+            <div className="st-empty-title">You haven’t published an app yet</div>
+            <p className="st-empty-text">Pick one of your apps and share it with everyone on Möbius.</p>
+            <button type="button" className="st-btn st-btn-primary" onClick={() => setView('choose')}>Publish an app</button>
+          </div>
+        )
       ) : (
         <>
           <div className="st-publish-list-head">
-            <div><h3>Choose an app</h3><p>{apps.length} local {apps.length === 1 ? 'app' : 'apps'} can be prepared for publishing.</p></div>
+            <div><p>{apps.length} {apps.length === 1 ? 'app' : 'apps'} on this Möbius can be published.</p></div>
             <label className="st-publish-search">
               <span className="st-sr-only">Search your apps</span>
               <Search width="17" height="17" aria-hidden="true" />
@@ -416,7 +639,7 @@ export function PublisherTab({
         </>
       )}
 
-      {!candidate ? (
+      {!candidate && view === 'choose' ? (
         <details className="st-publish-advanced">
           <summary><span>Already on GitHub?</span><small>List one exact commit</small></summary>
           <section className="st-publish-review" aria-labelledby="st-register-release-title">

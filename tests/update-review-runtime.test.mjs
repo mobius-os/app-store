@@ -135,11 +135,71 @@ test('App gates repeated batch confirmation synchronously', async () => {
     await act(async () => { secondConfirm.click(); await new Promise(resolve => setTimeout(resolve, 20)) })
     assert.equal(installs, 3, 'only the retried app was applied')
     assert.equal(installIds[2], 11)
+    assert.match(dom.window.document.querySelector('.st-update-review')?.textContent || '', /Updated/)
+    assert.match(dom.window.document.querySelector('.st-update-review')?.textContent || '', /1 updated/)
+    const memoryRetry = [...dom.window.document.querySelectorAll('.st-update-review-section')].find(section => section.textContent.includes('Memory')).querySelector('button')
+    await act(async () => { memoryRetry.click(); await new Promise(resolve => setTimeout(resolve, 20)) })
+    const lastConfirm = dom.window.document.querySelector('.st-update-review-actions button.st-btn-primary')
+    await act(async () => { lastConfirm.click(); await new Promise(resolve => setTimeout(resolve, 20)) })
+    assert.deepEqual(installIds.slice(2), [11, 12], 'each retry targets only its pending app')
+    const successCards = [...dom.window.document.querySelectorAll('.st-update-review-section')].filter(section => section.textContent.includes('This app was updated'))
+    assert.equal(successCards.length, 1, 'completed app stays visible exactly once')
+
     assert.match(dom.window.document.querySelector('.st-update-review')?.textContent || '', /memory failed/)
   } finally {
     await act(async () => root.unmount())
     Object.assign(globalThis, old)
     dom.window.close()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+
+test('update review leads with verified changes and keeps technical details collapsed', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://store.test/' })
+  const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  const { UpdateReviewModal } = await modalModule()
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const entry = reviewed('Pocket List')
+  entry.preview.upstream_diff = 'diff --git a/index.jsx b/index.jsx\n--- a/index.jsx\n+++ b/index.jsx\n@@ -1 +1 @@\n-old\n+new\n'
+  const props = { onClose() {}, onApply() {}, onReviewWithAgent() {} }
+  try {
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: entry })))
+    const details = dom.window.document.querySelector('details.st-update-technical')
+    assert.ok(details)
+    assert.equal(details.open, false)
+    assert.match(dom.window.document.body.textContent, /What changed/)
+    assert.match(dom.window.document.body.textContent, /1 file in this preview: 1 changed/)
+    assert.match(dom.window.document.body.textContent, /Ready to update/)
+    assert.ok(dom.window.document.querySelector('button.st-btn-primary'))
+    await act(async () => { details.open = true; details.dispatchEvent(new dom.window.Event('toggle')) })
+    assert.equal(details.open, true)
+    const overlapping = reviewed('Local edits', { conflict: true })
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: overlapping })))
+    assert.match(dom.window.document.body.textContent, /Local edits need review/)
+    assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
+    const unverified = { ...reviewed('Unchecked'), preview: null, previewError: 'This update could not be checked.' }
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: unverified })))
+    assert.match(dom.window.document.body.textContent, /Could not update/)
+    assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
+    const blocked = { ...reviewed('Blocked'), previewError: 'This update has an unresolved merge conflict.' }
+    blocked.preview = { ...blocked.preview, pending_update_state: 'needs_resolution' }
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, onResolve() {}, onRetry() {}, review: blocked })))
+    assert.match(dom.window.document.body.textContent, /Local edits need review/)
+    assert.match(dom.window.document.body.textContent, /Local changes must be reconciled before updating/)
+    const blockedButtons = [...dom.window.document.querySelectorAll('.st-update-review-section button')].map(b => b.textContent)
+    assert.deepEqual(blockedButtons, ['Resolve in chat'], 'a blocked entry offers only the resolver')
+    assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: reviewed('Pocket List', { ok: true }) })))
+    assert.match(dom.window.document.body.textContent, /Update results/)
+    assert.match(dom.window.document.body.textContent, /1 updated · 0 need attention/)
+    assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
+    assert.equal([...dom.window.document.querySelectorAll('button')].some(b => /agent/i.test(b.textContent)), false)
+    assert.ok([...dom.window.document.querySelectorAll('button')].some(b => b.textContent === 'Done'))
+  } finally {
+    await act(async () => root.unmount()); Object.assign(globalThis, old); dom.window.close()
     await rm(buildDir, { recursive: true, force: true })
   }
 })

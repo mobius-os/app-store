@@ -28,12 +28,12 @@ export function LibraryHealth({ installedCount, updateCount, attentionCount, upd
     ? `${installedCount} installed ${installedCount === 1 ? 'app' : 'apps'}`
     : updateCount > 0
       ? `${updateCount} ${updateCount === 1 ? 'update' : 'updates'} ready`
-      : `${attentionCount} ${attentionCount === 1 ? 'app needs' : 'apps need'} a reconcile`
+      : `${attentionCount} ${attentionCount === 1 ? 'app needs' : 'apps need'} local-edit review`
   const detail = healthy
     ? checkedLabel(updateChecks)
     : updateCount > 0
       ? attentionCount > 0
-        ? `Safe updates apply automatically. ${attentionCount} ${attentionCount === 1 ? 'app has local changes' : 'apps have local changes'} that overlap the update — resolve them individually or with Resolve all.`
+        ? `Review available updates before confirming. ${attentionCount} ${attentionCount === 1 ? 'app has local edits' : 'apps have local edits'} that overlap the update — review them individually or with Resolve all.`
         : 'Review available updates below. Changes to access still ask first.'
       : 'Your current apps stay live until you resolve the overlap — individually or with Resolve all.'
 

@@ -21,6 +21,8 @@ import {
   buildUpdateFailureMessage,
   buildUpdateReviewMessage,
   buildListingAgentMessage,
+  buildPublishCheckMessage,
+  buildPublishFixMessage,
   listingDraftFromPreview,
   listingPayload,
   utf8Length,
@@ -35,6 +37,7 @@ import {
   communityCatalogItems,
   communityPublicationStatus,
   communityPublicationsByLocalApp,
+  publicationViewerHandle,
   communityRepositoryUrl,
   filterCatalog,
   findInstalled,
@@ -77,6 +80,7 @@ import {
   loadLocalGithubIdentity,
   loadCommunityPublications,
   loadLocalPublicationPreview,
+  createPublicationListingReader,
   prepareListingImage,
   saveLocalListing,
   loadInstalledApps,
@@ -362,6 +366,10 @@ export default function App({ appId, token }) {
   const [publicationError, setPublicationError] = useState('')
   const [publicationStates, setPublicationStates] = useState({})
   const [publicationStatesError, setPublicationStatesError] = useState('')
+  const [publisherHandle, setPublisherHandle] = useState('')
+  // Public listing facts (ratings, release) per community app id; see
+  // createPublicationListingReader.
+  const [publicationListings, setPublicationListings] = useState({})
   const [communityActionBusy, setCommunityActionBusy] = useState(false)
   const [communityActionError, setCommunityActionError] = useState({ key: '', message: '' })
   // Retry an old interrupted install receipt once when its detail opens.
@@ -392,6 +400,13 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
+  // A section the open detail should scroll to ('reviews'), owned by the
+  // navigation entry that requested it; see openDetailEntry.
+  const [detailFocus, setDetailFocus] = useState('')
+  const showDetail = useCallback((item, focus = '') => {
+    setDetail(item)
+    setDetailFocus(item ? focus : '')
+  }, [])
   // Only nested destinations need data and host Back ownership. Scalars are
   // already restored on first paint, without waiting for network hydration.
   const [intentDestination, setIntentDestination] = useState(() =>
@@ -701,15 +716,24 @@ export default function App({ appId, token }) {
     }
   }, [token, query, communityOffset])
 
+  const refreshPublicationListings = useMemo(() => createPublicationListingReader(
+    token, (id, listing) => setPublicationListings((current) => ({ ...current, [id]: listing })),
+  ), [token])
+
+  const showPublications = useCallback((payload) => {
+    setPublicationStates(communityPublicationsByLocalApp(payload))
+    setPublisherHandle(publicationViewerHandle(payload))
+    setPublicationStatesError('')
+    refreshPublicationListings(payload?.items)
+  }, [refreshPublicationListings])
+
   const refreshPublicationStates = useCallback(async () => {
     try {
-      const payload = await loadCommunityPublications(token)
-      setPublicationStates(communityPublicationsByLocalApp(payload))
-      setPublicationStatesError('')
+      showPublications(await loadCommunityPublications(token))
     } catch (error) {
       setPublicationStatesError(error?.message || 'Publication status is unavailable right now.')
     }
-  }, [token])
+  }, [token, showPublications])
 
   useEffect(() => {
     let cancelled = false
@@ -727,8 +751,7 @@ export default function App({ appId, token }) {
         setCommunityIdentityError(identityResult.reason?.message || 'Identity is unavailable right now.')
       }
       if (publicationsResult.status === 'fulfilled') {
-        setPublicationStates(communityPublicationsByLocalApp(publicationsResult.value))
-        setPublicationStatesError('')
+        showPublications(publicationsResult.value)
       } else {
         setPublicationStatesError(publicationsResult.reason?.message || 'Publication status is unavailable right now.')
       }
@@ -744,7 +767,7 @@ export default function App({ appId, token }) {
       }
     })
     return () => { cancelled = true }
-  }, [token])
+  }, [token, showPublications])
 
   useEffect(() => {
     if (tab !== 'browse') return undefined
@@ -823,7 +846,7 @@ export default function App({ appId, token }) {
     }
   }, [publishingId, refreshCommunity, refreshPublicationStates, token])
 
-  const handlePublishLocal = useCallback(async (localAppId, repositoryName) => {
+  const handlePublishLocal = useCallback(async (localAppId, repositoryName, reviewedCommit = '') => {
     if (publishingId) return false
     setPublishingId(localAppId)
     setPublication(null)
@@ -838,6 +861,9 @@ export default function App({ appId, token }) {
         repository_url: communityRepositoryUrl(listed?.repository_url || (
           githubIdentity?.login ? `https://github.com/${githubIdentity.login}/${repositoryName}` : ''
         )),
+        // Publishing takes whatever revision is accepted at that moment.
+        revision_moved: !!(reviewedCommit && result?.published_commit
+          && result.published_commit !== String(reviewedCommit).toLowerCase()),
       })
       await Promise.allSettled([refreshCommunity(), refreshPublicationStates()])
       return true
@@ -945,6 +971,10 @@ export default function App({ appId, token }) {
     setCommunityActionError({ key: feedbackKey, message: '' })
     try {
       const result = await saveCommunityReview(token, feedback.id, stars, body)
+      // Only this app's rating changed; re-read its listing if it is one of yours.
+      if (Object.values(publicationStates).some((state) => state.community_app_id === feedback.id)) {
+        refreshPublicationListings([{ status: 'live', community_app_id: feedback.id }], { force: true })
+      }
       updateCommunityFeedback(feedback.id, (current) => ({
         ...current,
         user_review: result.user_review || null,
@@ -977,7 +1007,7 @@ export default function App({ appId, token }) {
     } finally {
       setCommunityActionBusy(false)
     }
-  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityFeedback])
+  }, [communityActionBusy, communityIdentity, detail, token, updateCommunityFeedback, publicationStates, refreshPublicationListings])
 
   const handleUploadSpotlightArtwork = useCallback(
     (file) => uploadEditorialArtwork(token, file),
@@ -1505,16 +1535,17 @@ export default function App({ appId, token }) {
 
   // Each nested level owns one reversible host entry. No iframe history or
   // timeout fallback: an unowned view would strand the device's Back gesture.
-  const openDetail = useCallback((item, signal) => openDetailEntry(navDetailRef, item, {
+  const openDetail = useCallback((item, signal, { focus = '' } = {}) => openDetailEntry(navDetailRef, item, {
     nav: window.mobius.nav,
-    show: setDetail,
+    show: showDetail,
     signal,
+    focus,
     cancelPendingDestination,
     prepare: target => {
       reviewCapabilities(target)
       if (!navDetailRef.current) savedGridScrollRef.current = gridScrollRef.current?.scrollTop || 0
     },
-  }), [reviewCapabilities, cancelPendingDestination])
+  }), [reviewCapabilities, cancelPendingDestination, showDetail])
 
   const openCollection = useCallback(async (id, signal) => {
     if (collectionNavRef.current) return
@@ -1654,11 +1685,12 @@ export default function App({ appId, token }) {
     setBusy(true)
     setBusyActionKind('batch_update')
     let issues = reviews
-      .filter(entry => !updateEntryConfirmable(entry))
+      .filter(entry => !entry.outcome?.ok && !updateEntryConfirmable(entry))
       .map(entry => entry.outcome ? entry : {
         ...entry, outcome: { error: entry.previewError || 'This update could not be verified.' },
       })
     let completed = 0
+    const updatedEntries = reviews.filter(entry => entry.outcome?.ok)
     const newConflicts = []
     try {
       for (let index = 0; index < entries.length; index += 1) {
@@ -1678,8 +1710,10 @@ export default function App({ appId, token }) {
           updateAppId: entry.preview.app_id,
           upstreamCommit: entry.preview.upstream_commit,
         })
-        if (outcome?.ok) completed += 1
-        else {
+        if (outcome?.ok) {
+          completed += 1
+          updatedEntries.push({ ...entry, outcome })
+        } else {
           issues.push({ ...entry, outcome: outcome || { error: 'This update could not be completed.' } })
           if (outcome?.conflict && outcome.result?.id) newConflicts.push(outcome.result.id)
         }
@@ -1697,7 +1731,7 @@ export default function App({ appId, token }) {
             : entry)
         }
       }
-      setUpdateReview(issues.length ? { entries: issues } : null)
+      setUpdateReview({ entries: [...updatedEntries, ...issues] })
       const refreshError = await refreshInstalled() ? '' : ' The app list could not be refreshed yet.'
       setToast({
         kind: issues.length || refreshError ? 'error' : 'success',
@@ -1806,6 +1840,47 @@ export default function App({ appId, token }) {
     }
   }, [token])
 
+  // The creator-run agent check: an owner-visible agent reads the exact
+  // accepted revision and writes its verdict into this Store's storage, which
+  // the Publish tab follows live.
+  const handlePublishCheck = useCallback(async (app, acceptedCommit) => {
+    if (!app?.id || !acceptedCommit) return false
+    try {
+      const chat = await createAppChat(`Check ${app.name || app.slug} before publishing`, token, { ownerVisible: true })
+      await seedChatMessage(chat.id, buildPublishCheckMessage({ app, acceptedCommit, storeAppId: appId }), token)
+      setToast({
+        kind: 'success',
+        message: `Your agent is checking ${app.name || app.slug}. The result appears here.`,
+        action: { label: 'View work', onClick: () => openChat(chat.id) },
+      })
+      return true
+    } catch (error) {
+      setToast({ kind: 'error', message: error.message || 'Could not start the agent check.' })
+      return false
+    }
+  }, [appId, token])
+
+  const handlePublishFix = useCallback(async (app, issues) => {
+    if (!app?.id) return false
+    try {
+      const chat = await createAppChat(`Fix ${app.name || app.slug} before publishing`, token, { ownerVisible: true })
+      await seedChatMessage(chat.id, buildPublishFixMessage({ app, issues }), token)
+      setToast({
+        kind: 'success',
+        message: `An agent is fixing ${app.name || app.slug}. Check again when it's done.`,
+        action: { label: 'View work', onClick: () => openChat(chat.id) },
+      })
+      return true
+    } catch (error) {
+      setToast({ kind: 'error', message: error.message || 'Could not open an agent chat.' })
+      return false
+    }
+  }, [token])
+
+  const loadPublisherReviews = useCallback((communityAppId) => (
+    loadCommunityReviews(token, communityAppId)
+  ), [token])
+
   const handleAskAgentAboutError = useCallback(async (item, error) => {
     if (!item || !error || agentErrorItemId) return
     const installedApp = findInstalled(installed, item)
@@ -1831,7 +1906,7 @@ export default function App({ appId, token }) {
     }
   }, [agentErrorItemId, installed, token])
 
-  const closeDetail = useCallback(() => closeDetailEntry(navDetailRef, setDetail), [])
+  const closeDetail = useCallback(() => closeDetailEntry(navDetailRef, showDetail), [showDetail])
 
   const handleCommunityWithdraw = useCallback(async () => {
     const community = detail?.community
@@ -2145,6 +2220,7 @@ export default function App({ appId, token }) {
         <DetailView
           storeAppId={appId}
           item={detail}
+          focusSection={detailFocus}
           capabilityReview={capabilityReviews[detail.id]}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
           installed={installed}
@@ -2366,6 +2442,8 @@ export default function App({ appId, token }) {
                     installed={installed}
                     updateChecks={updateChecks}
                     onPick={item => { if (item.manifest) openDetail(item) }}
+                    pickOpensApp={tab === 'library'}
+                    onRateApp={tab === 'library' ? (item => { if (item.manifest) openDetail(item, undefined, { focus: 'reviews' }) }) : undefined}
                     onRetry={retryCatalogItem}
                     onUpdate={handleCatalogUpdate}
                     onOpenInstalled={handleOpenInstalled}
@@ -2414,11 +2492,20 @@ export default function App({ appId, token }) {
             onSaveListing={(localAppId, listing) => saveLocalListing(token, localAppId, listing)}
             onPrepareImage={prepareListingImage}
             onListingAgent={handleListingAgent}
+            onRunCheck={handlePublishCheck}
+            onFixCheck={handlePublishFix}
+            onLoadReviews={loadPublisherReviews}
+            onViewInStore={(communityId) => {
+              cancelPendingDestination()
+              setIntentDestination({ kind: 'app', itemId: `community:${communityId}` })
+            }}
             onRegisterRepository={handleRegisterCommunity}
             publishingId={publishingId}
             publication={publication}
             publicationError={publicationError}
             publicationStates={publicationStates}
+            publicationListings={publicationListings}
+            publisherHandle={publisherHandle}
             publicationStatesError={publicationStatesError}
             onRefreshPublicationStates={refreshPublicationStates}
             onNavigate={() => {

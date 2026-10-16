@@ -1,4 +1,4 @@
-import { appLifecycleFor, busyLabelForAction, catalogCardDescription, catalogPublisher } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, catalogCardDescription, catalogPublisher, communityFeedbackOf } from '../domain.js'
 import { ArrowRotateCw, ArrowUpRight, Chat, Check, Download } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 
@@ -18,7 +18,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
   const m = item.manifest
 
   if (!m) {
@@ -71,6 +71,12 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   const storeInstalled = lifecycle.installedApp
   const cardVariant = lifecycle.cardVariant
   const canOpenInstalledApp = !!storeInstalled && typeof onOpenInstalled === 'function'
+  // In the Library, tapping a ready installed app launches it. A row with an
+  // update, conflict, retry or unfinished setup opens its details instead, so
+  // it never silently launches the old version. Details stays on every row
+  // for uninstall, setup and permissions.
+  const opensApp = pickOpensApp && canOpenInstalledApp &&
+    lifecycle.actionKind === 'open' && !lifecycle.setupNeedsAttention
   const canRetryInstalled = typeof onRetryInstalled === 'function'
   const canResolveUpdate = lifecycle.actionKind !== 'resolve' || !!lifecycle.resolutionNotice
   const isActionable =
@@ -160,8 +166,8 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       <button
         type="button"
         className="st-card-open"
-        onClick={() => onPick(item)}
-        aria-label={`${m.name} — open details`}
+        onClick={() => (opensApp ? onOpenInstalled(storeInstalled.id) : onPick(item))}
+        aria-label={opensApp ? `${m.name} — open app` : `${m.name} — open details`}
       >
         {m.name}
       </button>
@@ -190,6 +196,20 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
         <div className="st-card-byline">{catalogPublisher(item)}</div>
       ) : null}
       <div className="st-card-status-row">
+        {pickOpensApp ? (
+          <button type="button" className="st-card-secondary"
+                  onClick={() => onPick(item)}
+                  aria-label={`${m.name} details`}>
+            Details
+          </button>
+        ) : null}
+        {layout === 'list' && storeInstalled && typeof onRateApp === 'function' && communityFeedbackOf(item)?.id ? (
+          <button type="button" className="st-card-secondary"
+                  onClick={() => onRateApp(item)}
+                  aria-label={`Rate and review ${m.name}`}>
+            Review
+          </button>
+        ) : null}
         <button
           type="button"
           className={cardActionClass}

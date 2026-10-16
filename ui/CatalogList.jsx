@@ -55,6 +55,8 @@ export function CatalogList({
   onRetry,
   onUpdate,
   onOpenInstalled,
+  onRateApp,
+  pickOpensApp = false,
   onRetryInstalled,
   busy,
   busyItemId,
@@ -159,6 +161,8 @@ export function CatalogList({
       onRetry={onRetry}
       onUpdate={onUpdate}
       onOpenInstalled={onOpenInstalled}
+      onRateApp={onRateApp}
+      pickOpensApp={pickOpensApp}
       onRetryInstalled={onRetryInstalled}
       busy={busyItemId === item.id || checkingUpdateItemId === item.id}
       busyActionKind={busyItemId === item.id

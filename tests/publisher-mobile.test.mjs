@@ -5,6 +5,13 @@ import test from 'node:test'
 const publisher = readFileSync(new URL('../ui/PublisherTab.jsx', import.meta.url), 'utf8')
 const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
 
+test('published app stats use equal centered columns without wrapping', () => {
+  assert.match(theme, /grid-template-columns: 48px minmax\(0, 1fr\) repeat\(2, 112px\) 16px/)
+  assert.match(theme, /\.st-mine-num \{[^}]*white-space: nowrap/)
+  assert.match(theme, /\.st-mine-num \{[^}]*align-items: center/)
+  assert.match(theme, /\.st-mine-num small \{[^}]*min-height: 16px/)
+})
+
 test('phone publishing puts the release decision before the long listing details', () => {
   const readyLayout = publisher.slice(
     publisher.indexOf('<div className="st-listing-ready-layout">'),
