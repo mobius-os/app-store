@@ -589,12 +589,14 @@ async function withReadDeadline(opts, read) {
   }
 }
 
-// A retry delay ends early once the deadline passes; the next attempt then
-// fails at once and reports the read as unreachable.
-function sleep(ms, signal) {
+// A wait that ends early, or never starts, once `signal` aborts. A retry
+// after an expired deadline then fails at once and reports the read as
+// unreachable.
+export function sleep(ms, signal) {
+  if (signal?.aborted) return Promise.resolve()
   return new Promise(resolve => {
     const timer = setTimeout(resolve, ms)
-    signal.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
   })
 }
 

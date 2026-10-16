@@ -1,3 +1,5 @@
+import { sleep } from './api.js'
+
 // Reviewed "Update all" runs on the server. The Store checks every candidate,
 // the owner confirms one exact set of reviewed commits, and the platform's
 // update-batch owner applies them (POST /api/apps/update-batches). Closing the
@@ -105,8 +107,6 @@ function errorFields(error, fallback) {
   }
 }
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
-
 // Statuses a gateway in front of the platform may answer while the platform
 // itself did accept the batch: the outcome stays uncertain.
 const GATEWAY_STATUSES = new Set([502, 504])
@@ -201,7 +201,7 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
           failures += 1
           emit({ error: `${error?.status === 503 && error.message ? `${error.message} ` : 'Connection lost. '}Update work continues on the server; reconnecting…` })
         }
-        if (state.phase === 'applying') await sleep(Math.min(reconnectMs * 2 ** Math.max(failures - 1, 0), 15_000))
+        if (state.phase === 'applying') await sleep(Math.min(reconnectMs * 2 ** Math.max(failures - 1, 0), 15_000), controller.signal)
       }
     } finally { if (watchController === controller) watchedId = null }
   }

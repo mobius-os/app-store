@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import test, { mock } from 'node:test'
 import {
   fetchCatalog, fetchManifest, fetchUpdateCheck, loadInstalledApps, loadProviderStatus,
-  loadUpdateCandidatePreview, READ_DEADLINE_MS, UPDATE_CHECK_DEADLINE_MS,
+  loadUpdateCandidatePreview, READ_DEADLINE_MS, sleep, UPDATE_CHECK_DEADLINE_MS,
 } from '../api.js'
 import { LISTING_LIMITS } from '../constants.js'
 import { filterCatalog, isSystemCatalogItem, textWithinByteLimit, utf8Length } from '../domain.js'
@@ -216,6 +216,17 @@ test('retry delays never extend a read past its deadline', async () => {
   })
   assert.equal(answered, 2, 'the deadline ended the first retry delay of each read')
   assert.ok(Date.now() - started < 5_000)
+})
+
+test('a wait ends at once when its signal has already aborted, and early when it aborts', async () => {
+  const started = Date.now()
+  await sleep(60_000, AbortSignal.abort())
+  const controller = new AbortController()
+  const waiting = sleep(60_000, controller.signal)
+  controller.abort()
+  await waiting
+  await sleep(1)
+  assert.ok(Date.now() - started < 1_000)
 })
 
 test('a response body that stalls past the deadline reads as unreachable', async () => {
