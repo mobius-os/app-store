@@ -115,7 +115,9 @@ const GATEWAY_STATUSES = new Set([502, 504])
 // resolver actions. Browser teardown never cancels server-owned update work.
 // `applyOne` is the fallback for a Möbius without server batches: the
 // per-app reviewed update, one app at a time, while the Store stays open.
-export function createUpdateBatch({ prepare, submit, read, watch, resolve, refresh, applyOne, onChange, onSnapshot, onRefused, newId, reconnectMs = 1500 }, entries = []) {
+// `batchesMissing(error)` says whether a refused submit means this Möbius has
+// no batch routes; only then does `applyOne` run.
+export function createUpdateBatch({ prepare, submit, read, watch, resolve, refresh, applyOne, batchesMissing, onChange, onSnapshot, onRefused, newId, reconnectMs = 1500 }, entries = []) {
   let state = { phase: 'review', entries, error: '', batchId: null, runningBatchId: null, local: false }
   let checkController = null
   let watchController = null
@@ -203,7 +205,13 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     } finally { if (watchController === controller) watchedId = null }
   }
   async function check(items) {
-    if (!idle() || uncertain) return
+    if (!idle()) return
+    if (uncertain) {
+      // An approval that may already be running cannot be replaced by a new
+      // review until its outcome is known.
+      emit({ error: 'The confirmed updates may already be running. Confirm again to resend the same request, or reopen Store to see their status before checking again.' })
+      return
+    }
     checkController = new AbortController()
     const { signal } = checkController
     const ids = new Set(items.map(item => item.id))
@@ -261,7 +269,7 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
         awaitingCompletion.delete(id)
         onRefused?.(id)
         if (disposed) return
-        if ((error.status === 404 || error.status === 405) && applyOne) {
+        if (applyOne && batchesMissing?.(error)) {
           // A Möbius without server batches: apply each reviewed update here.
           await applyEach(approved)
           return
@@ -330,6 +338,8 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
   }
   return {
     get state() { return state },
+    // A submission whose outcome is unknown (its answer was lost).
+    get uncertain() { return uncertain },
     check, confirm,
     recover(snapshot) {
       mergeSnapshot(snapshot)
@@ -338,9 +348,29 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     async refreshSnapshot() {
       const id = state.batchId
       if (!id || disposed) return
-      const snapshot = await read(id)
+      let snapshot
+      try {
+        snapshot = await read(id)
+      } catch (error) {
+        // A submission whose answer was lost, read again later and still
+        // unknown to the server, never started: release it like a refusal.
+        if (error?.status === 404 && uncertain && state.batchId === id && state.phase === 'review') {
+          uncertain = false
+          awaitingCompletion.delete(id)
+          onRefused?.(id)
+          emit({ batchId: null, error: '' })
+          return
+        }
+        throw error
+      }
       if (state.batchId === id) mergeSnapshot(snapshot)
       if (state.phase === 'applying') void watchBatch(id)
+    },
+    // A snapshot the batch list already returned: no extra read.
+    offer(snapshot) {
+      if (disposed || snapshot?.id !== state.batchId) return
+      mergeSnapshot(snapshot)
+      if (state.phase === 'applying') void watchBatch(snapshot.id)
     },
     seedEntries(seeds) {
       if (disposed) return

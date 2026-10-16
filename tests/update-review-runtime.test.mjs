@@ -534,3 +534,60 @@ test('a Möbius without server batches still updates through the per-app reviewe
     await rm(buildDir, { recursive: true, force: true })
   }
 })
+
+test('an older Möbius whose app route answers 422 for the batch list shows no warning and still updates', async () => {
+  const { dom, restore } = useDom()
+  const installs = []
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([voiceRow])
+      // GET /api/apps/{app_id} reads "update-batches" as an app id.
+      if (path === '/api/apps/update-batches' && options.method !== 'POST') return json({ detail: [{ type: 'int_parsing', loc: ['path', 'app_id'], msg: 'Input should be a valid integer, unable to parse string as an integer', input: 'update-batches' }] }, 422)
+      if (path === '/api/apps/update-batches') return json({ detail: 'Method Not Allowed' }, 405)
+      if (path.includes('/update-check')) return json({ update_available: installs.length === 0, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json(candidate(11))
+      if (path === '/api/apps/install') {
+        installs.push(JSON.parse(options.body))
+        return json({ id: 11, slug: 'voice', name: 'Voice', version: '2.0.0', mode: 'update', divergence: 'fast_forward' })
+      }
+      return null
+    })
+    const doc = dom.window.document
+    assert.equal(doc.querySelector('[role="alert"]'), null, 'no "Update progress could not be read" warning')
+    await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
+    await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
+    assert.equal(installs.length, 1, 'the per-app fallback applied the reviewed update')
+    assert.match(doc.querySelector('.st-update-review').textContent, /1 updated · 0 need attention/)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('on a Möbius with batches, an app removed after its check is reported, never installed one by one', async () => {
+  const { dom, restore } = useDom()
+  let installs = 0
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches' && options.method === 'POST') return json({ detail: 'App not found.' }, 404)
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json(candidate(11))
+      if (path === '/api/apps/install') { installs++; return json({}, 500) }
+      return null
+    })
+    const doc = dom.window.document
+    await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
+    await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
+    assert.equal(installs, 0)
+    assert.match(doc.querySelector('.st-update-review').textContent, /App not found\./)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})

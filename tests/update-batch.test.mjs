@@ -4,9 +4,10 @@ import {
   createUpdateBatch, UPDATE_CHECK_CONCURRENCY, newestBatchSnapshot, normalizeBatchSnapshot,
   failedEntryActions, mapWithConcurrency,
 } from '../update-batch.js'
-import { responseError, watchUpdateBatch, submitUpdateBatch, loadUpdateCandidatePreview, installApp } from '../api.js'
+import { responseError, watchUpdateBatch, submitUpdateBatch, loadUpdateCandidatePreview, installApp, batchRoutesMissing, randomUuid } from '../api.js'
 import { appLifecycleFor } from '../domain.js'
 
+globalThis.__realCrypto = globalThis.crypto
 const gate = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
 const items = count => Array.from({ length: count }, (_, i) => ({ id: i + 1, manifest_url: `https://example.test/${i + 1}/mobius.json` }))
 const prepared = item => ({ item, installedApp: { id: item.id }, preview: {
@@ -292,6 +293,7 @@ test('without server batches each reviewed update is applied in turn through the
   const applied = [], refreshed = []
   let concurrent = 0, peak = 0
   const { batch, changes } = harness({
+    batchesMissing: error => batchRoutesMissing(error),
     submit: async () => { throw httpError(404, 'Not Found') },
     refresh: async () => { refreshed.push(true); return true },
     applyOne: async entry => {
@@ -432,4 +434,62 @@ test('a rejected candidate shows its reason instead of a silent Open', () => {
   assert.deepEqual([other.key, other.statusLabel], ['rejected', 'Update not offered'], 'unknown codes read the same way')
   const unknown = appLifecycleFor(item, { installed, updateChecks: { 11: { available: null, candidateRejected: null } } })
   assert.equal(unknown.key, 'unverified')
+})
+
+test('only a missing-route answer means a Möbius without batches', () => {
+  assert.equal(batchRoutesMissing(httpError(404, 'Not Found')), true)
+  assert.equal(batchRoutesMissing(httpError(405, 'Method Not Allowed')), true)
+  // An older GET /api/apps/{app_id} reads "update-batches" as an app id.
+  assert.equal(batchRoutesMissing(httpError(422, [{ type: 'int_parsing', loc: ['path', 'app_id'], msg: 'Input should be a valid integer' }])), true)
+  assert.equal(batchRoutesMissing(httpError(404, 'App not found.')), false, 'a real answer from the batch route')
+  assert.equal(batchRoutesMissing(httpError(422, [{ loc: ['body', 'updates', 0, 'source_digest'], msg: 'Field required' }])), false)
+  assert.equal(batchRoutesMissing(httpError(503, 'Restarting')), false)
+  assert.equal(batchRoutesMissing(new TypeError('Failed to fetch')), false)
+})
+
+test('an app removed after its check is an ordinary error, never the per-app fallback', async () => {
+  const applied = []
+  const { batch } = harness({
+    batchesMissing: error => batchRoutesMissing(error),
+    applyOne: async entry => { applied.push(entry); return { status: 'updated' } },
+    submit: async () => { throw httpError(404, 'App not found.') },
+  })
+  await batch.check(items(2)); await batch.confirm()
+  assert.equal(applied.length, 0)
+  assert.match(batch.state.error, /App not found/)
+  assert.deepEqual(status(batch), ['ready', 'ready'])
+})
+
+test('a lost submission the server never saw is released on a later read', async () => {
+  const refused = []
+  const { batch } = harness({
+    onRefused: id => refused.push(id),
+    submit: async () => { throw new TypeError('Failed to fetch') },
+    read: async () => { throw httpError(404, 'App update batch not found.') },
+  })
+  await batch.check(items(1)); await batch.confirm()
+  assert.equal(batch.uncertain, true)
+  assert.equal(batch.state.batchId, 'key-1')
+  await batch.check(items(1))
+  assert.match(batch.state.error, /may already be running/, 'Try again says why it waits')
+  await batch.refreshSnapshot()
+  assert.equal(batch.uncertain, false)
+  assert.equal(batch.state.batchId, null)
+  assert.deepEqual(refused, ['key-1'])
+  await batch.check(items(1))
+  assert.deepEqual(status(batch), ['ready'], 'a new review can start')
+})
+
+test('batch ids are UUIDs even without crypto.randomUUID (plain HTTP)', () => {
+  const pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+  assert.match(randomUuid(), pattern)
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+  try {
+    Object.defineProperty(globalThis, 'crypto', { value: { getRandomValues: bytes => globalThis.__realCrypto.getRandomValues(bytes) }, configurable: true })
+    assert.match(randomUuid(), pattern)
+    Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true })
+    const ids = new Set(Array.from({ length: 50 }, () => randomUuid()))
+    assert.equal(ids.size, 50)
+    for (const id of ids) assert.match(id, pattern)
+  } finally { Object.defineProperty(globalThis, 'crypto', descriptor) }
 })

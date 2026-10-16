@@ -27,7 +27,8 @@ the Store never cancels the work, and Library shows **View update progress**
 until it finishes. A lost answer resends the same batch id, so it attaches
 to the batch rather than approving a second one.
 
-On a Möbius without the batch routes (404/405), the Store falls back to the
+On a Möbius without the batch routes (its batch list answers with a generic
+404/405, or the 422 an older app route gives), the Store falls back to the
 per-app reviewed update it used before: the same `/api/apps/install` request
 with the reviewed digests, one app at a time, with the dialog kept open
 until it finishes.

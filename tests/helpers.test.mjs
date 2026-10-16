@@ -1909,7 +1909,9 @@ test('both update entry points use one reviewed server batch with bound digests'
     assert.match(controller, new RegExp(`${reviewed}: entry\\.prepared`))
   }
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
-  assert.ok(indexSource.includes('reviewed_source_digest: _opts.sourceDigest'))
+  // The per-app fallback for a Möbius without batches binds the same review.
+  assert.ok(indexSource.includes('reviewed_source_digest: preview.source_digest'))
+  assert.ok(indexSource.includes('reviewed_upstream_commit: preview.upstream_commit'))
 })
 
 test('candidate review requests the exact catalog manifest selected by the user', async () => {
@@ -2537,8 +2539,9 @@ test('busy labels stay tied to the action that started', async () => {
   const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
-  assert.ok(source.includes("const startedActionKind = _opts?.isUpdate ? 'update' : 'install'"))
-  assert.ok(source.includes('setBusyActionKind(startedActionKind)'))
+  // handleInstall only installs; updates show their busy state from the batch.
+  assert.ok(source.includes("setBusyActionKind('install')"))
+  assert.ok(source.includes("updatingItemIds.includes(detail.id) ? 'update'"))
   assert.ok(cardSource.includes('busyActionKind || lifecycle.actionKind'))
   assert.ok(cardSource.includes("lifecycle.actionKind === 'install'"))
   assert.ok(!cardSource.includes("'Review & install'"))

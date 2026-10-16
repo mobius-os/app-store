@@ -11,9 +11,22 @@ function communityHeaders(token, idempotencyKey = '') {
   }
 }
 
+// A version 4 UUID. `crypto.randomUUID` exists only in secure contexts, so a
+// Möbius served over plain HTTP builds one from random bytes instead.
+export function randomUuid() {
+  const native = globalThis.crypto?.randomUUID?.()
+  if (native) return native
+  const bytes = new Uint8Array(16)
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes)
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 function communityRequestKey(action) {
-  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  return `store:${action}:${random}`.slice(0, 127)
+  return `store:${action}:${randomUuid()}`.slice(0, 127)
 }
 
 async function communityResponse(response, fallback) {
@@ -968,6 +981,21 @@ export async function createConflictResolverBatch(appIds, resolutionPolicy, toke
     throw error
   }
   return await readJsonOrThrow(res, 'Could not open resolver chat')
+}
+
+// Whether an update-batch request failed because this Möbius has no batch
+// routes (it predates mobius-os/mobius#1843), rather than for a reason the
+// routes gave. Only FastAPI's generic answers count: "Not Found" or "Method
+// Not Allowed", or the 422 an older `GET /api/apps/{app_id}` route gives when
+// it reads "update-batches" as an app id. "App not found." is a real answer.
+export function batchRoutesMissing(error) {
+  const detail = error?.detail
+  if (error?.status === 404) return detail === 'Not Found'
+  if (error?.status === 405) return detail === 'Method Not Allowed'
+  if (error?.status === 422 && Array.isArray(detail)) {
+    return detail.some(item => Array.isArray(item?.loc) && item.loc[0] === 'path' && item.loc.includes('app_id'))
+  }
+  return false
 }
 
 // Server-run update batches (platform: POST/GET /api/apps/update-batches).
