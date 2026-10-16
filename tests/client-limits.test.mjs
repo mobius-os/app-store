@@ -195,7 +195,7 @@ test('slow Store reads end at one shared deadline with a clear error', async () 
   assert.ok(READ_DEADLINE_MS > 0 && READ_DEADLINE_MS <= 10_000)
 })
 
-test('retry delays never extend a read past its deadline', async () => {
+test('a retry that cannot fit before the deadline reports the server answer at once', async () => {
   const started = Date.now()
   let answered = 0
   await withFetch(async (url, init) => {
@@ -204,18 +204,30 @@ test('retry delays never extend a read past its deadline', async () => {
     return new Response('busy', { status: 503 })
   }, async () => {
     await assert.rejects(
-      loadInstalledApps('owner-token', { deadlineMs: 30, retries: 2, retryDelayMs: 60_000 }),
-      /Installed apps could not be reached/,
+      loadInstalledApps('owner-token', { deadlineMs: 5_000, retries: 2, retryDelayMs: 60_000 }),
+      /Installed apps could not be loaded \(503\)/,
     )
     await assert.rejects(
       fetchManifest('https://raw.example/apps/x/mobius.json', 'owner-token', {
-        deadlineMs: 30, retries: 2, retryDelayMs: 60_000,
+        deadlineMs: 5_000, retries: 2, retryDelayMs: 60_000,
       }),
-      /Manifest could not be reached/,
+      /Manifest fetch failed: 503/,
     )
+    await assert.rejects(
+      fetchCatalog('https://raw.example/catalog.json', 'owner-token', { deadlineMs: 5_000, retries: 2, retryDelayMs: 60_000 }),
+      /Catalog fetch failed: 503/,
+    )
+    assert.equal(await loadProviderStatus('owner-token', { deadlineMs: 5_000, retryDelayMs: 60_000 }), null)
   })
-  assert.equal(answered, 2, 'the deadline ended the first retry delay of each read')
-  assert.ok(Date.now() - started < 5_000)
+  assert.equal(answered, 4, 'no read waited for a retry it could not make')
+  assert.ok(Date.now() - started < 1_000)
+
+  // A retry that fits still happens.
+  let calls = 0
+  await withFetch(async () => (++calls === 1 ? new Response('busy', { status: 503 }) : jsonResponse([])), async () => {
+    assert.deepEqual(await loadInstalledApps('owner-token', { deadlineMs: 5_000, retryDelayMs: 1 }), [])
+  })
+  assert.equal(calls, 2)
 })
 
 test('a wait ends at once when its signal has already aborted, and early when it aborts', async () => {
@@ -227,6 +239,17 @@ test('a wait ends at once when its signal has already aborted, and early when it
   await waiting
   await sleep(1)
   assert.ok(Date.now() - started < 1_000)
+
+  // A wait that finishes removes its abort listener: one long-lived signal
+  // (a batch's watch) is shared by many waits.
+  const shared = new AbortController()
+  const added = [], removed = []
+  const { addEventListener, removeEventListener } = shared.signal
+  shared.signal.addEventListener = (type, listener, options) => { added.push(listener); addEventListener.call(shared.signal, type, listener, options) }
+  shared.signal.removeEventListener = (type, listener, options) => { removed.push(listener); removeEventListener.call(shared.signal, type, listener, options) }
+  for (let i = 0; i < 3; i++) await sleep(1, shared.signal)
+  assert.equal(added.length, 3)
+  assert.deepEqual(removed, added)
 })
 
 test('a response body that stalls past the deadline reads as unreachable', async () => {

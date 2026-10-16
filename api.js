@@ -428,7 +428,7 @@ export function openSystemSettings(section = 'ai-providers', onUnembedded) {
 export async function loadInstalledApps(token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 250
-  return await withReadDeadline(opts, async (signal) => {
+  return await withReadDeadline(opts, async ({ signal, wait }) => {
     let lastError = null
 
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -440,18 +440,14 @@ export async function loadInstalledApps(token, opts = {}) {
         })
       } catch (err) {
         lastError = err
-        if (!signal.aborted && attempt < retries && retryableFetchError(err)) {
-          await sleep(retryDelay(null, attempt, delayMs), signal)
-          continue
-        }
+        if (!signal.aborted && attempt < retries && retryableFetchError(err)
+          && await wait(retryDelay(null, attempt, delayMs))) continue
         throw new Error(transientFetchMessage('Installed apps'))
       }
 
       if (r.ok) return await jsonWithin(r, signal, 'Installed apps')
-      if (attempt < retries && retryableFetchStatus(r.status)) {
-        await sleep(retryDelay(r, attempt, delayMs), signal)
-        continue
-      }
+      if (attempt < retries && retryableFetchStatus(r.status)
+        && await wait(retryDelay(r, attempt, delayMs))) continue
       throw new Error(`Installed apps could not be loaded (${r.status}).`)
     }
 
@@ -516,7 +512,7 @@ export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') 
 export async function loadProviderStatus(token, opts = {}) {
   const retries = opts.retries ?? 1
   const delayMs = opts.retryDelayMs ?? 250
-  return await withReadDeadline(opts, async (signal) => {
+  return await withReadDeadline(opts, async ({ signal, wait }) => {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const r = await fetch('/api/auth/providers/status', {
@@ -528,7 +524,7 @@ export async function loadProviderStatus(token, opts = {}) {
       } catch (err) {
         if (signal.aborted || !retryableFetchError(err) || attempt === retries) return null
       }
-      await sleep(retryDelay(null, attempt, delayMs), signal)
+      if (!await wait(retryDelay(null, attempt, delayMs))) return null
     }
     return null
   })
@@ -579,24 +575,38 @@ function rateLimitMessage(url, res) {
 // never settles. Retries never extend it.
 export const READ_DEADLINE_MS = 8_000
 
+// `wait(ms)` is a retry delay inside the deadline. It answers false at once
+// when the delay would not end before the deadline, so the read reports its
+// last answer (a server status) rather than an unreachable server.
 async function withReadDeadline(opts, read) {
+  const deadlineMs = opts.deadlineMs ?? READ_DEADLINE_MS
+  const deadlineAt = Date.now() + deadlineMs
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), opts.deadlineMs ?? READ_DEADLINE_MS)
+  const timer = setTimeout(() => controller.abort(), deadlineMs)
+  const { signal } = controller
+  const wait = async ms => {
+    if (ms >= deadlineAt - Date.now()) return false
+    await sleep(ms, signal)
+    return !signal.aborted
+  }
   try {
-    return await read(controller.signal)
+    return await read({ signal, wait })
   } finally {
     clearTimeout(timer)
   }
 }
 
-// A wait that ends early, or never starts, once `signal` aborts. A retry
-// after an expired deadline then fails at once and reports the read as
-// unreachable.
+// A wait that ends early, or never starts, once `signal` aborts.
 export function sleep(ms, signal) {
   if (signal?.aborted) return Promise.resolve()
   return new Promise(resolve => {
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+    const done = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
   })
 }
 
@@ -616,7 +626,7 @@ export async function fetchManifest(url, token, opts = {}) {
   const manifestUrl = validateManifestUrl(url)
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
-  return await withReadDeadline(opts, async (signal) => {
+  return await withReadDeadline(opts, async ({ signal, wait }) => {
     let lastError = null
 
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -629,8 +639,8 @@ export async function fetchManifest(url, token, opts = {}) {
         })
       } catch (error) {
         lastError = new Error(transientFetchMessage('Manifest'))
-        if (signal.aborted || !retryableFetchError(error) || attempt === retries) break
-        await sleep(retryDelay(null, attempt, delayMs), signal)
+        if (signal.aborted || !retryableFetchError(error) || attempt === retries
+          || !await wait(retryDelay(null, attempt, delayMs))) break
         continue
       }
       if (r.ok) return await jsonWithin(r, signal, 'Manifest')
@@ -641,8 +651,8 @@ export async function fetchManifest(url, token, opts = {}) {
       }
 
       lastError = new Error(`Manifest fetch failed: ${r.status}`)
-      if (!retryableFetchStatus(r.status) || attempt === retries) break
-      await sleep(retryDelay(r, attempt, delayMs), signal)
+      if (!retryableFetchStatus(r.status) || attempt === retries
+        || !await wait(retryDelay(r, attempt, delayMs))) break
     }
 
     throw lastError || new Error('Manifest fetch failed')
@@ -662,7 +672,7 @@ export async function fetchManifest(url, token, opts = {}) {
 export async function fetchCatalog(url, token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
-  const body = await withReadDeadline(opts, async (signal) => {
+  const body = await withReadDeadline(opts, async ({ signal, wait }) => {
     let r
     let lastError = null
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -674,13 +684,12 @@ export async function fetchCatalog(url, token, opts = {}) {
         })
       } catch (error) {
         lastError = new Error(transientFetchMessage('Catalog'))
-        if (signal.aborted || !retryableFetchError(error) || attempt === retries) throw lastError
-        await sleep(retryDelay(null, attempt, delayMs), signal)
+        if (signal.aborted || !retryableFetchError(error) || attempt === retries
+          || !await wait(retryDelay(null, attempt, delayMs))) throw lastError
         continue
       }
       if (r.ok || !retryableFetchStatus(r.status) || attempt === retries) break
-      lastError = new Error(`Catalog fetch failed: ${r.status}`)
-      await sleep(retryDelay(r, attempt, delayMs), signal)
+      if (!await wait(retryDelay(r, attempt, delayMs))) break
     }
     if (!r) throw lastError || new Error('Catalog fetch failed')
     if (!r.ok) throw new Error(`Catalog fetch failed: ${r.status}`)
