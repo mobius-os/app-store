@@ -9,10 +9,17 @@ export const MICROPHONE = {
   limits: { max_duration_ms: 30_000 },
 }
 
-export function platformContract({ tools = [], skills = [], data = {}, runtime = {}, embedsAgent = false, network = [] } = {}) {
+export const ASSET_CACHE = {
+  version: 1, kind: 'session', title: 'Store large files on this device',
+  description: 'Download verified app assets into this browser’s private storage.',
+  risk: 'storage', lifecycle: 'active_frame', reason: null,
+  limits: { max_bytes: 256 * 1024 * 1024 },
+}
+
+export function platformContract({ tools = [], skills = [], data = {}, runtime = {}, embedsAgent = false, network = [], systemPrompt = null, background = null } = {}) {
   return {
     schema: 1,
-    agent: { system_prompt: null, skills, embeds_agent: embedsAgent, tools },
+    agent: { system_prompt: systemPrompt, skills, embeds_agent: embedsAgent, tools },
     data: {
       chat_logs: { requested: 'none', effective: 'none', redaction: 'none' },
       filesystem_api: false, shared_memory: 'none', cross_app_access: 'none', share_with_apps: 'none',
@@ -20,7 +27,7 @@ export function platformContract({ tools = [], skills = [], data = {}, runtime =
       connections_manage: false, connect_manage: false, identity_manage: false, railway_manage: false,
       ...data,
     },
-    background: null,
+    background,
     offline: { capable: false, contract: null },
     runtime,
     public: { network, storage: { read: false, write_prefix: null } },
@@ -70,4 +77,12 @@ export function platformPreview(installed, candidate) {
     capability_contract: candidate,
     capability_diff: platformDiff(installed, candidate),
   }
+}
+
+// The review invariant: every path the platform reports lies under a row the
+// review shows as changed, or is listed by path.
+export function hiddenPaths(preview, { rows, otherPaths }) {
+  const slices = rows.map(row => row.key.split(':')[0])
+  return preview.capability_diff.added.concat(preview.capability_diff.removed, preview.capability_diff.changed)
+    .filter(path => !otherPaths.includes(path) && !slices.some(slice => path === slice || path.startsWith(`${slice}.`)))
 }

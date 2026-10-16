@@ -69,6 +69,15 @@ function isActiveUnknownGrant(value) {
     && value !== 'none'
 }
 
+function limitValueText(key, value) {
+  if (!key.endsWith('_bytes') || !Number.isFinite(value)) return String(value)
+  const units = ['bytes', 'KiB', 'MiB', 'GiB']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1 }
+  return `${Math.round(size * 10) / 10} ${units[unit]}`
+}
+
 export function capabilityRows(contract) {
   if (!contract || typeof contract !== 'object') return []
   const agent = contract.agent || {}
@@ -127,8 +136,9 @@ export function capabilityRows(contract) {
   }
   for (const tool of Array.isArray(agent.tools) ? agent.tools : []) {
     if (!tool?.name) continue
-    // The whole declaration is compared, so a reworded or reshaped tool is a
-    // change even when its name stays.
+    // The whole declaration is compared, so a reshaped tool whose wording
+    // stays the same is still reported. The platform rejects repeated tool
+    // names, so the name keys the row.
     rows.push({
       ...row(
         `agent.tools:${tool.name}`, `Agent tool “${tool.name}”`, 'Agent tool',
@@ -162,16 +172,20 @@ export function capabilityRows(contract) {
     }
   }
   for (const [capability, declaration] of Object.entries(runtime).sort()) {
-    const limits = declaration?.limits || {}
-    const duration = Number(limits.max_duration_ms)
+    const { max_duration_ms: maxDuration, ...otherLimits } = declaration?.limits || {}
+    const duration = Number(maxDuration)
     const durationText = Number.isFinite(duration)
       ? ` for up to ${Math.round(duration / 100) / 10} seconds per request`
+      : ''
+    // Every other reviewed limit is listed too, so raising one is visible.
+    const limitsText = Object.keys(otherLimits).length
+      ? ` Limits: ${Object.entries(otherLimits).sort().map(([key, value]) => `${key} ${limitValueText(key, value)}`).join(', ')}.`
       : ''
     rows.push(row(
       `runtime.${capability}`,
       declaration?.title || capability,
       `v${declaration?.version || '?'}`,
-      `${declaration?.description || capability}${durationText}${
+      `${declaration?.description || capability}${durationText}${limitsText}${
         declaration?.reason ? ` Reason: ${declaration.reason}` : ''
       }`,
       declaration?.risk === 'device' ? 'write' : 'read',
@@ -185,36 +199,41 @@ export function changedCapabilityPaths(diff) {
   return [...(diff.added || []), ...(diff.removed || []), ...(diff.changed || [])]
 }
 
-// Paths under these keys are explained by capabilityRows. Their first segment
-// never contains a dot; runtime capability ids do, so they are never parsed.
-const ROW_PATH_PREFIXES = ['agent.system_prompt', 'agent.skills', 'agent.tools', 'data', 'background', 'runtime']
-
 const rowText = item => `${item.tag} · ${item.summary}`
 
+// The contract slice a row describes: agent tools share `agent.tools`; every
+// other row's key is its slice. Keys are never split, so dotted runtime ids
+// stay whole.
+const rowSlice = key => key.split(':')[0]
+const under = (path, slice) => path === slice || path.startsWith(`${slice}.`)
+
 // An update review pairs the installed contract's rows with the proposed
-// contract's by capability key: one row per capability, in the same words as
-// the full access list. Changes the rows do not describe stay listed by path
-// in `otherPaths`, so nothing the platform reports is hidden.
+// contract's by capability key: one Added, Removed or Changed row per
+// capability whose words differ, in the same words as the full access list.
+// A reported path counts as shown only when it lies under such a row and
+// under no row that changed without visibly changing (a reshaped tool).
+// Every other path stays in `otherPaths`, so the review hides nothing the
+// platform reports, even a change the wording cannot express.
 export function capabilityChanges(preview) {
   const diff = preview?.capability_diff
   if (diff?.unknown_previous !== false || !preview.installed_contract) return null
   const before = new Map(capabilityRows(preview.installed_contract).map(item => [item.key, item]))
   const after = new Map(capabilityRows(preview.capability_contract).map(item => [item.key, item]))
   const rows = []
+  const unseen = []
   for (const [key, next] of after) {
     const prior = before.get(key)
     if (!prior) rows.push({ kind: 'Added', key, label: next.label, proposed: rowText(next) })
-    else if (rowText(prior) !== rowText(next) || prior.compare !== next.compare) {
+    else if (rowText(prior) !== rowText(next)) {
       rows.push({ kind: 'Changed', key, label: next.label, previous: rowText(prior), proposed: rowText(next) })
-    }
+    } else if (prior.compare !== next.compare) unseen.push(rowSlice(key))
   }
   for (const [key, prior] of before) {
     if (!after.has(key)) rows.push({ kind: 'Removed', key, label: prior.label, previous: rowText(prior) })
   }
-  const paths = changedCapabilityPaths(diff)
-  const covered = path => ROW_PATH_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}.`))
-  const otherPaths = rows.length ? paths.filter(path => !covered(path)) : paths
-  return { rows, otherPaths }
+  const shown = rows.map(item => rowSlice(item.key))
+  const explained = path => shown.some(slice => under(path, slice)) && !unseen.some(slice => under(path, slice))
+  return { rows, otherPaths: changedCapabilityPaths(diff).filter(path => !explained(path)) }
 }
 
 function CapabilityRows({ contract }) {

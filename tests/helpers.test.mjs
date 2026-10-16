@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import test from 'node:test'
 import { hasConnectedProvider } from '../api.js'
-import { MICROPHONE, platformContract, platformPreview } from './capability-fixtures.mjs'
+import { ASSET_CACHE, MICROPHONE, hiddenPaths, platformContract, platformPreview } from './capability-fixtures.mjs'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(root, '.build')
@@ -1785,9 +1785,18 @@ test('an update review shows one row per changed capability, keyed by capability
   ])
   assert.deepEqual(otherPaths, [])
 
-  // A reshaped tool with the same wording is still a change.
-  const reshaped = capabilityChanges(platformPreview(installed, platformContract({ tools: [{ ...search, input_schema: { type: 'object', required: ['query'] } }] })))
-  assert.deepEqual(reshaped.rows.map(row => [row.kind, row.label]), [['Changed', 'Agent tool “search”']])
+  // A reshaped tool with the same wording has no new words to show: its path
+  // stays listed, even beside a tool whose wording did change.
+  const reshape = tool => ({ ...tool, input_schema: { type: 'object', required: ['query'] } })
+  const reshaped = capabilityChanges(platformPreview(installed, platformContract({ tools: [reshape(search)] })))
+  assert.deepEqual(reshaped, { rows: [], otherPaths: ['agent.tools'] })
+  const lookup = { name: 'lookup', description: 'Look up a note.', input_schema: { type: 'object' } }
+  const twoTools = capabilityChanges(platformPreview(
+    platformContract({ tools: [search, lookup] }),
+    platformContract({ tools: [reshape(search), { ...lookup, description: 'Look up a note or task.' }] }),
+  ))
+  assert.deepEqual(twoTools.rows.map(row => [row.kind, row.label]), [['Changed', 'Agent tool “lookup”']])
+  assert.deepEqual(twoTools.otherPaths, ['agent.tools'])
 
   const removed = capabilityChanges(platformPreview(candidate, installed))
   assert.deepEqual(removed.rows.map(row => [row.kind, row.label]), [
@@ -1805,6 +1814,62 @@ test('an update review shows one row per changed capability, keyed by capability
   // Without a recorded previous contract there is nothing to compare.
   assert.equal(capabilityChanges({ ...preview, capability_diff: { ...preview.capability_diff, unknown_previous: true } }), null)
   assert.equal(capabilityChanges({ ...preview, installed_contract: null }), null)
+})
+
+test('an update review never hides a reported access change behind another row', async () => {
+  const { capabilityChanges } = await bundle()
+  const GiB = 1024 * 1024 * 1024
+  const check = (installed, candidate) => {
+    const preview = platformPreview(installed, candidate)
+    const result = capabilityChanges(preview)
+    assert.deepEqual(hiddenPaths(preview, result), [], 'every reported path is shown or listed')
+    return result
+  }
+  const summary = result => [result.rows.map(row => [row.kind, row.label, row.previous, row.proposed]), result.otherPaths]
+
+  // The reviewed repro: a new skill, one more readable job secret and a
+  // larger asset cache. The cache limit is in the row's words.
+  const base = platformContract({ runtime: { 'device.asset-cache': ASSET_CACHE }, data: { job_secret_read: ['A'] } })
+  assert.deepEqual(summary(check(base, platformContract({
+    runtime: { 'device.asset-cache': { ...ASSET_CACHE, limits: { max_bytes: 2 * GiB } } },
+    data: { job_secret_read: ['A', 'B'] }, skills: ['x.md'],
+  }))), [[
+    ['Added', 'Bundled skills', undefined, '1 · Installs x.md while the app is active.'],
+    ['Changed', 'Store large files on this device',
+      'v1 · Download verified app assets into this browser’s private storage. Limits: max_bytes 256 MiB.',
+      'v1 · Download verified app assets into this browser’s private storage. Limits: max_bytes 2 GiB.'],
+  ], ['data.job_secret_read']])
+
+  // A limit-only change beside another row's change is shown, not dropped.
+  assert.deepEqual(summary(check(base, platformContract({
+    runtime: { 'device.asset-cache': { ...ASSET_CACHE, limits: { max_bytes: 2 * GiB } } },
+    data: { job_secret_read: ['A'], manage_apps: true },
+  })))[0].map(([kind, label]) => [kind, label]), [['Added', 'Installed apps'], ['Changed', 'Store large files on this device']])
+
+  // Changes the words cannot express stay listed by path.
+  const mic = platformContract({ runtime: { 'media.microphone.capture': MICROPHONE } })
+  assert.deepEqual(check(mic, platformContract({
+    runtime: { 'media.microphone.capture': { ...MICROPHONE, lifecycle: 'always', kind: 'invoke', risk: 'storage' } },
+    data: { manage_apps: true },
+  })).otherPaths, [
+    'runtime.media.microphone.capture.kind',
+    'runtime.media.microphone.capture.lifecycle',
+    'runtime.media.microphone.capture.risk',
+  ])
+  const prompt = { file: 'agent.md', scope: 'chats_started_while_installed', activation: 'chat_start' }
+  const job = { job: 'fetch.sh', mode: 'scheduled', cron: '0 4 * * *', user_configurable: false, initialize_on_install: false }
+  assert.deepEqual(check(
+    platformContract({ systemPrompt: prompt, background: job }),
+    platformContract({
+      systemPrompt: { ...prompt, scope: 'all_agent_chats', activation: 'next_turn' },
+      background: { ...job, job: 'sync.sh', user_configurable: true },
+      data: { manage_apps: true },
+    }),
+  ).otherPaths, [
+    // A closed (false) value is pruned, so turning it on is an addition.
+    'background.user_configurable',
+    'agent.system_prompt.activation', 'agent.system_prompt.scope', 'background.job',
+  ])
 })
 
 test('capability rows describe system prompt, redacted logs, and a server job generically', async () => {
