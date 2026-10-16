@@ -1,75 +1,92 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { X } from '@openai/apps-sdk-ui/components/Icon'
-import { capabilityDiffNeedsReview, updateEntryConfirmable, updateEntryNeedsResolution } from '../domain.js'
+import { capabilityDiffNeedsReview } from '../domain.js'
+import { batchProgress, failedEntryActions, updateBatchBusy } from '../update-batch.js'
 import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
 import FileDiffList from './diff/FileDiffList.jsx'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
-function ReviewEntry({ review, busy, onRetry, onResolve }) {
-  const preview = review.preview || {}
+const appName = entry => entry.item?.manifest?.name || entry.item?.name || String(entry.item?.id ?? '')
+
+const STATUS = {
+  checking: ['Checking…', 'ready'],
+  queued: ['Queued', 'ready'],
+  applying: ['Updating…', 'ready'],
+  updated: ['Updated', 'success'],
+  conflict: ['Local edits need review', 'attention'],
+  failed: ['Could not update', 'error'],
+}
+
+function ReviewEntry({ entry, locked, onRetry, onAskAgent, onResolveOne, onOpenChat }) {
+  const preview = entry.prepared?.preview || {}
   const files = useMemo(
-    () => parseUnifiedDiff(typeof preview.upstream_diff === 'string' ? preview.upstream_diff : ''),
-    [preview.upstream_diff],
+    () => parseUnifiedDiff(entry.status === 'ready' && typeof preview.upstream_diff === 'string' ? preview.upstream_diff : ''),
+    [entry.status, preview.upstream_diff],
   )
   const added = files.filter(file => file.status === 'A' || file.status === 'C').length
   const removed = files.filter(file => file.status === 'D').length
   const changed = files.length - added - removed
-  const needsResolution = updateEntryNeedsResolution(review)
-  // A conflict-blocked entry has no capability review to retry; resolving it
-  // in chat comes first.
-  const capabilitiesChanged = !needsResolution && capabilityDiffNeedsReview(
-    review.capabilityReview?.preview?.capability_diff,
+  const capabilitiesChanged = entry.status === 'ready' && capabilityDiffNeedsReview(
+    entry.prepared?.capabilityReview?.preview?.capability_diff,
   )
-  const name = review.item.manifest?.name || review.item.id
-  const version = preview.upstream_version || review.item.manifest?.version || 'latest'
-  const conflict = review.outcome?.conflict || needsResolution
-  const updated = review.outcome?.ok === true
-  const error = updated ? '' : review.previewError || review.outcome?.resolverError || review.outcome?.error ||
-    (review.outcome && !conflict ? 'This update could not be completed.' : '')
-  const ready = updateEntryConfirmable(review)
-  const resolving = review.outcome?.conflict && !review.outcome?.resolverError
-  const status = updated ? 'Updated'
-    : conflict ? 'Local edits need review'
-      : error || !ready ? 'Could not update'
-        : capabilitiesChanged ? 'Access review required'
-          : 'Ready to update'
-  const tone = updated ? 'success' : conflict ? 'attention' : error || !ready ? 'error' : 'ready'
+  const version = preview.upstream_version || entry.version || entry.item?.manifest?.version || 'latest'
+  const [label, tone] = entry.status === 'ready'
+    ? [capabilitiesChanged ? 'Access review required' : 'Ready to update', 'ready']
+    : STATUS[entry.status] || STATUS.failed
+  const actions = failedEntryActions(entry)
   const changes = [
     added ? `${added} added` : '',
     changed ? `${changed} changed` : '',
     removed ? `${removed} removed` : '',
   ].filter(Boolean).join(' · ')
+  const appId = entry.prepared?.installedApp?.id
 
   return (
-    <section className="st-update-review-section">
+    <section className="st-update-review-section" data-status={entry.status}>
       <div className="st-update-review-section-head">
-        <div><h3>{name}</h3><span className="st-update-version">Version {version}</span></div>
-        <span className={`st-update-status is-${tone}`}>{status}</span>
+        <div><h3>{appName(entry)}</h3><span className="st-update-version">Version {version}</span></div>
+        <span className={`st-update-status is-${tone}`}>{label}</span>
       </div>
-      {updated ? (
+      {entry.status === 'updated' ? (
         <div className="st-update-review-notice is-success" role="status">
           This app was updated. No further action is needed.
         </div>
-      ) : error || conflict || !ready ? (
+      ) : entry.status === 'checking' || entry.status === 'queued' || entry.status === 'applying' ? (
+        <div className="st-update-review-notice" role="status">
+          {entry.status === 'checking' ? 'Checking the release and its access. Nothing changes yet.'
+            : entry.status === 'queued' ? 'Waiting for a free update slot. The server runs two updates at a time.'
+              : 'Applying this update on the server.'}
+        </div>
+      ) : entry.status === 'conflict' ? (
         <div className="st-update-review-notice is-error" role="alert">
-          <div className="st-update-review-error-text">
-            {error || (conflict ? 'Your local edits overlap this update.' : 'This update could not be verified.')}
-          </div>
+          <div className="st-update-review-error-text">{entry.error || 'Your local edits overlap this update.'}</div>
           <p>
-            {needsResolution
-              ? 'Your current app stays live and is not included in the confirmed updates.'
-              : resolving
-                ? 'An agent is reviewing the overlap. Your current app stays live.'
-                : conflict
-                  ? 'Resolve the local edits before updating. Your current app stays live.'
-                  : 'Your current app stays unchanged. Recheck the update before trying again.'}
+            {entry.resolver
+              ? 'An agent is reconciling your edits with the update. Your current app stays live.'
+              : 'Your current app stays live. An agent can reconcile the update while keeping your edits.'}
           </p>
-          {needsResolution ? (
-            onResolve ? (
-              <button type="button" className="st-btn st-btn-secondary" onClick={() => onResolve(review)} disabled={busy}>Resolve in chat</button>
-            ) : null
-          ) : onRetry && !resolving ? (
-            <button type="button" className="st-btn st-btn-secondary" onClick={() => onRetry(review.item)} disabled={busy}>Try again</button>
+          {entry.resolver?.chat_id ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={() => onOpenChat?.(entry.resolver.chat_id)}>Open resolver chat</button>
+          ) : appId != null && onResolveOne ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={() => onResolveOne(appId)} disabled={locked}>Resolve in chat</button>
+          ) : null}
+        </div>
+      ) : entry.status === 'failed' ? (
+        <div className="st-update-review-notice is-error" role="alert">
+          <div className="st-update-review-error-text">{entry.error || 'This update could not be completed.'}</div>
+          <p>
+            {actions.retry
+              ? 'Your current app stays unchanged. Trying again checks the release before anything is applied.'
+              : 'Your current app stays unchanged. Trying the same update again would fail the same way.'}
+          </p>
+          {actions.retry && entry.item?.manifest_url && onRetry ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={() => onRetry(entry.item.id)} disabled={locked}>Try again</button>
+          ) : null}
+          {actions.retry && !entry.item?.manifest_url ? (
+            <p>Find this app in Library to check its release again.</p>
+          ) : null}
+          {actions.askAgent && onAskAgent ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={() => onAskAgent([entry])} disabled={locked}>Ask agent</button>
           ) : null}
         </div>
       ) : (
@@ -85,38 +102,60 @@ function ReviewEntry({ review, busy, onRetry, onResolve }) {
           </p>
         </div>
       )}
-      {!updated && files.length > 0 ? (
+      {entry.warnings?.length ? (
+        <ul className="st-update-review-warnings" aria-label={`${appName(entry)} update notes`}>
+          {entry.warnings.map((warning, index) => (
+            <li key={index}>{typeof warning === 'string' ? warning : warning?.message || String(warning)}</li>
+          ))}
+        </ul>
+      ) : null}
+      {files.length > 0 ? (
         <details className="st-update-technical">
           <summary>Technical details <span>{files.length} {files.length === 1 ? 'file' : 'files'}</span></summary>
           <FileDiffList files={files} />
         </details>
       ) : null}
-      {!updated && capabilitiesChanged ? (
+      {capabilitiesChanged ? (
         <div>
-          <h3>{review.capabilityReview?.preview?.capability_diff?.unknown_previous ? 'Access review' : 'Access changes'}</h3>
-          <CapabilityContract review={review.capabilityReview} isInstalled />
+          <h3>{entry.prepared.capabilityReview.preview.capability_diff?.unknown_previous ? 'Access review' : 'Access changes'}</h3>
+          <CapabilityContract review={entry.prepared.capabilityReview} isInstalled />
         </div>
       ) : null}
     </section>
   )
 }
 
-export function UpdateReviewModal({ review, applying = false, preparing = false, agentReviewing = false, onClose, onApply, onRetry, onResolve, onReviewWithAgent }) {
+// The review, its confirmation and the server batch's live progress share one
+// dialog. Closing it never cancels server work; reopening shows the progress.
+export function UpdateReviewModal({ review, agentReviewing = false, onClose, onConfirm, onRetry, onResolveAll, onResolveOne, onOpenChat, onAskAgent, onOpenBatch }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(null)
   const openerRef = useRef(null)
-  const entries = review.entries || [review]
-  const verified = entries.filter(updateEntryConfirmable)
-  const complete = entries.some(entry => entry.outcome)
-  const updatedCount = entries.filter(entry => entry.outcome?.ok).length
-  const attentionCount = entries.filter(entry => !entry.outcome?.ok && !updateEntryConfirmable(entry)).length
-  const allUpdated = updatedCount === entries.length
-  const busy = applying || preparing || agentReviewing
-  const hasFailure = entries.some(entry => entry.previewError || entry.outcome?.error || entry.outcome?.resolverError)
+  const { entries = [], phase = 'review', error = '' } = review
+  const ready = entries.filter(entry => entry.status === 'ready')
+  const updatedCount = entries.filter(entry => entry.status === 'updated').length
+  const attentionCount = entries.filter(entry => entry.status === 'conflict' || entry.status === 'failed').length
+  const unresolved = entries.filter(entry => entry.status === 'conflict' && !entry.resolver)
+  const progress = batchProgress(entries)
+  const applying = updateBatchBusy(review)
+  const checking = phase === 'checking'
+  const locked = applying || checking || phase === 'resolving' || agentReviewing
+  const hasResults = Boolean(review.batchId) || updatedCount > 0
+  const title = checking ? 'Checking for updates'
+    : phase === 'resolving' ? 'Starting resolver chat'
+      : applying ? 'Updating apps'
+        : hasResults ? 'Update results'
+          : entries.length === 1 ? 'Review update' : 'Review app updates'
+  const subtitle = checking ? 'Comparing each release’s source and access. Checking changes nothing.'
+    : phase === 'submitting' ? 'Starting the confirmed updates…'
+      : applying ? `${progress.finished} of ${progress.total} finished · ${progress.active} in progress. You can close this window; updates continue on the server.`
+        : phase === 'resolving' ? 'Opening a resolver chat for the selected apps…'
+          : hasResults ? `${updatedCount} updated · ${attentionCount} need attention${ready.length ? ` · ${ready.length} ready to confirm` : ''}.`
+            : ready.length ? `Review what changed, then confirm ${ready.length === 1 ? 'this update' : `${ready.length} updates`}. Local edits stay protected; overlapping edits wait for you to resolve them.`
+              : unresolved.length && unresolved.length === entries.length ? 'Local changes must be reconciled before updating. Nothing will change.'
+                : 'No updates are ready to confirm. Your current apps stay unchanged.'
 
-  const requestClose = useCallback(() => {
-    if (!busy) onClose()
-  }, [busy, onClose])
+  const requestClose = useCallback(() => { onClose() }, [onClose])
 
   useEffect(() => {
     openerRef.current = document.activeElement
@@ -148,34 +187,42 @@ export function UpdateReviewModal({ review, applying = false, preparing = false,
       <div ref={dialogRef} className="st-update-review" role="dialog" tabIndex={-1} aria-modal="true" aria-labelledby="st-update-review-title" onClick={event => event.stopPropagation()}>
         <div className="st-update-review-head">
           <div>
-            <h2 id="st-update-review-title" className="st-update-review-title">{complete ? 'Update results' : entries.length === 1 ? 'Review update' : 'Review app updates'}</h2>
-            <p className="st-update-review-subtitle">
-              {complete
-                ? `${updatedCount} updated · ${attentionCount} need attention${verified.length ? ` · ${verified.length} ready to confirm` : ''}. Completed apps will not be updated again.`
-                : verified.length
-                  ? `Review what changed, then confirm ${verified.length === 1 ? 'this update' : `${verified.length} updates`}. Local edits stay protected; overlapping edits go to an agent for review.`
-                  : entries.every(updateEntryNeedsResolution)
-                    ? 'Local changes must be reconciled before updating. Nothing will change.'
-                    : 'No updates are ready to confirm. Your current apps stay unchanged.'}
-            </p>
+            <h2 id="st-update-review-title" className="st-update-review-title">{title}</h2>
+            <p className="st-update-review-subtitle" role="status" aria-live="polite">{subtitle}</p>
           </div>
-          <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} disabled={busy} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
+          <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
         </div>
 
         <div className="st-update-review-body">
-          {entries.map(entry => <ReviewEntry key={entry.item.id} review={entry} busy={busy} onRetry={onRetry} onResolve={onResolve} />)}
+          {error ? (
+            <div className="st-update-review-notice is-error" role="alert">
+              <div className="st-update-review-error-text">{error}</div>
+              {review.runningBatchId && onOpenBatch ? (
+                <button type="button" className="st-btn st-btn-secondary" onClick={() => onOpenBatch(review.runningBatchId)}>View progress</button>
+              ) : null}
+            </div>
+          ) : null}
+          {entries.map(entry => (
+            <ReviewEntry key={entry.item.id} entry={entry} locked={locked}
+              onRetry={onRetry} onAskAgent={onAskAgent} onResolveOne={onResolveOne} onOpenChat={onOpenChat} />
+          ))}
         </div>
 
         <div className="st-update-review-actions">
-          <button type="button" className="st-btn st-btn-ghost" onClick={requestClose} disabled={busy}>{complete ? 'Done' : 'Not now'}</button>
-          {onReviewWithAgent && !allUpdated ? (
-            <button type="button" className="st-btn st-btn-secondary" onClick={onReviewWithAgent} disabled={busy}>
-              {agentReviewing ? 'Opening agent…' : hasFailure ? 'Ask agent about error' : 'Review with agent'}
+          <button type="button" className="st-btn st-btn-ghost" onClick={requestClose}>
+            {checking ? 'Cancel' : applying ? 'Continue in background' : hasResults ? 'Done' : 'Not now'}
+          </button>
+          {unresolved.length > 1 && onResolveAll ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={onResolveAll} disabled={locked}>Resolve all · {unresolved.length}</button>
+          ) : null}
+          {ready.length && onAskAgent ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={() => onAskAgent(ready)} disabled={locked}>
+              {agentReviewing ? 'Opening agent…' : 'Review with agent'}
             </button>
           ) : null}
-          {verified.length ? (
-            <button type="button" className="st-btn st-btn-primary" onClick={onApply} disabled={busy}>
-              {preparing ? 'Checking…' : applying ? 'Updating…' : entries.length === 1 ? 'Confirm update' : `Confirm & update · ${verified.length}`}
+          {ready.length || phase === 'submitting' ? (
+            <button type="button" className="st-btn st-btn-primary" onClick={onConfirm} disabled={locked}>
+              {phase === 'submitting' ? 'Starting…' : entries.length === 1 ? 'Confirm update' : `Confirm & update · ${ready.length}`}
             </button>
           ) : null}
         </div>

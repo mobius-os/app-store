@@ -2,7 +2,7 @@
   "id": "store",
   "package_id": "urn:uuid:cbcc33c4-6ff4-4bab-abe7-b9d9363ab72b",
   "name": "App Store",
-  "version": "1.21.4",
+  "version": "1.22.0",
   "description": "Discover, install, and update Möbius apps.",
   "author": "mobius-os",
   "license": "MIT",
@@ -67,6 +67,7 @@
     "catalog-freshness.js",
     "store-navigation.js",
     "store-location.js",
+    "update-batch.js",
     "ui/PublishCheck.jsx",
     "ui/PublishedApps.jsx"
   ],

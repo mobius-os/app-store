@@ -51,6 +51,7 @@ async function mount(fetchApps, { catalog = [], hidden = false } = {}) {
   Object.defineProperty(dom.window.document, 'visibilityState', { value: 'hidden', configurable: true })
   const signals = []
   const manifests = []
+  const batchSnapshots = new Map()
   dom.window.mobius = { signal(name, data) { signals.push({ name, data }) } }
   dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   dom.window.HTMLElement.prototype.scrollIntoView = () => {}
@@ -60,7 +61,29 @@ async function mount(fetchApps, { catalog = [], hidden = false } = {}) {
     IS_REACT_ACT_ENVIRONMENT: true,
     fetch: async (url, options = {}) => {
       const path = String(url)
-      if (path === '/api/apps/' || path === '/api/apps/install' || (/^\/api\/apps\/\d+\/update-candidate-preview/.test(path) && !path.startsWith('/api/apps/999/'))
+      // The server batch owner, played by this fixture: it applies each
+      // reviewed update through the same install fixture and reports the
+      // finished batch. The browser itself never calls /install for updates.
+      if (path === '/api/apps/update-batches' && options.method !== 'POST') return json({ batches: [...batchSnapshots.values()].reverse() })
+      if (path === '/api/apps/update-batches' && options.method === 'POST') {
+        const payload = JSON.parse(options.body)
+        const entries = await Promise.all(payload.updates.map(async update => {
+          const res = await fetchApps('/api/apps/install', { body: JSON.stringify({ update_app_id: update.app_id }) })
+          const result = await res.json()
+          return { app_id: update.app_id, name: update.app_id === 11 ? 'Voice' : 'Maps',
+            status: !res.ok ? 'failed' : result.mode === 'conflict' ? 'conflict' : 'updated',
+            error: !res.ok ? result.detail || 'Update failed' : '', error_code: null, retryable: false,
+            warnings: [], version: result.version || null, resolver_chat_id: null }
+        }))
+        const snapshot = { id: payload.id, phase: 'complete', entries }
+        batchSnapshots.set(payload.id, snapshot)
+        return json(snapshot)
+      }
+      if (path.startsWith('/api/apps/update-batches/')) {
+        const snapshot = batchSnapshots.get(path.split('/')[4])
+        return json(snapshot || {}, snapshot ? 200 : 404)
+      }
+      if (path === '/api/apps/' || path === '/api/apps/install' || path === '/api/apps/conflict-resolver-batch' || (/^\/api\/apps\/\d+\/update-candidate-preview/.test(path) && !path.startsWith('/api/apps/999/'))
         || (/^\/api\/apps\/\d+\/update-check/.test(path) && !path.startsWith('/api/apps/999/'))) return fetchApps(path, options)
       if (path.startsWith('/api/proxy?')) {
         const remote = decodeURIComponent(path.split('url=')[1] || '')
@@ -462,8 +485,8 @@ test('a successful Store update with an interleaved completion read has no false
     await view.message()
     await act(async () => releaseRead())
     assert.equal(view.voiceAction(), 'Open Voice')
-    assert.match(view.dom.window.document.querySelector('.st-toast-msg')?.textContent || '', /1 app was updated/)
-    assert.doesNotMatch(view.dom.window.document.querySelector('.st-toast-msg')?.textContent || '', /could not be refreshed/)
+    assert.match(view.dom.window.document.querySelector('.st-update-review')?.textContent || '', /1 updated/)
+    assert.doesNotMatch(view.dom.window.document.querySelector('.st-update-review')?.textContent || '', /could not be refreshed/)
   } finally { await act(async () => releaseRead?.()); await view.close() }
 })
 
@@ -521,7 +544,7 @@ test('due foreground checks reuse the in-flight full round while events replace 
   } finally { Date.now = now; await act(async () => releases.forEach(release => release())); await view?.close() }
 })
 
-test('a local install stamp does not discard an authoritative installed read in flight', async () => {
+test('an authoritative installed read in flight survives a server batch submission', async () => {
   const mapsUrl = 'https://raw.githubusercontent.com/mobius-os/app-maps/main/mobius.json'
   const rows = [...installed(), { id: 12, slug: 'maps', name: 'Maps', manifest_url: mapsUrl, source_manifest: { id: 'maps', url: mapsUrl } }]
   let holdRead = false
@@ -550,9 +573,9 @@ test('a local install stamp does not discard an authoritative installed read in 
     assert.ok(updateAll)
     await act(async () => updateAll.click())
     await act(async () => view.dom.window.document.querySelector('.st-update-review-actions button.st-btn-primary').click())
-    assert.ok(releaseInstall, 'first install completed; the batch is waiting on its sibling')
+    assert.ok(releaseInstall, 'the server fixture finished one app and waits on its sibling')
     await act(async () => releaseRead())
-    assert.equal(Boolean(view.dom.window.document.querySelector('button[aria-label$=" Maps"]')), false, 'the installed read is applied despite the intervening local install stamp')
+    assert.equal(Boolean(view.dom.window.document.querySelector('button[aria-label$=" Maps"]')), false, 'the installed read is applied while the batch is still running')
     await act(async () => releaseInstall())
   } finally { await act(async () => { releaseRead?.(); releaseInstall?.() }); await view.close() }
 })
@@ -567,6 +590,41 @@ test('a genuinely failed latest installed read still reports the refresh failure
   })
   try {
     await confirmVoiceUpdate(view)
-    assert.match(view.dom.window.document.querySelector('.st-toast-msg')?.textContent || '', /1 app was updated. The app list could not be refreshed yet/)
+    assert.match(view.dom.window.document.querySelector('.st-update-review')?.textContent || '', /1 updated[\s\S]*app list could not be refreshed/)
+  } finally { await view.close() }
+})
+
+test('a batch conflict waits for an explicit Resolve and settles when its resolver finishes', async () => {
+  let conflict = false
+  let resolved = false
+  let resolvers = 0
+  const view = await mount(async path => {
+    if (path === '/api/apps/') return json(installed(resolved ? '2.0.0' : '1.0.0'))
+    if (path.includes('/update-candidate-preview')) return preview(11)
+    if (path === '/api/apps/install') {
+      conflict = true
+      return json({ id: 11, mode: 'conflict', upstream_version: '2.0.0' })
+    }
+    if (path === '/api/apps/conflict-resolver-batch') {
+      resolvers++
+      return json({ chat_id: 'resolver', started: true })
+    }
+    return json({ update_available: !resolved, pending_update_state: conflict && !resolved ? 'needs_resolution' : 'none' })
+  })
+  try {
+    await confirmVoiceUpdate(view)
+    assert.equal(resolvers, 0, 'confirming updates never starts an agent')
+    const modal = () => view.dom.window.document.querySelector('.st-update-review')
+    assert.match(modal()?.textContent || '', /Local edits need review/)
+    assert.equal(view.voiceAction(), 'Resolve in chat Voice', 'the card shows the conflict the batch reported')
+    const resolve = [...modal().querySelectorAll('.st-update-review-section button')].find(button => button.textContent === 'Resolve in chat')
+    await act(async () => resolve.click())
+    assert.equal(resolvers, 1, 'the explicit Resolve starts the agent')
+    assert.match(modal().textContent, /Open resolver chat/)
+    resolved = true
+    await view.message()
+    assert.match(modal().textContent, /1 updated · 0 need attention/)
+    assert.equal(view.voiceAction(), 'Open Voice')
+    assert.equal(resolvers, 1, 'completion never relaunches a resolver or an install')
   } finally { await view.close() }
 })

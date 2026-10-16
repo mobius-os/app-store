@@ -18,7 +18,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, onRetryError = null, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
   const m = item.manifest
 
   if (!m) {
@@ -106,7 +106,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   // Routine lifecycle state is already carried by the one action and the
   // installed badge. Keep text only when it tells the owner about an actual
   // problem that the icon alone cannot explain.
-  const showLifecycleStatus = ['unavailable', 'conflict', 'unverified'].includes(lifecycle.key)
+  const showLifecycleStatus = ['unavailable', 'conflict', 'rejected', 'unverified'].includes(lifecycle.key)
   const onCardAction = () => {
     if (cardActionDisabled) return
     if (lifecycle.actionKind === 'open') {
@@ -178,6 +178,9 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
             {lifecycle.statusLabel}
           </div>
         ) : null}
+        {lifecycle.statusDetail ? (
+          <div className="st-card-state-detail">{lifecycle.statusDetail}</div>
+        ) : null}
         {lifecycle.setupNeedsAttention ? <span className="st-card-state-line">Setup needed</span> : null}
         {m.embeds_agent ? (
           <span className="st-card-agent" title="This app includes an in-app agent">Agent</span>
@@ -240,7 +243,17 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       ) : error ? (
         <div className="st-card-inline-error" role="alert">
           <div className="st-card-inline-error-text">{error}</div>
-          {onAskAgentError ? (
+          {onRetryError ? (
+            // A transient failure: the same action may succeed now.
+            <button
+              type="button"
+              className="st-btn st-btn-secondary st-card-inline-error-action"
+              onClick={onRetryError}
+              disabled={busy || blocked}
+            >
+              Try again
+            </button>
+          ) : onAskAgentError ? (
             <button
               type="button"
               className="st-btn st-btn-secondary st-card-inline-error-action"

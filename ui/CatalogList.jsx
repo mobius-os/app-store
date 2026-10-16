@@ -60,9 +60,12 @@ export function CatalogList({
   onRetryInstalled,
   busy,
   busyItemId,
+  // Apps a server update batch is applying right now.
+  updatingItemIds = [],
   busyActionKind,
   checkingUpdateItemId = null,
   errors,
+  errorRetries,
   onAskAgentError,
   agentErrorItemId = null,
   updateNotice,
@@ -164,13 +167,15 @@ export function CatalogList({
       onRateApp={onRateApp}
       pickOpensApp={pickOpensApp}
       onRetryInstalled={onRetryInstalled}
-      busy={busyItemId === item.id || checkingUpdateItemId === item.id}
+      busy={busyItemId === item.id || checkingUpdateItemId === item.id || updatingItemIds.includes(item.id)}
       busyActionKind={busyItemId === item.id
         ? busyActionKind
-        : checkingUpdateItemId === item.id ? 'checking_update' : null}
+        : checkingUpdateItemId === item.id ? 'checking_update'
+          : updatingItemIds.includes(item.id) ? 'update' : null}
       blocked={(busy && busyItemId !== item.id) ||
         (checkingUpdateItemId !== null && checkingUpdateItemId !== item.id)}
       error={errors?.[item.id]}
+      onRetryError={errorRetries?.[item.id] || null}
       onAskAgentError={onAskAgentError}
       askingAgentAboutError={agentErrorItemId === item.id}
       updateNotice={updateNotice?.itemId === item.id ? updateNotice : null}

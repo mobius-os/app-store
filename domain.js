@@ -604,27 +604,6 @@ export function capabilityDiffNeedsReview(diff) {
   )
 }
 
-// A reviewed update the owner can confirm: verified source, not yet attempted,
-// and not blocked while previewing (for example by an unresolved conflict).
-// The review modal's count and the install loop share this one rule.
-export function updateEntryConfirmable(entry) {
-  return Boolean(entry?.preview?.source_digest && !entry.outcome && !entry.previewError)
-}
-
-// An unresolved merge conflict blocks installing a candidate: installing would
-// only reopen the resolver. A replay_pending update installs normally.
-export function updatePreviewBlocker(candidate) {
-  return candidate?.pending_update_state === 'needs_resolution'
-    ? 'This update has an unresolved merge conflict. Use "Resolve in chat" to fix it before applying.'
-    : ''
-}
-
-// A conflict-blocked entry is resolved in chat, never retried: checking the
-// same candidate again only meets the same conflict.
-export function updateEntryNeedsResolution(entry) {
-  return Boolean(updatePreviewBlocker(entry?.preview))
-}
-
 // "Update all" applies every exact, non-widening candidate immediately.
 // Anything that widens access or cannot be verified stays on the individual
 // review path rather than being silently approved by the batch action.
@@ -675,6 +654,12 @@ export function appLifecycleFor(item, {
     updateCheck &&
     gitUpdate === null
   )
+  // The platform fetched a candidate but would not apply it to this app (a
+  // moved repository, or a package that is not this app). Say why rather
+  // than show a silent Open.
+  const candidateRejected = sourceCheckUnavailable && updateCheck.candidateRejected?.message
+    ? updateCheck.candidateRejected
+    : null
   const conflict = pendingUpdateState === 'needs_resolution' || (
     !pendingUpdateState &&
     updateNotice?.kind === 'conflict' && updateNotice?.itemId === item?.id
@@ -735,6 +720,24 @@ export function appLifecycleFor(item, {
       installedVersion,
       hasUpdate,
       pendingUpdateState,
+      setupRequired,
+      setupNeedsAttention,
+    }
+  }
+
+  if (installedApp && candidateRejected) {
+    return {
+      key: 'rejected',
+      statusLabel: candidateRejected.code === 'repository_moved' ? 'Repository moved' : 'Update not offered',
+      statusDetail: candidateRejected.message,
+      candidateRejected,
+      actionLabel: 'Open',
+      actionKind: 'open',
+      cardVariant: 'installed',
+      installedApp,
+      installedVersion,
+      hasUpdate,
+      sourceCheckUnavailable,
       setupRequired,
       setupNeedsAttention,
     }
@@ -1449,7 +1452,7 @@ export function libraryCollections(items, lifecycleById) {
   for (const item of items) {
     const state = lifecycleById.get(item.id)
     if (!state?.installedApp) continue
-    const attention = state.setupNeedsAttention || ['conflict', 'unverified', 'unavailable'].includes(state.key)
+    const attention = state.setupNeedsAttention || ['conflict', 'rejected', 'unverified', 'unavailable'].includes(state.key)
     buckets[attention ? 0 : state.key === 'update' ? 1 : 2].items.push(item)
   }
   for (const group of buckets) group.items.sort((a,b) => (a.manifest?.name || a.name || a.id).localeCompare(b.manifest?.name || b.name || b.id))
