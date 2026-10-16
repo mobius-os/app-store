@@ -1178,6 +1178,7 @@ export const CSS = `
   margin-top: 5px; color: var(--text); font-size: 13px; line-height: 1.4;
 }
 .st-capability-diff-arrow { color: var(--muted); }
+.st-capability-diff-before { color: var(--muted); }
 .st-capability-full-access {
   margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
 }

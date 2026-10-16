@@ -1,5 +1,7 @@
-function row(label, tag, summary, tone = '') {
-  return { label, tag, summary, tone }
+// `key` names one capability stably across contract versions, so an update
+// review can pair the installed row with the proposed one.
+function row(key, label, tag, summary, tone = '') {
+  return { key, label, tag, summary, tone }
 }
 
 function accessText(level, subject) {
@@ -77,27 +79,27 @@ export function capabilityRows(contract) {
   const logs = data.chat_logs || {}
   const rows = []
   if (prompt) rows.push(row(
-    'Agent chats', 'All chats',
+    'agent.system_prompt', 'Agent chats', 'All chats',
     `Adds system instructions to every agent chat on its next turn (${prompt.file}).`,
     'write',
   ))
-  if (logs.effective === 'summary') rows.push(row(
-    'Chat history', 'Redacted',
-    'Can request structurally redacted chat text; tool calls, hidden reasoning, errors, and secret-like values are removed.',
+  if (logs.effective === 'summary' || logs.effective === 'summary_with_deleted') rows.push(row(
+    'data.chat_logs', 'Chat history', 'Redacted',
+    `Can request structurally redacted chat text${logs.effective === 'summary_with_deleted' ? ', including recoverable deleted chats' : ''}; tool calls, hidden reasoning, errors, and secret-like values are removed.`,
     'read',
   ))
   if (data.shared_memory === 'read' || data.shared_memory === 'write') rows.push(row(
-    'Shared memory', data.shared_memory === 'write' ? 'Read + write' : 'Read',
+    'data.shared_memory', 'Shared memory', data.shared_memory === 'write' ? 'Read + write' : 'Read',
     accessText(data.shared_memory, 'the shared memory area'),
     data.shared_memory,
   ))
   if (data.cross_app_access === 'read' || data.cross_app_access === 'write') rows.push(row(
-    'Other apps’ data', data.cross_app_access === 'write' ? 'Read + write' : 'Read',
+    'data.cross_app_access', 'Other apps’ data', data.cross_app_access === 'write' ? 'Read + write' : 'Read',
     accessText(data.cross_app_access, 'other apps’ private data'),
     data.cross_app_access,
   ))
   if (data.share_with_apps === 'read' || data.share_with_apps === 'write') rows.push(row(
-    'Shares its data', data.share_with_apps === 'write' ? 'Read + write' : 'Read',
+    'data.share_with_apps', 'Shares its data', data.share_with_apps === 'write' ? 'Read + write' : 'Read',
     data.share_with_apps === 'write'
       ? 'Allows authorized apps to read and change this app’s private data.'
       : 'Allows authorized apps to read this app’s private data.',
@@ -111,21 +113,34 @@ export function capabilityRows(contract) {
       ? ' and starts an initialization run immediately after install'
       : ''
     rows.push(row(
-      'Background work', 'Server job',
+      'background', 'Background work', 'Server job',
       `${timing}${init}. It runs as reviewed owner-installed code with Möbius process access and receives a short-lived app token for API calls.`,
       'write',
     ))
   }
   if (Array.isArray(agent.skills) && agent.skills.length) {
     rows.push(row(
-      'Agent skills', String(agent.skills.length),
+      'agent.skills', 'Bundled skills', String(agent.skills.length),
       `Installs ${agent.skills.join(', ')} while the app is active.`,
       'read',
     ))
   }
+  for (const tool of Array.isArray(agent.tools) ? agent.tools : []) {
+    if (!tool?.name) continue
+    // The whole declaration is compared, so a reworded or reshaped tool is a
+    // change even when its name stays.
+    rows.push({
+      ...row(
+        `agent.tools:${tool.name}`, `Agent tool “${tool.name}”`, 'Agent tool',
+        tool.description || 'Agents can call this app.', 'read',
+      ),
+      compare: JSON.stringify(tool),
+    })
+  }
   for (const capability of BOOLEAN_DATA_CAPABILITIES) {
     if (data[capability.key]) {
       rows.push(row(
+        `data.${capability.key}`,
         capability.label,
         capability.tag,
         capability.summary,
@@ -138,6 +153,7 @@ export function capabilityRows(contract) {
   for (const [key, value] of Object.entries(data).sort()) {
     if (!DISCLOSED_DATA_KEYS.has(key) && isActiveUnknownGrant(value)) {
       rows.push(row(
+        `data.${key}`,
         readableCapabilityKey(key) || 'Additional data grant',
         'Review',
         `The platform reports the unrecognized “${key}” data grant. Update App Store for a detailed explanation.`,
@@ -152,6 +168,7 @@ export function capabilityRows(contract) {
       ? ` for up to ${Math.round(duration / 100) / 10} seconds per request`
       : ''
     rows.push(row(
+      `runtime.${capability}`,
       declaration?.title || capability,
       `v${declaration?.version || '?'}`,
       `${declaration?.description || capability}${durationText}${
@@ -168,67 +185,36 @@ export function changedCapabilityPaths(diff) {
   return [...(diff.added || []), ...(diff.removed || []), ...(diff.changed || [])]
 }
 
-const MISSING = Symbol('missing')
+// Paths under these keys are explained by capabilityRows. Their first segment
+// never contains a dot; runtime capability ids do, so they are never parsed.
+const ROW_PATH_PREFIXES = ['agent.system_prompt', 'agent.skills', 'agent.tools', 'data', 'background', 'runtime']
 
-function valueAtPath(contract, path) {
-  let value = contract
-  for (const part of String(path || '').split('.').filter(Boolean)) {
-    if (!value || typeof value !== 'object' || !Object.hasOwn(value, part)) return MISSING
-    value = value[part]
-  }
-  return value
-}
+const rowText = item => `${item.tag} · ${item.summary}`
 
-const PATH_LABELS = {
-  'data.chat_logs': 'Chat history',
-  'data.shared_memory': 'Shared memory',
-  'data.cross_app_access': 'Other apps’ data',
-  'data.share_with_apps': 'Shares its data',
-  'agent.system_prompt': 'Agent chats',
-  'agent.embeds_agent': 'Embedded agent',
-  'agent.skills': 'Agent skills',
-  ...Object.fromEntries(BOOLEAN_DATA_CAPABILITIES.map(capability => [`data.${capability.key}`, capability.label])),
-}
-
-function capabilityPathLabel(path, contract) {
-  const parts = String(path || '').split('.').filter(Boolean)
-  const label = PATH_LABELS[parts.slice(0, 2).join('.')]
-  if (label) return label
-  if (parts[0] === 'background') return 'Background work'
-  if (parts[0] === 'runtime') return contract?.runtime?.[parts[1]]?.title || 'Runtime capability'
-  return parts.map(readableCapabilityKey).join(' · ')
-}
-
-function capabilityValueText(value) {
-  if (value === MISSING) return 'Not granted'
-  if (value === null || value === undefined) return 'None'
-  if (typeof value === 'boolean') return value ? 'Allowed' : 'Not allowed'
-  if (typeof value === 'string') return value || 'Not set'
-  if (Array.isArray(value)) {
-    if (!value.length) return 'None'
-    return value.map(item => item && typeof item === 'object'
-      ? String(item.id || item.name || JSON.stringify(item))
-      : capabilityValueText(item)).join(', ')
-  }
-  return JSON.stringify(value)
-}
-
-// The platform's capability diff names changed paths only. The same preview
-// carries the installed and proposed contracts, so an update review can show
-// each change as its old and new value instead of an opaque path list.
-export function capabilityChangeRows(preview) {
+// An update review pairs the installed contract's rows with the proposed
+// contract's by capability key: one row per capability, in the same words as
+// the full access list. Changes the rows do not describe stay listed by path
+// in `otherPaths`, so nothing the platform reports is hidden.
+export function capabilityChanges(preview) {
   const diff = preview?.capability_diff
-  if (diff?.unknown_previous !== false) return []
-  const previous = preview.installed_contract || {}
-  const proposed = preview.capability_contract || {}
-  return [['Added', diff.added], ['Removed', diff.removed], ['Changed', diff.changed]]
-    .flatMap(([kind, paths]) => (Array.isArray(paths) ? paths : []).map(path => ({
-      kind,
-      path,
-      label: capabilityPathLabel(path, proposed),
-      previous: capabilityValueText(valueAtPath(previous, path)),
-      proposed: capabilityValueText(valueAtPath(proposed, path)),
-    })))
+  if (diff?.unknown_previous !== false || !preview.installed_contract) return null
+  const before = new Map(capabilityRows(preview.installed_contract).map(item => [item.key, item]))
+  const after = new Map(capabilityRows(preview.capability_contract).map(item => [item.key, item]))
+  const rows = []
+  for (const [key, next] of after) {
+    const prior = before.get(key)
+    if (!prior) rows.push({ kind: 'Added', key, label: next.label, proposed: rowText(next) })
+    else if (rowText(prior) !== rowText(next) || prior.compare !== next.compare) {
+      rows.push({ kind: 'Changed', key, label: next.label, previous: rowText(prior), proposed: rowText(next) })
+    }
+  }
+  for (const [key, prior] of before) {
+    if (!after.has(key)) rows.push({ kind: 'Removed', key, label: prior.label, previous: rowText(prior) })
+  }
+  const paths = changedCapabilityPaths(diff)
+  const covered = path => ROW_PATH_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}.`))
+  const otherPaths = rows.length ? paths.filter(path => !covered(path)) : paths
+  return { rows, otherPaths }
 }
 
 function CapabilityRows({ contract }) {
@@ -239,7 +225,7 @@ function CapabilityRows({ contract }) {
         <div className="st-capability-state">No special permissions requested.</div>
       )}
       {rows.map((item) => (
-        <div className="st-permission-row" key={item.label}>
+        <div className="st-permission-row" key={item.key}>
           <div className="st-perm-row-main">
             <div className="st-perm-label">{item.label}</div>
             <div className="st-perm-detail">{item.summary}</div>
@@ -257,13 +243,14 @@ function CapabilityChangeRows({ rows }) {
   return (
     <div className="st-capability-list" aria-label="Access changes">
       {rows.map(item => (
-        <div className={`st-permission-row st-capability-diff-row is-${item.kind.toLowerCase()}`} key={`${item.kind}:${item.path}`}>
+        <div className={`st-permission-row st-capability-diff-row is-${item.kind.toLowerCase()}`} key={item.key}>
           <div className="st-perm-row-main">
             <div className="st-perm-label"><span className="st-capability-diff-kind">{item.kind}</span>{item.label}</div>
             <div className="st-capability-diff-values">
-              <span>{item.previous}</span><span className="st-capability-diff-arrow" aria-hidden="true">→</span><span>{item.proposed}</span>
+              {item.previous ? <span className={item.proposed ? 'st-capability-diff-before' : undefined}>{item.previous}</span> : null}
+              {item.previous && item.proposed ? <span className="st-capability-diff-arrow" aria-hidden="true">→</span> : null}
+              {item.proposed ? <span>{item.proposed}</span> : null}
             </div>
-            <div className="st-perm-hint">{item.path}</div>
           </div>
         </div>
       ))}
@@ -272,9 +259,9 @@ function CapabilityChangeRows({ rows }) {
 }
 
 // `updateReview` is an update's pre-apply review: with a recorded previous
-// contract it lists each access change with its old and new value and keeps
-// the full resulting access one tap away. Elsewhere, and when no earlier
-// record exists, the complete access is shown.
+// contract it lists each changed capability, old and new, and keeps the full
+// resulting access one tap away. Elsewhere, and when no earlier record
+// exists, the complete access is shown.
 export function CapabilityContract({ review, onRetry, isInstalled = false, updateReview = false }) {
   if (!review || review.status === 'loading') {
     return (
@@ -295,11 +282,32 @@ export function CapabilityContract({ review, onRetry, isInstalled = false, updat
   }
   const preview = review.preview
   const unknownPrevious = preview?.capability_diff?.unknown_previous === true
-  const changeRows = updateReview ? capabilityChangeRows(preview) : []
-  if (changeRows.length) {
+  // `refused`: an install or update was refused because access changed after
+  // review, so nothing was installed. `changed`: a review of a release whose
+  // access differs from what is installed.
+  const notice = review.status === 'refused'
+    ? `${!isInstalled
+      ? 'This app’s access changed after your review.'
+      : unknownPrevious
+        ? 'This app was installed before access receipts were recorded, so the old and new access cannot be compared automatically.'
+        : 'The publisher changed this app’s capabilities after your last review.'} Nothing was installed. Review the current access below, then click again.`
+    : review.status === 'changed'
+      ? unknownPrevious
+        ? 'Möbius has no earlier access record for this app, so the old and new access cannot be compared automatically. Review the complete access below.'
+        : 'This version changes the app’s access. Review the permissions below before approving.'
+      : ''
+  const noticeBlock = notice ? <div className="st-notice is-warning" role="alert">{notice}</div> : null
+  const changes = updateReview ? capabilityChanges(preview) : null
+  if (changes?.rows.length) {
     return (
       <>
-        <CapabilityChangeRows rows={changeRows} />
+        {noticeBlock}
+        <CapabilityChangeRows rows={changes.rows} />
+        {changes.otherPaths.length ? (
+          <div className="st-capability-change" role="status">
+            {`This update also changes: ${changes.otherPaths.join(', ')}.`}
+          </div>
+        ) : null}
         <details className="st-capability-full-access">
           <summary>Show full resulting access</summary>
           <CapabilityRows contract={preview.capability_contract} />
@@ -307,21 +315,15 @@ export function CapabilityContract({ review, onRetry, isInstalled = false, updat
       </>
     )
   }
-  const changes = changedCapabilityPaths(preview?.capability_diff)
+  const paths = changedCapabilityPaths(preview?.capability_diff)
   return (
     <>
-      {review.status === 'changed' && (
-        <div className="st-notice is-warning" role="alert">
-          {unknownPrevious
-            ? 'This app was installed before access receipts were recorded, so the old and new access cannot be compared automatically. Nothing was installed. Review the complete access below.'
-            : 'This version changes the app’s access. Review the permissions below before approving.'}
-        </div>
-      )}
-      {isInstalled && (changes.length > 0 || unknownPrevious) && (
+      {noticeBlock}
+      {isInstalled && (paths.length > 0 || unknownPrevious) && (
         <div className="st-capability-change" role="status">
           {unknownPrevious
             ? 'This warning does not mean the update asked for new access; Möbius simply has no older receipt to compare against.'
-            : `This update changes: ${changes.join(', ')}.`}
+            : `This update changes: ${paths.join(', ')}.`}
         </div>
       )}
       <CapabilityRows contract={preview?.capability_contract} />

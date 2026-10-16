@@ -56,14 +56,13 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   // the backend. Do not disable its durable resolver action just because a new
   // read-only capability preview is temporarily unavailable.
   const requiresCapabilityReview = !blockedUpdate && (!storeInstalled || hasUpdate)
-  const capabilityReviewReady = capabilityReview?.status === 'ready' || capabilityReview?.status === 'changed'
+  const capabilityReviewReady = ['ready', 'changed', 'refused'].includes(capabilityReview?.status)
   const canRetryInstalled = typeof onRetryInstalled === 'function'
   const primaryActionDisabled =
     busy ||
     lifecycle.actionKind === 'none' ||
     (lifecycle.actionKind === 'open' && !storeInstalled) ||
     (lifecycle.actionKind === 'retry' && !canRetryInstalled) ||
-    (lifecycle.actionKind === 'resolve' && !resolutionNotice) ||
     (requiresCapabilityReview && !capabilityReviewReady)
   // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
   // already resolve to trusted hosts, so they pass silently. Invalid
@@ -87,7 +86,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
       : (!storeInstalled || lifecycle.setupNeedsAttention)
   )
   const canOpenSetup = showSetup && (setup.scope === 'system' || storeInstalled)
-  const accessChanged = capabilityReview?.status === 'changed'
+  const accessChanged = capabilityReview?.status === 'changed' || capabilityReview?.status === 'refused'
   const sourceCheck = storeInstalled ? updateChecks[storeInstalled.id] : null
   const installedRevision = shortRevision(
     sourceCheck?.installedSourceRevision || storeInstalled?.upstream_commit,

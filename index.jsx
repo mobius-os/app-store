@@ -196,7 +196,7 @@ export {
   proxyUrl,
   readErrorDetail,
 } from './api.js'
-export { capabilityChangeRows, capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
+export { capabilityChanges, capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
 export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
 export { catalogAssetFilename, catalogAssetUrl, storeAssetSource, storeAssetUrl } from './ui/StoreImage.jsx'
 export { createPublicationPreviewGate } from './ui/PublisherTab.jsx'
@@ -1342,7 +1342,7 @@ export default function App({ appId, token }) {
         }
         setCapabilityReviews(prev => ({
           ...prev,
-          [item.id]: { status: 'changed', preview, error: '' },
+          [item.id]: { status: 'refused', preview, error: '' },
         }))
         setToast({
           kind: 'error',

@@ -104,10 +104,10 @@ export function SelfUpdateBanner({ appId, token }) {
       setPhase('done')
     } catch (e) {
       if (e?.code === 'capability_changed') {
-        let next = { status: 'changed', preview: e.preview, candidate: review.candidate, error: '' }
+        let next = { status: 'refused', preview: e.preview, candidate: review.candidate, error: '' }
         try {
           const candidate = await loadUpdateCandidatePreview(appId, STORE_SELF.manifest_url, token)
-          next = { status: 'changed', preview: candidate.capability_preview, candidate, error: '' }
+          next = { status: 'refused', preview: candidate.capability_preview, candidate, error: '' }
         } catch {}
         setReview(next)
         setPhase('error')
