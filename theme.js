@@ -1191,6 +1191,26 @@ export const CSS = `
 .st-capability-change { margin-bottom: 10px; color: var(--text); }
 .st-capability-list { display: grid; gap: 8px; }
 .st-perm-hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.st-capability-diff-row.is-added { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
+.st-capability-diff-row.is-removed { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.st-capability-diff-kind {
+  display: inline-block; margin-right: 7px; color: var(--muted);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.st-capability-diff-values {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  margin-top: 5px; color: var(--text); font-size: 13px; line-height: 1.4;
+}
+.st-capability-diff-arrow { color: var(--muted); }
+.st-capability-full-access {
+  margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+}
+.st-capability-full-access summary {
+  min-height: 44px; padding: 12px; cursor: pointer; color: var(--muted);
+  font-size: 13px; font-weight: 650; touch-action: manipulation;
+}
+.st-capability-full-access[open] summary { border-bottom: 1px solid var(--border); color: var(--text); }
+.st-capability-full-access > .st-capability-list { padding: 10px; }
 
 /* Progressive disclosure for the information that matters during review or
    troubleshooting but should not dominate everyday app browsing. Permission

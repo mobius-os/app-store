@@ -147,7 +147,7 @@ export function SelfUpdateBanner({ appId, token }) {
                     ? 'Möbius does not have an earlier access record for this app. Confirm it once; later updates stop only when access changes.'
                     : 'This update changes what the App Store can access. Review the changes before updating.'}
                 </p>
-                <CapabilityContract review={review} isInstalled />
+                <CapabilityContract review={review} isInstalled updateReview />
               </div>
             ) : null}
           </div>

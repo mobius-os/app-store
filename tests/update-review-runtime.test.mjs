@@ -196,6 +196,46 @@ test('update review leads with verified changes and keeps technical details coll
   }
 })
 
+test('an access change is reviewed as old and new values, with the full access one tap away', async () => {
+  const { dom, restore } = useDom()
+  const { UpdateReviewModal } = await modalModule()
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const doc = dom.window.document
+  const withAccess = (id, capability) => {
+    const result = entry(id)
+    result.prepared.capabilityReview = { status: 'changed', preview: { capability_digest: 'c'.repeat(64), ...capability } }
+    return result
+  }
+  const props = { onClose() {}, onConfirm() {}, onAskAgent() {}, onResolveOne() {} }
+  try {
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: { phase: 'review', entries: [withAccess('Planner', {
+      installed_contract: { data: { manage_apps: false } },
+      capability_contract: { data: { manage_apps: true, shared_memory: 'read' } },
+      capability_diff: { unknown_previous: false, widens: true, added: ['data.shared_memory'], removed: [], changed: ['data.manage_apps'] },
+    })] } })))
+    const rows = [...doc.querySelectorAll('.st-capability-diff-row')].map(row => row.textContent)
+    assert.deepEqual(rows, [
+      'AddedShared memoryNot granted→readdata.shared_memory',
+      'ChangedInstalled appsNot allowed→Alloweddata.manage_apps',
+    ])
+    const full = doc.querySelector('details.st-capability-full-access')
+    assert.equal(full.open, false)
+    assert.match(full.textContent, /Show full resulting access[\s\S]*Shared memory[\s\S]*Installed apps/)
+    assert.doesNotMatch(doc.body.textContent, /This update changes:|Nothing was installed/)
+
+    await act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: { phase: 'review', entries: [withAccess('Planner', {
+      capability_contract: { data: { manage_apps: true } },
+      capability_diff: { unknown_previous: true, widens: true, added: [], removed: [], changed: [] },
+    })] } })))
+    assert.equal(doc.querySelector('.st-capability-diff-row'), null)
+    assert.equal(doc.querySelector('details.st-capability-full-access'), null, 'with no earlier record the full access is shown openly')
+    assert.match(doc.body.textContent, /Access review[\s\S]*Installed apps/)
+  } finally {
+    await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
 test('App submits one server batch despite repeated confirmation; a retry needs a fresh check and batch', async () => {
   const { dom, restore } = useDom()
   const submitted = []

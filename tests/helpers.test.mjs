@@ -1763,6 +1763,39 @@ test('capability-change 409 exposes the new contract without retrying install', 
   }
 })
 
+test('capability change rows pair each changed path with its old and new value', async () => {
+  const { capabilityChangeRows } = await bundle()
+  const preview = {
+    installed_contract: {
+      data: { manage_apps: false, shared_memory: 'read' },
+      agent: { skills: ['notes'] },
+    },
+    capability_contract: {
+      data: { manage_apps: true, shared_memory: 'write', manage_skills: true },
+      runtime: { camera: { title: 'Camera' } },
+      public: { network: ['api.example.com'] },
+    },
+    capability_diff: {
+      unknown_previous: false,
+      widens: true,
+      added: ['data.manage_skills', 'public.network', 'runtime.camera.title'],
+      removed: ['agent.skills'],
+      changed: ['data.manage_apps', 'data.shared_memory'],
+    },
+  }
+  assert.deepEqual(capabilityChangeRows(preview).map(({ kind, label, previous, proposed }) => [kind, label, previous, proposed]), [
+    ['Added', 'Agent skills', 'Not granted', 'Allowed'],
+    ['Added', 'Public · Network', 'Not granted', 'api.example.com'],
+    ['Added', 'Camera', 'Not granted', 'Camera'],
+    ['Removed', 'Agent skills', 'notes', 'Not granted'],
+    ['Changed', 'Installed apps', 'Not allowed', 'Allowed'],
+    ['Changed', 'Shared memory', 'read', 'write'],
+  ])
+  // Without a recorded previous contract there is nothing to compare.
+  assert.deepEqual(capabilityChangeRows({ ...preview, capability_diff: { ...preview.capability_diff, unknown_previous: true } }), [])
+  assert.deepEqual(capabilityChangeRows({ capability_contract: {} }), [])
+})
+
 test('capability rows describe system prompt, redacted logs, and a server job generically', async () => {
   const { capabilityRows } = await bundle()
   const rows = capabilityRows({

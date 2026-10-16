@@ -120,7 +120,7 @@ function ReviewEntry({ entry, locked, onRetry, onAskAgent, onResolveOne, onOpenC
       {capabilitiesChanged ? (
         <div>
           <h3>{entry.prepared.capabilityReview.preview.capability_diff?.unknown_previous ? 'Access review' : 'Access changes'}</h3>
-          <CapabilityContract review={entry.prepared.capabilityReview} isInstalled />
+          <CapabilityContract review={entry.prepared.capabilityReview} isInstalled updateReview />
         </div>
       ) : null}
     </section>
