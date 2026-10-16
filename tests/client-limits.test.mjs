@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test, { mock } from 'node:test'
 import {
-  fetchCatalog, fetchUpdateCheck, loadUpdateCandidatePreview, UPDATE_CHECK_DEADLINE_MS,
+  fetchCatalog, fetchManifest, fetchUpdateCheck, loadInstalledApps, loadProviderStatus,
+  loadUpdateCandidatePreview, READ_DEADLINE_MS, UPDATE_CHECK_DEADLINE_MS,
 } from '../api.js'
 import { LISTING_LIMITS } from '../constants.js'
 import { filterCatalog, isSystemCatalogItem, textWithinByteLimit, utf8Length } from '../domain.js'
@@ -159,6 +160,79 @@ test('a background update check that outlives its wall-clock deadline is unknown
   } finally {
     mock.timers.reset()
   }
+})
+
+// A connection that never answers: it settles only when its signal aborts.
+function stalledFetch(seen = []) {
+  return (url, init) => {
+    seen.push(init.signal)
+    return new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })
+    })
+  }
+}
+
+test('slow Store reads end at one shared deadline with a clear error', async () => {
+  const signals = []
+  await withFetch(stalledFetch(signals), async () => {
+    await assert.rejects(
+      loadInstalledApps('owner-token', { deadlineMs: 20 }),
+      /Installed apps could not be reached/,
+    )
+    await assert.rejects(
+      fetchManifest('https://raw.example/apps/x/mobius.json', 'owner-token', { deadlineMs: 20 }),
+      /Manifest could not be reached/,
+    )
+    await assert.rejects(
+      fetchCatalog('https://raw.example/catalog.json', 'owner-token', { deadlineMs: 20 }),
+      /Catalog could not be reached/,
+    )
+    assert.equal(await loadProviderStatus('owner-token', { deadlineMs: 20 }), null)
+  })
+  // A timed-out attempt is not retried: each read made exactly one request.
+  assert.equal(signals.length, 4)
+  assert.ok(signals.every(signal => signal.aborted))
+  assert.ok(READ_DEADLINE_MS > 0 && READ_DEADLINE_MS <= 10_000)
+})
+
+test('retry delays never extend a read past its deadline', async () => {
+  const started = Date.now()
+  let answered = 0
+  await withFetch(async (url, init) => {
+    if (init.signal.aborted) throw init.signal.reason
+    answered += 1
+    return new Response('busy', { status: 503 })
+  }, async () => {
+    await assert.rejects(
+      loadInstalledApps('owner-token', { deadlineMs: 30, retries: 2, retryDelayMs: 60_000 }),
+      /Installed apps could not be reached/,
+    )
+    await assert.rejects(
+      fetchManifest('https://raw.example/apps/x/mobius.json', 'owner-token', {
+        deadlineMs: 30, retries: 2, retryDelayMs: 60_000,
+      }),
+      /Manifest could not be reached/,
+    )
+  })
+  assert.equal(answered, 2, 'the deadline ended the first retry delay of each read')
+  assert.ok(Date.now() - started < 5_000)
+})
+
+test('a response body that stalls past the deadline reads as unreachable', async () => {
+  await withFetch(async (url, init) => new Response(new ReadableStream({
+    start(controller) {
+      init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true })
+    },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }), async () => {
+    await assert.rejects(
+      fetchCatalog('https://raw.example/catalog.json', 'owner-token', { deadlineMs: 20, retries: 0 }),
+      /Catalog could not be reached/,
+    )
+    await assert.rejects(
+      loadInstalledApps('owner-token', { deadlineMs: 20, retries: 0 }),
+      /Installed apps could not be reached/,
+    )
+  })
 })
 
 test('catalog search retains every capability string, including Workflows lifecycle', async () => {
