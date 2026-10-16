@@ -698,6 +698,8 @@ export default function App({ appId, token }) {
   // Reflection counts real opens from app_ready, so it fires once the first
   // usable catalog has painted, not after the background registry refresh,
   // which a slow upstream can hold open long after the Store is in use.
+  // It also fires after a failed installed-apps read: the Store is open and
+  // shows its reconnect state, which is still a real open.
   const appReadySignalledRef = useRef(false)
   useEffect(() => {
     if (loadingCatalog || appReadySignalledRef.current) return
