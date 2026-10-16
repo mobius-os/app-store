@@ -16,6 +16,28 @@ manifest preview. The backend fetches the entry file, compiles it,
 seeds storage, uploads the icon, writes the editable source tree,
 and registers any cron schedule as one transaction.
 
+## Reviewed updates run on the server
+
+**Update** and **Update all** check each candidate (read-only) and show what
+changed. Confirming sends one exact set of app ids, Git commits, source digests
+and access digests to the platform's update-batch owner
+(`POST /api/apps/update-batches`, Möbius with mobius-os/mobius#1843). The
+dialog follows per-app progress over the batch's event stream; closing it or
+the Store never cancels the work, and Library shows **View update progress**
+until it finishes. A lost answer resends the same batch id, so it attaches
+to the batch rather than approving a second one.
+
+On a Möbius without the batch routes (its batch list answers with a generic
+404/405, or the 422 an older app route gives), the Store falls back to the
+per-app reviewed update it used before: the same `/api/apps/install` request
+with the reviewed digests, one app at a time, with the dialog kept open
+until it finishes.
+
+Confirming never starts an agent. A conflict keeps the current app live and
+offers **Resolve in chat**. A failure the platform marks `retryable` offers
+**Try again** (a fresh check, then a new confirmation); a permanent one offers
+**Ask agent**.
+
 ## How it's installed
 
 The first time a Möbius container boots, the entrypoint script

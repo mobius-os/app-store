@@ -1894,21 +1894,24 @@ test('capability rows fail visibly for a future data grant', async () => {
   assert.equal(future.tone, 'write')
 })
 
-test('individual catalog updates keep a read-only review with bound digests', async () => {
+test('both update entry points use one reviewed server batch with bound digests', async () => {
   const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
-  assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token/)
-  assert.ok(indexSource.includes('setUpdateReview(prepared)'))
-  // The install loop takes exactly the confirmable entries; every other entry
-  // except an already-updated one is reported, so a blocked one never installs.
-  assert.match(indexSource, /reviews\.filter\(updateEntryConfirmable\)/)
-  assert.match(indexSource, /filter\(entry => !entry\.outcome\?\.ok && !updateEntryConfirmable\(entry\)\)/)
-  const modalSource = await readFile(join(root, '..', 'ui', 'UpdateReviewModal.jsx'), 'utf8')
-  assert.match(modalSource, /entries\.filter\(updateEntryConfirmable\)/)
-  assert.ok(indexSource.includes('capabilityDigest: entry.capabilityReview.preview.capability_digest'))
-  assert.ok(indexSource.includes('sourceDigest: entry.preview.source_digest'))
+  const controller = await readFile(join(root, '..', 'update-batch.js'), 'utf8')
+  assert.match(indexSource, /loadUpdateCandidatePreview\(\s*installedApp\.id, updateItem\.manifest_url, token, \{ signal \}/)
+  assert.match(indexSource, /openUpdateBatch\(\)\?\.check\(\[item\]\)/)
+  assert.match(indexSource, /openUpdateBatch\(\)\?\.check\(updateItems\)/)
+  assert.match(indexSource, /submit: payload => submitUpdateBatch\(payload, token\)/)
+  assert.match(indexSource, /onConfirm=\{\(\) => updateBatchRef\.current\?\.confirm\(\)\}/)
+  // The browser never applies a reviewed update itself.
+  assert.doesNotMatch(indexSource, /updateAppId: entry|deferResolver|batch: true/)
+  assert.doesNotMatch(controller, /installApp/)
+  for (const reviewed of ['capability_digest', 'source_digest', 'upstream_commit', 'manifest_url', 'app_id']) {
+    assert.match(controller, new RegExp(`${reviewed}: entry\\.prepared`))
+  }
   assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
-  assert.ok(indexSource.includes('reviewed_source_digest: _opts.sourceDigest'))
-  assert.match(indexSource, /setUpdateReview\(\{ entries: \[\.\.\.updatedEntries, \.\.\.issues\] \}\)[\s\S]*await refreshInstalled\(\)/)
+  // The per-app fallback for a Möbius without batches binds the same review.
+  assert.ok(indexSource.includes('reviewed_source_digest: preview.source_digest'))
+  assert.ok(indexSource.includes('reviewed_upstream_commit: preview.upstream_commit'))
 })
 
 test('candidate review requests the exact catalog manifest selected by the user', async () => {
@@ -1984,6 +1987,15 @@ test('confirmed conflicts are handed to one preserving resolver chat', async () 
     assert.deepEqual(await createConflictResolverBatch([80, 81], 'preserve_local', 'token'), {
       chat_id: 'one-chat',
     })
+    // An app already bound to a running resolver reuses that chat, for the
+    // apps the server names.
+    globalThis.fetch = async () => new Response(JSON.stringify({ detail: {
+      code: 'conflict_resolver_running', message: 'Voice is already being resolved', chat_id: 'existing-chat', app_ids: [81],
+    } }), { status: 409, headers: { 'content-type': 'application/json' } })
+    assert.deepEqual(await createConflictResolverBatch([80, 81], 'preserve_local', 'token'), {
+      chat_id: 'existing-chat', app_ids: [81], started: false, existing: true,
+      message: 'Voice is already being resolved',
+    })
     assert.equal(request.url, '/api/apps/conflict-resolver-batch')
     assert.deepEqual(JSON.parse(request.options.body), {
       app_ids: [80, 81],
@@ -1992,7 +2004,8 @@ test('confirmed conflicts are handed to one preserving resolver chat', async () 
   } finally {
     globalThis.fetch = oldFetch
   }
-  assert.match(indexSource, /const newConflicts = \[\][\s\S]*createConflictResolverBatch\([\s\S]*'preserve_local'/)
+  // Batch conflicts are never handed to an agent without the owner's Resolve.
+  assert.match(indexSource, /resolve: appIds => createConflictResolverBatch\(appIds, 'preserve_local', token\)/)
 })
 
 test('Update all applies verified non-widening releases and reviews wider access', async () => {
@@ -2063,7 +2076,7 @@ test('automatic updates have no duplicate trust preference path', async () => {
   const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   assert.doesNotMatch(source, /trusted-updates\.json|trustedUpdate|toggleTrusted/)
   assert.doesNotMatch(detail, /Trust routine updates|Require review|Review every update/)
-  assert.match(source, /setUpdateReview\(\{ entries \}\)/)
+  assert.match(source, /openUpdateBatch\(\)\?\.check\(updateItems\)/)
 })
 
 test('filterCatalog matches categories, descriptions, and setup metadata', async () => {
@@ -2327,6 +2340,10 @@ test('fetchUpdateCheck maps the current backend contract', async () => {
     },
     { update_available: true, pending_update_state: 'unknown', upstream_version: '2.0.0' },
     { update_available: false, pending_update_state: 'none', upstream_version: '1.0.0' },
+    {
+      update_available: null, pending_update_state: 'none',
+      candidate_rejected: { code: 'repository_moved', message: 'The catalog lists this app in another repository.' },
+    },
   ]
   globalThis.fetch = async (url) => {
     requests.push(url)
@@ -2342,6 +2359,7 @@ test('fetchUpdateCheck maps the current backend contract', async () => {
       upstreamVersion: '2.0.0',
       installedSourceRevision: 'a'.repeat(40),
       candidateSourceDigest: 'b'.repeat(64),
+      candidateRejected: null,
       checkedAt: '2026-08-07T12:00:00Z',
     })
     assert.deepEqual(await fetchUpdateCheck(1, 'token'), {
@@ -2350,6 +2368,7 @@ test('fetchUpdateCheck maps the current backend contract', async () => {
       upstreamVersion: '2.0.0',
       installedSourceRevision: null,
       candidateSourceDigest: null,
+      candidateRejected: null,
       checkedAt: null,
     })
     assert.deepEqual(await fetchUpdateCheck(1, 'token'), {
@@ -2358,6 +2377,7 @@ test('fetchUpdateCheck maps the current backend contract', async () => {
       upstreamVersion: '1.0.0',
       installedSourceRevision: null,
       candidateSourceDigest: null,
+      candidateRejected: null,
       checkedAt: null,
     })
     assert.equal(
@@ -2366,6 +2386,12 @@ test('fetchUpdateCheck maps the current backend contract', async () => {
     )
     assert.equal(requests[1], '/api/apps/1/update-check')
     assert.equal(requests[2], '/api/apps/1/update-check')
+    // A candidate install would refuse says why, with update_available null.
+    const rejected = await fetchUpdateCheck(1, 'token')
+    assert.equal(rejected.available, null)
+    assert.deepEqual(rejected.candidateRejected, {
+      code: 'repository_moved', message: 'The catalog lists this app in another repository.',
+    })
   } finally {
     globalThis.fetch = oldFetch
   }
@@ -2513,8 +2539,9 @@ test('busy labels stay tied to the action that started', async () => {
   const source = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const cardSource = await readFile(join(root, '..', 'ui', 'CatalogCard.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
-  assert.ok(source.includes("const startedActionKind = _opts?.isUpdate ? 'update' : 'install'"))
-  assert.ok(source.includes('setBusyActionKind(startedActionKind)'))
+  // handleInstall only installs; updates show their busy state from the batch.
+  assert.ok(source.includes("setBusyActionKind('install')"))
+  assert.ok(source.includes("updatingItemIds.includes(detail.id) ? 'update'"))
   assert.ok(cardSource.includes('busyActionKind || lifecycle.actionKind'))
   assert.ok(cardSource.includes("lifecycle.actionKind === 'install'"))
   assert.ok(!cardSource.includes("'Review & install'"))
@@ -2909,28 +2936,4 @@ test('review prompts that need an account or handle hand off to Möbius · You',
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   assert.match(appSource, /onLogInToMobiusYou=\{logInToMobiusYou\}/)
   assert.match(detailSource, /onLogInToMobiusYou=\{onLogInToMobiusYou\}/)
-})
-
-test('an unresolved conflict blocks its update while clean updates stay confirmable', async () => {
-  const { updateEntryConfirmable, updateEntryNeedsResolution, updatePreviewBlocker } = await import(
-    pathToFileURL(join(root, '..', 'domain.js'))
-  )
-  const digest = 'a'.repeat(64)
-  const conflicted = { pending_update_state: 'needs_resolution', source_digest: digest }
-  assert.match(updatePreviewBlocker(conflicted), /unresolved merge conflict/)
-  for (const state of ['none', 'replay_pending', 'unknown', undefined]) {
-    assert.equal(updatePreviewBlocker({ pending_update_state: state, source_digest: digest }), '')
-  }
-
-  const clean = { preview: { source_digest: digest }, previewError: '' }
-  const blocked = { preview: conflicted, previewError: updatePreviewBlocker(conflicted) }
-  const unverified = { preview: null, previewError: 'This update could not be checked.' }
-  const done = { preview: { source_digest: digest }, outcome: { ok: true } }
-
-  // Conflict-only review: nothing to confirm or install.
-  assert.deepEqual([blocked].filter(updateEntryConfirmable), [])
-  // Mixed batch: only the clean update is confirmable; the conflict is not.
-  assert.deepEqual([clean, blocked, unverified, done].filter(updateEntryConfirmable), [clean])
-  // Only the conflict is resolved in chat; other failures keep their retry.
-  assert.deepEqual([clean, blocked, unverified, done].filter(updateEntryNeedsResolution), [blocked])
 })

@@ -827,6 +827,12 @@ export const CSS = `
 .st-card-state-line.is-update { color: var(--text); }
 .st-card-state-line.is-conflict { color: var(--danger, #e5484d); }
 .st-card-state-line.is-unavailable { color: var(--muted); }
+.st-card-state-line.is-rejected { color: var(--orange, #e8b45a); }
+.st-card-state-detail {
+  flex-basis: 100%; max-width: 100%; color: var(--muted);
+  font-size: 12px; line-height: 1.4; overflow-wrap: anywhere;
+}
+.st-card-state-row:has(.st-card-state-detail) { flex-wrap: wrap; row-gap: 2px; }
 .st-card-agent {
   flex: 0 0 auto;
   font-family: var(--font, inherit); font-weight: 600;
@@ -1501,6 +1507,8 @@ export const CSS = `
   cursor: text;
 }
 .st-update-review-error-text { margin-bottom: 6px; color: var(--danger); }
+.st-update-review-notice .st-btn + .st-btn { margin-left: 8px; }
+.st-update-review-warnings { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .st-banner-access-review { margin-top: 10px; }
 .st-banner-access-note {
   max-width: 65ch;
@@ -2194,6 +2202,13 @@ export const CSS = `
 .st-scroll.is-library .st-chip { flex: 0 0 auto; width: auto; min-height: 44px; padding: 8px 14px; }
 .st-scroll.is-library .st-update-all-trigger { width: auto; min-height: 44px; margin-left: auto; padding: 8px 16px; }
 .st-scroll.is-library .st-library-health { padding: 14px; margin-bottom: 22px; }
+.st-scroll.is-library .st-update-batch-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.st-scroll.is-library .st-update-batch-list .st-update-all-trigger {
+  margin-left: 0; background: var(--surface); color: var(--text); border-color: var(--border);
+}
+@media (max-width: 520px) {
+  .st-scroll.is-library .st-update-batch-list .st-update-all-trigger { width: 100%; }
+}
 
 /* Publish tab: your published apps, one app page, and the agent check. */
 .st-publish-heading .st-back-btn { margin-bottom: 10px; }

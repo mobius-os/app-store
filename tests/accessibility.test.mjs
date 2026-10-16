@@ -17,20 +17,16 @@ test('update review restores its opener independently of busy-state effects', ()
   assert.match(updateReview, /\}, \[\]\)\n\n  useEffect\(\(\) => \{/)
 })
 
-test('retry preserves sibling update outcomes and requires a fresh confirmation', () => {
-  assert.match(app, /\.filter\(entry => !entry\.outcome\?\.ok && !updateEntryConfirmable\(entry\)\)/)
-  assert.match(app, /current\.entries\.map\(entry => entry\.item\.id === item\.id \? prepared : entry\)/)
-  assert.match(app, /applyingUpdateRef\.current = true/)
-  assert.match(app, /if \(!updateReview \|\| busy \|\| applyingUpdateRef\.current \|\| checkingUpdateRef\.current\) return/)
-  assert.match(updateReview, /\{verified\.length \? \(/)
-  assert.match(updateReview, /onClick=\{onApply\} disabled=\{busy\}/)
-})
-
-test('review with agent remains available without applying an update', () => {
+test('a retry needs a fresh check and confirmation; agent review stays available', () => {
+  const controller = readFileSync(new URL('../update-batch.js', import.meta.url), 'utf8')
+  // Try again re-checks the release (read-only) and never resubmits it.
+  assert.match(controller, /async retry\(id\) \{[\s\S]*?await check\(\[entry\.item\]\)/)
+  assert.match(controller, /const approved = state\.entries\.filter\(entry => entry\.status === 'ready'\)/)
+  assert.match(updateReview, /onClick=\{onConfirm\} disabled=\{locked\}/)
   assert.match(updateReview, /Review with agent/)
-  assert.match(app, /onReviewWithAgent=\{handleAgentUpdateReview\}/)
-  assert.match(app, /buildUpdateReviewMessage\(entry\)/)
-  assert.match(app, /buildUpdateFailureMessage\(\{ \.\.\.entry, error \}\)/)
+  assert.match(app, /onAskAgent=\{handleAgentUpdateReview\}/)
+  assert.match(app, /buildUpdateReviewMessage\(context\)/)
+  assert.match(app, /buildUpdateFailureMessage\(\{ \.\.\.context, error: entry\.error \}\)/)
 })
 
 test('Browse, Library, and Publish form one keyboard-navigable tab set', () => {
@@ -99,7 +95,7 @@ test('catalog cards use one labelled icon action without repeating routine lifec
   assert.match(catalogCard, /ArrowRotateCw, ArrowUpRight, Chat, Check, Download/)
   assert.match(catalogCard, /aria-label=\{`\$\{actionLabel\} \$\{m\.name\}`\}/)
   assert.match(catalogCard, /title=\{actionLabel\}/)
-  assert.match(catalogCard, /\['unavailable', 'conflict', 'unverified'\]\.includes\(lifecycle\.key\)/)
+  assert.match(catalogCard, /\['unavailable', 'conflict', 'rejected', 'unverified'\]\.includes\(lifecycle\.key\)/)
   assert.doesNotMatch(catalogCard, />\s*\{actionLabel\}\s*<\/button>/)
 })
 

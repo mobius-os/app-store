@@ -11,9 +11,22 @@ function communityHeaders(token, idempotencyKey = '') {
   }
 }
 
+// A version 4 UUID. `crypto.randomUUID` exists only in secure contexts, so a
+// Möbius served over plain HTTP builds one from random bytes instead.
+export function randomUuid() {
+  const native = globalThis.crypto?.randomUUID?.()
+  if (native) return native
+  const bytes = new Uint8Array(16)
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes)
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 function communityRequestKey(action) {
-  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  return `store:${action}:${random}`.slice(0, 127)
+  return `store:${action}:${randomUuid()}`.slice(0, 127)
 }
 
 async function communityResponse(response, fallback) {
@@ -483,6 +496,11 @@ export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') 
       upstreamVersion: body?.upstream_version || null,
       installedSourceRevision: body?.installed_source_revision || null,
       candidateSourceDigest: body?.candidate_source_digest || null,
+      // Why a fetched candidate is not offered (identity_mismatch,
+      // repository_moved, or a newer code read the same way); null otherwise.
+      candidateRejected: typeof body?.candidate_rejected?.message === 'string' && body.candidate_rejected.message
+        ? { code: String(body.candidate_rejected.code || ''), message: body.candidate_rejected.message }
+        : null,
       checkedAt: body?.checked_at || null,
     }
   } catch {
@@ -831,7 +849,7 @@ export async function installApp({
     if (res.status === 409 && detail?.code === 'update_changed') {
       throw new UpdateChangedError(detail)
     }
-    throw new Error(formatErrorDetail(detail) || text || `HTTP ${res.status}`)
+    throw responseError(res.status, text)
   }
   const out = await res.json()
   return {
@@ -879,20 +897,49 @@ export async function readErrorDetail(res, fallback) {
   }
 }
 
+// Statuses the platform's installer itself treats as transient.
+const TRANSIENT_STATUSES = new Set([429, 502, 503, 504])
+
+// A failed response as an Error that keeps the server's structured detail:
+// `status`, its `code`, and whether the same request may later succeed
+// (`retryable`: the detail says so, or the status is transient).
+export function responseError(status, text, fallback) {
+  let detail = null
+  let message = text || ''
+  try {
+    const body = text ? JSON.parse(text) : null
+    detail = body?.detail ?? body
+    message = formatErrorDetail(detail)
+  } catch {}
+  const error = new Error(message || fallback || `HTTP ${status}`)
+  error.status = status
+  error.detail = detail
+  error.code = typeof detail?.code === 'string' ? detail.code : null
+  error.retryable = detail?.retryable === true || TRANSIENT_STATUSES.has(status)
+  return error
+}
+
+async function responseErrorOf(res, fallback) {
+  return responseError(res.status, await res.text().catch(() => ''), fallback)
+}
+
 export async function readJsonOrThrow(res, fallback) {
   if (res.ok) return await res.json()
-  throw new Error(await readErrorDetail(res, fallback || `HTTP ${res.status}`))
+  throw await responseErrorOf(res, fallback || `HTTP ${res.status}`)
 }
 
 // Read-only preview of the currently published candidate. This fetches the
 // incoming release before anything is applied. Reviewing an update is
 // user-initiated, so there is deliberately no client deadline: the server
-// bounds its own candidate fetch and the caller shows progress.
-export async function loadUpdateCandidatePreview(appId, manifestUrl, token) {
+// bounds its own candidate fetch, the caller shows progress, and `signal`
+// lets the owner cancel. A candidate install would refuse is a 409 whose
+// detail is `{code, message}` (identity_mismatch, repository_moved).
+export async function loadUpdateCandidatePreview(appId, manifestUrl, token, { signal } = {}) {
   const query = manifestUrl
     ? `?manifest_url=${encodeURIComponent(manifestUrl)}`
     : ''
   const res = await fetch(`/api/apps/${appId}/update-candidate-preview${query}`, {
+    signal,
     headers: { Authorization: `Bearer ${token}` },
   })
   return await readJsonOrThrow(res, 'Update changes could not be loaded')
@@ -919,7 +966,98 @@ export async function createConflictResolverBatch(appIds, resolutionPolicy, toke
     },
     body: JSON.stringify({ app_ids: appIds, resolution_policy: resolutionPolicy }),
   })
+  if (res.status === 409) {
+    const error = await responseErrorOf(res, 'Could not open resolver chat')
+    // Apps already bound to a running resolver reuse that chat; `app_ids`
+    // names only the apps it covers.
+    if (error.code === 'conflict_resolver_running' && error.detail?.chat_id) {
+      return {
+        chat_id: error.detail.chat_id, app_ids: error.detail.app_ids || [], started: false, existing: true,
+        // Why the chat is reused (for example, it is still resolving an
+        // earlier update): shown instead of the generic resolving note.
+        message: typeof error.detail.message === 'string' ? error.detail.message : '',
+      }
+    }
+    throw error
+  }
   return await readJsonOrThrow(res, 'Could not open resolver chat')
+}
+
+// Whether an update-batch request failed because this Möbius has no batch
+// routes (it predates mobius-os/mobius#1843), rather than for a reason the
+// routes gave. Only FastAPI's generic answers count: "Not Found" or "Method
+// Not Allowed", or the 422 an older `GET /api/apps/{app_id}` route gives when
+// it reads "update-batches" as an app id. "App not found." is a real answer.
+export function batchRoutesMissing(error) {
+  const detail = error?.detail
+  if (error?.status === 404) return detail === 'Not Found'
+  if (error?.status === 405) return detail === 'Method Not Allowed'
+  if (error?.status === 422 && Array.isArray(detail)) {
+    return detail.some(item => Array.isArray(item?.loc) && item.loc[0] === 'path' && item.loc.includes('app_id'))
+  }
+  return false
+}
+
+// Server-run update batches (platform: POST/GET /api/apps/update-batches).
+// The batch id is chosen here, so resending the same request after a lost
+// answer attaches to the batch already running instead of starting another.
+export async function submitUpdateBatch(payload, token) {
+  const res = await fetch('/api/apps/update-batches', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return await readJsonOrThrow(res, 'The updates could not be started.')
+}
+
+export async function loadUpdateBatches(token) {
+  const res = await fetch('/api/apps/update-batches', { headers: { Authorization: `Bearer ${token}` } })
+  return await readJsonOrThrow(res, 'Update progress could not be loaded.')
+}
+
+export async function loadUpdateBatch(id, token, { signal } = {}) {
+  const res = await fetch(`/api/apps/update-batches/${encodeURIComponent(id)}`, {
+    signal, headers: { Authorization: `Bearer ${token}` },
+  })
+  return await readJsonOrThrow(res, 'Update progress could not be loaded.')
+}
+
+// Server-sent events: one `data: <snapshot>` frame per change, comment
+// keepalives in between, ending after the `complete` snapshot. Resolves when
+// the stream ends; the caller re-reads and reconnects if work remains.
+export async function watchUpdateBatch(id, token, onSnapshot, { signal } = {}) {
+  const res = await fetch(`/api/apps/update-batches/${encodeURIComponent(id)}/events`, {
+    signal, headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+  })
+  if (!res.ok) throw await responseErrorOf(res, 'Update progress stream unavailable.')
+  if (!res.body) throw new Error('Update progress stream unavailable.')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  const deliver = frame => {
+    const data = frame.split('\n').filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).replace(/^ /, '')).join('\n')
+    if (!data) return false
+    const snapshot = JSON.parse(data)
+    onSnapshot(snapshot)
+    return snapshot?.phase === 'complete'
+  }
+  try {
+    while (!signal?.aborted) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n?/g, '\n')
+      let boundary
+      while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        if (deliver(frame)) return
+      }
+    }
+    if (!signal?.aborted && buffer.trim()) deliver(buffer)
+  } finally {
+    reader.cancel().catch(() => {})
+  }
 }
 
 export async function createAppChat(title, token, { ownerVisible = false } = {}) {

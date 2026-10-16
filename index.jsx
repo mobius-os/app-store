@@ -1,3 +1,4 @@
+import { mapWithConcurrency, createUpdateBatch, updateBatchBusy, newestBatchSnapshot, normalizeBatchSnapshot, batchProgress as batchProgressOf } from './update-batch.js'
 import { openDetailEntry, closeDetailEntry } from './store-navigation.js'
 import { restoredStoreLocation, storeLocation } from './store-location.js'
 import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
@@ -60,13 +61,17 @@ import {
   shouldRefreshCatalogManifest,
   sortCatalogForDisplay,
   updateCandidateUrlsByInstalledId,
-  updateEntryConfirmable,
-  updatePreviewBlocker,
 } from './domain.js'
 import {
   createAppChat,
   createConflictResolverChat,
   createConflictResolverBatch,
+  submitUpdateBatch,
+  batchRoutesMissing,
+  randomUuid,
+  loadUpdateBatches,
+  loadUpdateBatch,
+  watchUpdateBatch,
   fetchCatalog,
   fetchManifest,
   fetchUpdateCheck,
@@ -232,22 +237,9 @@ function Toast({ toast, onDismiss }) {
   )
 }
 
-async function mapWithConcurrency(items, limit, mapper) {
-  const out = new Array(items.length)
-  let next = 0
-  const workers = Array.from(
-    { length: Math.min(Math.max(limit, 1), items.length) },
-    async () => {
-      while (next < items.length) {
-        const i = next
-        next += 1
-        out[i] = await mapper(items[i], i)
-      }
-    },
-  )
-  await Promise.all(workers)
-  return out
-}
+// Why the platform refuses a candidate for an installed app (the update
+// preview's 409 detail, as update-check's `candidate_rejected`).
+const CANDIDATE_REJECTION_CODES = new Set(['identity_mismatch', 'repository_moved'])
 
 // Probe GET /api/apps/{id}/update-check for the given installed rows and return
 // a { [numericAppId]: source-provenance facts } map.
@@ -281,6 +273,8 @@ function sameUpdateCheck(left, right) {
     left.upstreamVersion === right.upstreamVersion &&
     left.installedSourceRevision === right.installedSourceRevision &&
     left.candidateSourceDigest === right.candidateSourceDigest &&
+    left.candidateRejected?.code === right.candidateRejected?.code &&
+    left.candidateRejected?.message === right.candidateRejected?.message &&
     left.checkedAt === right.checkedAt
 }
 
@@ -383,6 +377,8 @@ export default function App({ appId, token }) {
   const catalogRef = useRef(catalog)
   useEffect(() => { catalogRef.current = catalog }, [catalog])
   const [installed, setInstalled] = useState([])
+  const installedRef = useRef(installed)
+  installedRef.current = installed
   const contributeApp = useMemo(
     () => installed.find((app) => app?.slug === 'contribute') || null,
     [installed],
@@ -451,19 +447,30 @@ export default function App({ appId, token }) {
   // Candidate loading state for the pre-apply update review. The review opens
   // from either a catalog card or DetailView, so this stays item-scoped.
   const [checkingUpdateItemId, setCheckingUpdateItemId] = useState(null)
-  const checkingUpdateRef = useRef(null)
   const [checkingAllUpdates, setCheckingAllUpdates] = useState(false)
-  const checkingAllUpdatesRef = useRef(false)
   const [resolvingAll, setResolvingAll] = useState(false)
   const [toast, setToast] = useState(null)
   const [updateNotice, setUpdateNotice] = useState(null)
-  // Single and batch updates share one read-only review before anything changes.
-  const [updateReview, setUpdateReview] = useState(null)
-  const applyingUpdateRef = useRef(false)
-  const [batchProgress, setBatchProgress] = useState(null)
+  // Single and batch updates share one reviewed transaction: read-only checks,
+  // one explicit confirmation, then a server-run batch the dialog follows.
+  const [updateTransaction, setUpdateTransaction] = useState(null)
+  const updateBatchRef = useRef(null)
+  // Recent server batches (running, or with results to act on) and every
+  // controller following one, keyed by batch id.
+  const [updateBatches, setUpdateBatches] = useState([])
+  const [batchLoadError, setBatchLoadError] = useState(null)
+  const reloadUpdateBatchesRef = useRef(null)
+  const batchControllersRef = useRef(new Map())
+  useEffect(() => () => {
+    updateBatchRef.current?.dispose()
+    for (const controller of batchControllersRef.current.values()) controller.dispose()
+  }, [])
   const [agentReviewingUpdate, setAgentReviewingUpdate] = useState(false)
   const [agentErrorItemId, setAgentErrorItemId] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
+  // A card error the same action may get past offers "Try again" (keyed by
+  // item id) instead of "Ask agent".
+  const [cardErrorRetries, setCardErrorRetries] = useState({})
   const [searchOpen, setSearchOpen] = useState(false)
   const searchVisible = searchOpen || !!query
   // Covers every control, including assistive clicks, before it can reuse a
@@ -520,26 +527,32 @@ export default function App({ appId, token }) {
 
   const clearSettledUpdateArtifacts = useCallback((itemIds) => {
     if (!itemIds?.size) return
-    setCardErrors(prev => {
+    const clear = prev => {
       let next = prev
       for (const id of itemIds) next = withoutKey(next, id)
       return next
-    })
+    }
+    setCardErrors(clear)
+    setCardErrorRetries(clear)
     setUpdateNotice(prev => (prev && itemIds.has(prev.itemId) ? null : prev))
   }, [])
 
-  const refreshUpdateChecks = useCallback((apps) => {
+  // `force` checks exactly `apps` now, for a caller that needs the answer
+  // (a resolver that finished in its own chat).
+  const refreshUpdateChecks = useCallback((apps, { force = false } = {}) => {
     const pendingIds = pendingCheckIdsRef.current
     const fullCheck = fullCheckPendingRef.current
-    if (!catalogReadyRef.current || (!fullCheck && document.visibilityState !== 'visible')) return
-    fullCheckPendingRef.current = false
+    if (!catalogReadyRef.current || (!force && !fullCheck && document.visibilityState !== 'visible')) return
+    // A forced check of a few apps leaves any due full round pending.
+    if (!force) fullCheckPendingRef.current = false
     // Reuse a slow full round, but still let events replace only their own
     // probes immediately. Never invalidate unrelated answers in that round.
-    const startFullCheck = fullCheck && !fullCheckRoundRef.current
-    if (!startFullCheck && !pendingIds.size) return fullCheckRoundRef.current
+    const startFullCheck = !force && fullCheck && !fullCheckRoundRef.current
+    if (!force && !startFullCheck && !pendingIds.size) return fullCheckRoundRef.current
     const rows = sourceBackedInstalledApps(apps, { excludeAppIds: [appId] })
-      .filter(app => startFullCheck || pendingIds.has(String(app.id)))
-    pendingIds.clear()
+      .filter(app => force || startFullCheck || pendingIds.has(String(app.id)))
+    if (force) for (const app of rows) pendingIds.delete(String(app.id))
+    else pendingIds.clear()
     const generation = ++checkGenerationRef.current
     for (const app of rows) checkGenerationsRef.current.set(String(app.id), generation)
     const round = fetchUpdateChecksFor(rows, token, [
@@ -551,6 +564,7 @@ export default function App({ appId, token }) {
       clearSettledUpdateArtifacts(itemIdsSettledByChecks(
         [...catalogRef.current, ...otherInstalledCatalogRef.current], apps, currentChecks,
       ))
+      return currentChecks
     }).finally(() => {
       if (fullCheckRoundRef.current === round) fullCheckRoundRef.current = null
     })
@@ -1202,97 +1216,36 @@ export default function App({ appId, token }) {
     }
   }, [token])
 
-  // Installs run inline from DetailView; updates reach this only after the
-  // candidate-diff review's explicit Apply action. `busy` keeps the initiating
-  // surface dimensionally stable while the transaction is in flight.
+  // Installs run inline from DetailView. Reviewed updates never come here:
+  // they run as batches (see createBatchController). `busy` keeps the
+  // initiating surface dimensionally stable while the install is in flight.
   const handleInstall = async (item, _opts = {}) => {
-    const isBatch = _opts.batch === true
-    if (busy && !isBatch) return { ok: false, reason: 'busy' }
+    if (busy) return { ok: false, reason: 'busy' }
     if (!_opts.capabilityDigest) {
       reviewCapabilities(item)
-      if (!isBatch) {
-        setToast({ kind: 'error', message: 'Review this app’s live access before installing.' })
-      }
+      setToast({ kind: 'error', message: 'Review this app’s live access before installing.' })
       return { ok: false, reason: 'capability_review' }
     }
-    const startedActionKind = _opts?.isUpdate ? 'update' : 'install'
-    if (!isBatch) {
-      setBusy(true)
-      setBusyItemId(item?.id || null)
-      setBusyActionKind(startedActionKind)
-    }
+    setBusy(true)
+    setBusyItemId(item?.id || null)
+    setBusyActionKind('install')
     setCardErrors(prev => withoutKey(prev, item.id))
+    setCardErrorRetries(prev => withoutKey(prev, item.id))
     setUpdateNotice(null)
     try {
-      // GitHub-backed apps install/update from manifest_url so the backend
-      // fetches the latest release at click time. The in-memory manifest is
-      // only the preview/fallback path for entries without a durable URL.
+      // GitHub-backed apps install from manifest_url so the backend fetches
+      // the latest release at click time. The in-memory manifest is only the
+      // preview/fallback path for entries without a durable URL.
       const result = await installApp({
         manifest_url: item.manifest_url,
         manifest: item.manifest,
         raw_base: item.raw_base,
         token,
         reviewed_capability_digest: _opts.capabilityDigest,
-        reviewed_source_digest: _opts.sourceDigest,
-        update_app_id: _opts.updateAppId,
-        reviewed_upstream_commit: _opts.upstreamCommit,
       })
       // A local mutation is newer than any background probe already in flight.
       // Invalidate only this app's answer; unrelated checks can still finish.
       if (result.id) checkGenerationsRef.current.set(String(result.id), ++checkGenerationRef.current)
-      const isConflict = result.mode === 'conflict'
-      const isSeamlessUpdate = result.mode === 'update' &&
-        (result.divergence === 'fast_forward' || result.divergence === 'none')
-      const isCleanMerge = result.mode === 'update' && result.divergence === 'clean_merge'
-
-      if (isConflict) {
-        // Keep the current app live. A confirmed batch defers resolver creation
-        // so every conflict can be handed to one owner-visible chat.
-        const deferResolver = _opts.deferResolver === true
-        let resolver = null
-        let resolverError = ''
-        if (!deferResolver) {
-          try {
-            resolver = await createConflictResolverChat(result.id, 'preserve_local', token)
-          } catch (error) {
-            resolverError = error.message || 'The resolver agent could not be started.'
-          }
-        }
-        const notice = {
-          kind: 'conflict',
-          itemId: item.id,
-          appId: result.id,
-          message: deferResolver
-            ? 'Local changes overlap this update. Your current app stayed live — resolve it when you’re ready.'
-            : resolver
-            ? 'Local changes overlap this update. An agent is reconciling them while your current app stays live.'
-            : 'Local changes overlap this update. Your current app stayed live, but the resolver agent could not start.',
-          result,
-          item,
-          resolverChatId: resolver?.chat_id || null,
-        }
-        if (result.id) {
-          // Record the pending state so the app's card renders its own
-          // "Resolve in chat" action from durable server state, even when we
-          // deferred spawning the resolver during a batch update.
-          setUpdateChecks(prev => mergeUpdateChecks(prev, {
-            [result.id]: {
-              available: true,
-              pendingUpdateState: 'needs_resolution',
-              upstreamVersion: result.upstream_version || null,
-            },
-          }))
-        }
-        // The global notice is single-slot; a batch can produce several
-        // conflicts, so batch mode relies on per-card synthesized notices.
-        if (!deferResolver) setUpdateNotice(notice)
-        if (resolverError) {
-          setCardErrors(prev => ({ ...prev, [item.id]: resolverError }))
-        }
-        if (!isBatch) await refreshInstalled()
-        if (!isBatch && resolver?.chat_id) openChat(resolver.chat_id)
-        return { ok: false, conflict: true, result, notice, resolver, resolverError }
-      }
 
       if (result.id) {
         // A successful install/update just made this app current. The
@@ -1314,7 +1267,7 @@ export default function App({ appId, token }) {
       }
       setCardErrors(prev => withoutKey(prev, item.id))
       setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
-      if (!isBatch) await refreshInstalled()
+      await refreshInstalled()
       // Only a linked mobius.you identity gets a receipt (and its failure
       // message): an unlinked owner can still install a public listing.
       const receipt = communityReceiptAfterInstall(item, result, communityIdentity)
@@ -1326,7 +1279,7 @@ export default function App({ appId, token }) {
           receipt.attemptKey,
           () => confirmCommunityInstall(item, result, receipt.revisionId),
         )?.then((confirmed) => {
-          if (!confirmed && !isBatch) setToast({
+          if (!confirmed) setToast({
             kind: 'error',
             message: 'App installed, but rating access could not be verified. Reopen Store to retry.',
           })
@@ -1340,37 +1293,6 @@ export default function App({ appId, token }) {
         : null
       const appName = result.name || item.manifest?.name || item.id
       const versionText = result.version || item.manifest?.version
-
-      if (isSeamlessUpdate) {
-        window.mobius?.signal?.('app_updated', { slug: result.id || item.id })
-        if (!isBatch) {
-          setToast({
-            kind: 'success',
-            message: `${appName} updated to v${versionText}.`,
-            action: openAction,
-          })
-        }
-        return { ok: true, result }
-      }
-
-      if (isCleanMerge) {
-        // A clean merge means the update applied with no conflicts, so do not
-        // nag the owner to "double-check" it. The backend's divergence check
-        // over-reports "you edited this" for apps the owner never touched (a
-        // re-seeded or line-ending-normalized on-disk tree diffs as a local
-        // edit), which made this prompt fire on untouched apps like News. Only
-        // a real conflict (handled above) is worth surfacing; a clean result
-        // is just a quiet success.
-        window.mobius?.signal?.('app_updated', { slug: result.id || item.id })
-        if (!isBatch) {
-          setToast({
-            kind: 'success',
-            message: `${appName} updated to v${versionText}.`,
-            action: openAction,
-          })
-        }
-        return { ok: true, result }
-      }
 
       const verb = result.mode === 'update' ? 'updated' : 'installed'
       const installNotes = result.warnings || []
@@ -1386,13 +1308,11 @@ export default function App({ appId, token }) {
       // app_updated SSE event after install/update, and the shell listens
       // for that and refreshes its drawer automatically. The toast just
       // confirms what happened.
-      if (!isBatch) {
-        setToast({
-          kind: 'success',
-          message: `${appName} ${verb}${warnSuffix}.`,
-          action: openAction,
-        })
-      }
+      setToast({
+        kind: 'success',
+        message: `${appName} ${verb}${warnSuffix}.`,
+        action: openAction,
+      })
       return { ok: true, result }
       // Stay on the detail view. Two reasons: (1) closing here would
       // bounce the user back to the catalog grid mid-action, which felt
@@ -1419,36 +1339,32 @@ export default function App({ appId, token }) {
           ...prev,
           [item.id]: { status: 'changed', preview, error: '' },
         }))
-        if (!isBatch) {
-          setToast({
-            kind: 'error',
-            message: 'This app changed its access after review. Nothing was installed; review the current access and click again.',
-          })
-        }
+        setToast({
+          kind: 'error',
+          message: 'This app changed its access after review. Nothing was installed; review the current access and click again.',
+        })
         return { ok: false, reason: 'capability_changed' }
       }
-      if (e?.code === 'update_changed') {
-        if (!isBatch) {
-          setToast({
-            kind: 'error',
-            message: 'This update changed after review. The latest diff is being loaded.',
-          })
-        }
-        return { ok: false, reason: 'update_changed' }
-      }
       const message = e.message || String(e)
+      // A transient failure (the platform says `retryable`, or the request
+      // never got an answer) offers the same reviewed install again.
+      const retry = e?.retryable === true || !e?.status
+        ? () => { void handleInstallRef.current(item, _opts) }
+        : null
       setCardErrors(prev => ({ ...prev, [item.id]: message }))
+      setCardErrorRetries(prev => retry ? { ...prev, [item.id]: retry } : withoutKey(prev, item.id))
       window.mobius?.signal?.('error', { message, source: 'install' })
-      if (!isBatch) setToast({ kind: 'error', message })
+      // Installs start from DetailView, where no card shows this error.
+      setToast({ kind: 'error', message, action: retry ? { label: 'Try again', onClick: retry } : null })
       return { ok: false, reason: 'error', error: message }
     } finally {
-      if (!isBatch) {
-        setBusy(false)
-        setBusyItemId(null)
-        setBusyActionKind(null)
-      }
+      setBusy(false)
+      setBusyItemId(null)
+      setBusyActionKind(null)
     }
   }
+  const handleInstallRef = useRef(handleInstall)
+  handleInstallRef.current = handleInstall
 
   const handleReviewUpdate = async (notice) => {
     if (busy || !notice) return
@@ -1460,6 +1376,7 @@ export default function App({ appId, token }) {
     setBusyItemId(notice.itemId || null)
     setBusyActionKind('resolve')
     setCardErrors(prev => withoutKey(prev, notice.itemId))
+    setCardErrorRetries(prev => withoutKey(prev, notice.itemId))
     try {
       const resolver = await createConflictResolverChat(
         notice.appId,
@@ -1476,14 +1393,21 @@ export default function App({ appId, token }) {
       openChat(resolver.chat_id)
     } catch (e) {
       const message = e.message || String(e)
+      const retry = e?.retryable === true || !e?.status
+        ? () => { void handleReviewUpdateRef.current(notice) }
+        : null
       setCardErrors(prev => ({ ...prev, [notice.itemId]: message }))
-      setToast({ kind: 'error', message })
+      if (retry) setCardErrorRetries(prev => ({ ...prev, [notice.itemId]: retry }))
+      // A card shows this error; the detail page has no card, so it gets a toast.
+      if (detail) setToast({ kind: 'error', message, action: retry ? { label: 'Try again', onClick: retry } : null })
     } finally {
       setBusy(false)
       setBusyItemId(null)
       setBusyActionKind(null)
     }
   }
+  const handleReviewUpdateRef = useRef(handleReviewUpdate)
+  handleReviewUpdateRef.current = handleReviewUpdate
 
   const handleDismissNotice = () => setUpdateNotice(null)
 
@@ -1596,15 +1520,33 @@ export default function App({ appId, token }) {
     collectionNavRef.current?.close()
   }, [])
 
-  const prepareCatalogUpdate = useCallback(async (item) => {
+  const prepareCatalogUpdate = useCallback(async (item, { signal } = {}) => {
     const installedApp = findInstalled(installed, item)
     if (!installedApp) throw new Error('Installed app could not be matched for review.')
     const updateItem = catalogUpdateItemForInstalled(item, installedApp)
-    const candidate = await loadUpdateCandidatePreview(
-      installedApp.id, updateItem.manifest_url, token,
-    )
-    const blocker = updatePreviewBlocker(candidate)
-    if (blocker) {
+    let candidate
+    try {
+      candidate = await loadUpdateCandidatePreview(
+        installedApp.id, updateItem.manifest_url, token, { signal },
+      )
+    } catch (error) {
+      if (error?.status === 409 && CANDIDATE_REJECTION_CODES.has(error.code)) {
+        // The platform would not apply this candidate to the installed app
+        // (a moved repository, or another package). The card says why too.
+        // Other coded 409s (a Git source that could not be read) are ordinary
+        // failures, with Try again when they are retryable.
+        checkGenerationsRef.current.set(String(installedApp.id), ++checkGenerationRef.current)
+        setUpdateChecks(prev => mergeUpdateChecks(prev, {
+          [installedApp.id]: {
+            ...prev[installedApp.id],
+            available: null,
+            candidateRejected: { code: error.code, message: error.message },
+          },
+        }))
+      }
+      throw error
+    }
+    if (candidate?.pending_update_state === 'needs_resolution') {
       // The update-check that offered "Update" was stale. The preview is newer
       // than any probe in flight, so record the conflict and let the card
       // offer "Resolve in chat" instead of another Update that hits it again.
@@ -1616,201 +1558,376 @@ export default function App({ appId, token }) {
           pendingUpdateState: 'needs_resolution',
         },
       }))
-      return {
-        item: updateItem,
-        installedApp,
-        preview: candidate,
-        previewError: blocker,
-        capabilityReview: { status: 'error', preview: null, error: '' },
-      }
     }
     const capabilityPreview = candidate.capability_preview
     const capabilityReview = {
-      status: capabilityDiffNeedsReview(capabilityPreview.capability_diff)
+      status: capabilityDiffNeedsReview(capabilityPreview?.capability_diff)
         ? 'changed'
         : 'ready',
       preview: capabilityPreview,
       error: '',
     }
+    if (capabilityPreview) setCapabilityReviews(prev => ({ ...prev, [item.id]: capabilityReview }))
     return {
       item: updateItem,
       installedApp,
       preview: candidate,
-      previewError: '',
       capabilityReview,
     }
   }, [installed, token])
+  const prepareCatalogUpdateRef = useRef(prepareCatalogUpdate)
+  prepareCatalogUpdateRef.current = prepareCatalogUpdate
 
-  const openPreparedUpdateReview = useCallback((prepared) => {
-    setCapabilityReviews(prev => ({
-      ...prev,
-      [prepared.item.id]: prepared.capabilityReview,
-    }))
-    setUpdateReview(prepared)
+  // Mirror one controller's state into the open dialog.
+  const showTransaction = (review) => {
+    setUpdateTransaction(review)
+    setCheckingAllUpdates(review.phase === 'checking')
+    setCheckingUpdateItemId(review.phase === 'checking' && review.entries.length === 1
+      ? review.entries[0].item.id : null)
+  }
+
+  // A batch outcome updates its card only when this Store saw the entry
+  // still running: an old finished batch must not hide a newer release.
+  const runningBatchEntriesRef = useRef(new Set())
+  const reportBatchOutcomes = useCallback((snapshot) => {
+    const running = runningBatchEntriesRef.current
+    const changes = {}
+    for (const entry of snapshot.entries) {
+      const key = `${snapshot.id}:${entry.app_id}`
+      if (entry.status === 'queued' || entry.status === 'applying') { running.add(key); continue }
+      if (!running.delete(key) || !['updated', 'conflict'].includes(entry.status)) continue
+      // The server's outcome is newer than any check in flight for this app.
+      checkGenerationsRef.current.set(String(entry.app_id), ++checkGenerationRef.current)
+      changes[entry.app_id] = entry.status === 'updated'
+        ? { available: false, pendingUpdateState: 'none', upstreamVersion: entry.version || null }
+        : { available: true, pendingUpdateState: 'needs_resolution', upstreamVersion: entry.version || null }
+    }
+    if (Object.keys(changes).length) setUpdateChecks(prev => mergeUpdateChecks(prev, changes))
   }, [])
 
+  // A Möbius without server batches (no mobius#1843) gets the per-app
+  // reviewed update the Store used before: the same /install request, bound
+  // to the reviewed source and access digests, one app at a time.
+  const applyReviewedUpdate = async (entry) => {
+    const { item, installedApp, preview, capabilityReview } = entry.prepared
+    try {
+      const result = await installApp({
+        manifest_url: item.manifest_url,
+        manifest: item.manifest,
+        raw_base: item.raw_base,
+        token,
+        reviewed_capability_digest: capabilityReview.preview.capability_digest,
+        reviewed_source_digest: preview.source_digest,
+        update_app_id: installedApp.id,
+        reviewed_upstream_commit: preview.upstream_commit,
+      })
+      const conflict = result.mode === 'conflict'
+      const id = result.id || installedApp.id
+      checkGenerationsRef.current.set(String(id), ++checkGenerationRef.current)
+      setUpdateChecks(prev => mergeUpdateChecks(prev, {
+        [id]: conflict
+          ? { available: true, pendingUpdateState: 'needs_resolution', upstreamVersion: result.version || null }
+          : { available: false, pendingUpdateState: 'none', upstreamVersion: result.version || null },
+      }))
+      if (!conflict) window.mobius?.signal?.('app_updated', { slug: id })
+      return { status: conflict ? 'conflict' : 'updated', version: result.version || null, warnings: result.warnings || [] }
+    } catch (error) {
+      return {
+        status: 'failed',
+        error: error.message || 'This update could not be completed.',
+        errorCode: typeof error.code === 'string' ? error.code : null,
+        retryable: typeof error.retryable === 'boolean' ? error.retryable : !error.status,
+      }
+    }
+  }
+
+  // Whether this Möbius has server batches, decided in one place: from the
+  // batch list (or, before it answers, the same generic route-missing answer
+  // on submit). 'unknown' | 'supported' | 'missing'.
+  const batchSupportRef = useRef('unknown')
+  const batchesMissing = (error) => {
+    if (batchSupportRef.current === 'unknown' && batchRoutesMissing(error)) batchSupportRef.current = 'missing'
+    return batchSupportRef.current === 'missing'
+  }
+
+  const createBatchController = (entries = []) => {
+    const batch = createUpdateBatch({
+      prepare: (item, options) => prepareCatalogUpdateRef.current(item, options),
+      submit: payload => submitUpdateBatch(payload, token),
+      read: (id, options) => loadUpdateBatch(id, token, options),
+      watch: (id, onSnapshot, options) => watchUpdateBatch(id, token, onSnapshot, options),
+      newId: randomUuid,
+      resolve: appIds => createConflictResolverBatch(appIds, 'preserve_local', token),
+      refresh: () => refreshInstalled(),
+      applyOne: applyReviewedUpdate,
+      batchesMissing,
+      // The platform refused this id, so nothing runs under it: drop the
+      // Library placeholder a closed dialog may have left.
+      onRefused: id => {
+        if (batchControllersRef.current.get(id) === batch) batchControllersRef.current.delete(id)
+        setUpdateBatches(previous => previous.filter(item => !(item.id === id && item.phase === 'unknown')))
+      },
+      onSnapshot: snapshot => {
+        for (const [id, controller] of batchControllersRef.current) {
+          if (controller === batch && id !== snapshot.id) batchControllersRef.current.delete(id)
+        }
+        const previous = batchControllersRef.current.get(snapshot.id)
+        if (previous && previous !== batch && previous !== updateBatchRef.current) previous.dispose()
+        batchControllersRef.current.set(snapshot.id, batch)
+        reportBatchOutcomes(snapshot)
+        setUpdateBatches(previous => {
+          const current = previous.find(item => item.id === snapshot.id)
+          return [newestBatchSnapshot(current, snapshot), ...previous.filter(item => item.id !== snapshot.id)]
+        })
+      },
+      onChange: review => {
+        if (review.phase === 'submitting' && review.batchId) {
+          // This Store is submitting these entries: their outcome is news.
+          for (const entry of review.entries) {
+            if (entry.status === 'ready') runningBatchEntriesRef.current.add(`${review.batchId}:${entry.prepared.installedApp.id}`)
+          }
+        }
+        if (updateBatchRef.current === batch) showTransaction(review)
+      },
+    }, entries)
+    return batch
+  }
+
+  const openUpdateBatch = (entries = []) => {
+    if (updateBatchRef.current) return null
+    const batch = createBatchController(entries)
+    updateBatchRef.current = batch
+    showTransaction(batch.state)
+    return batch
+  }
+
+  // Closing the dialog never cancels server work. A batch the server has (or
+  // may have) accepted keeps its controller, so Library can show its progress.
+  const closeUpdateTransaction = () => {
+    const batch = updateBatchRef.current
+    if (!batch) return
+    updateBatchRef.current = null
+    const { batchId, phase, entries } = batch.state
+    if (!batchId) batch.dispose()
+    else {
+      batchControllersRef.current.set(batchId, batch)
+      if (phase === 'submitting' || batch.state.error.startsWith('Could not confirm whether')) {
+        // Accepted or not, this id may be running: keep a placeholder until
+        // the server lists it.
+        setUpdateBatches(previous => previous.some(item => item.id === batchId) ? previous : [{
+          id: batchId, phase: 'unknown', entries: entries.filter(entry => entry.status === 'ready').map(entry => ({
+            app_id: entry.prepared.installedApp.id, status: 'queued',
+          })),
+        }, ...previous])
+      }
+    }
+    setCheckingAllUpdates(false)
+    setCheckingUpdateItemId(null)
+    setUpdateTransaction(null)
+  }
+
+  useEffect(() => {
+    if (!token) return undefined
+    let live = true
+    let generation = 0
+    // One read at a time: events that arrive during a read coalesce into one
+    // more read after it.
+    let inFlight = null
+    let again = false
+    const readOnce = () => {
+      const requestGeneration = ++generation
+      return loadUpdateBatches(token).then(result => {
+        if (!live || requestGeneration !== generation) return
+        batchSupportRef.current = 'supported'
+        const batches = (Array.isArray(result?.batches) ? result.batches : []).map(normalizeBatchSnapshot).filter(Boolean)
+        setBatchLoadError(null)
+        setUpdateBatches(previous => [
+          ...batches.map(snapshot => newestBatchSnapshot(previous.find(item => item.id === snapshot.id), snapshot)),
+          // A placeholder stays only while its controller still holds that
+          // possibly accepted id.
+          ...previous.filter(item => item.phase === 'unknown' && !batches.some(current => current.id === item.id)
+            && batchControllersRef.current.get(item.id)?.state.batchId === item.id),
+        ])
+        for (const snapshot of batches) reportBatchOutcomes(snapshot)
+        // Only a submission that may or may not have started needs its own
+        // read; listed batches already came with their snapshot.
+        for (const [id, controller] of batchControllersRef.current) {
+          if (controller.uncertain && !batches.some(item => item.id === id)) void controller.refreshSnapshot().catch(() => {})
+        }
+        for (const snapshot of batches) {
+          const controller = batchControllersRef.current.get(snapshot.id)
+          if (controller) {
+            controller.offer(snapshot)
+          } else if (snapshot.phase === 'applying') {
+            // Started elsewhere or before this Store opened: follow it live.
+            const background = createBatchController()
+            batchControllersRef.current.set(snapshot.id, background)
+            background.recover(snapshot)
+          }
+        }
+      }).catch(error => {
+        if (!live || requestGeneration !== generation) return
+        if (batchRoutesMissing(error)) {
+          // This Möbius predates server batches: nothing to show, and updates
+          // use the per-app fallback.
+          batchSupportRef.current = 'missing'
+          setBatchLoadError(null)
+          return
+        }
+        setBatchLoadError({ message: error?.message || 'Update progress is unavailable.', status: error?.status || 0 })
+      })
+    }
+    const reload = () => {
+      if (inFlight) { again = true; return inFlight }
+      inFlight = readOnce().finally(() => {
+        inFlight = null
+        if (again && live) { again = false; void reload() }
+      })
+      return inFlight
+    }
+    reloadUpdateBatchesRef.current = reload
+    void reload()
+    const foreground = () => { if (document.visibilityState === 'visible') void reload() }
+    const managed = event => {
+      if (event.source !== window.parent || event.data?.type !== 'moebius:managed-app-event') return
+      void reload()
+    }
+    window.addEventListener('focus', foreground)
+    document.addEventListener('visibilitychange', foreground)
+    window.addEventListener('message', managed)
+    return () => {
+      live = false
+      if (reloadUpdateBatchesRef.current === reload) reloadUpdateBatchesRef.current = null
+      window.removeEventListener('focus', foreground)
+      document.removeEventListener('visibilitychange', foreground)
+      window.removeEventListener('message', managed)
+    }
+  }, [token, reportBatchOutcomes])
+
+  const catalogItemForAppId = (appId) => displayCatalog.find(
+    candidate => lifecycleById.get(candidate.id)?.installedApp?.id === Number(appId),
+  )
+
+  // Reopen a batch's progress or results. Reading it never resubmits it.
+  const openingBatchRef = useRef(false)
+  const openStoredUpdateBatch = async (id) => {
+    if (!id || updateBatchRef.current || openingBatchRef.current) return
+    const seed = appIds => appIds.flatMap(appId => {
+      const item = catalogItemForAppId(appId)
+      return item ? [{ item, prepared: { installedApp: { id: Number(appId) } } }] : []
+    })
+    const existing = batchControllersRef.current.get(id)
+    if (existing?.state.batchId === id) {
+      existing.seedEntries(seed(existing.state.entries.map(entry => entry.prepared?.installedApp?.id)))
+      updateBatchRef.current = existing
+      showTransaction(existing.state)
+      void existing.refreshSnapshot().catch(() => {})
+      return
+    }
+    // One open at a time: a double click or a background reload during the
+    // read cannot create a second controller for this batch.
+    openingBatchRef.current = true
+    try {
+      const snapshot = normalizeBatchSnapshot(await loadUpdateBatch(id, token))
+      if (!snapshot) throw new Error('Update progress could not be read.')
+      if (updateBatchRef.current) return
+      let batch = batchControllersRef.current.get(id)
+      if (batch?.state.batchId === id) {
+        batch.seedEntries(seed(snapshot.entries.map(row => row.app_id)))
+        batch.offer(snapshot)
+      } else {
+        batch?.dispose()
+        batch = createBatchController(seed(snapshot.entries.map(row => row.app_id))
+          .map(entry => ({ ...entry, status: 'queued' })))
+        batchControllersRef.current.set(id, batch)
+        batch.recover(snapshot)
+      }
+      updateBatchRef.current = batch
+      showTransaction(batch.state)
+    } catch (error) {
+      setToast({ kind: 'error', message: error.message || 'Update progress could not be read.' })
+    } finally {
+      openingBatchRef.current = false
+    }
+  }
+
+  const handleOpenRunningBatch = (id) => {
+    closeUpdateTransaction()
+    void openStoredUpdateBatch(id)
+  }
+
   // Individual and batch updates use the same read-only candidate contract.
-  const handleCatalogUpdate = useCallback(async (item, opts = {}) => {
+  const handleCatalogUpdate = async (item, opts = {}) => {
     if (!opts.isUpdate) {
       openDetail(item)
       return
     }
-    if (busy || checkingUpdateRef.current || checkingAllUpdatesRef.current) return
-    checkingUpdateRef.current = item.id
-    setCheckingUpdateItemId(item.id)
+    if (busy || updateBatchRef.current) return
     setCardErrors(prev => withoutKey(prev, item.id))
-    try {
-      openPreparedUpdateReview(await prepareCatalogUpdate(item))
-    } catch (error) {
-      const message = error.message || 'This update could not be checked.'
-      setCapabilityReviews(prev => ({
-        ...prev,
-        [item.id]: { status: 'error', preview: null, error: message },
-      }))
-      setCardErrors(prev => ({ ...prev, [item.id]: message }))
-      setToast({ kind: 'error', message })
-    } finally {
-      checkingUpdateRef.current = null
-      setCheckingUpdateItemId(null)
-    }
-  }, [busy, openDetail, openPreparedUpdateReview, prepareCatalogUpdate])
-
-  const handleApplyReviewedUpdate = useCallback(async () => {
-    if (!updateReview || busy || applyingUpdateRef.current || checkingUpdateRef.current) return
-    const reviews = updateReview.entries || [updateReview]
-    const entries = reviews.filter(updateEntryConfirmable)
-    if (!entries.length) return
-
-    applyingUpdateRef.current = true
-    setBusy(true)
-    setBusyActionKind('batch_update')
-    let issues = reviews
-      .filter(entry => !entry.outcome?.ok && !updateEntryConfirmable(entry))
-      .map(entry => entry.outcome ? entry : {
-        ...entry, outcome: { error: entry.previewError || 'This update could not be verified.' },
-      })
-    let completed = 0
-    const updatedEntries = reviews.filter(entry => entry.outcome?.ok)
-    const newConflicts = []
-    try {
-      for (let index = 0; index < entries.length; index += 1) {
-        const entry = entries[index]
-        setBusyItemId(entry.item.id)
-        setBatchProgress({
-          current: index + 1,
-          total: entries.length,
-          name: entry.item.manifest?.name || entry.item.id,
-        })
-        const outcome = await handleInstall(entry.item, {
-          isUpdate: true,
-          batch: true,
-          deferResolver: true,
-          capabilityDigest: entry.capabilityReview.preview.capability_digest,
-          sourceDigest: entry.preview.source_digest,
-          updateAppId: entry.preview.app_id,
-          upstreamCommit: entry.preview.upstream_commit,
-        })
-        if (outcome?.ok) {
-          completed += 1
-          updatedEntries.push({ ...entry, outcome })
-        } else {
-          issues.push({ ...entry, outcome: outcome || { error: 'This update could not be completed.' } })
-          if (outcome?.conflict && outcome.result?.id) newConflicts.push(outcome.result.id)
-        }
-      }
-      if (newConflicts.length) {
-        try {
-          await createConflictResolverBatch(
-            [...new Set(newConflicts)],
-            'preserve_local',
-            token,
-          )
-        } catch (error) {
-          issues = issues.map(entry => newConflicts.includes(entry.outcome?.result?.id)
-            ? { ...entry, outcome: { ...entry.outcome, resolverError: error.message || 'The resolver agent could not be started.' } }
-            : entry)
-        }
-      }
-      setUpdateReview({ entries: [...updatedEntries, ...issues] })
-      const refreshError = await refreshInstalled() ? '' : ' The app list could not be refreshed yet.'
-      setToast({
-        kind: issues.length || refreshError ? 'error' : 'success',
-        message: issues.length
-          ? `${completed} updated; ${issues.length} ${issues.length === 1 ? 'app needs' : 'apps need'} attention.${refreshError}`
-          : `${completed} ${completed === 1 ? 'app was' : 'apps were'} updated.${refreshError}`,
-      })
-    } finally {
-      applyingUpdateRef.current = false
-      setBusy(false)
-      setBusyItemId(null)
-      setBusyActionKind(null)
-      setBatchProgress(null)
-    }
-  }, [busy, handleInstall, refreshInstalled, token, updateReview])
-
-  const retryReviewedUpdate = useCallback(async (item) => {
-    if (busy || checkingUpdateRef.current || checkingAllUpdatesRef.current) return
-    const reviewAtStart = updateReview
-    checkingUpdateRef.current = item.id
-    setCheckingUpdateItemId(item.id)
-    try {
-      const prepared = await prepareCatalogUpdate(item)
-      setCapabilityReviews(prev => ({ ...prev, [item.id]: prepared.capabilityReview }))
-      setUpdateReview(current => {
-        if (current !== reviewAtStart) return current
-        if (!current.entries) return prepared
-        return { entries: current.entries.map(entry => entry.item.id === item.id ? prepared : entry) }
-      })
-    } catch (error) {
-      const message = error.message || 'This update could not be checked.'
-      setUpdateReview(current => {
-        if (current !== reviewAtStart) return current
-        const failed = entry => entry.item.id === item.id ? {
-          ...entry, preview: null, previewError: message,
-          capabilityReview: { status: 'error', preview: null, error: message },
-          outcome: { error: message },
-        } : entry
-        return current.entries
-          ? { entries: current.entries.map(failed) }
-          : failed(current)
-      })
-    } finally {
-      checkingUpdateRef.current = null
-      setCheckingUpdateItemId(null)
-    }
-  }, [busy, prepareCatalogUpdate, updateReview])
-
-  // A conflict-blocked review entry hands off to the same resolver the card's
-  // "Resolve in chat" starts. The entry leaves the review; any siblings stay.
-  const resolveReviewedConflict = (entry) => {
-    if (busy || !entry?.installedApp) return
-    const itemId = entry.item.id
-    setUpdateReview(current => {
-      const remaining = current?.entries?.filter(other => other.item.id !== itemId) || []
-      return remaining.length ? { entries: remaining } : null
-    })
-    void handleReviewUpdate(updateNotice?.kind === 'conflict' && updateNotice.itemId === itemId
-      ? updateNotice
-      : { kind: 'conflict', itemId, appId: entry.installedApp.id })
+    setCardErrorRetries(prev => withoutKey(prev, item.id))
+    await openUpdateBatch()?.check([item])
   }
 
-  const handleAgentUpdateReview = useCallback(async () => {
-    if (!updateReview || busy || agentReviewingUpdate) return
-    const reviews = updateReview.entries || [updateReview]
-    const pending = reviews.filter(entry => !entry.outcome?.ok)
-    if (!pending.length) return
+  // A resolver agent finishes in its own chat, outside this iframe. When the
+  // shell reports an app change (or the owner returns to the Store), read the
+  // resolving apps' state so the open results settle by themselves.
+  const resolvingAppKey = (updateTransaction?.phase === 'review' ? updateTransaction.entries : [])
+    .filter(entry => entry.status === 'conflict' && entry.resolver)
+    .map(entry => entry.prepared?.installedApp?.id)
+    .filter(id => id != null)
+    .join(',')
+  useEffect(() => {
+    if (!resolvingAppKey) return undefined
+    const ids = resolvingAppKey.split(',').map(Number)
+    let active = true
+    const settle = async () => {
+      if (!active) return
+      const rows = installedRef.current.filter(app => ids.includes(app.id))
+      const checks = await refreshUpdateChecks(rows, { force: true })
+      if (!active || !checks) return
+      updateBatchRef.current?.reconcile(checks)
+      if (ids.some(id => checks[id]?.available === false)) refreshInstalled().catch(() => {})
+    }
+    const onManagedAppEvent = (event) => {
+      if (event.source !== window.parent || event?.data?.type !== 'moebius:managed-app-event') return
+      const changed = Number(event.data.event?.appId)
+      if (!Number.isFinite(changed) || ids.includes(changed)) settle()
+    }
+    const onReturn = () => {
+      if (document.visibilityState === 'visible') settle()
+    }
+    window.addEventListener('message', onManagedAppEvent)
+    document.addEventListener('visibilitychange', onReturn)
+    window.addEventListener('focus', onReturn)
+    settle()
+    return () => {
+      active = false
+      window.removeEventListener('message', onManagedAppEvent)
+      document.removeEventListener('visibilitychange', onReturn)
+      window.removeEventListener('focus', onReturn)
+    }
+  }, [resolvingAppKey, refreshInstalled, refreshUpdateChecks])
+
+  // One owner-visible chat reviews the selected updates: ready releases are
+  // reviewed before anything applies, failed ones are investigated.
+  const handleAgentUpdateReview = async (entries) => {
+    const pending = (entries || []).filter(entry => entry.status === 'ready' || entry.status === 'failed')
+    if (!pending.length || agentReviewingUpdate) return
     setAgentReviewingUpdate(true)
     try {
       const title = pending.length === 1
-        ? `Review ${pending[0].item.manifest?.name || pending[0].item.id} update`
+        ? `${pending[0].status === 'failed' ? 'Investigate' : 'Review'} ${pending[0].item.manifest?.name || pending[0].item.name || pending[0].item.id} update`
         : `Review ${pending.length} app updates`
       const chat = await createAppChat(title, token, { ownerVisible: true })
       const content = pending.map(entry => {
-        const error = entry.previewError || entry.outcome?.error || entry.outcome?.resolverError ||
-          (entry.outcome?.conflict ? 'Local changes overlap this update; a resolver chat has been started.' : '')
-        return error
-          ? buildUpdateFailureMessage({ ...entry, error })
-          : buildUpdateReviewMessage(entry)
+        const context = {
+          item: entry.item,
+          installedApp: findInstalled(installed, entry.item) || entry.prepared?.installedApp,
+          preview: entry.prepared?.preview || null,
+        }
+        return entry.status === 'failed'
+          ? buildUpdateFailureMessage({ ...context, error: entry.error })
+          : buildUpdateReviewMessage(context)
       }).join('\n\n---\n\n')
       await seedChatMessage(chat.id, content, token)
       openChat(chat.id)
@@ -1819,7 +1936,7 @@ export default function App({ appId, token }) {
     } finally {
       setAgentReviewingUpdate(false)
     }
-  }, [agentReviewingUpdate, busy, token, updateReview])
+  }
 
   // Publishing stays in the Store while an owner-visible agent works. The
   // conversation remains available as optional detail rather than navigation.
@@ -2024,9 +2141,25 @@ export default function App({ appId, token }) {
     }
   }, [identityApp, displayCatalog, selectTab, openDetail, closeDetail])
 
+  // Apps a server batch is applying (or may be, for an unconfirmed
+  // submission) show as updating and stay out of another "Update all".
+  const runningBatches = useMemo(
+    () => updateBatches.filter(batch => batch.phase === 'applying' || batch.phase === 'unknown'),
+    [updateBatches],
+  )
+  const updatingItemIds = useMemo(() => {
+    const appIds = new Set(runningBatches.flatMap(batch => batch.entries
+      .filter(entry => entry.status === 'queued' || entry.status === 'applying')
+      .map(entry => Number(entry.app_id))))
+    return displayCatalog.filter(item => appIds.has(lifecycleById.get(item.id)?.installedApp?.id)).map(item => item.id)
+  }, [runningBatches, displayCatalog, lifecycleById])
+  const transactionProgress = updateBatchBusy(updateTransaction)
+    ? batchProgressOf(updateTransaction.entries)
+    : null
+
   const updateItems = useMemo(
-    () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'update'),
-    [displayCatalog, lifecycleById],
+    () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'update' && !updatingItemIds.includes(item.id)),
+    [displayCatalog, lifecycleById, updatingItemIds],
   )
 
   const conflictItems = useMemo(
@@ -2074,32 +2207,10 @@ export default function App({ appId, token }) {
   }
 
   const handleUpdateAll = async () => {
-    if (
-      !updateItems.length || busy || checkingUpdateRef.current ||
-      checkingAllUpdatesRef.current || installedLoadError
-    ) return
-    checkingAllUpdatesRef.current = true
-    setCheckingAllUpdates(true)
-    try {
-      const entries = await mapWithConcurrency(updateItems, 4, async (item) => {
-        try {
-          return await prepareCatalogUpdate(item)
-        } catch (error) {
-          const message = error.message || 'This update could not be checked.'
-          return {
-            item,
-            preview: null,
-            previewError: message,
-            capabilityReview: { status: 'error', preview: null, error: message },
-          }
-        }
-      })
-      setUpdateReview({ entries })
-    } finally {
-      checkingAllUpdatesRef.current = false
-      setCheckingAllUpdates(false)
-    }
+    if (!updateItems.length || busy || updateBatchRef.current || installedLoadError) return
+    await openUpdateBatch()?.check(updateItems)
   }
+
 
   const visibleCatalog = useMemo(() => {
     const specialFilters = new Set(['update', 'setup', 'installed'])
@@ -2232,10 +2343,11 @@ export default function App({ appId, token }) {
           onOpenInstalled={handleOpenInstalled}
           onSetup={handleSetup}
           onRetryInstalled={handleRetryInstalled}
-          busy={busy || checkingUpdateItemId === detail.id}
+          busy={busy || checkingUpdateItemId === detail.id || updatingItemIds.includes(detail.id)}
           busyActionKind={busyItemId === detail.id
             ? busyActionKind
-            : checkingUpdateItemId === detail.id ? 'checking_update' : null}
+            : checkingUpdateItemId === detail.id ? 'checking_update'
+              : updatingItemIds.includes(detail.id) ? 'update' : null}
           updateChecks={updateChecks}
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
@@ -2268,17 +2380,18 @@ export default function App({ appId, token }) {
             onCancel={() => !busy && setPendingUninstall(null)}
           />
         )}
-        {updateReview && (
+        {updateTransaction && (
           <UpdateReviewModal
-            review={updateReview}
-            applying={busy && busyActionKind === 'batch_update'}
-            preparing={Boolean(checkingUpdateItemId)}
-            onClose={() => !busy && setUpdateReview(null)}
-            onApply={handleApplyReviewedUpdate}
-            onRetry={retryReviewedUpdate}
-            onResolve={resolveReviewedConflict}
+            review={updateTransaction}
             agentReviewing={agentReviewingUpdate}
-            onReviewWithAgent={handleAgentUpdateReview}
+            onClose={closeUpdateTransaction}
+            onConfirm={() => updateBatchRef.current?.confirm()}
+            onRetry={itemId => updateBatchRef.current?.retry(itemId)}
+            onResolveAll={() => updateBatchRef.current?.resolveAll()}
+            onResolveOne={id => updateBatchRef.current?.resolveOne(id)}
+            onOpenChat={openChat}
+            onAskAgent={handleAgentUpdateReview}
+            onOpenBatch={handleOpenRunningBatch}
           />
         )}
         <Toast toast={toast} onDismiss={() => setToast(null)} />
@@ -2400,9 +2513,9 @@ export default function App({ appId, token }) {
                     updateAllCount={updateItems.length}
                     updateAllState={checkingAllUpdates
                       ? 'checking'
-                      : busyActionKind === 'batch_update' ? 'updating' : 'idle'}
-                    updateAllProgress={batchProgress}
-                    updateAllDisabled={busy || resolvingAll || !!checkingUpdateItemId || !!installedLoadError}
+                      : transactionProgress ? 'updating' : 'idle'}
+                    updateAllProgress={transactionProgress && { current: transactionProgress.finished, total: transactionProgress.total }}
+                    updateAllDisabled={busy || resolvingAll || !!checkingUpdateItemId || !!installedLoadError || !!updateTransaction}
                     onUpdateAll={handleUpdateAll}
                     conflictCount={conflictItems.length}
                     onResolveAll={handleResolveAllConflicts}
@@ -2410,6 +2523,30 @@ export default function App({ appId, token }) {
                     resolveAllState={resolvingAll ? 'resolving' : 'idle'}
                     mode={tab}
                   />
+                  {tab === 'library' && batchLoadError ? (
+                    <div className="st-notice is-warning st-notice-row" role="alert">
+                      <span>Update progress could not be read: {batchLoadError.message} Updates already running continue on the server.</span>
+                      <button type="button" className="st-btn st-btn-secondary st-notice-action" onClick={() => reloadUpdateBatchesRef.current?.()}>
+                        Try again
+                      </button>
+                    </div>
+                  ) : null}
+                  {tab === 'library' && updateBatches.length > 0 ? (
+                    <section className="st-update-batch-list" aria-label="Update progress and results">
+                      {updateBatches.map(batch => {
+                        const progress = batchProgressOf(batch.entries)
+                        const toResolve = batch.entries.filter(entry => entry.status === 'conflict' && !entry.resolver_chat_id).length
+                        return (
+                          <button key={batch.id} type="button" className="st-update-all-trigger"
+                            onClick={() => openStoredUpdateBatch(batch.id)} disabled={!!updateTransaction}>
+                            {batch.phase === 'unknown' ? 'Check update status'
+                              : batch.phase === 'applying' ? `View update progress · ${progress.finished}/${progress.total} finished`
+                                : toResolve ? `Review update results · ${toResolve} to resolve` : 'View update results'}
+                          </button>
+                        )
+                      })}
+                    </section>
+                  ) : null}
                   {tab === 'library' && (
                     <LibraryHealth
                       installedCount={filterCounts.installed}
@@ -2451,9 +2588,11 @@ export default function App({ appId, token }) {
                     busy={busy || checkingAllUpdates}
                     installedUnavailable={!!installedLoadError}
                     busyItemId={busyItemId}
+                    updatingItemIds={updatingItemIds}
                     busyActionKind={busyActionKind}
                     checkingUpdateItemId={checkingUpdateItemId}
                     errors={cardErrors}
+                    errorRetries={cardErrorRetries}
                     onAskAgentError={handleAskAgentAboutError}
                     agentErrorItemId={agentErrorItemId}
                     updateNotice={updateNotice}
@@ -2534,17 +2673,18 @@ export default function App({ appId, token }) {
           onCancel={() => !busy && setPendingUninstall(null)}
         />
       )}
-      {updateReview && (
+      {updateTransaction && (
         <UpdateReviewModal
-          review={updateReview}
-          applying={busy && busyActionKind === 'batch_update'}
-          preparing={Boolean(checkingUpdateItemId)}
-          onClose={() => !busy && setUpdateReview(null)}
-          onApply={handleApplyReviewedUpdate}
-          onRetry={retryReviewedUpdate}
-          onResolve={resolveReviewedConflict}
+          review={updateTransaction}
           agentReviewing={agentReviewingUpdate}
-          onReviewWithAgent={handleAgentUpdateReview}
+          onClose={closeUpdateTransaction}
+          onConfirm={() => updateBatchRef.current?.confirm()}
+          onRetry={itemId => updateBatchRef.current?.retry(itemId)}
+          onResolveAll={() => updateBatchRef.current?.resolveAll()}
+          onResolveOne={id => updateBatchRef.current?.resolveOne(id)}
+          onOpenChat={openChat}
+          onAskAgent={handleAgentUpdateReview}
+          onOpenBatch={handleOpenRunningBatch}
         />
       )}
 
