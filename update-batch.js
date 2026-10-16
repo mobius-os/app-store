@@ -1,4 +1,4 @@
-import { sleep } from './api.js'
+import { sleep } from './sleep.js'
 
 // Reviewed "Update all" runs on the server. The Store checks every candidate,
 // the owner confirms one exact set of reviewed commits, and the platform's

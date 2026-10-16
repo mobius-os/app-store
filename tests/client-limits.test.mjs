@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url'
 import test, { mock } from 'node:test'
 import {
   fetchCatalog, fetchManifest, fetchUpdateCheck, loadInstalledApps, loadProviderStatus,
-  loadUpdateCandidatePreview, READ_DEADLINE_MS, sleep, UPDATE_CHECK_DEADLINE_MS,
+  loadUpdateCandidatePreview, READ_DEADLINE_MS, UPDATE_CHECK_DEADLINE_MS,
 } from '../api.js'
+import { sleep } from '../sleep.js'
 import { LISTING_LIMITS } from '../constants.js'
 import { filterCatalog, isSystemCatalogItem, textWithinByteLimit, utf8Length } from '../domain.js'
 

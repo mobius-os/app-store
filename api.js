@@ -1,4 +1,5 @@
 import { LISTING_LIMITS } from './constants.js'
+import { sleep } from './sleep.js'
 import { publicationListingFacts, textWithinByteLimit, validateManifestUrl } from './domain.js'
 
 export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
@@ -594,20 +595,6 @@ async function withReadDeadline(opts, read) {
   } finally {
     clearTimeout(timer)
   }
-}
-
-// A wait that ends early, or never starts, once `signal` aborts.
-export function sleep(ms, signal) {
-  if (signal?.aborted) return Promise.resolve()
-  return new Promise(resolve => {
-    const done = () => {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', done)
-      resolve()
-    }
-    const timer = setTimeout(done, ms)
-    signal?.addEventListener('abort', done, { once: true })
-  })
 }
 
 async function jsonWithin(res, signal, kind) {

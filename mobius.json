@@ -68,6 +68,7 @@
     "store-navigation.js",
     "store-location.js",
     "update-batch.js",
+    "sleep.js",
     "ui/PublishCheck.jsx",
     "ui/PublishedApps.jsx"
   ],
