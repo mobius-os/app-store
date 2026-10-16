@@ -655,7 +655,11 @@ export default function App({ appId, token }) {
               const manifest = await fetchManifest(c.manifest_url, token)
               return { ...c, manifest, error: null }
             } catch (e) {
-              return { ...c, manifest: null, error: e.message || String(e) }
+              // A failed live read keeps the baked manifest: the card stays as
+              // it painted. Only an entry with nothing to show reports it.
+              return c.manifest
+                ? { ...c, error: null }
+                : { ...c, manifest: null, error: e.message || String(e) }
             }
           },
         )
