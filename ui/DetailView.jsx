@@ -36,14 +36,13 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const lifecycle = appLifecycleFor(reviewedItem, {
     installed,
     updateChecks,
-    updateNotice,
     installedUnavailable,
     setupCompletions,
     systemSetupReady,
@@ -57,14 +56,13 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   // the backend. Do not disable its durable resolver action just because a new
   // read-only capability preview is temporarily unavailable.
   const requiresCapabilityReview = !blockedUpdate && (!storeInstalled || hasUpdate)
-  const capabilityReviewReady = capabilityReview?.status === 'ready' || capabilityReview?.status === 'changed'
+  const capabilityReviewReady = ['ready', 'changed', 'refused'].includes(capabilityReview?.status)
   const canRetryInstalled = typeof onRetryInstalled === 'function'
   const primaryActionDisabled =
     busy ||
     lifecycle.actionKind === 'none' ||
     (lifecycle.actionKind === 'open' && !storeInstalled) ||
     (lifecycle.actionKind === 'retry' && !canRetryInstalled) ||
-    (lifecycle.actionKind === 'resolve' && !resolutionNotice) ||
     (requiresCapabilityReview && !capabilityReviewReady)
   // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
   // already resolve to trusted hosts, so they pass silently. Invalid
@@ -88,7 +86,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
       : (!storeInstalled || lifecycle.setupNeedsAttention)
   )
   const canOpenSetup = showSetup && (setup.scope === 'system' || storeInstalled)
-  const accessChanged = capabilityReview?.status === 'changed'
+  const accessChanged = capabilityReview?.status === 'changed' || capabilityReview?.status === 'refused'
   const sourceCheck = storeInstalled ? updateChecks[storeInstalled.id] : null
   const installedRevision = shortRevision(
     sourceCheck?.installedSourceRevision || storeInstalled?.upstream_commit,
@@ -318,37 +316,6 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
                     {setup.action || (setup.scope === 'system' ? 'Open Settings' : 'Open app')}
                   </button>
                 )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {storeInstalled && blockedUpdate && updateNotice && (
-          <div className="st-detail-section">
-            <div className="st-section-label">Update</div>
-            <div className="st-update-notice">
-              <div>{updateNotice.message}</div>
-              <div className="st-update-notice-actions">
-                <button
-                  type="button"
-                  className="st-btn st-btn-primary"
-                  onClick={() => onReviewUpdate(updateNotice)}
-                  disabled={busy}
-                >
-                  {busy
-                    ? busyLabelForAction('resolve')
-                    : updateNotice.kind === 'conflict'
-                    ? 'Resolve update'
-                    : 'Review in chat'}
-                </button>
-                <button
-                  type="button"
-                  className="st-btn st-btn-secondary"
-                  onClick={onDismissNotice}
-                  disabled={busy}
-                >
-                  Not now
-                </button>
               </div>
             </div>
           </div>

@@ -196,7 +196,7 @@ export {
   proxyUrl,
   readErrorDetail,
 } from './api.js'
-export { capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
+export { capabilityChangeRows, capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
 export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
 export { catalogAssetFilename, catalogAssetUrl, storeAssetSource, storeAssetUrl } from './ui/StoreImage.jsx'
 export { createPublicationPreviewGate } from './ui/PublisherTab.jsx'
@@ -450,7 +450,6 @@ export default function App({ appId, token }) {
   const [checkingAllUpdates, setCheckingAllUpdates] = useState(false)
   const [resolvingAll, setResolvingAll] = useState(false)
   const [toast, setToast] = useState(null)
-  const [updateNotice, setUpdateNotice] = useState(null)
   // Single and batch updates share one reviewed transaction: read-only checks,
   // one explicit confirmation, then a server-run batch the dialog follows.
   const [updateTransaction, setUpdateTransaction] = useState(null)
@@ -534,7 +533,6 @@ export default function App({ appId, token }) {
     }
     setCardErrors(clear)
     setCardErrorRetries(clear)
-    setUpdateNotice(prev => (prev && itemIds.has(prev.itemId) ? null : prev))
   }, [])
 
   // `force` checks exactly `apps` now, for a caller that needs the answer
@@ -657,7 +655,15 @@ export default function App({ appId, token }) {
               const manifest = await fetchManifest(c.manifest_url, token)
               return { ...c, manifest, error: null }
             } catch (e) {
-              return { ...c, manifest: null, error: e.message || String(e) }
+              // A failed live read keeps the baked manifest: the card stays as
+              // it painted. Only an entry with nothing to show reports it.
+              // The trade-off: a permanent failure (a 404 for a moved or
+              // deleted repository) is not shown here either. For an installed
+              // app the update check still reports its source; installing a
+              // listing reports the failure when it fetches the release.
+              return c.manifest
+                ? { ...c, error: null }
+                : { ...c, manifest: null, error: e.message || String(e) }
             }
           },
         )
@@ -669,7 +675,6 @@ export default function App({ appId, token }) {
         // Always run the startup check with the live catalog and a fresh
         // installed list, even if an event superseded the first-paint read.
         void refreshInstalled({ checkAll: true })
-        window.mobius?.signal?.('app_ready', { installed_count: apps.length })
       } finally {
         if (!cancelled) {
           setLoadingCatalog(false)
@@ -689,6 +694,18 @@ export default function App({ appId, token }) {
       fullCheckPendingRef.current = false
     }
   }, [appId, token, refreshInstalled])
+
+  // Reflection counts real opens from app_ready, so it fires once the first
+  // usable catalog has painted, not after the background registry refresh,
+  // which a slow upstream can hold open long after the Store is in use.
+  // It also fires after a failed installed-apps read: the Store is open and
+  // shows its reconnect state, which is still a real open.
+  const appReadySignalledRef = useRef(false)
+  useEffect(() => {
+    if (loadingCatalog || appReadySignalledRef.current) return
+    appReadySignalledRef.current = true
+    window.mobius?.signal?.('app_ready', { installed_count: installed.length })
+  }, [loadingCatalog, installed.length])
 
   const communityRequestRef = useRef(0)
   const communityAbortRef = useRef(null)
@@ -1231,7 +1248,6 @@ export default function App({ appId, token }) {
     setBusyActionKind('install')
     setCardErrors(prev => withoutKey(prev, item.id))
     setCardErrorRetries(prev => withoutKey(prev, item.id))
-    setUpdateNotice(null)
     try {
       // GitHub-backed apps install from manifest_url so the backend fetches
       // the latest release at click time. The in-memory manifest is only the
@@ -1266,7 +1282,6 @@ export default function App({ appId, token }) {
         rememberCommunityInstallRevision(result, communityFeedback)
       }
       setCardErrors(prev => withoutKey(prev, item.id))
-      setUpdateNotice(prev => (prev?.itemId === item.id ? null : prev))
       await refreshInstalled()
       // Only a linked mobius.you identity gets a receipt (and its failure
       // message): an unlinked owner can still install a public listing.
@@ -1337,7 +1352,7 @@ export default function App({ appId, token }) {
         }
         setCapabilityReviews(prev => ({
           ...prev,
-          [item.id]: { status: 'changed', preview, error: '' },
+          [item.id]: { status: 'refused', preview, error: '' },
         }))
         setToast({
           kind: 'error',
@@ -1368,10 +1383,6 @@ export default function App({ appId, token }) {
 
   const handleReviewUpdate = async (notice) => {
     if (busy || !notice) return
-    if (notice.resolverChatId) {
-      openChat(notice.resolverChatId)
-      return
-    }
     setBusy(true)
     setBusyItemId(notice.itemId || null)
     setBusyActionKind('resolve')
@@ -1383,13 +1394,6 @@ export default function App({ appId, token }) {
         'preserve_local',
         token,
       )
-      setUpdateNotice(current => current?.itemId === notice.itemId
-        ? {
-            ...current,
-            resolverChatId: resolver.chat_id,
-            message: 'Local changes overlap this update. An agent is reconciling them while your current app stays live.',
-          }
-        : current)
       openChat(resolver.chat_id)
     } catch (e) {
       const message = e.message || String(e)
@@ -1408,8 +1412,6 @@ export default function App({ appId, token }) {
   }
   const handleReviewUpdateRef = useRef(handleReviewUpdate)
   handleReviewUpdateRef.current = handleReviewUpdate
-
-  const handleDismissNotice = () => setUpdateNotice(null)
 
   // Stage the uninstall — DetailView's Uninstall button calls this,
   // and the modal's Confirm calls confirmUninstall to actually run
@@ -1610,35 +1612,27 @@ export default function App({ appId, token }) {
   // to the reviewed source and access digests, one app at a time.
   const applyReviewedUpdate = async (entry) => {
     const { item, installedApp, preview, capabilityReview } = entry.prepared
-    try {
-      const result = await installApp({
-        manifest_url: item.manifest_url,
-        manifest: item.manifest,
-        raw_base: item.raw_base,
-        token,
-        reviewed_capability_digest: capabilityReview.preview.capability_digest,
-        reviewed_source_digest: preview.source_digest,
-        update_app_id: installedApp.id,
-        reviewed_upstream_commit: preview.upstream_commit,
-      })
-      const conflict = result.mode === 'conflict'
-      const id = result.id || installedApp.id
-      checkGenerationsRef.current.set(String(id), ++checkGenerationRef.current)
-      setUpdateChecks(prev => mergeUpdateChecks(prev, {
-        [id]: conflict
-          ? { available: true, pendingUpdateState: 'needs_resolution', upstreamVersion: result.version || null }
-          : { available: false, pendingUpdateState: 'none', upstreamVersion: result.version || null },
-      }))
-      if (!conflict) window.mobius?.signal?.('app_updated', { slug: id })
-      return { status: conflict ? 'conflict' : 'updated', version: result.version || null, warnings: result.warnings || [] }
-    } catch (error) {
-      return {
-        status: 'failed',
-        error: error.message || 'This update could not be completed.',
-        errorCode: typeof error.code === 'string' ? error.code : null,
-        retryable: typeof error.retryable === 'boolean' ? error.retryable : !error.status,
-      }
-    }
+    // A failure throws: the batch controller records it like any other.
+    const result = await installApp({
+      manifest_url: item.manifest_url,
+      manifest: item.manifest,
+      raw_base: item.raw_base,
+      token,
+      reviewed_capability_digest: capabilityReview.preview.capability_digest,
+      reviewed_source_digest: preview.source_digest,
+      update_app_id: installedApp.id,
+      reviewed_upstream_commit: preview.upstream_commit,
+    })
+    const conflict = result.mode === 'conflict'
+    const id = result.id || installedApp.id
+    checkGenerationsRef.current.set(String(id), ++checkGenerationRef.current)
+    setUpdateChecks(prev => mergeUpdateChecks(prev, {
+      [id]: conflict
+        ? { available: true, pendingUpdateState: 'needs_resolution', upstreamVersion: result.version || null }
+        : { available: false, pendingUpdateState: 'none', upstreamVersion: result.version || null },
+    }))
+    if (!conflict) window.mobius?.signal?.('app_updated', { slug: id })
+    return { status: conflict ? 'conflict' : 'updated', version: result.version || null, warnings: result.warnings || [] }
   }
 
   // Whether this Möbius has server batches, decided in one place: from the
@@ -1711,7 +1705,7 @@ export default function App({ appId, token }) {
     if (!batchId) batch.dispose()
     else {
       batchControllersRef.current.set(batchId, batch)
-      if (phase === 'submitting' || batch.state.error.startsWith('Could not confirm whether')) {
+      if (phase === 'submitting' || batch.uncertain) {
         // Accepted or not, this id may be running: keep a placeholder until
         // the server lists it.
         setUpdateBatches(previous => previous.some(item => item.id === batchId) ? previous : [{
@@ -2094,14 +2088,13 @@ export default function App({ appId, token }) {
       byId.set(item.id, appLifecycleFor(item, {
         installed,
         updateChecks,
-        updateNotice: updateNotice?.itemId === item.id ? updateNotice : null,
         installedUnavailable: !!installedLoadError,
         setupCompletions,
         systemSetupReady,
       }))
     }
     return byId
-  }, [displayCatalog, installed, updateChecks, updateNotice, installedLoadError, setupCompletions, systemSetupReady])
+  }, [displayCatalog, installed, updateChecks, installedLoadError, setupCompletions, systemSetupReady])
 
   const filterCounts = useMemo(() => {
     let updates = 0
@@ -2349,9 +2342,7 @@ export default function App({ appId, token }) {
             : checkingUpdateItemId === detail.id ? 'checking_update'
               : updatingItemIds.includes(detail.id) ? 'update' : null}
           updateChecks={updateChecks}
-          updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}
-          onDismissNotice={handleDismissNotice}
           onCommunityFeedback={handleCommunityFeedback}
           onCommunityWithdraw={handleCommunityWithdraw}
           canCommunityWithdraw={!!(
@@ -2595,9 +2586,7 @@ export default function App({ appId, token }) {
                     errorRetries={cardErrorRetries}
                     onAskAgentError={handleAskAgentAboutError}
                     agentErrorItemId={agentErrorItemId}
-                    updateNotice={updateNotice}
                     onReviewUpdate={handleReviewUpdate}
-                    onDismissNotice={handleDismissNotice}
                     token={token}
                     emptyTitle={tab === 'library' ? 'No installed apps match' : 'No matches'}
                     emptyText={tab === 'library' ? 'Try another search, or browse the Store for something new.' : 'Try a different search or filter.'}

@@ -68,9 +68,7 @@ export function CatalogList({
   errorRetries,
   onAskAgentError,
   agentErrorItemId = null,
-  updateNotice,
   onReviewUpdate,
-  onDismissNotice,
   token,
   installedUnavailable = false,
   setupCompletions = {},
@@ -178,9 +176,7 @@ export function CatalogList({
       onRetryError={errorRetries?.[item.id] || null}
       onAskAgentError={onAskAgentError}
       askingAgentAboutError={agentErrorItemId === item.id}
-      updateNotice={updateNotice?.itemId === item.id ? updateNotice : null}
       onReviewUpdate={onReviewUpdate}
-      onDismissNotice={onDismissNotice}
       token={token}
       installedUnavailable={installedUnavailable}
       setupCompletions={setupCompletions}

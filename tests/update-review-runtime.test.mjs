@@ -8,6 +8,7 @@ import { JSDOM } from 'jsdom'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react'
+import { ASSET_CACHE, MICROPHONE, platformContract, platformPreview } from './capability-fixtures.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-review-runtime')
@@ -190,6 +191,112 @@ test('update review leads with verified changes and keeps technical details coll
     assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
     assert.equal([...dom.window.document.querySelectorAll('button')].some(b => /agent/i.test(b.textContent)), false)
     assert.ok([...dom.window.document.querySelectorAll('button')].some(b => b.textContent === 'Done'))
+  } finally {
+    await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('an access change is reviewed once per capability, with the full access one tap away', async () => {
+  const { dom, restore } = useDom()
+  const { UpdateReviewModal } = await modalModule()
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const doc = dom.window.document
+  const withAccess = (id, capability) => {
+    const result = entry(id)
+    result.prepared.capabilityReview = { status: 'changed', preview: capability }
+    return result
+  }
+  const search = { name: 'search', description: 'Find notes.', input_schema: { type: 'object' } }
+  const installed = platformContract({ tools: [search] })
+  const props = { onClose() {}, onConfirm() {}, onAskAgent() {}, onResolveOne() {} }
+  const render = preview => act(async () => root.render(React.createElement(UpdateReviewModal, { ...props, review: { phase: 'review', entries: [withAccess('Planner', preview)] } })))
+  try {
+    await render(platformPreview(installed, platformContract({
+      tools: [{ ...search, description: 'Find notes and tasks.' }],
+      runtime: { 'media.microphone.capture': MICROPHONE },
+    })))
+    const rows = [...doc.querySelectorAll('.st-capability-diff-row')].map(row => row.textContent)
+    assert.deepEqual(rows, [
+      'ChangedAgent tool “search”Agent tool · Find notes.→Agent tool · Find notes and tasks.',
+      'AddedRecord audiov1 · Use the device microphone while this app is visible. for up to 30 seconds per request Reason: Voice notes',
+    ])
+    assert.doesNotMatch(doc.body.textContent, /Runtime capability|Not granted|Nothing was installed/)
+    const full = doc.querySelector('details.st-capability-full-access')
+    assert.equal(full.open, false)
+    assert.match(full.textContent, /Show full resulting access[\s\S]*Record audio/)
+
+    // A change the access list cannot describe falls back to its path.
+    await render(platformPreview(installed, platformContract({ tools: [search], embedsAgent: true })))
+    assert.equal(doc.querySelector('.st-capability-diff-row'), null)
+    assert.match(doc.body.textContent, /This update changes: agent\.embeds_agent\./)
+
+    await render({ ...platformPreview(installed, platformContract({ data: { manage_apps: true } })), installed_contract: null,
+      capability_diff: { unknown_previous: true, widens: true, added: [], removed: [], changed: [] } })
+    assert.equal(doc.querySelector('.st-capability-diff-row'), null)
+    assert.equal(doc.querySelector('details.st-capability-full-access'), null, 'with no earlier record the full access is shown openly')
+    assert.match(doc.body.textContent, /no earlier access record[\s\S]*Installed apps/)
+    assert.doesNotMatch(doc.body.textContent, /Nothing was installed/, 'a review installs nothing and says nothing about it')
+  } finally {
+    await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('an update review always lists every path the platform reports, beside its rows', async () => {
+  const { dom, restore } = useDom()
+  const { CapabilityContract } = await bundle(join('ui', 'CapabilityContract.jsx'), 'contract-paths')
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const prompt = { file: 'agent.md', scope: 'chats_started_while_installed', activation: 'chat_start' }
+  const job = { job: 'fetch.sh', mode: 'scheduled', cron: '0 4 * * *', user_configurable: false, initialize_on_install: false }
+  const tool = { name: 'search', description: 'Find notes.', input_schema: { type: 'object' } }
+  const cases = {
+    'system prompt file with scope and activation': [{ systemPrompt: prompt }, { systemPrompt: { file: 'agent2.md', scope: 'all_agent_chats', activation: 'next_turn' } }],
+    'microphone wording with lifecycle, risk and kind': [
+      { runtime: { 'media.microphone.capture': MICROPHONE } },
+      { runtime: { 'media.microphone.capture': { ...MICROPHONE, description: 'Use the microphone.', lifecycle: 'always', risk: 'storage', kind: 'invoke' } } },
+    ],
+    'background schedule with job script and configurability': [{ background: job }, { background: { ...job, cron: '*/5 * * * *', job: 'sync.sh', user_configurable: true } }],
+    'tool wording with input schema': [{ tools: [tool] }, { tools: [{ ...tool, description: 'Find notes and tasks.', input_schema: { type: 'object', required: ['query'] } }] }],
+    'new skill, job secret and asset-cache limit': [
+      { runtime: { 'device.asset-cache': ASSET_CACHE }, data: { job_secret_read: ['A'] } },
+      { runtime: { 'device.asset-cache': { ...ASSET_CACHE, limits: { max_bytes: 2 * 1024 ** 3 } } }, data: { job_secret_read: ['A', 'B'] }, skills: ['x.md'] },
+    ],
+  }
+  try {
+    for (const [name, [before, after]] of Object.entries(cases)) {
+      const preview = platformPreview(platformContract(before), platformContract(after))
+      const { added, removed, changed } = preview.capability_diff
+      await act(async () => root.render(React.createElement(CapabilityContract, { review: { status: 'changed', preview }, isInstalled: true, updateReview: true })))
+      const doc = dom.window.document
+      assert.ok(doc.querySelector('.st-capability-diff-row'), `${name}: the summary rows render`)
+      const listed = doc.querySelector('.st-capability-change')?.textContent || ''
+      for (const path of [...added, ...removed, ...changed]) assert.ok(listed.includes(path), `${name}: ${path} is listed`)
+    }
+  } finally {
+    await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('a refused install says nothing was installed, in words that fit a fresh install', async () => {
+  const { dom, restore } = useDom()
+  const { CapabilityContract } = await bundle(join('ui', 'CapabilityContract.jsx'), 'contract')
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const alert = () => dom.window.document.querySelector('[role="alert"]')?.textContent || ''
+  const contract = platformContract({ data: { manage_apps: true } })
+  const unrecorded = { capability_digest: 'c'.repeat(64), capability_contract: contract, installed_contract: null,
+    capability_diff: { unknown_previous: true, widens: true, added: [], removed: [], changed: [] } }
+  const render = props => act(async () => root.render(React.createElement(CapabilityContract, props)))
+  try {
+    await render({ review: { status: 'refused', preview: unrecorded } })
+    assert.match(alert(), /^This app’s access changed after your review\. Nothing was installed\. Review the current access below, then click again\.$/)
+    await render({ review: { status: 'refused', preview: unrecorded }, isInstalled: true })
+    assert.match(alert(), /installed before access receipts were recorded[\s\S]*Nothing was installed[\s\S]*click again/)
+    await render({ review: { status: 'refused', preview: platformPreview(platformContract(), contract) }, isInstalled: true })
+    assert.match(alert(), /publisher changed this app’s capabilities[\s\S]*Nothing was installed[\s\S]*click again/)
+    await render({ review: { status: 'ready', preview: unrecorded } })
+    assert.equal(alert(), '')
   } finally {
     await act(async () => root.unmount()); restore()
     await rm(buildDir, { recursive: true, force: true })
@@ -466,6 +573,32 @@ test('a refusal after the dialog closed during Starting leaves no stuck placehol
   }
 })
 
+test('closing after a lost submission keeps its possibly running batch in Library', async () => {
+  const { dom, restore } = useDom()
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches' && options.method === 'POST') throw new TypeError('Failed to fetch')
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (path.startsWith('/api/apps/update-batches/')) throw new TypeError('Failed to fetch')
+      if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json(candidate(11))
+      return null
+    })
+    const doc = dom.window.document
+    await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
+    await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
+    assert.match(doc.querySelector('.st-update-review').textContent, /Could not confirm whether the updates started/)
+    await act(async () => doc.querySelector('.st-update-review-actions .st-btn-ghost').click())
+    assert.match(doc.querySelector('.st-update-batch-list')?.textContent || '', /Check update status/)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
 test('a temporary Git failure in the preview is an ordinary error with Try again, not a rejection', async () => {
   const { dom, restore } = useDom()
   let root
@@ -495,13 +628,17 @@ test('a temporary Git failure in the preview is an ordinary error with Try again
 test('a Möbius without server batches still updates through the per-app reviewed install', async () => {
   const { dom, restore } = useDom()
   const installs = []
+  let batchPosts = 0
   let releaseInstall
   let updated = false
   let root
   try {
     root = await mountApp(dom, async (path, options) => {
       if (path === '/api/apps/') return json([{ ...voiceRow, version: updated ? '2.0.0' : '1.0.0' }])
-      if (path.startsWith('/api/apps/update-batches')) return json({ detail: 'Not Found' }, 404)
+      if (path.startsWith('/api/apps/update-batches')) {
+        if (options.method === 'POST') batchPosts++
+        return json({ detail: 'Not Found' }, 404)
+      }
       if (path.includes('/update-check')) return json({ update_available: !updated, pending_update_state: 'none' })
       if (path.includes('/update-candidate-preview')) return json(candidate(11))
       if (path === '/api/apps/install') {
@@ -515,6 +652,7 @@ test('a Möbius without server batches still updates through the per-app reviewe
     await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
     await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
     assert.equal(installs.length, 1)
+    assert.equal(batchPosts, 0, 'the batch list already showed no batch routes')
     assert.deepEqual(installs[0], {
       manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json',
       reviewed_capability_digest: 'c'.repeat(64), reviewed_source_digest: 'a'.repeat(64),

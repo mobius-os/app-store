@@ -18,7 +18,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, onRetryError = null, updateNotice, onReviewUpdate, onDismissNotice, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, onRetryError = null, onReviewUpdate, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid' }) {
   const m = item.manifest
 
   if (!m) {
@@ -63,7 +63,6 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   const lifecycle = appLifecycleFor(item, {
     installed,
     updateChecks,
-    updateNotice,
     installedUnavailable,
     setupCompletions,
     systemSetupReady,
@@ -78,16 +77,11 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   const opensApp = pickOpensApp && canOpenInstalledApp &&
     lifecycle.actionKind === 'open' && !lifecycle.setupNeedsAttention
   const canRetryInstalled = typeof onRetryInstalled === 'function'
-  const canResolveUpdate = lifecycle.actionKind !== 'resolve' || !!lifecycle.resolutionNotice
   const isActionable =
     lifecycle.actionKind !== 'none' &&
     (lifecycle.actionKind !== 'open' || canOpenInstalledApp) &&
-    (lifecycle.actionKind !== 'retry' || canRetryInstalled) &&
-    canResolveUpdate
+    (lifecycle.actionKind !== 'retry' || canRetryInstalled)
   const cardActionDisabled = busy || blocked || !isActionable
-  const showUpdateNotice = lifecycle.actionKind === 'resolve' &&
-    updateNotice?.kind === 'conflict'
-  const noticeDisabled = busy || blocked
   const reviewLabel = lifecycle.actionKind === 'install'
     ? 'Install'
     : lifecycle.actionKind === 'update'
@@ -226,21 +220,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
             : <ActionIcon width={20} height={20} aria-hidden="true" />}
         </button>
       </div>
-      {showUpdateNotice ? (
-        <div className="st-card-notice">
-          <div>{updateNotice.message}</div>
-          <div className="st-card-notice-actions">
-            <button
-              type="button"
-              className="st-btn st-btn-secondary"
-              onClick={onDismissNotice}
-              disabled={noticeDisabled}
-            >
-              Not now
-            </button>
-          </div>
-        </div>
-      ) : error ? (
+      {error ? (
         <div className="st-card-inline-error" role="alert">
           <div className="st-card-inline-error-text">{error}</div>
           {onRetryError ? (

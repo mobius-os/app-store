@@ -1,3 +1,5 @@
+import { sleep } from './sleep.js'
+
 // Reviewed "Update all" runs on the server. The Store checks every candidate,
 // the owner confirms one exact set of reviewed commits, and the platform's
 // update-batch owner applies them (POST /api/apps/update-batches). Closing the
@@ -105,8 +107,6 @@ function errorFields(error, fallback) {
   }
 }
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
-
 // Statuses a gateway in front of the platform may answer while the platform
 // itself did accept the batch: the outcome stays uncertain.
 const GATEWAY_STATUSES = new Set([502, 504])
@@ -115,8 +115,9 @@ const GATEWAY_STATUSES = new Set([502, 504])
 // resolver actions. Browser teardown never cancels server-owned update work.
 // `applyOne` is the fallback for a Möbius without server batches: the
 // per-app reviewed update, one app at a time, while the Store stays open.
-// `batchesMissing(error)` says whether a refused submit means this Möbius has
-// no batch routes; only then does `applyOne` run.
+// `batchesMissing(error)` says whether this Möbius has no batch routes: with
+// no error, whether that is already known; with a refused submit's error,
+// whether the refusal shows it. Only then does `applyOne` run.
 export function createUpdateBatch({ prepare, submit, read, watch, resolve, refresh, applyOne, batchesMissing, onChange, onSnapshot, onRefused, newId, reconnectMs = 1500 }, entries = []) {
   let state = { phase: 'review', entries, error: '', batchId: null, runningBatchId: null, local: false }
   let checkController = null
@@ -200,7 +201,7 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
           failures += 1
           emit({ error: `${error?.status === 503 && error.message ? `${error.message} ` : 'Connection lost. '}Update work continues on the server; reconnecting…` })
         }
-        if (state.phase === 'applying') await sleep(Math.min(reconnectMs * 2 ** Math.max(failures - 1, 0), 15_000))
+        if (state.phase === 'applying') await sleep(Math.min(reconnectMs * 2 ** Math.max(failures - 1, 0), 15_000), controller.signal)
       }
     } finally { if (watchController === controller) watchedId = null }
   }
@@ -247,6 +248,13 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     if (!idle()) return
     const approved = state.entries.filter(entry => entry.status === 'ready')
     if (!approved.length) return
+    // Known missing batch routes go straight to the per-app fallback. Posting
+    // first would show "Starting", and a close then would leave the fallback
+    // running in a dialog nobody can reopen.
+    if (applyOne && batchesMissing?.()) {
+      await applyEach(approved)
+      return
+    }
     const id = state.batchId || newId()
     const updates = approved.map(entry => ({
       app_id: entry.prepared.installedApp.id,

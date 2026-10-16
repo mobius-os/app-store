@@ -4,8 +4,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test, { mock } from 'node:test'
 import {
-  fetchCatalog, fetchUpdateCheck, loadUpdateCandidatePreview, UPDATE_CHECK_DEADLINE_MS,
+  fetchCatalog, fetchManifest, fetchUpdateCheck, loadInstalledApps, loadProviderStatus,
+  loadUpdateCandidatePreview, READ_DEADLINE_MS, UPDATE_CHECK_DEADLINE_MS,
 } from '../api.js'
+import { sleep } from '../sleep.js'
 import { LISTING_LIMITS } from '../constants.js'
 import { filterCatalog, isSystemCatalogItem, textWithinByteLimit, utf8Length } from '../domain.js'
 
@@ -159,6 +161,113 @@ test('a background update check that outlives its wall-clock deadline is unknown
   } finally {
     mock.timers.reset()
   }
+})
+
+// A connection that never answers: it settles only when its signal aborts.
+function stalledFetch(seen = []) {
+  return (url, init) => {
+    seen.push(init.signal)
+    return new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })
+    })
+  }
+}
+
+test('slow Store reads end at one shared deadline with a clear error', async () => {
+  const signals = []
+  await withFetch(stalledFetch(signals), async () => {
+    await assert.rejects(
+      loadInstalledApps('owner-token', { deadlineMs: 20 }),
+      /Installed apps could not be reached/,
+    )
+    await assert.rejects(
+      fetchManifest('https://raw.example/apps/x/mobius.json', 'owner-token', { deadlineMs: 20 }),
+      /Manifest could not be reached/,
+    )
+    await assert.rejects(
+      fetchCatalog('https://raw.example/catalog.json', 'owner-token', { deadlineMs: 20 }),
+      /Catalog could not be reached/,
+    )
+    assert.equal(await loadProviderStatus('owner-token', { deadlineMs: 20 }), null)
+  })
+  // A timed-out attempt is not retried: each read made exactly one request.
+  assert.equal(signals.length, 4)
+  assert.ok(signals.every(signal => signal.aborted))
+  assert.ok(READ_DEADLINE_MS > 0 && READ_DEADLINE_MS <= 10_000)
+})
+
+test('a retry that cannot fit before the deadline reports the server answer at once', async () => {
+  const started = Date.now()
+  let answered = 0
+  await withFetch(async (url, init) => {
+    if (init.signal.aborted) throw init.signal.reason
+    answered += 1
+    return new Response('busy', { status: 503 })
+  }, async () => {
+    await assert.rejects(
+      loadInstalledApps('owner-token', { deadlineMs: 5_000, retries: 2, retryDelayMs: 60_000 }),
+      /Installed apps could not be loaded \(503\)/,
+    )
+    await assert.rejects(
+      fetchManifest('https://raw.example/apps/x/mobius.json', 'owner-token', {
+        deadlineMs: 5_000, retries: 2, retryDelayMs: 60_000,
+      }),
+      /Manifest fetch failed: 503/,
+    )
+    await assert.rejects(
+      fetchCatalog('https://raw.example/catalog.json', 'owner-token', { deadlineMs: 5_000, retries: 2, retryDelayMs: 60_000 }),
+      /Catalog fetch failed: 503/,
+    )
+    assert.equal(await loadProviderStatus('owner-token', { deadlineMs: 5_000, retryDelayMs: 60_000 }), null)
+  })
+  assert.equal(answered, 4, 'no read waited for a retry it could not make')
+  assert.ok(Date.now() - started < 1_000)
+
+  // A retry that fits still happens.
+  let calls = 0
+  await withFetch(async () => (++calls === 1 ? new Response('busy', { status: 503 }) : jsonResponse([])), async () => {
+    assert.deepEqual(await loadInstalledApps('owner-token', { deadlineMs: 5_000, retryDelayMs: 1 }), [])
+  })
+  assert.equal(calls, 2)
+})
+
+test('a wait ends at once when its signal has already aborted, and early when it aborts', async () => {
+  const started = Date.now()
+  await sleep(60_000, AbortSignal.abort())
+  const controller = new AbortController()
+  const waiting = sleep(60_000, controller.signal)
+  controller.abort()
+  await waiting
+  await sleep(1)
+  assert.ok(Date.now() - started < 1_000)
+
+  // A wait that finishes removes its abort listener: one long-lived signal
+  // (a batch's watch) is shared by many waits.
+  const shared = new AbortController()
+  const added = [], removed = []
+  const { addEventListener, removeEventListener } = shared.signal
+  shared.signal.addEventListener = (type, listener, options) => { added.push(listener); addEventListener.call(shared.signal, type, listener, options) }
+  shared.signal.removeEventListener = (type, listener, options) => { removed.push(listener); removeEventListener.call(shared.signal, type, listener, options) }
+  for (let i = 0; i < 3; i++) await sleep(1, shared.signal)
+  assert.equal(added.length, 3)
+  assert.deepEqual(removed, added)
+})
+
+test('a response body that stalls past the deadline reads as unreachable', async () => {
+  await withFetch(async (url, init) => new Response(new ReadableStream({
+    start(controller) {
+      init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true })
+    },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }), async () => {
+    await assert.rejects(
+      fetchCatalog('https://raw.example/catalog.json', 'owner-token', { deadlineMs: 20, retries: 0 }),
+      /Catalog could not be reached/,
+    )
+    await assert.rejects(
+      loadInstalledApps('owner-token', { deadlineMs: 20, retries: 0 }),
+      /Installed apps could not be reached/,
+    )
+  })
 })
 
 test('catalog search retains every capability string, including Workflows lifecycle', async () => {

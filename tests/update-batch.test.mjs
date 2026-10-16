@@ -460,6 +460,19 @@ test('an app removed after its check is an ordinary error, never the per-app fal
   assert.deepEqual(status(batch), ['ready', 'ready'])
 })
 
+test('when batch routes are already known missing, confirm goes straight to the fallback', async () => {
+  const applied = []
+  const { batch, submitted, changes } = harness({
+    batchesMissing: error => error === undefined,
+    applyOne: async entry => { applied.push(entry.prepared.installedApp.id); return { status: 'updated' } },
+  })
+  await batch.check(items(2)); await batch.confirm()
+  assert.deepEqual(submitted, [], 'nothing is posted to a route known to be missing')
+  assert.deepEqual(applied, [1, 2])
+  assert.equal(changes.some(state => state.phase === 'submitting'), false, 'no "Starting" phase to close during')
+  assert.deepEqual(status(batch), ['updated', 'updated'])
+})
+
 test('a lost submission the server never saw is released on a later read', async () => {
   const refused = []
   const { batch } = harness({

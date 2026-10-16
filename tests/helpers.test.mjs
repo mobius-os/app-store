@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import test from 'node:test'
 import { hasConnectedProvider } from '../api.js'
+import { MICROPHONE, platformContract, platformPreview } from './capability-fixtures.mjs'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(root, '.build')
@@ -1763,6 +1764,44 @@ test('capability-change 409 exposes the new contract without retrying install', 
   }
 })
 
+test('an update review summarises one row per changed capability, keyed by capability', async () => {
+  const { capabilityChangeRows } = await bundle()
+  const search = { name: 'search', description: 'Find notes.', input_schema: { type: 'object' } }
+  const installed = platformContract({ tools: [search] })
+  const candidate = platformContract({
+    tools: [{ ...search, description: 'Find notes and tasks.' }],
+    skills: ['notes.md'],
+    data: { manage_skills: true },
+    runtime: { 'media.microphone.capture': MICROPHONE },
+  })
+  const preview = platformPreview(installed, candidate)
+  assert.ok(preview.capability_diff.added.includes('runtime.media.microphone.capture.title'), 'the fixture carries the platform\'s dotted leaf paths')
+  assert.deepEqual(capabilityChangeRows(preview).map(({ kind, label, previous, proposed }) => [kind, label, previous, proposed]), [
+    ['Added', 'Bundled skills', undefined, '1 · Installs notes.md while the app is active.'],
+    ['Changed', 'Agent tool “search”', 'Agent tool · Find notes.', 'Agent tool · Find notes and tasks.'],
+    ['Added', 'Agent skills', undefined, 'Manages · Can install and remove agent skills.'],
+    ['Added', 'Record audio', undefined, 'v1 · Use the device microphone while this app is visible. for up to 30 seconds per request Reason: Voice notes'],
+  ])
+  assert.deepEqual(capabilityChangeRows(platformPreview(candidate, installed)).map(row => [row.kind, row.label]), [
+    ['Changed', 'Agent tool “search”'], ['Removed', 'Bundled skills'], ['Removed', 'Agent skills'], ['Removed', 'Record audio'],
+  ])
+  // Without a recorded previous contract there is nothing to compare.
+  assert.deepEqual(capabilityChangeRows({ ...preview, capability_diff: { ...preview.capability_diff, unknown_previous: true } }), [])
+  assert.deepEqual(capabilityChangeRows({ ...preview, installed_contract: null }), [])
+})
+
+test('the system prompt row states its real scope and activation', async () => {
+  const { capabilityRows } = await bundle()
+  const promptRow = prompt => capabilityRows(platformContract({ systemPrompt: prompt })).find(row => row.key === 'agent.system_prompt')
+  const installedOnly = promptRow({ file: 'agent.md', scope: 'chats_started_while_installed', activation: 'chat_start' })
+  assert.equal(installedOnly.tag, 'New chats')
+  assert.equal(installedOnly.summary, 'Adds system instructions to agent chats started while it is installed when the chat starts (agent.md).')
+  const everywhere = promptRow({ file: 'core.md', scope: 'all_agent_chats', activation: 'next_turn' })
+  assert.equal(everywhere.tag, 'All chats')
+  assert.equal(everywhere.summary, 'Adds system instructions to every agent chat on its next turn (core.md).')
+  assert.match(promptRow({ file: 'x.md', scope: 'future_scope', activation: 'future_activation' }).summary, /future_scope[\s\S]*future_activation/)
+})
+
 test('capability rows describe system prompt, redacted logs, and a server job generically', async () => {
   const { capabilityRows } = await bundle()
   const rows = capabilityRows({
@@ -1870,7 +1909,7 @@ test('capability rows disclose GitHub connection and skill management separately
     /disconnect the owner’s GitHub connection/,
   )
   assert.match(
-    rows.find(row => row.label === 'Agent skills' && row.tag === 'Manages').summary,
+    rows.find(row => row.key === 'data.manage_skills' && row.label === 'Agent skills').summary,
     /install and remove agent skills/,
   )
 })
@@ -2227,10 +2266,6 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
   assert.equal(appLifecycleFor(item, { installed }).actionKind, 'open')
   assert.equal(appLifecycleFor(item, {
     installed,
-    updateNotice: { kind: 'conflict', itemId: 'news' },
-  }).actionKind, 'resolve')
-  assert.equal(appLifecycleFor(item, {
-    installed,
     installedUnavailable: true,
     updateChecks: { 3: { available: true, pendingUpdateState: 'none' } },
   }).actionKind, 'retry')
@@ -2309,7 +2344,6 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
       available: true,
       pendingUpdateState: 'replay_pending',
     } },
-    updateNotice: { kind: 'conflict', itemId: 'news', appId: 3 },
   })
   assert.equal(replayPending.actionKind, 'update')
   assert.equal(replayPending.pendingUpdateState, 'replay_pending')
@@ -2319,7 +2353,6 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
       available: true,
       pendingUpdateState: 'unknown',
     } },
-    updateNotice: { kind: 'conflict', itemId: 'news', appId: 3 },
   })
   assert.equal(unknownPending.actionKind, 'update')
   assert.equal(unknownPending.pendingUpdateState, 'unknown')

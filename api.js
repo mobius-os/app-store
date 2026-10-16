@@ -1,4 +1,5 @@
 import { LISTING_LIMITS } from './constants.js'
+import { sleep } from './sleep.js'
 import { publicationListingFacts, textWithinByteLimit, validateManifestUrl } from './domain.js'
 
 export const SETUP_COMPLETIONS_KEY = 'mobius:setup-complete:v1'
@@ -428,32 +429,31 @@ export function openSystemSettings(section = 'ai-providers', onUnembedded) {
 export async function loadInstalledApps(token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 250
-  let lastError = null
+  return await withReadDeadline(opts, async ({ signal, wait }) => {
+    let lastError = null
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    let r
-    try {
-      r = await fetch('/api/apps/', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    } catch (err) {
-      lastError = err
-      if (attempt < retries && retryableFetchError(err)) {
-        await sleep(retryDelay(null, attempt, delayMs))
-        continue
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      let r
+      try {
+        r = await fetch('/api/apps/', {
+          signal,
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      } catch (err) {
+        lastError = err
+        if (!signal.aborted && attempt < retries && retryableFetchError(err)
+          && await wait(retryDelay(null, attempt, delayMs))) continue
+        throw new Error(transientFetchMessage('Installed apps'))
       }
-      throw new Error(transientFetchMessage('Installed apps'))
+
+      if (r.ok) return await jsonWithin(r, signal, 'Installed apps')
+      if (attempt < retries && retryableFetchStatus(r.status)
+        && await wait(retryDelay(r, attempt, delayMs))) continue
+      throw new Error(`Installed apps could not be loaded (${r.status}).`)
     }
 
-    if (r.ok) return await r.json()
-    if (attempt < retries && retryableFetchStatus(r.status)) {
-      await sleep(retryDelay(r, attempt, delayMs))
-      continue
-    }
-    throw new Error(`Installed apps could not be loaded (${r.status}).`)
-  }
-
-  throw new Error(lastError?.message || 'Installed apps could not be loaded.')
+    throw new Error(lastError?.message || 'Installed apps could not be loaded.')
+  })
 }
 
 // Browser background probes have a wall-clock deadline and degrade to unknown
@@ -513,19 +513,22 @@ export async function fetchUpdateCheck(appId, token, candidateManifestUrl = '') 
 export async function loadProviderStatus(token, opts = {}) {
   const retries = opts.retries ?? 1
   const delayMs = opts.retryDelayMs ?? 250
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const r = await fetch('/api/auth/providers/status', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (r.ok) return await r.json()
-      if (!retryableFetchStatus(r.status) || attempt === retries) return null
-    } catch (err) {
-      if (!retryableFetchError(err) || attempt === retries) return null
+  return await withReadDeadline(opts, async ({ signal, wait }) => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const r = await fetch('/api/auth/providers/status', {
+          signal,
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (r.ok) return await r.json()
+        if (!retryableFetchStatus(r.status) || attempt === retries) return null
+      } catch (err) {
+        if (signal.aborted || !retryableFetchError(err) || attempt === retries) return null
+      }
+      if (!await wait(retryDelay(null, attempt, delayMs))) return null
     }
-    await sleep(retryDelay(null, attempt, delayMs))
-  }
-  return null
+    return null
+  })
 }
 
 // External resources (catalog manifests + icons) live on public git hosts
@@ -567,8 +570,39 @@ function rateLimitMessage(url, res) {
   return `${service} rate-limited this request. Please wait a minute and try again.`
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+// Reads the Store waits on (installed apps, provider status, the registry and
+// its manifests) share one deadline across every attempt, retry delay and body
+// read, so a stalled connection ends in a clear error instead of a page that
+// never settles. Retries never extend it.
+export const READ_DEADLINE_MS = 8_000
+
+// `wait(ms)` is a retry delay inside the deadline. It answers false at once
+// when the delay would not end before the deadline, so the read reports its
+// last answer (a server status) rather than an unreachable server.
+async function withReadDeadline(opts, read) {
+  const deadlineMs = opts.deadlineMs ?? READ_DEADLINE_MS
+  const deadlineAt = Date.now() + deadlineMs
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), deadlineMs)
+  const { signal } = controller
+  const wait = async ms => {
+    if (ms >= deadlineAt - Date.now()) return false
+    await sleep(ms, signal)
+    return !signal.aborted
+  }
+  try {
+    return await read({ signal, wait })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function jsonWithin(res, signal, kind) {
+  try {
+    return await res.json()
+  } catch (error) {
+    throw signal.aborted ? new Error(transientFetchMessage(kind)) : error
+  }
 }
 
 function transientFetchMessage(kind) {
@@ -579,34 +613,37 @@ export async function fetchManifest(url, token, opts = {}) {
   const manifestUrl = validateManifestUrl(url)
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
-  let lastError = null
+  return await withReadDeadline(opts, async ({ signal, wait }) => {
+    let lastError = null
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    let r
-    try {
-      r = await fetch(proxyUrl(manifestUrl), {
-        cache: 'no-cache',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-    } catch (error) {
-      lastError = new Error(transientFetchMessage('Manifest'))
-      if (!retryableFetchError(error) || attempt === retries) break
-      await sleep(retryDelay(null, attempt, delayMs))
-      continue
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      let r
+      try {
+        r = await fetch(proxyUrl(manifestUrl), {
+          cache: 'no-cache',
+          signal,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+      } catch (error) {
+        lastError = new Error(transientFetchMessage('Manifest'))
+        if (signal.aborted || !retryableFetchError(error) || attempt === retries
+          || !await wait(retryDelay(null, attempt, delayMs))) break
+        continue
+      }
+      if (r.ok) return await jsonWithin(r, signal, 'Manifest')
+
+      if (r.status === 429) {
+        lastError = new Error(rateLimitMessage(manifestUrl, r))
+        break
+      }
+
+      lastError = new Error(`Manifest fetch failed: ${r.status}`)
+      if (!retryableFetchStatus(r.status) || attempt === retries
+        || !await wait(retryDelay(r, attempt, delayMs))) break
     }
-    if (r.ok) return await r.json()
 
-    if (r.status === 429) {
-      lastError = new Error(rateLimitMessage(manifestUrl, r))
-      break
-    }
-
-    lastError = new Error(`Manifest fetch failed: ${r.status}`)
-    if (!retryableFetchStatus(r.status) || attempt === retries) break
-    await sleep(retryDelay(r, attempt, delayMs))
-  }
-
-  throw lastError || new Error('Manifest fetch failed')
+    throw lastError || new Error('Manifest fetch failed')
+  })
 }
 
 // Fetch the web registry (catalog.json) via the proxy and return a validated
@@ -622,27 +659,29 @@ export async function fetchManifest(url, token, opts = {}) {
 export async function fetchCatalog(url, token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
-  let r
-  let lastError = null
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      r = await fetch(proxyUrl(url), {
-        cache: 'no-cache',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-    } catch (error) {
-      lastError = new Error(transientFetchMessage('Catalog'))
-      if (!retryableFetchError(error) || attempt === retries) throw lastError
-      await sleep(retryDelay(null, attempt, delayMs))
-      continue
+  const body = await withReadDeadline(opts, async ({ signal, wait }) => {
+    let r
+    let lastError = null
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        r = await fetch(proxyUrl(url), {
+          cache: 'no-cache',
+          signal,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+      } catch (error) {
+        lastError = new Error(transientFetchMessage('Catalog'))
+        if (signal.aborted || !retryableFetchError(error) || attempt === retries
+          || !await wait(retryDelay(null, attempt, delayMs))) throw lastError
+        continue
+      }
+      if (r.ok || !retryableFetchStatus(r.status) || attempt === retries) break
+      if (!await wait(retryDelay(r, attempt, delayMs))) break
     }
-    if (r.ok || !retryableFetchStatus(r.status) || attempt === retries) break
-    lastError = new Error(`Catalog fetch failed: ${r.status}`)
-    await sleep(retryDelay(r, attempt, delayMs))
-  }
-  if (!r) throw lastError || new Error('Catalog fetch failed')
-  if (!r.ok) throw new Error(`Catalog fetch failed: ${r.status}`)
-  const body = await r.json()
+    if (!r) throw lastError || new Error('Catalog fetch failed')
+    if (!r.ok) throw new Error(`Catalog fetch failed: ${r.status}`)
+    return await jsonWithin(r, signal, 'Catalog')
+  })
   if (body?.schema !== 1 || !Array.isArray(body.apps)) {
     throw new Error('Catalog schema is unsupported')
   }
