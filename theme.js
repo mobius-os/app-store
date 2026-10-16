@@ -704,7 +704,6 @@ export const CSS = `
   margin-top: 8px;
   align-items: flex-end;
 }
-.st-card.is-catalog .st-card-notice,
 .st-card.is-catalog .st-card-inline-error { grid-column: 1 / -1; }
 /* The app name is the card's open affordance. Its ::after overlay covers
    the whole card so the icon / name / description all open details. */
@@ -957,29 +956,6 @@ export const CSS = `
   padding: 7px 12px;
   user-select: none;
 }
-.st-card-notice {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  margin-top: 8px;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--accent);
-  font-size: 12px;
-  line-height: 1.35;
-  text-align: left;
-  box-sizing: border-box;
-}
-.st-card-notice-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-.st-card-notice-actions .st-big-btn,
-.st-card-notice-actions .st-btn { width: 100%; }
 /* Skeleton placeholder — same shape as a card so the grid doesn't reflow
    when the real manifests arrive. Per-block width/height stay inline. */
 .st-skeleton-card {
@@ -1383,21 +1359,6 @@ export const CSS = `
   .st-danger-btn:not(:disabled):active { opacity: 0.8; }
 }
 .st-danger-btn:disabled { pointer-events: none; opacity: 0.65; }
-/* Update notice on the detail view (clean-merge / conflict). App-specific. */
-.st-update-notice {
-  margin-top: 12px;
-  padding: 12px;
-  background: var(--surface);
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  font-size: 14px;
-  line-height: 1.45;
-}
-.st-update-notice-actions {
-  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;
-}
-.st-update-notice-actions .st-btn { flex: 1 1 160px; min-width: 0; }
-
 /* Self-update banner — the store checks for its own newer published
    version and offers a one-tap update + reload. App-specific. */
 .st-banner {
@@ -1695,22 +1656,6 @@ export const CSS = `
   .st-detail-cta {
     width: auto;
     min-width: 148px;
-  }
-  .st-update-notice-actions {
-    justify-content: flex-start;
-  }
-  .st-update-notice-actions .st-btn {
-    flex: 0 0 auto;
-    min-width: 136px;
-  }
-  .st-card-notice-actions {
-    flex-direction: row;
-    justify-content: flex-end;
-  }
-  .st-card-notice-actions .st-big-btn,
-  .st-card-notice-actions .st-btn {
-    width: auto;
-    min-width: 112px;
   }
   .st-sheet {
     border-radius: 16px;
@@ -2021,7 +1966,6 @@ export const CSS = `
 }
 .st-card.is-editorial-row .st-card-state-row { grid-column: 2; grid-row: 3; justify-content: flex-start; min-height: 18px; margin: 2px 0 0; }
 .st-card.is-editorial-row .st-card-status-row { grid-column: 3; grid-row: 1 / span 3; align-self: center; margin: 0; }
-.st-card.is-editorial-row .st-card-notice,
 .st-card.is-editorial-row .st-card-inline-error { grid-column: 1 / -1; grid-row: 4; }
 
 /* Library rows scan like a system update centre rather than a second Store grid. */
@@ -2038,7 +1982,6 @@ export const CSS = `
 .st-card.is-list .st-card-desc { display: none; }
 .st-card.is-list .st-card-status-row { grid-column: 3; grid-row: 1 / span 2; align-self: center; margin: 0; }
 .st-card.is-list .st-card-status-row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-.st-card.is-list .st-card-notice,
 .st-card.is-list .st-card-inline-error { grid-column: 1 / -1; grid-row: 3; }
 
 /* Listing-led detail pages put imagery and product value before prose. */
@@ -2091,7 +2034,6 @@ export const CSS = `
   .st-card.is-editorial-row .st-icon-slot { grid-row: 1 / span 3; }
   .st-card.is-editorial-row .st-icon-wrap { width: 48px; height: 48px; border-radius: 12px; }
   .st-card.is-editorial-row .st-card-status-row { grid-column: 3; grid-row: 1 / span 3; width: auto; margin: 0; }
-  .st-card.is-editorial-row .st-card-notice,
   .st-card.is-editorial-row .st-card-inline-error { grid-row: 4; }
 }
 
@@ -2201,7 +2143,7 @@ export const CSS = `
 .st-card.is-compact .st-card-status-row, .st-card.is-list .st-card-status-row { grid-column: 3; grid-row: 1 / span 4; margin: 0; align-self: center; }
 .st-card.is-compact .st-card-action, .st-card.is-list .st-card-action { width: auto; min-width: 60px; min-height: 44px; height: auto; padding: 8px 13px; border: 0; border-radius: 999px; background: var(--surface); color: var(--text); font: 650 12px/1.3 var(--font); }
 .st-card.is-compact .st-card-action.is-update, .st-card.is-list .st-card-action.is-update { background: var(--accent); color: var(--accent-text, white); }
-.st-card.is-compact .st-card-notice, .st-card.is-compact .st-card-inline-error, .st-card.is-list .st-card-notice, .st-card.is-list .st-card-inline-error { grid-column: 1 / -1; grid-row: auto; }
+.st-card.is-compact .st-card-inline-error, .st-card.is-list .st-card-inline-error { grid-column: 1 / -1; grid-row: auto; }
 .st-catalog-sections.is-list .st-catalog-grid { gap: 0; }
 .st-catalog-sections.is-list .st-card + .st-card { border-top: 1px solid var(--border); }
 @media (max-width: 1100px) {

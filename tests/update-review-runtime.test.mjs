@@ -506,6 +506,32 @@ test('a refusal after the dialog closed during Starting leaves no stuck placehol
   }
 })
 
+test('closing after a lost submission keeps its possibly running batch in Library', async () => {
+  const { dom, restore } = useDom()
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches' && options.method === 'POST') throw new TypeError('Failed to fetch')
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (path.startsWith('/api/apps/update-batches/')) throw new TypeError('Failed to fetch')
+      if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json(candidate(11))
+      return null
+    })
+    const doc = dom.window.document
+    await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
+    await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
+    assert.match(doc.querySelector('.st-update-review').textContent, /Could not confirm whether the updates started/)
+    await act(async () => doc.querySelector('.st-update-review-actions .st-btn-ghost').click())
+    assert.match(doc.querySelector('.st-update-batch-list')?.textContent || '', /Check update status/)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
 test('a temporary Git failure in the preview is an ordinary error with Try again, not a rejection', async () => {
   const { dom, restore } = useDom()
   let root
@@ -535,13 +561,17 @@ test('a temporary Git failure in the preview is an ordinary error with Try again
 test('a Möbius without server batches still updates through the per-app reviewed install', async () => {
   const { dom, restore } = useDom()
   const installs = []
+  let batchPosts = 0
   let releaseInstall
   let updated = false
   let root
   try {
     root = await mountApp(dom, async (path, options) => {
       if (path === '/api/apps/') return json([{ ...voiceRow, version: updated ? '2.0.0' : '1.0.0' }])
-      if (path.startsWith('/api/apps/update-batches')) return json({ detail: 'Not Found' }, 404)
+      if (path.startsWith('/api/apps/update-batches')) {
+        if (options.method === 'POST') batchPosts++
+        return json({ detail: 'Not Found' }, 404)
+      }
       if (path.includes('/update-check')) return json({ update_available: !updated, pending_update_state: 'none' })
       if (path.includes('/update-candidate-preview')) return json(candidate(11))
       if (path === '/api/apps/install') {
@@ -555,6 +585,7 @@ test('a Möbius without server batches still updates through the per-app reviewe
     await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
     await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
     assert.equal(installs.length, 1)
+    assert.equal(batchPosts, 0, 'the batch list already showed no batch routes')
     assert.deepEqual(installs[0], {
       manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json',
       reviewed_capability_digest: 'c'.repeat(64), reviewed_source_digest: 'a'.repeat(64),

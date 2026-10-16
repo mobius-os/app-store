@@ -623,7 +623,6 @@ export function updateBatchDisposition(prepared) {
 export function appLifecycleFor(item, {
   installed = [],
   updateChecks = {},
-  updateNotice = null,
   installedUnavailable = false,
   setupCompletions = {},
   systemSetupReady = false,
@@ -660,10 +659,7 @@ export function appLifecycleFor(item, {
   const candidateRejected = sourceCheckUnavailable && updateCheck.candidateRejected?.message
     ? updateCheck.candidateRejected
     : null
-  const conflict = pendingUpdateState === 'needs_resolution' || (
-    !pendingUpdateState &&
-    updateNotice?.kind === 'conflict' && updateNotice?.itemId === item?.id
-  )
+  const conflict = pendingUpdateState === 'needs_resolution'
   const needsFreshInstalledState =
     hasUpdate ||
     conflict ||
@@ -685,14 +681,12 @@ export function appLifecycleFor(item, {
   }
 
   if (conflict) {
-    const resolutionNotice = updateNotice?.kind === 'conflict'
-      ? updateNotice
-      : {
-          kind: 'conflict',
-          itemId: item?.id,
-          appId: installedApp?.id,
-          message: 'This copy has local changes, so updating needs a quick reconcile.',
-        }
+    const resolutionNotice = {
+      kind: 'conflict',
+      itemId: item?.id,
+      appId: installedApp?.id,
+      message: 'This copy has local changes, so updating needs a quick reconcile.',
+    }
     return {
       key: 'conflict',
       statusLabel: 'Update blocked',

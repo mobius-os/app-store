@@ -36,14 +36,13 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, updateNotice, onReviewUpdate, onDismissNotice, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const lifecycle = appLifecycleFor(reviewedItem, {
     installed,
     updateChecks,
-    updateNotice,
     installedUnavailable,
     setupCompletions,
     systemSetupReady,
@@ -318,37 +317,6 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
                     {setup.action || (setup.scope === 'system' ? 'Open Settings' : 'Open app')}
                   </button>
                 )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {storeInstalled && blockedUpdate && updateNotice && (
-          <div className="st-detail-section">
-            <div className="st-section-label">Update</div>
-            <div className="st-update-notice">
-              <div>{updateNotice.message}</div>
-              <div className="st-update-notice-actions">
-                <button
-                  type="button"
-                  className="st-btn st-btn-primary"
-                  onClick={() => onReviewUpdate(updateNotice)}
-                  disabled={busy}
-                >
-                  {busy
-                    ? busyLabelForAction('resolve')
-                    : updateNotice.kind === 'conflict'
-                    ? 'Resolve update'
-                    : 'Review in chat'}
-                </button>
-                <button
-                  type="button"
-                  className="st-btn st-btn-secondary"
-                  onClick={onDismissNotice}
-                  disabled={busy}
-                >
-                  Not now
-                </button>
               </div>
             </div>
           </div>

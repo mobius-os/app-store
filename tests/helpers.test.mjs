@@ -2260,10 +2260,6 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
   assert.equal(appLifecycleFor(item, { installed }).actionKind, 'open')
   assert.equal(appLifecycleFor(item, {
     installed,
-    updateNotice: { kind: 'conflict', itemId: 'news' },
-  }).actionKind, 'resolve')
-  assert.equal(appLifecycleFor(item, {
-    installed,
     installedUnavailable: true,
     updateChecks: { 3: { available: true, pendingUpdateState: 'none' } },
   }).actionKind, 'retry')
@@ -2342,7 +2338,6 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
       available: true,
       pendingUpdateState: 'replay_pending',
     } },
-    updateNotice: { kind: 'conflict', itemId: 'news', appId: 3 },
   })
   assert.equal(replayPending.actionKind, 'update')
   assert.equal(replayPending.pendingUpdateState, 'replay_pending')
@@ -2352,7 +2347,6 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
       available: true,
       pendingUpdateState: 'unknown',
     } },
-    updateNotice: { kind: 'conflict', itemId: 'news', appId: 3 },
   })
   assert.equal(unknownPending.actionKind, 'update')
   assert.equal(unknownPending.pendingUpdateState, 'unknown')

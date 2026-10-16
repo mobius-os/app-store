@@ -115,8 +115,9 @@ const GATEWAY_STATUSES = new Set([502, 504])
 // resolver actions. Browser teardown never cancels server-owned update work.
 // `applyOne` is the fallback for a Möbius without server batches: the
 // per-app reviewed update, one app at a time, while the Store stays open.
-// `batchesMissing(error)` says whether a refused submit means this Möbius has
-// no batch routes; only then does `applyOne` run.
+// `batchesMissing(error)` says whether this Möbius has no batch routes: with
+// no error, whether that is already known; with a refused submit's error,
+// whether the refusal shows it. Only then does `applyOne` run.
 export function createUpdateBatch({ prepare, submit, read, watch, resolve, refresh, applyOne, batchesMissing, onChange, onSnapshot, onRefused, newId, reconnectMs = 1500 }, entries = []) {
   let state = { phase: 'review', entries, error: '', batchId: null, runningBatchId: null, local: false }
   let checkController = null
@@ -247,6 +248,13 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     if (!idle()) return
     const approved = state.entries.filter(entry => entry.status === 'ready')
     if (!approved.length) return
+    // Known missing batch routes go straight to the per-app fallback. Posting
+    // first would show "Starting", and a close then would leave the fallback
+    // running in a dialog nobody can reopen.
+    if (applyOne && batchesMissing?.()) {
+      await applyEach(approved)
+      return
+    }
     const id = state.batchId || newId()
     const updates = approved.map(entry => ({
       app_id: entry.prepared.installedApp.id,
