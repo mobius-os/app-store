@@ -8,7 +8,7 @@ import { JSDOM } from 'jsdom'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react'
-import { MICROPHONE, platformContract, platformPreview } from './capability-fixtures.mjs'
+import { ASSET_CACHE, MICROPHONE, platformContract, platformPreview } from './capability-fixtures.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-review-runtime')
@@ -237,6 +237,42 @@ test('an access change is reviewed once per capability, with the full access one
     assert.equal(doc.querySelector('details.st-capability-full-access'), null, 'with no earlier record the full access is shown openly')
     assert.match(doc.body.textContent, /no earlier access record[\s\S]*Installed apps/)
     assert.doesNotMatch(doc.body.textContent, /Nothing was installed/, 'a review installs nothing and says nothing about it')
+  } finally {
+    await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('an update review always lists every path the platform reports, beside its rows', async () => {
+  const { dom, restore } = useDom()
+  const { CapabilityContract } = await bundle(join('ui', 'CapabilityContract.jsx'), 'contract-paths')
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const prompt = { file: 'agent.md', scope: 'chats_started_while_installed', activation: 'chat_start' }
+  const job = { job: 'fetch.sh', mode: 'scheduled', cron: '0 4 * * *', user_configurable: false, initialize_on_install: false }
+  const tool = { name: 'search', description: 'Find notes.', input_schema: { type: 'object' } }
+  const cases = {
+    'system prompt file with scope and activation': [{ systemPrompt: prompt }, { systemPrompt: { file: 'agent2.md', scope: 'all_agent_chats', activation: 'next_turn' } }],
+    'microphone wording with lifecycle, risk and kind': [
+      { runtime: { 'media.microphone.capture': MICROPHONE } },
+      { runtime: { 'media.microphone.capture': { ...MICROPHONE, description: 'Use the microphone.', lifecycle: 'always', risk: 'storage', kind: 'invoke' } } },
+    ],
+    'background schedule with job script and configurability': [{ background: job }, { background: { ...job, cron: '*/5 * * * *', job: 'sync.sh', user_configurable: true } }],
+    'tool wording with input schema': [{ tools: [tool] }, { tools: [{ ...tool, description: 'Find notes and tasks.', input_schema: { type: 'object', required: ['query'] } }] }],
+    'new skill, job secret and asset-cache limit': [
+      { runtime: { 'device.asset-cache': ASSET_CACHE }, data: { job_secret_read: ['A'] } },
+      { runtime: { 'device.asset-cache': { ...ASSET_CACHE, limits: { max_bytes: 2 * 1024 ** 3 } } }, data: { job_secret_read: ['A', 'B'] }, skills: ['x.md'] },
+    ],
+  }
+  try {
+    for (const [name, [before, after]] of Object.entries(cases)) {
+      const preview = platformPreview(platformContract(before), platformContract(after))
+      const { added, removed, changed } = preview.capability_diff
+      await act(async () => root.render(React.createElement(CapabilityContract, { review: { status: 'changed', preview }, isInstalled: true, updateReview: true })))
+      const doc = dom.window.document
+      assert.ok(doc.querySelector('.st-capability-diff-row'), `${name}: the summary rows render`)
+      const listed = doc.querySelector('.st-capability-change')?.textContent || ''
+      for (const path of [...added, ...removed, ...changed]) assert.ok(listed.includes(path), `${name}: ${path} is listed`)
+    }
   } finally {
     await act(async () => root.unmount()); restore()
     await rm(buildDir, { recursive: true, force: true })

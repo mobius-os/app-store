@@ -79,10 +79,3 @@ export function platformPreview(installed, candidate) {
   }
 }
 
-// The review invariant: every path the platform reports lies under a row the
-// review shows as changed, or is listed by path.
-export function hiddenPaths(preview, { rows, otherPaths }) {
-  const slices = rows.map(row => row.key.split(':')[0])
-  return preview.capability_diff.added.concat(preview.capability_diff.removed, preview.capability_diff.changed)
-    .filter(path => !otherPaths.includes(path) && !slices.some(slice => path === slice || path.startsWith(`${slice}.`)))
-}

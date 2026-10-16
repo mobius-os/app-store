@@ -78,6 +78,15 @@ function limitValueText(key, value) {
   return `${Math.round(size * 10) / 10} ${units[unit]}`
 }
 
+const PROMPT_SCOPES = {
+  all_agent_chats: ['All chats', 'every agent chat'],
+  chats_started_while_installed: ['New chats', 'agent chats started while it is installed'],
+}
+const PROMPT_ACTIVATIONS = {
+  next_turn: 'on its next turn',
+  chat_start: 'when the chat starts',
+}
+
 export function capabilityRows(contract) {
   if (!contract || typeof contract !== 'object') return []
   const agent = contract.agent || {}
@@ -87,11 +96,15 @@ export function capabilityRows(contract) {
   const prompt = agent.system_prompt
   const logs = data.chat_logs || {}
   const rows = []
-  if (prompt) rows.push(row(
-    'agent.system_prompt', 'Agent chats', 'All chats',
-    `Adds system instructions to every agent chat on its next turn (${prompt.file}).`,
-    'write',
-  ))
+  if (prompt) {
+    const [tag, chats] = PROMPT_SCOPES[prompt.scope] || ['Agent chats', `agent chats (scope ${prompt.scope})`]
+    const when = PROMPT_ACTIVATIONS[prompt.activation] || `(activation ${prompt.activation})`
+    rows.push(row(
+      'agent.system_prompt', 'Agent chats', tag,
+      `Adds system instructions to ${chats} ${when} (${prompt.file}).`,
+      'write',
+    ))
+  }
   if (logs.effective === 'summary' || logs.effective === 'summary_with_deleted') rows.push(row(
     'data.chat_logs', 'Chat history', 'Redacted',
     `Can request structurally redacted chat text${logs.effective === 'summary_with_deleted' ? ', including recoverable deleted chats' : ''}; tool calls, hidden reasoning, errors, and secret-like values are removed.`,
@@ -134,18 +147,13 @@ export function capabilityRows(contract) {
       'read',
     ))
   }
+  // The platform rejects repeated tool names, so the name keys the row.
   for (const tool of Array.isArray(agent.tools) ? agent.tools : []) {
     if (!tool?.name) continue
-    // The whole declaration is compared, so a reshaped tool whose wording
-    // stays the same is still reported. The platform rejects repeated tool
-    // names, so the name keys the row.
-    rows.push({
-      ...row(
-        `agent.tools:${tool.name}`, `Agent tool “${tool.name}”`, 'Agent tool',
-        tool.description || 'Agents can call this app.', 'read',
-      ),
-      compare: JSON.stringify(tool),
-    })
+    rows.push(row(
+      `agent.tools:${tool.name}`, `Agent tool “${tool.name}”`, 'Agent tool',
+      tool.description || 'Agents can call this app.', 'read',
+    ))
   }
   for (const capability of BOOLEAN_DATA_CAPABILITIES) {
     if (data[capability.key]) {
@@ -201,39 +209,26 @@ export function changedCapabilityPaths(diff) {
 
 const rowText = item => `${item.tag} · ${item.summary}`
 
-// The contract slice a row describes: agent tools share `agent.tools`; every
-// other row's key is its slice. Keys are never split, so dotted runtime ids
-// stay whole.
-const rowSlice = key => key.split(':')[0]
-const under = (path, slice) => path === slice || path.startsWith(`${slice}.`)
-
-// An update review pairs the installed contract's rows with the proposed
-// contract's by capability key: one Added, Removed or Changed row per
-// capability whose words differ, in the same words as the full access list.
-// A reported path counts as shown only when it lies under such a row and
-// under no row that changed without visibly changing (a reshaped tool).
-// Every other path stays in `otherPaths`, so the review hides nothing the
-// platform reports, even a change the wording cannot express.
-export function capabilityChanges(preview) {
-  const diff = preview?.capability_diff
-  if (diff?.unknown_previous !== false || !preview.installed_contract) return null
+// A readable summary of an update's access changes: the installed and
+// proposed access rows paired by capability key, one Added, Removed or
+// Changed row per capability whose words differ. It is only a summary; the
+// review always lists every path the platform reports beside it.
+export function capabilityChangeRows(preview) {
+  if (preview?.capability_diff?.unknown_previous !== false || !preview.installed_contract) return []
   const before = new Map(capabilityRows(preview.installed_contract).map(item => [item.key, item]))
   const after = new Map(capabilityRows(preview.capability_contract).map(item => [item.key, item]))
   const rows = []
-  const unseen = []
   for (const [key, next] of after) {
     const prior = before.get(key)
     if (!prior) rows.push({ kind: 'Added', key, label: next.label, proposed: rowText(next) })
     else if (rowText(prior) !== rowText(next)) {
       rows.push({ kind: 'Changed', key, label: next.label, previous: rowText(prior), proposed: rowText(next) })
-    } else if (prior.compare !== next.compare) unseen.push(rowSlice(key))
+    }
   }
   for (const [key, prior] of before) {
     if (!after.has(key)) rows.push({ kind: 'Removed', key, label: prior.label, previous: rowText(prior) })
   }
-  const shown = rows.map(item => rowSlice(item.key))
-  const explained = path => shown.some(slice => under(path, slice)) && !unseen.some(slice => under(path, slice))
-  return { rows, otherPaths: changedCapabilityPaths(diff).filter(path => !explained(path)) }
+  return rows
 }
 
 function CapabilityRows({ contract }) {
@@ -278,9 +273,10 @@ function CapabilityChangeRows({ rows }) {
 }
 
 // `updateReview` is an update's pre-apply review: with a recorded previous
-// contract it lists each changed capability, old and new, and keeps the full
-// resulting access one tap away. Elsewhere, and when no earlier record
-// exists, the complete access is shown.
+// contract it summarises each changed capability, old and new, beside the
+// full list of changed paths, and keeps the full resulting access one tap
+// away. Elsewhere, and when no earlier record exists, the complete access is
+// shown with the changed paths.
 export function CapabilityContract({ review, onRetry, isInstalled = false, updateReview = false }) {
   if (!review || review.status === 'loading') {
     return (
@@ -315,29 +311,12 @@ export function CapabilityContract({ review, onRetry, isInstalled = false, updat
         ? 'Möbius has no earlier access record for this app, so the old and new access cannot be compared automatically. Review the complete access below.'
         : 'This version changes the app’s access. Review the permissions below before approving.'
       : ''
-  const noticeBlock = notice ? <div className="st-notice is-warning" role="alert">{notice}</div> : null
-  const changes = updateReview ? capabilityChanges(preview) : null
-  if (changes?.rows.length) {
-    return (
-      <>
-        {noticeBlock}
-        <CapabilityChangeRows rows={changes.rows} />
-        {changes.otherPaths.length ? (
-          <div className="st-capability-change" role="status">
-            {`This update also changes: ${changes.otherPaths.join(', ')}.`}
-          </div>
-        ) : null}
-        <details className="st-capability-full-access">
-          <summary>Show full resulting access</summary>
-          <CapabilityRows contract={preview.capability_contract} />
-        </details>
-      </>
-    )
-  }
+  const changeRows = updateReview ? capabilityChangeRows(preview) : []
   const paths = changedCapabilityPaths(preview?.capability_diff)
   return (
     <>
-      {noticeBlock}
+      {notice ? <div className="st-notice is-warning" role="alert">{notice}</div> : null}
+      {changeRows.length ? <CapabilityChangeRows rows={changeRows} /> : null}
       {isInstalled && (paths.length > 0 || unknownPrevious) && (
         <div className="st-capability-change" role="status">
           {unknownPrevious
@@ -345,7 +324,12 @@ export function CapabilityContract({ review, onRetry, isInstalled = false, updat
             : `This update changes: ${paths.join(', ')}.`}
         </div>
       )}
-      <CapabilityRows contract={preview?.capability_contract} />
+      {changeRows.length ? (
+        <details className="st-capability-full-access">
+          <summary>Show full resulting access</summary>
+          <CapabilityRows contract={preview.capability_contract} />
+        </details>
+      ) : <CapabilityRows contract={preview?.capability_contract} />}
     </>
   )
 }

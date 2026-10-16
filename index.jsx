@@ -196,7 +196,7 @@ export {
   proxyUrl,
   readErrorDetail,
 } from './api.js'
-export { capabilityChanges, capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
+export { capabilityChangeRows, capabilityRows, changedCapabilityPaths } from './ui/CapabilityContract.jsx'
 export { appIcon, installedIconUrl } from './ui/IconBox.jsx'
 export { catalogAssetFilename, catalogAssetUrl, storeAssetSource, storeAssetUrl } from './ui/StoreImage.jsx'
 export { createPublicationPreviewGate } from './ui/PublisherTab.jsx'
