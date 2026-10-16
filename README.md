@@ -27,6 +27,11 @@ the Store never cancels the work, and Library shows **View update progress**
 until it finishes. A lost answer resends the same batch id, so it attaches
 to the batch rather than approving a second one.
 
+On a Möbius without the batch routes (404/405), the Store falls back to the
+per-app reviewed update it used before: the same `/api/apps/install` request
+with the reviewed digests, one app at a time, with the dialog kept open
+until it finishes.
+
 Confirming never starts an agent. A conflict keeps the current app live and
 offers **Resolve in chat**. A failure the platform marks `retryable` offers
 **Try again** (a fresh check, then a new confirmation); a permanent one offers

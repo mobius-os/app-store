@@ -1992,6 +1992,7 @@ test('confirmed conflicts are handed to one preserving resolver chat', async () 
     } }), { status: 409, headers: { 'content-type': 'application/json' } })
     assert.deepEqual(await createConflictResolverBatch([80, 81], 'preserve_local', 'token'), {
       chat_id: 'existing-chat', app_ids: [81], started: false, existing: true,
+      message: 'Voice is already being resolved',
     })
     assert.equal(request.url, '/api/apps/conflict-resolver-batch')
     assert.deepEqual(JSON.parse(request.options.body), {

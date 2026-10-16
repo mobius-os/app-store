@@ -140,14 +140,17 @@ test('the dialog shows per-app progress and can be closed while the batch contin
   try {
     const review = { phase: 'applying', batchId: 'b', entries: [
       entry('one', 'updated'), entry('two', 'applying'), entry('three', 'queued'),
-      entry('four', 'conflict'), entry('five', 'failed', { error: 'boom', retryable: true }),
+      entry('four', 'conflict', { resolver: { chat_id: 'old', message: 'Another chat is still resolving an earlier update of four; open or stop it there.' } }),
+      entry('five', 'failed', { error: 'boom', retryable: true }),
     ] }
     await act(async () => root.render(React.createElement(UpdateReviewModal, { review, onClose() { closed++ }, onConfirm() {} })))
     assert.equal(doc.querySelector('#st-update-review-title').textContent, 'Updating apps')
     assert.match(doc.querySelector('.st-update-review-subtitle').textContent, /3 of 5 finished · 2 in progress/)
     const labels = [...doc.querySelectorAll('.st-update-status')].map(node => node.textContent)
     assert.deepEqual(labels, ['Updated', 'Updating…', 'Queued', 'Local edits need review', 'Could not update'])
-    assert.ok([...doc.querySelectorAll('.st-update-review-section button')].every(button => button.disabled), 'per-app actions wait for the batch')
+    assert.match(doc.body.textContent, /still resolving an earlier update of four/, 'the server says why the chat is reused')
+    assert.doesNotMatch(doc.body.textContent, /An agent is reconciling your edits/)
+    assert.ok([...doc.querySelectorAll('.st-update-review-section button')].filter(button => button.textContent !== 'Open resolver chat').every(button => button.disabled), 'per-app actions wait for the batch')
     const close = doc.querySelector('.st-update-review-actions .st-btn-ghost')
     assert.equal(close.textContent, 'Continue in background')
     assert.equal(close.disabled, false)
@@ -321,7 +324,7 @@ test('closing an accepted batch keeps live progress; reopening shows it from the
     })
     await act(async () => { doc.querySelector('.st-update-batch-list button').click(); await wait(10) })
     assert.match(doc.querySelector('.st-update-review').textContent, /Updating apps/)
-    assert.match(doc.querySelector('.st-update-review').textContent, /Applying this update on the server/)
+    assert.match(doc.querySelector('.st-update-review').textContent, /Applying this update/)
     batch = { ...batch, phase: 'complete', entries: [{ ...batch.entries[0], status: 'updated', version: '2.0.0' }] }
     await act(async () => { streamController.enqueue(frame(batch)); await wait(20) })
     assert.match(doc.querySelector('.st-update-review').textContent, /1 updated · 0 need attention/)
@@ -427,6 +430,107 @@ test('a card error the same action may get past offers Try again; others keep As
     assert.deepEqual(errorButtons(), ['Ask agent'])
   } finally {
     await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('a refusal after the dialog closed during Starting leaves no stuck placeholder', async () => {
+  const { dom, restore } = useDom()
+  let answer
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches' && options.method === 'POST') return new Promise(resolve => { answer = resolve })
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json(candidate(11))
+      return null
+    })
+    const doc = dom.window.document
+    await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
+    await act(async () => doc.querySelector('.st-update-review-actions button.st-btn-primary').click())
+    assert.ok(answer, 'the submission is in flight')
+    await act(async () => doc.querySelector('.st-update-review-actions .st-btn-ghost').click())
+    assert.match(doc.querySelector('.st-update-batch-list')?.textContent || '', /Check update status/)
+    assert.equal(doc.querySelector('button[aria-label$=" Voice"].st-card-action')?.disabled, true, 'possibly accepted: shown as updating')
+    await act(async () => { answer(json({ detail: { code: 'app_update_running', batch_id: 'other', message: 'Already running.' } }, 409)); await wait(20) })
+    assert.equal(doc.querySelector('.st-update-batch-list'), null, 'a refused id leaves Library')
+    await act(async () => { dom.window.dispatchEvent(new dom.window.Event('focus')); await wait(20) })
+    assert.equal(doc.querySelector('.st-update-batch-list'), null)
+    assert.equal(doc.querySelector('button[aria-label="Update Voice"]')?.disabled, false, 'the app is free to update again')
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('a temporary Git failure in the preview is an ordinary error with Try again, not a rejection', async () => {
+  const { dom, restore } = useDom()
+  let root
+  try {
+    root = await mountApp(dom, async path => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json({ detail: { code: 'git_transfer_timeout', message: 'The app\'s Git transfer timed out.', retryable: true } }, 409)
+      return null
+    })
+    const doc = dom.window.document
+    await act(async () => { doc.querySelector('button[aria-label="Update Voice"]').click(); await wait(20) })
+    const modal = doc.querySelector('.st-update-review')
+    assert.match(modal.textContent, /Git transfer timed out/)
+    assert.deepEqual([...modal.querySelectorAll('.st-update-review-section button')].map(b => b.textContent), ['Try again'])
+    await act(async () => doc.querySelector('.st-update-review-actions .st-btn-ghost').click())
+    assert.doesNotMatch(doc.body.textContent, /Update not offered|Repository moved/)
+    assert.ok(doc.querySelector('button[aria-label="Update Voice"]'), 'the update is still offered')
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('a Möbius without server batches still updates through the per-app reviewed install', async () => {
+  const { dom, restore } = useDom()
+  const installs = []
+  let releaseInstall
+  let updated = false
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([{ ...voiceRow, version: updated ? '2.0.0' : '1.0.0' }])
+      if (path.startsWith('/api/apps/update-batches')) return json({ detail: 'Not Found' }, 404)
+      if (path.includes('/update-check')) return json({ update_available: !updated, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json(candidate(11))
+      if (path === '/api/apps/install') {
+        installs.push(JSON.parse(options.body))
+        return new Promise(resolve => { releaseInstall = () => { updated = true; resolve(json({ id: 11, slug: 'voice', name: 'Voice', version: '2.0.0', mode: 'update', divergence: 'fast_forward' })) } })
+      }
+      return null
+    })
+    const doc = dom.window.document
+    assert.equal(doc.querySelector('[role="alert"]'), null, 'a missing batch list is not an error')
+    await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
+    await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
+    assert.equal(installs.length, 1)
+    assert.deepEqual(installs[0], {
+      manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json',
+      reviewed_capability_digest: 'c'.repeat(64), reviewed_source_digest: 'a'.repeat(64),
+      update_app_id: 11, reviewed_upstream_commit: 'b'.repeat(40),
+    })
+    const close = doc.querySelector('.st-update-review-actions .st-btn-ghost')
+    assert.equal(close.disabled, true, 'the Store applies these itself, so the dialog stays open')
+    assert.match(doc.querySelector('.st-update-review-subtitle').textContent, /Keep the Store open/)
+    await act(async () => { releaseInstall(); await wait(20) })
+    assert.match(doc.querySelector('.st-update-review').textContent, /1 updated · 0 need attention/)
+    await act(async () => doc.querySelector('.st-update-review-actions .st-btn-ghost').click())
+    assert.equal(doc.querySelector('.st-update-review'), null)
+    assert.ok(doc.querySelector('button[aria-label="Open Voice"]'))
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
     await rm(buildDir, { recursive: true, force: true })
   }
 })

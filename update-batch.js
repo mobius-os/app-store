@@ -107,10 +107,16 @@ function errorFields(error, fallback) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+// Statuses a gateway in front of the platform may answer while the platform
+// itself did accept the batch: the outcome stays uncertain.
+const GATEWAY_STATUSES = new Set([502, 504])
+
 // One controller owns review, submission, recovered snapshots and explicit
 // resolver actions. Browser teardown never cancels server-owned update work.
-export function createUpdateBatch({ prepare, submit, read, watch, resolve, refresh, onChange, onSnapshot, newId, reconnectMs = 1500 }, entries = []) {
-  let state = { phase: 'review', entries, error: '', batchId: null, runningBatchId: null }
+// `applyOne` is the fallback for a Möbius without server batches: the
+// per-app reviewed update, one app at a time, while the Store stays open.
+export function createUpdateBatch({ prepare, submit, read, watch, resolve, refresh, applyOne, onChange, onSnapshot, onRefused, newId, reconnectMs = 1500 }, entries = []) {
+  let state = { phase: 'review', entries, error: '', batchId: null, runningBatchId: null, local: false }
   let checkController = null
   let watchController = null
   let disposed = false
@@ -122,7 +128,15 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     if (!disposed) onChange?.(state)
   }
   const idle = () => !disposed && state.phase === 'review'
-  const appId = entry => Number(entry.prepared?.installedApp?.id ?? entry.item?.id)
+  // The installed app id once known; a check that failed before matching an
+  // installed app keeps its catalog item id (often a string such as 'voice').
+  const appId = entry => {
+    const id = entry.prepared?.installedApp?.id
+    return id != null ? Number(id) : entry.item?.id
+  }
+  // Batches this controller saw running (or submitted): their completion is
+  // news, so the app list is re-read once when they finish.
+  const awaitingCompletion = new Set()
   const replace = (id, patch) => emit({ entries: state.entries.map(entry => appId(entry) === id ? { ...entry, ...patch } : entry) })
   const mergeSnapshot = raw => {
     const snapshot = normalizeBatchSnapshot(raw)
@@ -130,6 +144,7 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     if (newestBatchSnapshot(snapshots.get(snapshot.id), snapshot) !== snapshot) return
     snapshots.set(snapshot.id, snapshot)
     uncertain = false
+    if (snapshot.phase === 'applying') awaitingCompletion.add(snapshot.id)
     onSnapshot?.(snapshot)
     const known = new Map(state.entries.map(entry => [appId(entry), entry]))
     const rows = snapshot.entries.map(row => {
@@ -153,6 +168,8 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     emit({ batchId: snapshot.id, runningBatchId: null, phase: snapshot.phase === 'complete' ? 'review' : 'applying', error: '', entries: [...rows, ...siblings] })
     if (snapshot.phase === 'complete') {
       watchController?.abort()
+      // Re-reading a finished batch changes nothing: refresh only once.
+      if (!awaitingCompletion.delete(snapshot.id)) return
       const refreshFailed = () => {
         if (!disposed) emit({ error: 'Update results are kept, but the app list could not be refreshed. Reopen Store to refresh it.' })
       }
@@ -192,7 +209,7 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     const ids = new Set(items.map(item => item.id))
     const retained = state.entries.filter(entry => !ids.has(entry.item.id))
     const seen = new Set(retained.map(appId))
-    emit({ phase: 'checking', error: '', batchId: null, runningBatchId: null, entries: [...retained, ...items.map(item => ({ item, status: 'checking' }))] })
+    emit({ phase: 'checking', error: '', batchId: null, runningBatchId: null, applied: false, entries: [...retained, ...items.map(item => ({ item, status: 'checking' }))] })
     const checked = await mapWithConcurrency(items, UPDATE_CHECK_CONCURRENCY, async item => {
       if (signal.aborted) return null
       try {
@@ -233,26 +250,32 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     // Keep the id before the request. If the answer is lost, a retry sends
     // this same id, which attaches to the batch rather than approving another.
     emit({ phase: 'submitting', error: '', batchId: id, runningBatchId: null })
+    awaitingCompletion.add(id)
     try {
       mergeSnapshot(await submit({ id, updates }))
       if (state.phase === 'applying') void watchBatch(id)
     } catch (error) {
-      if (disposed) return
-      if (error?.status) {
-        // The server answered, so no batch exists under this id. An app that
-        // is already updating points at the batch that owns it.
+      if (error?.status && !GATEWAY_STATUSES.has(error.status)) {
+        // The platform answered, so no batch exists under this id.
         uncertain = false
+        awaitingCompletion.delete(id)
+        onRefused?.(id)
+        if (disposed) return
+        if ((error.status === 404 || error.status === 405) && applyOne) {
+          // A Möbius without server batches: apply each reviewed update here.
+          await applyEach(approved)
+          return
+        }
+        // An app that is already updating points at the batch that owns it.
         const running = error.code === 'app_update_running' && error.detail?.batch_id
-        const legacy = error.status === 404 || error.status === 405
         emit({
           phase: 'review', batchId: null,
           runningBatchId: running ? String(error.detail.batch_id) : null,
-          error: legacy
-            ? 'This Möbius cannot run Store updates on the server yet. Update Möbius, then try again.'
-            : error.message || 'The updates could not be started.',
+          error: error.message || 'The updates could not be started.',
         })
         return
       }
+      if (disposed) return
       try {
         mergeSnapshot(await read(id))
         if (state.phase === 'applying') void watchBatch(id)
@@ -262,6 +285,30 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
         emit({ phase: 'review', error: `Could not confirm whether the updates started. Confirm again to resend the same request, or reopen Store to see its status. ${error?.message || ''}`.trim() })
       }
     }
+  }
+  // The per-app reviewed update, in order, as the Store did before server
+  // batches. It needs the Store open, so the dialog stays until it finishes.
+  async function applyEach(approved) {
+    const ids = new Set(approved.map(appId))
+    emit({ phase: 'applying', local: true, batchId: null, error: '',
+      entries: state.entries.map(entry => ids.has(appId(entry)) ? { ...entry, status: 'queued' } : entry) })
+    for (const entry of approved) {
+      if (disposed) return
+      replace(appId(entry), { status: 'applying' })
+      let outcome
+      try {
+        outcome = await applyOne(entry)
+      } catch (error) {
+        outcome = { status: 'failed', ...errorFields(error, NOT_UPDATED) }
+      }
+      replace(appId(entry), { error: '', errorCode: null, retryable: null, warnings: [], ...outcome })
+    }
+    if (disposed) return
+    emit({ phase: 'review', local: false, applied: true })
+    const refreshFailed = () => {
+      if (!disposed) emit({ error: 'Update results are kept, but the app list could not be refreshed. Reopen Store to refresh it.' })
+    }
+    await Promise.resolve().then(refresh).then(result => { if (!result) refreshFailed() }).catch(refreshFailed)
   }
   async function resolveEntries(ids) {
     if (!idle()) return

@@ -54,16 +54,18 @@ function ReviewEntry({ entry, locked, onRetry, onAskAgent, onResolveOne, onOpenC
       ) : entry.status === 'checking' || entry.status === 'queued' || entry.status === 'applying' ? (
         <div className="st-update-review-notice" role="status">
           {entry.status === 'checking' ? 'Checking the release and its access. Nothing changes yet.'
-            : entry.status === 'queued' ? 'Waiting for a free update slot. The server runs two updates at a time.'
-              : 'Applying this update on the server.'}
+            : entry.status === 'queued' ? 'Waiting for its turn. A few updates run at a time.'
+              : 'Applying this update.'}
         </div>
       ) : entry.status === 'conflict' ? (
         <div className="st-update-review-notice is-error" role="alert">
           <div className="st-update-review-error-text">{entry.error || 'Your local edits overlap this update.'}</div>
           <p>
-            {entry.resolver
-              ? 'An agent is reconciling your edits with the update. Your current app stays live.'
-              : 'Your current app stays live. An agent can reconcile the update while keeping your edits.'}
+            {entry.resolver?.message
+              ? `${entry.resolver.message} Your current app stays live.`
+              : entry.resolver
+                ? 'An agent is reconciling your edits with the update. Your current app stays live.'
+                : 'Your current app stays live. An agent can reconcile the update while keeping your edits.'}
           </p>
           {entry.resolver?.chat_id ? (
             <button type="button" className="st-btn st-btn-secondary" onClick={() => onOpenChat?.(entry.resolver.chat_id)}>Open resolver chat</button>
@@ -138,9 +140,12 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
   const unresolved = entries.filter(entry => entry.status === 'conflict' && !entry.resolver)
   const progress = batchProgress(entries)
   const applying = updateBatchBusy(review)
+  // The per-app fallback (a Möbius without server batches) runs in this
+  // Store, so the dialog stays open until it finishes, as it always did.
+  const localApply = applying && review.local === true
   const checking = phase === 'checking'
   const locked = applying || checking || phase === 'resolving' || agentReviewing
-  const hasResults = Boolean(review.batchId) || updatedCount > 0
+  const hasResults = Boolean(review.batchId) || review.applied === true || updatedCount > 0
   const title = checking ? 'Checking for updates'
     : phase === 'resolving' ? 'Starting resolver chat'
       : applying ? 'Updating apps'
@@ -148,6 +153,7 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
           : entries.length === 1 ? 'Review update' : 'Review app updates'
   const subtitle = checking ? 'Comparing each release’s source and access. Checking changes nothing.'
     : phase === 'submitting' ? 'Starting the confirmed updates…'
+      : localApply ? `${progress.finished} of ${progress.total} finished · ${progress.active} in progress. Keep the Store open until these finish.`
       : applying ? `${progress.finished} of ${progress.total} finished · ${progress.active} in progress. You can close this window; updates continue on the server.`
         : phase === 'resolving' ? 'Opening a resolver chat for the selected apps…'
           : hasResults ? `${updatedCount} updated · ${attentionCount} need attention${ready.length ? ` · ${ready.length} ready to confirm` : ''}.`
@@ -155,7 +161,7 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
               : unresolved.length && unresolved.length === entries.length ? 'Local changes must be reconciled before updating. Nothing will change.'
                 : 'No updates are ready to confirm. Your current apps stay unchanged.'
 
-  const requestClose = useCallback(() => { onClose() }, [onClose])
+  const requestClose = useCallback(() => { if (!localApply) onClose() }, [localApply, onClose])
 
   useEffect(() => {
     openerRef.current = document.activeElement
@@ -190,7 +196,7 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
             <h2 id="st-update-review-title" className="st-update-review-title">{title}</h2>
             <p className="st-update-review-subtitle" role="status" aria-live="polite">{subtitle}</p>
           </div>
-          <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
+          <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} disabled={localApply} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
         </div>
 
         <div className="st-update-review-body">
@@ -209,8 +215,8 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
         </div>
 
         <div className="st-update-review-actions">
-          <button type="button" className="st-btn st-btn-ghost" onClick={requestClose}>
-            {checking ? 'Cancel' : applying ? 'Continue in background' : hasResults ? 'Done' : 'Not now'}
+          <button type="button" className="st-btn st-btn-ghost" onClick={requestClose} disabled={localApply}>
+            {checking ? 'Cancel' : localApply ? 'Updating…' : applying ? 'Continue in background' : hasResults ? 'Done' : 'Not now'}
           </button>
           {unresolved.length > 1 && onResolveAll ? (
             <button type="button" className="st-btn st-btn-secondary" onClick={onResolveAll} disabled={locked}>Resolve all · {unresolved.length}</button>

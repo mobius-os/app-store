@@ -262,14 +262,95 @@ test('an app already updating elsewhere points at the batch that owns it', async
   assert.deepEqual(status(batch), ['ready'], 'the review stays for a later confirmation')
 })
 
-test('a definite refusal is reported once, and a platform without batches says so', async () => {
-  const { batch } = harness({ submit: async () => { throw httpError(503, 'App updates are unavailable while the server restarts.') } })
+test('a definite refusal is reported once and releases its id', async () => {
+  const refused = []
+  const { batch } = harness({ onRefused: id => refused.push(id), submit: async () => { throw httpError(503, 'App updates are unavailable while the server restarts.') } })
   await batch.check(items(1)); await batch.confirm()
   assert.match(batch.state.error, /server restarts/)
   assert.equal(batch.state.batchId, null)
-  const legacy = harness({ submit: async () => { throw httpError(405, 'Method Not Allowed') } }).batch
-  await legacy.check(items(1)); await legacy.confirm()
-  assert.match(legacy.state.error, /cannot run Store updates on the server yet/)
+  assert.deepEqual(refused, ['key-1'], 'the app can drop any placeholder for this id')
+  const running = harness({ onRefused: id => refused.push(id), newId: () => 'key-2', submit: async () => { throw httpError(409, { code: 'app_update_running', batch_id: 'b', message: 'Already running.' }) } }).batch
+  await running.check(items(1)); await running.confirm()
+  assert.deepEqual(refused, ['key-1', 'key-2'])
+})
+
+test('a gateway error on submit is uncertain: the id is kept and re-read', async () => {
+  const reads = [], refused = []
+  const { batch } = harness({
+    onRefused: id => refused.push(id),
+    submit: async () => { throw httpError(504, 'Gateway Timeout') },
+    read: async id => { reads.push(id); return snapshot(id, ['updated']) },
+  })
+  await batch.check(items(1)); await batch.confirm()
+  assert.deepEqual(reads, ['key-1'])
+  assert.deepEqual(refused, [])
+  assert.equal(batch.state.batchId, 'key-1')
+  assert.deepEqual(status(batch), ['updated'])
+})
+
+test('without server batches each reviewed update is applied in turn through the fallback', async () => {
+  const applied = [], refreshed = []
+  let concurrent = 0, peak = 0
+  const { batch, changes } = harness({
+    submit: async () => { throw httpError(404, 'Not Found') },
+    refresh: async () => { refreshed.push(true); return true },
+    applyOne: async entry => {
+      concurrent++; peak = Math.max(peak, concurrent)
+      applied.push(entry.prepared.installedApp.id)
+      await tick()
+      concurrent--
+      const id = entry.prepared.installedApp.id
+      if (id === 2) return { status: 'conflict' }
+      if (id === 3) throw Object.assign(new Error('Source unreachable.'), { status: 409, code: 'git_update_unavailable', retryable: true })
+      return { status: 'updated', version: '2.0.0' }
+    },
+  })
+  await batch.check(items(3)); await batch.confirm()
+  assert.deepEqual(applied, [1, 2, 3])
+  assert.equal(peak, 1, 'one app at a time, as before server batches')
+  assert.ok(changes.some(state => state.phase === 'applying' && state.local), 'the dialog knows the Store must stay open')
+  assert.deepEqual(status(batch), ['updated', 'conflict', 'failed'])
+  assert.deepEqual([batch.state.entries[2].errorCode, batch.state.entries[2].retryable], ['git_update_unavailable', true])
+  assert.equal(batch.state.phase, 'review')
+  assert.equal(batch.state.applied, true)
+  assert.equal(batch.state.error, '')
+  assert.equal(refreshed.length, 1)
+})
+
+test('failed checks keep one entry each, even with string catalog ids', async () => {
+  const ids = ['voice', 'maps', 'notes', 'tasks']
+  const { batch } = harness({ prepare: async item => {
+    if (item.id !== 'tasks') throw new Error(`${item.id} check failed`)
+    return { ...prepared(item), installedApp: { id: 40 } }
+  } })
+  await batch.check(ids.map(id => ({ id, manifest_url: `https://example.test/${id}/mobius.json` })))
+  assert.deepEqual(status(batch), ['failed', 'failed', 'failed', 'ready'])
+  assert.deepEqual(batch.state.entries.map(entry => entry.error || entry.item.id), ['voice check failed', 'maps check failed', 'notes check failed', 'tasks'])
+  // Trying one again keeps its siblings.
+  await batch.retry('maps')
+  assert.equal(batch.state.entries.length, 4)
+})
+
+test('a finished batch refreshes the app list once, not on every re-read', async () => {
+  let refreshes = 0
+  const { batch } = harness({ refresh: async () => { refreshes++; return true } })
+  await batch.check(items(1)); await batch.confirm()
+  assert.equal(refreshes, 1)
+  await batch.refreshSnapshot(); await batch.refreshSnapshot()
+  await tick()
+  assert.equal(refreshes, 1)
+  const recovered = harness({ refresh: async () => { refreshes++; return true } }).batch
+  recovered.recover(snapshot('old', ['updated']))
+  await tick()
+  assert.equal(refreshes, 1, 'opening old results changes nothing')
+})
+
+test('a reused resolver chat keeps the server\'s reason', async () => {
+  const message = 'Another chat is still resolving an earlier update of App 1; open or stop it there.'
+  const { batch } = harness({ resolve: async () => ({ chat_id: 'old', app_ids: [1], existing: true, message }) },
+    [{ item: items(1)[0], prepared: prepared(items(1)[0]), status: 'conflict' }])
+  await batch.resolveAll()
+  assert.equal(batch.state.entries[0].resolver.message, message)
 })
 
 test('authoritative snapshot clears a stale resolver binding and reconnect error', async () => {

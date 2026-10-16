@@ -235,6 +235,10 @@ function Toast({ toast, onDismiss }) {
   )
 }
 
+// Why the platform refuses a candidate for an installed app (the update
+// preview's 409 detail, as update-check's `candidate_rejected`).
+const CANDIDATE_REJECTION_CODES = new Set(['identity_mismatch', 'repository_moved'])
+
 // Probe GET /api/apps/{id}/update-check for the given installed rows and return
 // a { [numericAppId]: source-provenance facts } map.
 // Use the same bounded pool as manifest refetches. fetchUpdateCheck never
@@ -1469,12 +1473,14 @@ export default function App({ appId, token }) {
         : current)
       openChat(resolver.chat_id)
     } catch (e) {
-      // The card that started this shows the error; no toast repeats it.
       const message = e.message || String(e)
+      const retry = e?.retryable === true || !e?.status
+        ? () => { void handleReviewUpdateRef.current(notice) }
+        : null
       setCardErrors(prev => ({ ...prev, [notice.itemId]: message }))
-      if (e?.retryable === true || !e?.status) {
-        setCardErrorRetries(prev => ({ ...prev, [notice.itemId]: () => { void handleReviewUpdateRef.current(notice) } }))
-      }
+      if (retry) setCardErrorRetries(prev => ({ ...prev, [notice.itemId]: retry }))
+      // A card shows this error; the detail page has no card, so it gets a toast.
+      if (detail) setToast({ kind: 'error', message, action: retry ? { label: 'Try again', onClick: retry } : null })
     } finally {
       setBusy(false)
       setBusyItemId(null)
@@ -1605,9 +1611,11 @@ export default function App({ appId, token }) {
         installedApp.id, updateItem.manifest_url, token, { signal },
       )
     } catch (error) {
-      if (error?.status === 409 && error.code) {
+      if (error?.status === 409 && CANDIDATE_REJECTION_CODES.has(error.code)) {
         // The platform would not apply this candidate to the installed app
         // (a moved repository, or another package). The card says why too.
+        // Other coded 409s (a Git source that could not be read) are ordinary
+        // failures, with Try again when they are retryable.
         checkGenerationsRef.current.set(String(installedApp.id), ++checkGenerationRef.current)
         setUpdateChecks(prev => mergeUpdateChecks(prev, {
           [installedApp.id]: {
@@ -1679,6 +1687,42 @@ export default function App({ appId, token }) {
     if (Object.keys(changes).length) setUpdateChecks(prev => mergeUpdateChecks(prev, changes))
   }, [])
 
+  // A Möbius without server batches (no mobius#1843) gets the per-app
+  // reviewed update the Store used before: the same /install request, bound
+  // to the reviewed source and access digests, one app at a time.
+  const applyReviewedUpdate = async (entry) => {
+    const { item, installedApp, preview, capabilityReview } = entry.prepared
+    try {
+      const result = await installApp({
+        manifest_url: item.manifest_url,
+        manifest: item.manifest,
+        raw_base: item.raw_base,
+        token,
+        reviewed_capability_digest: capabilityReview.preview.capability_digest,
+        reviewed_source_digest: preview.source_digest,
+        update_app_id: installedApp.id,
+        reviewed_upstream_commit: preview.upstream_commit,
+      })
+      const conflict = result.mode === 'conflict'
+      const id = result.id || installedApp.id
+      checkGenerationsRef.current.set(String(id), ++checkGenerationRef.current)
+      setUpdateChecks(prev => mergeUpdateChecks(prev, {
+        [id]: conflict
+          ? { available: true, pendingUpdateState: 'needs_resolution', upstreamVersion: result.upstream_version || null }
+          : { available: false, pendingUpdateState: 'none', upstreamVersion: result.version || null },
+      }))
+      if (!conflict) window.mobius?.signal?.('app_updated', { slug: id })
+      return { status: conflict ? 'conflict' : 'updated', version: result.version || null, warnings: result.warnings || [] }
+    } catch (error) {
+      return {
+        status: 'failed',
+        error: error.message || 'This update could not be completed.',
+        errorCode: typeof error.code === 'string' ? error.code : null,
+        retryable: typeof error.retryable === 'boolean' ? error.retryable : !error.status,
+      }
+    }
+  }
+
   const createBatchController = (entries = []) => {
     const batch = createUpdateBatch({
       prepare: (item, options) => prepareCatalogUpdateRef.current(item, options),
@@ -1688,6 +1732,13 @@ export default function App({ appId, token }) {
       newId: () => crypto.randomUUID(),
       resolve: appIds => createConflictResolverBatch(appIds, 'preserve_local', token),
       refresh: () => refreshInstalled(),
+      applyOne: applyReviewedUpdate,
+      // The platform refused this id, so nothing runs under it: drop the
+      // Library placeholder a closed dialog may have left.
+      onRefused: id => {
+        if (batchControllersRef.current.get(id) === batch) batchControllersRef.current.delete(id)
+        setUpdateBatches(previous => previous.filter(item => !(item.id === id && item.phase === 'unknown')))
+      },
       onSnapshot: snapshot => {
         for (const [id, controller] of batchControllersRef.current) {
           if (controller === batch && id !== snapshot.id) batchControllersRef.current.delete(id)
@@ -1758,7 +1809,10 @@ export default function App({ appId, token }) {
         setBatchLoadError(null)
         setUpdateBatches(previous => [
           ...batches.map(snapshot => newestBatchSnapshot(previous.find(item => item.id === snapshot.id), snapshot)),
-          ...previous.filter(item => item.phase === 'unknown' && !batches.some(current => current.id === item.id)),
+          // A placeholder stays only while its controller still holds that
+          // possibly accepted id.
+          ...previous.filter(item => item.phase === 'unknown' && !batches.some(current => current.id === item.id)
+            && batchControllersRef.current.get(item.id)?.state.batchId === item.id),
         ])
         for (const snapshot of batches) reportBatchOutcomes(snapshot)
         for (const [id, controller] of batchControllersRef.current) {
@@ -2326,10 +2380,11 @@ export default function App({ appId, token }) {
           onOpenInstalled={handleOpenInstalled}
           onSetup={handleSetup}
           onRetryInstalled={handleRetryInstalled}
-          busy={busy || checkingUpdateItemId === detail.id}
+          busy={busy || checkingUpdateItemId === detail.id || updatingItemIds.includes(detail.id)}
           busyActionKind={busyItemId === detail.id
             ? busyActionKind
-            : checkingUpdateItemId === detail.id ? 'checking_update' : null}
+            : checkingUpdateItemId === detail.id ? 'checking_update'
+              : updatingItemIds.includes(detail.id) ? 'update' : null}
           updateChecks={updateChecks}
           updateNotice={updateNotice?.itemId === detail.id ? updateNotice : null}
           onReviewUpdate={handleReviewUpdate}

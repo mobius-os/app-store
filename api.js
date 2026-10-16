@@ -958,7 +958,12 @@ export async function createConflictResolverBatch(appIds, resolutionPolicy, toke
     // Apps already bound to a running resolver reuse that chat; `app_ids`
     // names only the apps it covers.
     if (error.code === 'conflict_resolver_running' && error.detail?.chat_id) {
-      return { chat_id: error.detail.chat_id, app_ids: error.detail.app_ids || [], started: false, existing: true }
+      return {
+        chat_id: error.detail.chat_id, app_ids: error.detail.app_ids || [], started: false, existing: true,
+        // Why the chat is reused (for example, it is still resolving an
+        // earlier update): shown instead of the generic resolving note.
+        message: typeof error.detail.message === 'string' ? error.detail.message : '',
+      }
     }
     throw error
   }
