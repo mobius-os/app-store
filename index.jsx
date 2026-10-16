@@ -657,6 +657,10 @@ export default function App({ appId, token }) {
             } catch (e) {
               // A failed live read keeps the baked manifest: the card stays as
               // it painted. Only an entry with nothing to show reports it.
+              // The trade-off: a permanent failure (a 404 for a moved or
+              // deleted repository) is not shown here either. For an installed
+              // app the update check still reports its source; installing a
+              // listing reports the failure when it fetches the release.
               return c.manifest
                 ? { ...c, error: null }
                 : { ...c, manifest: null, error: e.message || String(e) }
