@@ -787,6 +787,13 @@ export function humanCron(expr) {
   return `Cron: ${expr}`
 }
 
+// Decimal units, like the sizes app stores and file managers show.
+export function formatDownloadSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return ''
+  const kilobytes = Math.max(1, Math.round(bytes / 1e3))
+  return kilobytes < 1000 ? `${kilobytes} KB` : `${(bytes / 1e6).toFixed(1)} MB`
+}
+
 export function scheduleSummary(schedule) {
   if (!schedule) return ''
   if (schedule.default) return humanCron(schedule.default)

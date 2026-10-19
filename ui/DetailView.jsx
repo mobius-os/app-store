@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -40,6 +40,9 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
+  const downloadSize = formatDownloadSize(capabilityReview?.preview?.download_bytes)
+  const byline = [m.author, m.license, downloadSize && `${downloadSize} download`]
+    .filter(Boolean).join(' · ')
   const lifecycle = appLifecycleFor(reviewedItem, {
     installed,
     updateChecks,
@@ -169,9 +172,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           <p className="st-detail-desc">{listingDescription}</p>
         </div>
 
-        {(m.author || m.license) ? (
-          <div className="st-detail-byline">{[m.author, m.license].filter(Boolean).join(' · ')}</div>
-        ) : null}
+        {byline ? <div className="st-detail-byline">{byline}</div> : null}
 
         {listingScreenshots.length ? (
           <div className={`st-detail-gallery${listingScreenshots.length === 1 ? ' is-single' : ''}`} aria-label={`${m.name} screenshots`}>
