@@ -1790,6 +1790,19 @@ test('an update review summarises one row per changed capability, keyed by capab
   assert.deepEqual(capabilityChangeRows({ ...preview, installed_contract: null }), [])
 })
 
+test('a limit-only increase shows both values, because the platform row text carries them', async () => {
+  const { capabilityChangeRows } = await bundle()
+  const row = text => ({ id: 'device.asset-cache', title: 'Store large files', text, level: null, rank: 1, critical: false })
+  const preview = {
+    ...platformPreview(platformContract(), platformContract()),
+    access_rows: [row('Download verified assets. Limits: max_bytes 2 GiB.')],
+    installed_access_rows: [row('Download verified assets. Limits: max_bytes 256 MiB.')],
+  }
+  assert.deepEqual(capabilityChangeRows(preview).map(({ kind, previous, proposed }) => [kind, previous, proposed]), [
+    ['Changed', 'Download verified assets. Limits: max_bytes 256 MiB.', 'Download verified assets. Limits: max_bytes 2 GiB.'],
+  ])
+})
+
 test('the system prompt row states its real scope and activation', async () => {
   const { capabilityRows } = await bundle()
   const promptRow = prompt => capabilityRows([], platformContract({ systemPrompt: prompt })).find(row => row.key === 'agent.system_prompt')
