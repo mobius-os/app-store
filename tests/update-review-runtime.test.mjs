@@ -218,8 +218,8 @@ test('an access change is reviewed once per capability, with the full access one
     })))
     const rows = [...doc.querySelectorAll('.st-capability-diff-row')].map(row => row.textContent)
     assert.deepEqual(rows, [
+      'AddedRecord audioUse the device microphone while this app is visible.',
       'ChangedAgent tool “search”Agent tool · Find notes.→Agent tool · Find notes and tasks.',
-      'AddedRecord audiov1 · Use the device microphone while this app is visible. for up to 30 seconds per request Reason: Voice notes',
     ])
     assert.doesNotMatch(doc.body.textContent, /Runtime capability|Not granted|Nothing was installed/)
     const full = doc.querySelector('details.st-capability-full-access')
@@ -227,15 +227,19 @@ test('an access change is reviewed once per capability, with the full access one
     assert.match(full.textContent, /Show full resulting access[\s\S]*Record audio/)
 
     // A change the access list cannot describe falls back to its path.
-    await render(platformPreview(installed, platformContract({ tools: [search], embedsAgent: true })))
+    const job = { job: 'fetch.sh', mode: 'scheduled', cron: '0 4 * * *', user_configurable: false, initialize_on_install: false }
+    await render(platformPreview(
+      platformContract({ tools: [search], background: job }),
+      platformContract({ tools: [search], background: { ...job, user_configurable: true } }),
+    ))
     assert.equal(doc.querySelector('.st-capability-diff-row'), null)
-    assert.match(doc.body.textContent, /This update changes: agent\.embeds_agent\./)
+    assert.match(doc.body.textContent, /This update changes: background\.user_configurable\./)
 
     await render({ ...platformPreview(installed, platformContract({ data: { manage_apps: true } })), installed_contract: null,
       capability_diff: { unknown_previous: true, widens: true, added: [], removed: [], changed: [] } })
     assert.equal(doc.querySelector('.st-capability-diff-row'), null)
     assert.equal(doc.querySelector('details.st-capability-full-access'), null, 'with no earlier record the full access is shown openly')
-    assert.match(doc.body.textContent, /no earlier access record[\s\S]*Installed apps/)
+    assert.match(doc.body.textContent, /no earlier access record[\s\S]*Use manage_apps/)
     assert.doesNotMatch(doc.body.textContent, /Nothing was installed/, 'a review installs nothing and says nothing about it')
   } finally {
     await act(async () => root.unmount()); restore()

@@ -70,12 +70,37 @@ export function platformDiff(installed, candidate) {
   }
 }
 
+// A stand-in for the platform's access_rows (backend app_consent.py, which
+// owns the real wording): one row per enabled grant, enough to exercise the
+// Store's mapping and pairing.
+export function serverRows(contract) {
+  if (!contract) return []
+  const rows = Object.entries(contract.data || {})
+    .filter(([, value]) => value === true)
+    .map(([key]) => ({ id: key, title: `Use ${key}`, text: `Can use ${key}.`, level: null, rank: 1, critical: false }))
+  for (const [capability, declaration] of Object.entries(contract.runtime || {})) {
+    rows.push({ id: capability, title: declaration.title, text: declaration.description, level: null, rank: 1, critical: false })
+  }
+  if (contract.background) {
+    rows.push({ id: 'background_job', title: 'Run a background job', text: `Runs ${contract.background.cron || 'on demand'}.`, level: null, rank: 1, critical: false })
+  }
+  if (Array.isArray(contract.data?.job_secret_read) && contract.data.job_secret_read.length) {
+    rows.push({ id: 'job_secret_read', title: 'Read named secrets in its job', text: `Reads ${contract.data.job_secret_read.join(', ')}.`, level: null, rank: 1, critical: false })
+  }
+  if (contract.agent?.embeds_agent) {
+    rows.push({ id: 'agent_start', title: 'Start agent chats on its own', text: 'Can start agent chats.', level: null, rank: 1, critical: false })
+  }
+  return rows
+}
+
 export function platformPreview(installed, candidate) {
   return {
     capability_digest: 'c'.repeat(64),
     installed_contract: installed,
     capability_contract: candidate,
     capability_diff: platformDiff(installed, candidate),
+    access_rows: serverRows(candidate),
+    installed_access_rows: serverRows(installed),
   }
 }
 
