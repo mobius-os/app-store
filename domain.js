@@ -593,6 +593,15 @@ export function busyLabelForAction(actionKind) {
   return 'Installing…'
 }
 
+// The platform's preview carries the permission rows the owner approves. A
+// preview without them (an older Möbius) cannot be approved: nothing would be
+// disclosed.
+export const MISSING_ACCESS_ROWS = 'Update Möbius to see what this app asks for.'
+
+export function hasAccessRows(preview) {
+  return Array.isArray(preview?.access_rows)
+}
+
 export function capabilityDiffNeedsReview(diff) {
   if (!diff || typeof diff !== 'object') return true
   if (diff.unknown_previous !== false) return true

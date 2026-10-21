@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { STORE_SELF } from '../constants.js'
 import { createConflictResolverChat, fetchUpdateCheck, installApp, loadUpdateCandidatePreview, openChat } from '../api.js'
-import { capabilityDiffNeedsReview } from '../domain.js'
+import { capabilityDiffNeedsReview, hasAccessRows } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
 // Self-update banner. The store is bootstrapped separately from its catalog
@@ -63,7 +63,8 @@ export function SelfUpdateBanner({ appId, token }) {
   // than the newest published release.
   const conflictVersion = updateCheck?.upstreamVersion || latest?.version
   const accessDiff = review?.preview?.capability_diff
-  const needsAccessReview = capabilityDiffNeedsReview(accessDiff)
+  const accessRowsMissing = review?.preview ? !hasAccessRows(review.preview) : false
+  const needsAccessReview = capabilityDiffNeedsReview(accessDiff) || accessRowsMissing
   const previousAccessUnrecorded = accessDiff?.unknown_previous === true
   if (phase !== 'done' && !needsResolution && !hasUpdate) return null
 
@@ -151,7 +152,7 @@ export function SelfUpdateBanner({ appId, token }) {
               </div>
             ) : null}
           </div>
-          <button className="st-banner-btn" disabled={phase === 'updating'} onClick={onUpdate}>
+          <button className="st-banner-btn" disabled={phase === 'updating' || accessRowsMissing} onClick={onUpdate}>
             {phase === 'updating'
               ? 'Updating…'
               : needsAccessReview && !showReview

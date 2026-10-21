@@ -1742,6 +1742,7 @@ test('capability-change 409 exposes the new contract without retrying install', 
       manifest: { id: 'memory', version: '2.0.1' },
       capability_contract: { schema: 1, system_app: true },
       capability_digest: 'b'.repeat(64),
+      access_rows: [{ id: 'manage_apps', title: 'Install and remove apps', text: 'Can install and uninstall apps on your behalf.', level: null, rank: 1, critical: true }],
     } }), { status: 409, headers: { 'content-type': 'application/json' } })
   }
   try {
@@ -1755,6 +1756,7 @@ test('capability-change 409 exposes the new contract without retrying install', 
       (error) => {
         assert.equal(error.code, 'capability_changed')
         assert.equal(error.preview.capability_digest, 'b'.repeat(64))
+        assert.deepEqual(error.preview.access_rows.map(row => row.id), ['manage_apps'], 'the rows the owner must see survive a failed follow-up preview')
         return true
       },
     )
@@ -1801,6 +1803,13 @@ test('a limit-only increase shows both values, because the platform row text car
   assert.deepEqual(capabilityChangeRows(preview).map(({ kind, previous, proposed }) => [kind, previous, proposed]), [
     ['Changed', 'Download verified assets. Limits: max_bytes 256 MiB.', 'Download verified assets. Limits: max_bytes 2 GiB.'],
   ])
+})
+
+test('a preview without access rows cannot be approved', async () => {
+  const { hasAccessRows } = await bundle()
+  assert.equal(hasAccessRows({ access_rows: [] }), true, 'an empty list is a real "nothing requested"')
+  assert.equal(hasAccessRows({ capability_contract: {} }), false, 'an older platform sends no rows')
+  assert.equal(hasAccessRows(null), false)
 })
 
 test('the system prompt row states its real scope and activation', async () => {

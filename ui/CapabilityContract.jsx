@@ -1,3 +1,5 @@
+import { hasAccessRows, MISSING_ACCESS_ROWS } from '../domain.js'
+
 // Permission rows come from the platform (`access_rows` on every preview, built
 // by the server's app_consent), so the Store carries no wording of its own for
 // them and a new permission can never be missing here. What an app ships
@@ -91,8 +93,8 @@ export function capabilityChangeRows(preview) {
 
 function CapabilityRows({ preview }) {
   // An older Möbius sends no rows; say so rather than claim nothing is requested.
-  if (!Array.isArray(preview?.access_rows)) {
-    return <div className="st-capability-state">Update Möbius to see what this app asks for.</div>
+  if (!hasAccessRows(preview)) {
+    return <div className="st-capability-state">{MISSING_ACCESS_ROWS}</div>
   }
   const rows = capabilityRows(preview.access_rows, preview.capability_contract)
   return (

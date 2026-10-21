@@ -847,6 +847,7 @@ export class CapabilityChangedError extends Error {
       manifest: detail?.manifest,
       capability_contract: detail?.capability_contract,
       capability_digest: detail?.capability_digest,
+      access_rows: detail?.access_rows,
       installed_contract: null,
       capability_diff: { unknown_previous: true, added: [], removed: [], changed: [] },
     }
