@@ -35,7 +35,7 @@ const modalModule = () => bundle(join('ui', 'UpdateReviewModal.jsx'), 'modal')
 
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
-const capabilityPreview = { capability_digest: 'c'.repeat(64), capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] } }
+const capabilityPreview = { capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [], capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] } }
 const candidate = id => ({ app_id: id, upstream_version: '2.0.0', upstream_diff: '', source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40), capability_preview: capabilityPreview })
 const voiceRow = { id: 11, slug: 'voice', name: 'Voice', manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main#manifest-id=voice', source_manifest: { id: 'voice', url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json' }, manifest: { id: 'voice', name: 'Voice', version: '1.0.0' } }
 const memoryRow = { id: 12, slug: 'memory', name: 'Memory', manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main#manifest-id=memory', source_manifest: { id: 'memory', url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json' }, manifest: { id: 'memory', name: 'Memory', version: '1.0.0' } }
@@ -218,8 +218,8 @@ test('an access change is reviewed once per capability, with the full access one
     })))
     const rows = [...doc.querySelectorAll('.st-capability-diff-row')].map(row => row.textContent)
     assert.deepEqual(rows, [
+      'AddedRecord audioUse the device microphone while this app is visible.',
       'ChangedAgent tool “search”Agent tool · Find notes.→Agent tool · Find notes and tasks.',
-      'AddedRecord audiov1 · Use the device microphone while this app is visible. for up to 30 seconds per request Reason: Voice notes',
     ])
     assert.doesNotMatch(doc.body.textContent, /Runtime capability|Not granted|Nothing was installed/)
     const full = doc.querySelector('details.st-capability-full-access')
@@ -227,15 +227,19 @@ test('an access change is reviewed once per capability, with the full access one
     assert.match(full.textContent, /Show full resulting access[\s\S]*Record audio/)
 
     // A change the access list cannot describe falls back to its path.
-    await render(platformPreview(installed, platformContract({ tools: [search], embedsAgent: true })))
+    const job = { job: 'fetch.sh', mode: 'scheduled', cron: '0 4 * * *', user_configurable: false, initialize_on_install: false }
+    await render(platformPreview(
+      platformContract({ tools: [search], background: job }),
+      platformContract({ tools: [search], background: { ...job, user_configurable: true } }),
+    ))
     assert.equal(doc.querySelector('.st-capability-diff-row'), null)
-    assert.match(doc.body.textContent, /This update changes: agent\.embeds_agent\./)
+    assert.match(doc.body.textContent, /This update changes: background\.user_configurable\./)
 
     await render({ ...platformPreview(installed, platformContract({ data: { manage_apps: true } })), installed_contract: null,
       capability_diff: { unknown_previous: true, widens: true, added: [], removed: [], changed: [] } })
     assert.equal(doc.querySelector('.st-capability-diff-row'), null)
     assert.equal(doc.querySelector('details.st-capability-full-access'), null, 'with no earlier record the full access is shown openly')
-    assert.match(doc.body.textContent, /no earlier access record[\s\S]*Installed apps/)
+    assert.match(doc.body.textContent, /no earlier access record[\s\S]*Use manage_apps/)
     assert.doesNotMatch(doc.body.textContent, /Nothing was installed/, 'a review installs nothing and says nothing about it')
   } finally {
     await act(async () => root.unmount()); restore()

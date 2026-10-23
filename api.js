@@ -847,6 +847,9 @@ export class CapabilityChangedError extends Error {
       manifest: detail?.manifest,
       capability_contract: detail?.capability_contract,
       capability_digest: detail?.capability_digest,
+      access_rows: detail?.access_rows,
+      // The platform that sent these rows built them; no earlier record exists.
+      installed_access_rows: Array.isArray(detail?.access_rows) ? [] : undefined,
       installed_contract: null,
       capability_diff: { unknown_previous: true, added: [], removed: [], changed: [] },
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, hasAccessRows, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -60,6 +60,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   // read-only capability preview is temporarily unavailable.
   const requiresCapabilityReview = !blockedUpdate && (!storeInstalled || hasUpdate)
   const capabilityReviewReady = ['ready', 'changed', 'refused'].includes(capabilityReview?.status)
+    && hasAccessRows(capabilityReview?.preview)
   const canRetryInstalled = typeof onRetryInstalled === 'function'
   const primaryActionDisabled =
     busy ||
@@ -471,7 +472,8 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           }}
         >
           {busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind)
-            : requiresCapabilityReview && !capabilityReviewReady ? 'Reviewing access…'
+            : requiresCapabilityReview && !capabilityReviewReady
+              ? (capabilityReview?.preview ? 'Access unavailable' : 'Reviewing access…')
             : blockedUpdate ? 'Resolve update'
             : lifecycle.actionKind === 'retry' ? 'Retry'
             : hasUpdate ? 'Review update'

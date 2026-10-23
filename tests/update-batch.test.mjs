@@ -12,7 +12,7 @@ const gate = () => { let resolve; const promise = new Promise(r => { resolve = r
 const items = count => Array.from({ length: count }, (_, i) => ({ id: i + 1, manifest_url: `https://example.test/${i + 1}/mobius.json` }))
 const prepared = item => ({ item, installedApp: { id: item.id }, preview: {
   source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40),
-}, capabilityReview: { preview: { capability_digest: 'c'.repeat(64) } } })
+}, capabilityReview: { preview: { capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [] } } })
 const snapshot = (id, statuses, phase = 'complete') => ({ id, phase, entries: statuses.map((status, i) => ({
   app_id: i + 1, name: `App ${i + 1}`, status, error: status === 'failed' ? 'Build failed' : '',
   error_code: status === 'failed' ? 'invalid_package' : null, retryable: false, warnings: [], version: null, resolver_chat_id: null,
@@ -505,4 +505,29 @@ test('batch ids are UUIDs even without crypto.randomUUID (plain HTTP)', () => {
     assert.equal(ids.size, 50)
     for (const id of ids) assert.match(id, pattern)
   } finally { Object.defineProperty(globalThis, 'crypto', descriptor) }
+})
+
+test('an update whose preview carries no access rows is not offered for confirmation', async () => {
+  const { batch, submitted } = harness({ prepare: async item => {
+    const entry = prepared(item)
+    delete entry.capabilityReview.preview.access_rows // an older platform
+    return entry
+  } })
+  await batch.check(items(1))
+  assert.deepEqual(status(batch), ['failed'])
+  assert.equal(submitted.length, 0)
+  batch.dispose()
+})
+
+test('an empty access list from a platform that defaults it is not approvable', async () => {
+  const { batch, submitted } = harness({ prepare: async item => {
+    const entry = prepared(item)
+    delete entry.capabilityReview.preview.installed_access_rows // only a platform that builds the rows sends this
+    entry.capabilityReview.preview.capability_contract = { data: { manage_apps: true } }
+    return entry
+  } })
+  await batch.check(items(1))
+  assert.deepEqual(status(batch), ['failed'])
+  assert.equal(submitted.length, 0)
+  batch.dispose()
 })

@@ -1,83 +1,19 @@
-// `key` names one capability stably across contract versions, so an update
-// review can pair the installed row with the proposed one.
-function row(key, label, tag, summary, tone = '') {
-  return { key, label, tag, summary, tone }
+import { hasAccessRows, MISSING_ACCESS_ROWS } from '../domain.js'
+
+// Permission rows come from the platform (`access_rows` on every preview, built
+// by the server's app_consent), so the Store carries no wording of its own for
+// them and a new permission can never be missing here. What an app ships
+// (instructions, skills, tools) is content, not permission wording, and is
+// listed from the contract. `key` names one row stably across contract
+// versions so an update review can pair the installed row with the proposed one.
+const LEVEL_TAGS = {
+  read: 'Read',
+  write: 'Read + write',
+  redacted: 'Redacted',
+  'redacted+deleted': 'Redacted + deleted',
+  apps: 'Other apps',
+  public: 'Anyone',
 }
-
-function accessText(level, subject) {
-  if (level === 'write') return `Can read and write ${subject}.`
-  return `Can read ${subject}, but cannot change it.`
-}
-
-// Boolean data capabilities belong in one disclosure registry. Keeping their
-// owner-facing copy next to the contract key makes a newly introduced grant
-// difficult to wire into the backend while accidentally hiding it in review.
-const BOOLEAN_DATA_CAPABILITIES = [
-  {
-    key: 'filesystem_api',
-    label: 'Owner files',
-    tag: 'Access',
-    summary: 'Can use the guarded owner-filesystem API.',
-  },
-  {
-    key: 'github_access',
-    label: 'GitHub data',
-    tag: 'Access',
-    summary: 'Can use the connected GitHub account.',
-  },
-  {
-    key: 'github_connect',
-    label: 'GitHub connection',
-    tag: 'Manages',
-    summary:
-      'Can start, resume, refresh, cancel, or disconnect the owner’s GitHub connection.',
-  },
-  {
-    key: 'manage_apps',
-    label: 'Installed apps',
-    tag: 'Manages',
-    summary: 'Can install and uninstall apps.',
-  },
-  {
-    key: 'manage_skills',
-    label: 'Agent skills',
-    tag: 'Manages',
-    summary: 'Can install and remove agent skills.',
-  },
-]
-const DISCLOSED_DATA_KEYS = new Set([
-  'chat_logs',
-  'shared_memory',
-  'cross_app_access',
-  'share_with_apps',
-  ...BOOLEAN_DATA_CAPABILITIES.map(capability => capability.key),
-])
-
-function readableCapabilityKey(key) {
-  return String(key || '')
-    .split('_')
-    .filter(Boolean)
-    .map(word => word[0]?.toUpperCase() + word.slice(1))
-    .join(' ')
-}
-
-function isActiveUnknownGrant(value) {
-  return value !== false
-    && value !== null
-    && value !== undefined
-    && value !== ''
-    && value !== 'none'
-}
-
-function limitValueText(key, value) {
-  if (!key.endsWith('_bytes') || !Number.isFinite(value)) return String(value)
-  const units = ['bytes', 'KiB', 'MiB', 'GiB']
-  let size = value
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1 }
-  return `${Math.round(size * 10) / 10} ${units[unit]}`
-}
-
 const PROMPT_SCOPES = {
   all_agent_chats: ['All chats', 'every agent chat'],
   chats_started_while_installed: ['New chats', 'agent chats started while it is installed'],
@@ -87,119 +23,43 @@ const PROMPT_ACTIVATIONS = {
   chat_start: 'when the chat starts',
 }
 
-export function capabilityRows(contract) {
-  if (!contract || typeof contract !== 'object') return []
-  const agent = contract.agent || {}
-  const data = contract.data || {}
-  const background = contract.background
-  const runtime = contract.runtime || {}
-  const prompt = agent.system_prompt
-  const logs = data.chat_logs || {}
+function shippedRows(contract) {
+  const agent = contract?.agent || {}
   const rows = []
+  const prompt = agent.system_prompt
   if (prompt) {
     const [tag, chats] = PROMPT_SCOPES[prompt.scope] || ['Agent chats', `agent chats (scope ${prompt.scope})`]
     const when = PROMPT_ACTIVATIONS[prompt.activation] || `(activation ${prompt.activation})`
-    rows.push(row(
-      'agent.system_prompt', 'Agent chats', tag,
-      `Adds system instructions to ${chats} ${when} (${prompt.file}).`,
-      'write',
-    ))
-  }
-  if (logs.effective === 'summary' || logs.effective === 'summary_with_deleted') rows.push(row(
-    'data.chat_logs', 'Chat history', 'Redacted',
-    `Can request structurally redacted chat text${logs.effective === 'summary_with_deleted' ? ', including recoverable deleted chats' : ''}; tool calls, hidden reasoning, errors, and secret-like values are removed.`,
-    'read',
-  ))
-  if (data.shared_memory === 'read' || data.shared_memory === 'write') rows.push(row(
-    'data.shared_memory', 'Shared memory', data.shared_memory === 'write' ? 'Read + write' : 'Read',
-    accessText(data.shared_memory, 'the shared memory area'),
-    data.shared_memory,
-  ))
-  if (data.cross_app_access === 'read' || data.cross_app_access === 'write') rows.push(row(
-    'data.cross_app_access', 'Other apps’ data', data.cross_app_access === 'write' ? 'Read + write' : 'Read',
-    accessText(data.cross_app_access, 'other apps’ private data'),
-    data.cross_app_access,
-  ))
-  if (data.share_with_apps === 'read' || data.share_with_apps === 'write') rows.push(row(
-    'data.share_with_apps', 'Shares its data', data.share_with_apps === 'write' ? 'Read + write' : 'Read',
-    data.share_with_apps === 'write'
-      ? 'Allows authorized apps to read and change this app’s private data.'
-      : 'Allows authorized apps to read this app’s private data.',
-    data.share_with_apps,
-  ))
-  if (background) {
-    const timing = background.mode === 'scheduled'
-      ? `Runs on schedule ${background.cron || ''}`.trim()
-      : 'Runs only on demand'
-    const init = background.initialize_on_install
-      ? ' and starts an initialization run immediately after install'
-      : ''
-    rows.push(row(
-      'background', 'Background work', 'Server job',
-      `${timing}${init}. It runs as reviewed owner-installed code with Möbius process access and receives a short-lived app token for API calls.`,
-      'write',
-    ))
+    rows.push({
+      key: 'agent.system_prompt', label: 'Agent chats', tag,
+      summary: `Adds system instructions to ${chats} ${when} (${prompt.file}).`,
+    })
   }
   if (Array.isArray(agent.skills) && agent.skills.length) {
-    rows.push(row(
-      'agent.skills', 'Bundled skills', String(agent.skills.length),
-      `Installs ${agent.skills.join(', ')} while the app is active.`,
-      'read',
-    ))
+    rows.push({
+      key: 'agent.skills', label: 'Bundled skills', tag: String(agent.skills.length),
+      summary: `Installs ${agent.skills.join(', ')} while the app is active.`,
+    })
   }
   // The platform rejects repeated tool names, so the name keys the row.
   for (const tool of Array.isArray(agent.tools) ? agent.tools : []) {
     if (!tool?.name) continue
-    rows.push(row(
-      `agent.tools:${tool.name}`, `Agent tool “${tool.name}”`, 'Agent tool',
-      tool.description || 'Agents can call this app.', 'read',
-    ))
-  }
-  for (const capability of BOOLEAN_DATA_CAPABILITIES) {
-    if (data[capability.key]) {
-      rows.push(row(
-        `data.${capability.key}`,
-        capability.label,
-        capability.tag,
-        capability.summary,
-        'write',
-      ))
-    }
-  }
-  // Platform and App Store can ship independently. Never hide a newly added
-  // data grant just because this Store version lacks its polished copy.
-  for (const [key, value] of Object.entries(data).sort()) {
-    if (!DISCLOSED_DATA_KEYS.has(key) && isActiveUnknownGrant(value)) {
-      rows.push(row(
-        `data.${key}`,
-        readableCapabilityKey(key) || 'Additional data grant',
-        'Review',
-        `The platform reports the unrecognized “${key}” data grant. Update App Store for a detailed explanation.`,
-        'write',
-      ))
-    }
-  }
-  for (const [capability, declaration] of Object.entries(runtime).sort()) {
-    const { max_duration_ms: maxDuration, ...otherLimits } = declaration?.limits || {}
-    const duration = Number(maxDuration)
-    const durationText = Number.isFinite(duration)
-      ? ` for up to ${Math.round(duration / 100) / 10} seconds per request`
-      : ''
-    // Every other reviewed limit is listed too, so raising one is visible.
-    const limitsText = Object.keys(otherLimits).length
-      ? ` Limits: ${Object.entries(otherLimits).sort().map(([key, value]) => `${key} ${limitValueText(key, value)}`).join(', ')}.`
-      : ''
-    rows.push(row(
-      `runtime.${capability}`,
-      declaration?.title || capability,
-      `v${declaration?.version || '?'}`,
-      `${declaration?.description || capability}${durationText}${limitsText}${
-        declaration?.reason ? ` Reason: ${declaration.reason}` : ''
-      }`,
-      declaration?.risk === 'device' ? 'write' : 'read',
-    ))
+    rows.push({
+      key: `agent.tools:${tool.name}`, label: `Agent tool “${tool.name}”`, tag: 'Agent tool',
+      summary: tool.description || 'Agents can call this app.',
+    })
   }
   return rows
+}
+
+export function capabilityRows(accessRows, contract) {
+  return [
+    ...(Array.isArray(accessRows) ? accessRows : []).map(item => ({
+      key: item.id, label: item.title, tag: LEVEL_TAGS[item.level] || '',
+      summary: item.text, critical: Boolean(item.critical),
+    })),
+    ...shippedRows(contract),
+  ]
 }
 
 export function changedCapabilityPaths(diff) {
@@ -207,7 +67,7 @@ export function changedCapabilityPaths(diff) {
   return [...(diff.added || []), ...(diff.removed || []), ...(diff.changed || [])]
 }
 
-const rowText = item => `${item.tag} · ${item.summary}`
+const rowText = item => (item.tag ? `${item.tag} · ${item.summary}` : item.summary)
 
 // A readable summary of an update's access changes: the installed and
 // proposed access rows paired by capability key, one Added, Removed or
@@ -215,8 +75,8 @@ const rowText = item => `${item.tag} · ${item.summary}`
 // review always lists every path the platform reports beside it.
 export function capabilityChangeRows(preview) {
   if (preview?.capability_diff?.unknown_previous !== false || !preview.installed_contract) return []
-  const before = new Map(capabilityRows(preview.installed_contract).map(item => [item.key, item]))
-  const after = new Map(capabilityRows(preview.capability_contract).map(item => [item.key, item]))
+  const before = new Map(capabilityRows(preview.installed_access_rows, preview.installed_contract).map(item => [item.key, item]))
+  const after = new Map(capabilityRows(preview.access_rows, preview.capability_contract).map(item => [item.key, item]))
   const rows = []
   for (const [key, next] of after) {
     const prior = before.get(key)
@@ -231,8 +91,12 @@ export function capabilityChangeRows(preview) {
   return rows
 }
 
-function CapabilityRows({ contract }) {
-  const rows = capabilityRows(contract)
+function CapabilityRows({ preview }) {
+  // An older Möbius sends no rows; say so rather than claim nothing is requested.
+  if (!hasAccessRows(preview)) {
+    return <div className="st-capability-state">{MISSING_ACCESS_ROWS}</div>
+  }
+  const rows = capabilityRows(preview.access_rows, preview.capability_contract)
   return (
     <div className="st-capability-list">
       {rows.length === 0 && (
@@ -244,9 +108,8 @@ function CapabilityRows({ contract }) {
             <div className="st-perm-label">{item.label}</div>
             <div className="st-perm-detail">{item.summary}</div>
           </div>
-          <span className={`st-perm-tag${item.tone === 'muted' ? ' is-muted' : item.tone === 'read' ? ' is-read' : ''}`}>
-            {item.tag}
-          </span>
+          {item.tag ? <span className="st-perm-tag">{item.tag}</span> : null}
+          {item.critical ? <span className="st-perm-critical" role="img" aria-label="Critical" title="Critical: can change your Möbius" /> : null}
         </div>
       ))}
     </div>
@@ -327,9 +190,9 @@ export function CapabilityContract({ review, onRetry, isInstalled = false, updat
       {changeRows.length ? (
         <details className="st-capability-full-access">
           <summary>Show full resulting access</summary>
-          <CapabilityRows contract={preview.capability_contract} />
+          <CapabilityRows preview={preview} />
         </details>
-      ) : <CapabilityRows contract={preview?.capability_contract} />}
+      ) : <CapabilityRows preview={preview} />}
     </>
   )
 }

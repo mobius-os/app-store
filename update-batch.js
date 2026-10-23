@@ -1,3 +1,4 @@
+import { hasAccessRows } from './domain.js'
 import { sleep } from './sleep.js'
 
 // Reviewed "Update all" runs on the server. The Store checks every candidate,
@@ -230,7 +231,7 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
         }
         const access = prepared.capabilityReview?.preview
         if (!prepared.installedApp?.id || !prepared.item?.manifest_url || !prepared.preview?.source_digest
-          || !prepared.preview?.upstream_commit || !access?.capability_digest) {
+          || !prepared.preview?.upstream_commit || !access?.capability_digest || !hasAccessRows(access)) {
           throw Object.assign(new Error('Source or access could not be verified. Check again before confirming.'), { retryable: true })
         }
         return { item, prepared, status: 'ready', error: '' }

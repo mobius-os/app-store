@@ -1742,6 +1742,7 @@ test('capability-change 409 exposes the new contract without retrying install', 
       manifest: { id: 'memory', version: '2.0.1' },
       capability_contract: { schema: 1, system_app: true },
       capability_digest: 'b'.repeat(64),
+      access_rows: [{ id: 'manage_apps', title: 'Install and remove apps', text: 'Can install and uninstall apps on your behalf.', level: null, rank: 1, critical: true }],
     } }), { status: 409, headers: { 'content-type': 'application/json' } })
   }
   try {
@@ -1755,6 +1756,7 @@ test('capability-change 409 exposes the new contract without retrying install', 
       (error) => {
         assert.equal(error.code, 'capability_changed')
         assert.equal(error.preview.capability_digest, 'b'.repeat(64))
+        assert.deepEqual(error.preview.access_rows.map(row => row.id), ['manage_apps'], 'the rows the owner must see survive a failed follow-up preview')
         return true
       },
     )
@@ -1777,160 +1779,71 @@ test('an update review summarises one row per changed capability, keyed by capab
   const preview = platformPreview(installed, candidate)
   assert.ok(preview.capability_diff.added.includes('runtime.media.microphone.capture.title'), 'the fixture carries the platform\'s dotted leaf paths')
   assert.deepEqual(capabilityChangeRows(preview).map(({ kind, label, previous, proposed }) => [kind, label, previous, proposed]), [
+    ['Added', 'Use manage_skills', undefined, 'Can use manage_skills.'],
+    ['Added', 'Record audio', undefined, 'Use the device microphone while this app is visible.'],
     ['Added', 'Bundled skills', undefined, '1 · Installs notes.md while the app is active.'],
     ['Changed', 'Agent tool “search”', 'Agent tool · Find notes.', 'Agent tool · Find notes and tasks.'],
-    ['Added', 'Agent skills', undefined, 'Manages · Can install and remove agent skills.'],
-    ['Added', 'Record audio', undefined, 'v1 · Use the device microphone while this app is visible. for up to 30 seconds per request Reason: Voice notes'],
   ])
   assert.deepEqual(capabilityChangeRows(platformPreview(candidate, installed)).map(row => [row.kind, row.label]), [
-    ['Changed', 'Agent tool “search”'], ['Removed', 'Bundled skills'], ['Removed', 'Agent skills'], ['Removed', 'Record audio'],
+    ['Changed', 'Agent tool “search”'], ['Removed', 'Use manage_skills'], ['Removed', 'Record audio'], ['Removed', 'Bundled skills'],
   ])
   // Without a recorded previous contract there is nothing to compare.
   assert.deepEqual(capabilityChangeRows({ ...preview, capability_diff: { ...preview.capability_diff, unknown_previous: true } }), [])
   assert.deepEqual(capabilityChangeRows({ ...preview, installed_contract: null }), [])
 })
 
+test('a limit-only increase shows both values, because the platform row text carries them', async () => {
+  const { capabilityChangeRows } = await bundle()
+  const row = text => ({ id: 'device.asset-cache', title: 'Store large files', text, level: null, rank: 1, critical: false })
+  const preview = {
+    ...platformPreview(platformContract(), platformContract()),
+    access_rows: [row('Download verified assets. Limits: max_bytes 2 GiB.')],
+    installed_access_rows: [row('Download verified assets. Limits: max_bytes 256 MiB.')],
+  }
+  assert.deepEqual(capabilityChangeRows(preview).map(({ kind, previous, proposed }) => [kind, previous, proposed]), [
+    ['Changed', 'Download verified assets. Limits: max_bytes 256 MiB.', 'Download verified assets. Limits: max_bytes 2 GiB.'],
+  ])
+})
+
+test('a preview without access rows cannot be approved', async () => {
+  const { hasAccessRows } = await bundle()
+  assert.equal(hasAccessRows({ access_rows: [], installed_access_rows: [] }), true, 'an empty list is a real "nothing requested"')
+  assert.equal(hasAccessRows({ capability_contract: {} }), false, 'an older platform sends no rows')
+  assert.equal(hasAccessRows({ access_rows: [] }), false, 'an older platform defaults the list to empty, which proves nothing')
+  assert.equal(hasAccessRows(null), false)
+})
+
 test('the system prompt row states its real scope and activation', async () => {
   const { capabilityRows } = await bundle()
-  const promptRow = prompt => capabilityRows(platformContract({ systemPrompt: prompt })).find(row => row.key === 'agent.system_prompt')
+  const promptRow = prompt => capabilityRows([], platformContract({ systemPrompt: prompt })).find(row => row.key === 'agent.system_prompt')
   const installedOnly = promptRow({ file: 'agent.md', scope: 'chats_started_while_installed', activation: 'chat_start' })
   assert.equal(installedOnly.tag, 'New chats')
   assert.equal(installedOnly.summary, 'Adds system instructions to agent chats started while it is installed when the chat starts (agent.md).')
   const everywhere = promptRow({ file: 'core.md', scope: 'all_agent_chats', activation: 'next_turn' })
   assert.equal(everywhere.tag, 'All chats')
-  assert.equal(everywhere.summary, 'Adds system instructions to every agent chat on its next turn (core.md).')
-  assert.match(promptRow({ file: 'x.md', scope: 'future_scope', activation: 'future_activation' }).summary, /future_scope[\s\S]*future_activation/)
+  assert.match(everywhere.summary, /every agent chat on its next turn \(core\.md\)/)
+  const unknown = promptRow({ file: 'x.md', scope: 'future_scope', activation: 'future_activation' })
+  assert.match(unknown.summary, /future_scope[\s\S]*future_activation/, 'an unknown scope is shown, not hidden')
 })
 
-test('capability rows describe system prompt, redacted logs, and a server job generically', async () => {
+test('permission rows come from the platform; the Store adds only what the app ships', async () => {
   const { capabilityRows } = await bundle()
-  const rows = capabilityRows({
-    schema: 1,
-    system_app: true,
-    agent: {
-      system_prompt: { file: 'memory-core.md', scope: 'all_agent_chats', activation: 'next_turn' },
-      skills: ['memory.md'], embeds_agent: false,
-    },
-    data: {
-      chat_logs: { effective: 'summary', redaction: 'structural' },
-      shared_memory: 'write', cross_app_access: 'none', share_with_apps: 'read',
-      filesystem_api: false, github_access: false, manage_apps: false,
-    },
-    background: {
-      mode: 'scheduled', cron: '30 5 * * *', job: 'fetch.sh', agent: true,
-      initialize_on_install: true, authority: 'scoped_system_job',
-    },
+  const accessRows = [
+    { id: 'chat_log_access', title: 'Read chat history', text: 'Can read redacted chat text.', level: 'redacted', rank: 1, critical: false },
+    { id: 'identity_manage', title: 'Manage your sign-in identity', text: 'Can manage the sign-in link.', level: null, rank: 1, critical: true },
+  ]
+  const contract = platformContract({
+    skills: ['notes.md'],
+    tools: [{ name: 'search', description: 'Find notes.', input_schema: { type: 'object' } }],
   })
-  assert.match(rows.find(row => row.label === 'Agent chats').summary, /every agent chat/)
-  assert.match(rows.find(row => row.label === 'Chat history').summary, /structurally redacted/)
-  const background = rows.find(row => row.label === 'Background work')
-  assert.equal(background.tag, 'Server job')
-  assert.match(background.summary, /initialization run/)
-  assert.match(background.summary, /reviewed owner-installed code/)
-  assert.match(background.summary, /short-lived app token/)
-  assert.match(rows.find(row => row.label === 'Shares its data').summary, /read this app’s private data/)
-  assert.ok(rows.every(row => !/Memory app/i.test(row.summary)), 'renderer has no app-specific branch')
-})
-
-test('retired receipt fields do not create a second server-job tier', async () => {
-  const { capabilityRows } = await bundle()
-  const rows = capabilityRows({
-    agent: { skills: [] },
-    data: {
-      chat_logs: { effective: 'none' }, shared_memory: 'none',
-      cross_app_access: 'none', share_with_apps: 'none',
-    },
-    background: {
-      mode: 'scheduled', cron: '0 4 * * *', job: 'fetch.sh',
-      agent: false, authority: 'app_job_process',
-    },
-  })
-  const background = rows.find(row => row.label === 'Background work')
-  assert.equal(background.tag, 'Server job')
-  assert.match(background.summary, /Möbius process access/)
-  assert.doesNotMatch(background.summary, /legacy|filesystem-confined/)
-})
-
-test('capability rows show server jobs but omit non-permission app features', async () => {
-  const { capabilityRows } = await bundle()
-  const rows = capabilityRows({
-    agent: { embeds_agent: true, skills: [] },
-    data: {
-      chat_logs: { effective: 'none' }, shared_memory: 'none',
-      cross_app_access: 'none', share_with_apps: 'none',
-    },
-    background: {
-      agent: true, mode: 'on_demand', authority: 'scoped_system_job',
-      initialize_on_install: false,
-    },
-    offline: {
-      capable: true,
-      contract: { reads: true, writes: 'none', execution: 'partial' },
-    },
-  })
-  assert.equal(rows.find(row => row.label === 'Embedded agent'), undefined)
-  assert.equal(rows.find(row => row.label === 'Background work').tag, 'Server job')
-  assert.equal(rows.find(row => row.label === 'Offline use'), undefined)
-  assert.equal(rows.find(row => row.tag === 'None'), undefined)
-})
-
-test('capability rows omit model-provider metadata and empty grants', async () => {
-  const { capabilityRows } = await bundle()
-  const rows = capabilityRows({
-    model_provider: {
-      name: 'Example AI', base_url: 'https://models.example.com',
-      models: [{ id: 'example-1', label: 'Example 1' }],
-    },
-  })
-  assert.deepEqual(rows, [])
-})
-
-test('capability rows disclose GitHub connection and skill management separately', async () => {
-  const { capabilityRows } = await bundle()
-  const rows = capabilityRows({
-    agent: { skills: [] },
-    data: {
-      chat_logs: { effective: 'none' },
-      shared_memory: 'none',
-      cross_app_access: 'none',
-      share_with_apps: 'none',
-      github_access: true,
-      github_connect: true,
-      manage_skills: true,
-    },
-  })
-
-  assert.match(
-    rows.find(row => row.label === 'GitHub data').summary,
-    /connected GitHub account/,
-  )
-  assert.match(
-    rows.find(row => row.label === 'GitHub connection').summary,
-    /disconnect the owner’s GitHub connection/,
-  )
-  assert.match(
-    rows.find(row => row.key === 'data.manage_skills' && row.label === 'Agent skills').summary,
-    /install and remove agent skills/,
-  )
-})
-
-test('capability rows fail visibly for a future data grant', async () => {
-  const { capabilityRows } = await bundle()
-  const rows = capabilityRows({
-    agent: { skills: [] },
-    data: {
-      chat_logs: { effective: 'none' },
-      shared_memory: 'none',
-      cross_app_access: 'none',
-      share_with_apps: 'none',
-      future_owner_control: true,
-    },
-  })
-
-  const future = rows.find(row => row.label === 'Future Owner Control')
-  assert.equal(future.tag, 'Review')
-  assert.match(future.summary, /unrecognized “future_owner_control” data grant/)
-  assert.equal(future.tone, 'write')
+  const rows = capabilityRows(accessRows, contract)
+  assert.deepEqual(rows.map(row => [row.key, row.label, row.tag, row.critical || false]), [
+    ['chat_log_access', 'Read chat history', 'Redacted', false],
+    ['identity_manage', 'Manage your sign-in identity', '', true],
+    ['agent.skills', 'Bundled skills', '1', false],
+    ['agent.tools:search', 'Agent tool “search”', 'Agent tool', false],
+  ])
+  assert.deepEqual(capabilityRows(undefined, platformContract()), [], 'no rows from an older platform is not an invented list')
 })
 
 test('both update entry points use one reviewed server batch with bound digests', async () => {

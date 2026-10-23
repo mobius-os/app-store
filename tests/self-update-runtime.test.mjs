@@ -108,7 +108,7 @@ test('a new self-update conflict switches from Update to the agent, not Retry', 
     if (path.includes('/update-candidate-preview')) return json({
       app_id: 1, source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40),
       capability_preview: {
-        manifest: { version: '1.21.4' }, capability_digest: 'c'.repeat(64),
+        manifest: { version: '1.21.4' }, capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [],
         capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
       },
     })
@@ -212,7 +212,7 @@ test('a pending conflict names its receipt version, not a newer published releas
     if (path.includes('/update-candidate-preview')) return json({
       app_id: 1, source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40),
       capability_preview: {
-        manifest: { version: '1.22.0' }, capability_digest: 'c'.repeat(64),
+        manifest: { version: '1.22.0' }, capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [],
         capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
       },
     })
@@ -235,7 +235,7 @@ test('the conflict layout class stays off the existing update banner', async () 
     if (path.includes('/update-candidate-preview')) return json({
       app_id: 1, source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40),
       capability_preview: {
-        manifest: { version: '1.22.0' }, capability_digest: 'c'.repeat(64),
+        manifest: { version: '1.22.0' }, capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [],
         capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
       },
     })

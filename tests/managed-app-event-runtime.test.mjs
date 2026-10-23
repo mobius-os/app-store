@@ -390,7 +390,7 @@ test('a local update supersedes an older background check without waiting for it
     if (path.startsWith('/api/apps/11/update-candidate-preview')) return json({
       app_id: 11, upstream_version: '2.0.0', upstream_diff: '', source_digest: 'a'.repeat(64),
       upstream_commit: 'b'.repeat(40), capability_preview: {
-        capability_digest: 'c'.repeat(64), capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
+        capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [], capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
       },
     })
     if (path === '/api/apps/install') {
@@ -423,7 +423,7 @@ test('a local update supersedes an older background check without waiting for it
 const preview = id => json({
   app_id: id, upstream_version: '2.0.0', upstream_diff: '', source_digest: 'a'.repeat(64),
   upstream_commit: 'b'.repeat(40), capability_preview: {
-    capability_digest: 'c'.repeat(64), capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
+    capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [], capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
   },
 })
 const updateResult = id => json({

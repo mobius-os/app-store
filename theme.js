@@ -1241,6 +1241,11 @@ export const CSS = `
   border: 1px solid var(--accent);
   align-self: flex-start;
 }
+/* The platform marks the few rows that can change Möbius itself with one dot. */
+.st-perm-critical {
+  flex-shrink: 0; align-self: flex-start; margin-top: 6px;
+  width: 8px; height: 8px; border-radius: 50%; background: #f87171;
+}
 .st-perm-tag.is-read { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .st-perm-tag.is-muted {
   background: color-mix(in srgb, var(--muted) 14%, transparent);
