@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { STORE_SELF } from '../constants.js'
 import { createConflictResolverChat, fetchUpdateCheck, installApp, loadUpdateCandidatePreview, openChat } from '../api.js'
-import { capabilityDiffNeedsReview, hasAccessRows } from '../domain.js'
+import { capabilityDiffNeedsReview, hasAccessRows, MISSING_ACCESS_ROWS } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
 // Self-update banner. The store is bootstrapped separately from its catalog
@@ -141,6 +141,7 @@ export function SelfUpdateBanner({ appId, token }) {
             <div className="st-banner-msg">
               App Store v{latest.version} is ready{phase === 'error' && msg ? ` — ${msg}` : ''}.
             </div>
+            {accessRowsMissing ? <p className="st-banner-access-note">{MISSING_ACCESS_ROWS}</p> : null}
             {showReview && needsAccessReview ? (
               <div className="st-banner-access-review">
                 <p className="st-banner-access-note">

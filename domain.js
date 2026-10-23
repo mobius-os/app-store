@@ -594,12 +594,14 @@ export function busyLabelForAction(actionKind) {
 }
 
 // The platform's preview carries the permission rows the owner approves. A
-// preview without them (an older Möbius) cannot be approved: nothing would be
-// disclosed.
+// preview from a Möbius that predates them cannot be approved: nothing would be
+// disclosed. An older Möbius can also send an empty `access_rows` by default, so
+// the rows only count when `installed_access_rows`, which only a Möbius that
+// builds the rows sends, comes with them.
 export const MISSING_ACCESS_ROWS = 'Update Möbius to see what this app asks for.'
 
 export function hasAccessRows(preview) {
-  return Array.isArray(preview?.access_rows)
+  return Array.isArray(preview?.access_rows) && Array.isArray(preview?.installed_access_rows)
 }
 
 export function capabilityDiffNeedsReview(diff) {

@@ -1807,8 +1807,9 @@ test('a limit-only increase shows both values, because the platform row text car
 
 test('a preview without access rows cannot be approved', async () => {
   const { hasAccessRows } = await bundle()
-  assert.equal(hasAccessRows({ access_rows: [] }), true, 'an empty list is a real "nothing requested"')
+  assert.equal(hasAccessRows({ access_rows: [], installed_access_rows: [] }), true, 'an empty list is a real "nothing requested"')
   assert.equal(hasAccessRows({ capability_contract: {} }), false, 'an older platform sends no rows')
+  assert.equal(hasAccessRows({ access_rows: [] }), false, 'an older platform defaults the list to empty, which proves nothing')
   assert.equal(hasAccessRows(null), false)
 })
 
