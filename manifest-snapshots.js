@@ -78,7 +78,7 @@ export const MANIFEST_SNAPSHOTS = {
   "memory": {
     "id": "memory",
     "name": "Memory",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "description": "Build and retrieve an optional graph of durable facts without injecting it into every chat.",
     "author": "mobius-os",
     "license": "MIT",
@@ -132,12 +132,18 @@ export const MANIFEST_SNAPSHOTS = {
       "memory-core.md",
       "memory.md",
       "memory_search.py",
+      "memory_read.py",
+      "remember.py",
+      "memory_benchmark.py",
+      "service.py",
       "memory_text_provider.py",
       "memory_runner.py",
+      "model_selection.py",
       "memory_store.py",
       "memory_graph.py",
       "personalization_profile.py",
       "constants.js",
+      "model-selection.mjs",
       "theme.js",
       "domain.js",
       "storage.js",
@@ -153,6 +159,7 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/NetworkGlyph.jsx",
       "ui/BackgroundAgentList.jsx",
       "ui/SupportingChats.jsx",
+      "ui/ActivityView.jsx",
       "ui/backgroundAgentOrder.js",
       "ui/ModelPicker.jsx",
       "seed-memory/index.md",
@@ -162,6 +169,91 @@ export const MANIFEST_SNAPSHOTS = {
       "seed-memory/mocs/mobius-platform.md",
       "seed-memory/notes/how-the-memory-graph-works.md",
       "seed-memory/notes/memory-is-visible-to-the-partner.md"
+    ],
+    "agent_activities": {
+      "memory-search": {
+        "tool": "search",
+        "running_label": "Searching"
+      },
+      "memory-read": {
+        "tool": "read",
+        "running_label": "Reading"
+      },
+      "memory-capture": {
+        "tool": "remember",
+        "running_label": "Saving"
+      }
+    },
+    "service": {
+      "entry": "service.py"
+    },
+    "tools": [
+      {
+        "name": "search",
+        "description": "Search Memory for durable context about the partner (preferences, constraints, people, goals, projects, prior decisions and their impact) that could change this work. Describe the context needed and why, anchored to the relevant people, projects, or apps. Returns a catalogue of relevant notes and a lookup_id; open notes with Memory's read tool. Takes up to a few minutes.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Focused description of the facts or prior context needed, and why."
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      },
+      {
+        "name": "read",
+        "description": "Continue a Memory lookup: page its catalogue (selection \"catalog\") or read full notes (selection \"all\" or a list of catalogue ids). Repeat with the returned cursor until complete.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "lookup_id": {
+              "type": "string"
+            },
+            "selection": {
+              "description": "\"catalog\", \"all\", or a list of catalogue ids.",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "cursor": {
+              "type": "string",
+              "description": "\"start\" (default) or the next cursor the previous page returned."
+            }
+          },
+          "required": [
+            "lookup_id",
+            "selection"
+          ]
+        }
+      },
+      {
+        "name": "remember",
+        "description": "Save one self-contained fact a future chat would want to know. Memory's nightly writer checks it against this chat before filing it.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "fact": {
+              "type": "string",
+              "description": "One fact that stands alone months from now: who and what, absolute dates, and the why when known."
+            }
+          },
+          "required": [
+            "fact"
+          ]
+        }
+      }
     ]
   },
   "integrations": {
@@ -171,6 +263,9 @@ export const MANIFEST_SNAPSHOTS = {
     "description": "Give your agents new tools through MCP integrations — with live health, honest per-message cost, and curated suggestions.",
     "author": "mobius-os",
     "license": "MIT",
+    "homepage": "https://github.com/mobius-os/app-integrations",
+    "previous_id": "connections",
+    "previous_manifest_url": "https://raw.githubusercontent.com/mobius-os/app-connections/main/mobius.json",
     "icon": "icon.png",
     "entry": "index.jsx",
     "offline_capable": false,
@@ -196,15 +291,12 @@ export const MANIFEST_SNAPSHOTS = {
       "suggestions.js",
       "integrations.md",
       "icon.png"
-    ],
-    "homepage": "https://github.com/mobius-os/app-integrations",
-    "previous_id": "connections",
-    "previous_manifest_url": "https://raw.githubusercontent.com/mobius-os/app-connections/main/mobius.json"
+    ]
   },
   "connect": {
     "id": "connect",
     "name": "Connect",
-    "version": "0.3.7",
+    "version": "0.6.0",
     "description": "Pair your laptop, workstation, or cluster and let Möbius run things on it.",
     "author": "mobius-os",
     "license": "MIT",
@@ -229,14 +321,17 @@ export const MANIFEST_SNAPSHOTS = {
       "icon.png",
       "connect.md",
       "mach",
-      "connect-state.mjs"
+      "connect-state.mjs",
+      "connect-api.mjs",
+      "connect-ui.jsx",
+      "BrowserAccessSection.jsx"
     ]
   },
   "identity": {
     "id": "identity",
     "name": "Möbius · You",
-    "version": "0.3.3",
-    "description": "Your Möbius account, profile and active deployments.",
+    "version": "0.4.1",
+    "description": "Your Möbius account, model access, profile and deployments.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-mobius-you",
@@ -246,6 +341,98 @@ export const MANIFEST_SNAPSHOTS = {
     "permissions": {
       "identity_manage": true,
       "railway_manage": true
+    },
+    "model_provider": {
+      "name": "Möbius",
+      "transport": "identity_broker",
+      "base_url": "http://127.0.0.1:8765/v1",
+      "default_model": "evolve",
+      "models": [
+        {
+          "id": "spark",
+          "label": "Spark (Qwen3.8 27B)",
+          "effort_levels": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "max"
+          ],
+          "context_window": 235930,
+          "input_modalities": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "evolve",
+          "label": "Evolve (Qwen3.8 Max 0902)",
+          "effort_levels": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "max"
+          ],
+          "context_window": 900000,
+          "input_modalities": [
+            "text",
+            "image"
+          ],
+          "auto_compact_token_limit": 420000
+        },
+        {
+          "id": "reflect",
+          "label": "Reflect (DeepSeek V4.1 Flash)",
+          "effort_levels": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "max"
+          ],
+          "context_window": 943718,
+          "input_modalities": [
+            "text",
+            "image"
+          ],
+          "auto_compact_token_limit": 420000
+        },
+        {
+          "id": "flow",
+          "label": "Flow (GLM 5.3 Flash)",
+          "effort_levels": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "max"
+          ],
+          "context_window": 943718,
+          "input_modalities": [
+            "text",
+            "image"
+          ],
+          "auto_compact_token_limit": 420000
+        },
+        {
+          "id": "prism",
+          "label": "Prism (Gemini 3.8 Flash)",
+          "effort_levels": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "max"
+          ],
+          "context_window": 943718,
+          "input_modalities": [
+            "text",
+            "image"
+          ],
+          "auto_compact_token_limit": 420000
+        }
+      ]
     },
     "requires": [
       "identity_manage",
@@ -267,8 +454,8 @@ export const MANIFEST_SNAPSHOTS = {
   "reflection": {
     "id": "reflection",
     "name": "Reflection",
-    "version": "4.0.0",
-    "description": "Agents log friction as it happens; on days with new friction, Reflection looks into it, reports, and asks you before fixing anything.",
+    "version": "4.0.1",
+    "description": "Agents log friction as it happens; on days with new friction, Reflection investigates and reports proposed fixes without making changes.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-reflection",
@@ -314,13 +501,13 @@ export const MANIFEST_SNAPSHOTS = {
     "tools": [
       {
         "name": "log_friction",
-        "description": "Record friction you just hit: anything that made this work harder than it should have been. One short, self-contained description of what happened and what it cost. Returns immediately; carry on with the task.",
+        "description": "Record friction caused by Möbius itself (a tool, route, helper, skill, prompt or the environment) that is likely to trip up the next agent too. Not for bugs in your own task work. One short, self-contained description of what happened and what it cost. Returns immediately; carry on with the task.",
         "input_schema": {
           "type": "object",
           "properties": {
             "friction": {
               "type": "string",
-              "description": "What happened and what it cost, in one short text."
+              "description": "What Möbius did, what it cost, and the workaround, in one short text."
             }
           },
           "required": [
@@ -359,7 +546,7 @@ export const MANIFEST_SNAPSHOTS = {
   "workflows": {
     "id": "workflows",
     "name": "Workflows",
-    "version": "2.3.5",
+    "version": "2.4.0",
     "description": "A timeline of background work: see what ran, which helpers were created, and how each attempt ended.",
     "author": "mobius-os",
     "license": "MIT",
@@ -394,7 +581,7 @@ export const MANIFEST_SNAPSHOTS = {
   "skills": {
     "id": "skills",
     "name": "Skills",
-    "version": "2.2.3",
+    "version": "2.3.0",
     "description": "Browse and read your agent's skills, and grow them: install from public skill catalogs, or ask the agent to find the right one for you.",
     "author": "mobius-os",
     "license": "MIT",
@@ -431,11 +618,13 @@ export const MANIFEST_SNAPSHOTS = {
   "pages": {
     "id": "pages",
     "name": "Pages",
-    "version": "0.7.0",
+    "version": "0.7.2",
     "description": "Browse, preview, version, share, view, copy, and download self-contained pages — interactive mockups, explainers, and polished documents — created in Möbius chats.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-pages",
+    "previous_id": "artifacts",
+    "previous_manifest_url": "https://raw.githubusercontent.com/mobius-os/app-artifacts/main/mobius.json",
     "entry": "index.jsx",
     "system_app": true,
     "system_prompt": "pages-core.md",
@@ -456,11 +645,14 @@ export const MANIFEST_SNAPSHOTS = {
       "theme.js",
       "preview/ArtifactFrame.jsx",
       "preview/artifactLinks.js",
+      "preview/shellShortcuts.js",
+      "ui/adaptivePoll.js",
       "ui/ArtifactCard.jsx",
       "ui/ArtifactThumbnail.jsx",
       "ui/catalogSnapshot.js",
       "ui/clipboard.js",
       "ui/detailSync.js",
+      "ui/deletePage.js",
       "ui/Detail.jsx",
       "ui/Empty.jsx",
       "ui/Gallery.jsx",
@@ -479,9 +671,7 @@ export const MANIFEST_SNAPSHOTS = {
         "@codemirror/view",
         "@openai/apps-sdk-ui/components/Icon"
       ]
-    },
-    "previous_id": "artifacts",
-    "previous_manifest_url": "https://raw.githubusercontent.com/mobius-os/app-artifacts/main/mobius.json"
+    }
   },
   "maps": {
     "id": "maps",
@@ -569,14 +759,21 @@ export const MANIFEST_SNAPSHOTS = {
   "contribute": {
     "id": "contribute",
     "name": "Contribute",
-    "version": "0.5.27",
-    "description": "See what your agent has proposed upstream — pull requests, issues, and comments across the Möbius ecosystem, from prepared to merged.",
+    "version": "0.5.43",
+    "description": "See local project changes, prepare and review them privately, and follow shared work through acceptance.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-contribute",
     "icon": "icon.png",
     "entry": "index.jsx",
     "offline_capable": true,
+    "embeds_agent": true,
+    "capabilities": {
+      "chat.blocks.passive": {
+        "version": 1,
+        "reason": "Shows the current state of the contributions a chat card names, and sends them to GitHub only after you press Confirm on that card."
+      }
+    },
     "offline": {
       "reads": true,
       "writes": "none",
@@ -602,8 +799,12 @@ export const MANIFEST_SNAPSHOTS = {
       "default": "*/15 * * * *",
       "job": "job.sh"
     },
+    "service": {
+      "entry": "service.py",
+      "access": "self"
+    },
     "skills": [
-      "contributing.md",
+      "contributing/",
       "review-followup.md"
     ],
     "source_files": [
@@ -618,15 +819,29 @@ export const MANIFEST_SNAPSHOTS = {
       "autopilot.js",
       "diff.js",
       "api.js",
+      "cycle-delivery.js",
       "github-connection.js",
       "storage.js",
       "prepared_reconcile.py",
+      "ledger_scan.py",
       "agent_snapshot.py",
-      "contributing.md",
+      "contributing/SKILL.md",
+      "contributing/cycle.md",
+      "contributing/prepare.md",
+      "contributing/branch.md",
+      "contributing/ledger.md",
+      "contributing/publish.md",
+      "contributing/maintainer.md",
+      "contributing/ci.md",
+      "contributing/adapter-mobius.md",
+      "contributing/adapter-github.md",
+      "contributing/legacy-bot.md",
+      "attached-work.md",
       "review-followup.md",
       "ui/Icons.jsx",
       "ui/BatchAction.jsx",
       "ui/ConnectionCard.jsx",
+      "ui/AgentModelSettings.jsx",
       "ui/MarkdownView.jsx",
       "ui/FileDiffList.jsx",
       "ui/ContributionCard.jsx",
@@ -638,13 +853,42 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/diff/FileDiffList.jsx",
       "ui/diff/UnifiedDiff.jsx",
       "ui/diff/parseUnifiedDiff.js",
-      "ui/diff/styles.js"
+      "ui/diff/styles.js",
+      "ui/ProjectControls.jsx",
+      "collaboration.js",
+      "ui/PullRequests.jsx",
+      "ui/useFocusLease.js",
+      "ui/GithubParts.jsx",
+      "ui/TaskPane.jsx",
+      "workspace-theme.js",
+      "ui/useProjectCycle.js",
+      "ui/SourceConversations.jsx",
+      "repositories.js",
+      "ui/RepositoryPicker.jsx",
+      "review-selection.js",
+      "ui/ReviewSelection.jsx",
+      "review_prs.py",
+      "pull-details.js",
+      "service.py",
+      "ui/PullRequestDetail.jsx",
+      "chat-blocks.js",
+      "provenance.js",
+      "pull-view.js",
+      "pr_block.py",
+      "review-prompts.js",
+      "ui/ReviewPromptSettings.jsx",
+      "ui/RunDetail.jsx",
+      "send-readiness.js",
+      "inline-session.js",
+      "block-protocol.js",
+      "ui/InlineBlockSession.jsx",
+      "prepared_block.py"
     ]
   },
   "notes": {
     "id": "notes",
     "name": "Notes",
-    "version": "1.2.36",
+    "version": "1.2.38",
     "description": "Markdown notes that render as you type, with checklists, pins, colors, search, and images.",
     "author": "mobius-os",
     "license": "MIT",
@@ -726,7 +970,7 @@ export const MANIFEST_SNAPSHOTS = {
   "news": {
     "id": "news",
     "name": "News",
-    "version": "1.29.7",
+    "version": "1.29.8",
     "description": "A personal daily news digest shaped by your interests, source mix, and listening preferences.",
     "offline_capable": true,
     "embeds_agent": true,
@@ -739,6 +983,7 @@ export const MANIFEST_SNAPSHOTS = {
       "report-schema.mjs",
       "system-prompt.md",
       "constants.js",
+      "model-selection.mjs",
       "preferences.js",
       "theme.js",
       "domain.js",
@@ -764,7 +1009,8 @@ export const MANIFEST_SNAPSHOTS = {
       "ui/backgroundAgentOrder.js",
       "ui/SettingsTab.jsx",
       "ui/useVoiceCatalog.js",
-      "codex_output.py"
+      "codex_output.py",
+      "model_selection.py"
     ],
     "theme_color": "#0c0f14",
     "background_color": "#0c0f14",
@@ -869,16 +1115,16 @@ export const MANIFEST_SNAPSHOTS = {
   "webstudio": {
     "id": "webstudio",
     "name": "Web Studio",
-    "version": "1.3.0",
-    "description": "Create live projects for websites, mini-apps, visualizations, documents, spreadsheets, and presentations.",
+    "version": "1.3.4",
+    "description": "A Project app that adds Website projects to Möbius.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-webstudio",
     "entry": "index.jsx",
     "icon": "icon.png",
-    "offline_capable": true,
+    "offline_capable": false,
     "offline": {
-      "reads": true,
+      "reads": false,
       "writes": "none",
       "execution": "none"
     },
@@ -898,27 +1144,10 @@ export const MANIFEST_SNAPSHOTS = {
     "source_files": [
       "webstudio-project.md",
       "project-builder.sh",
-      "mini-app-builder.sh",
-      "mini-app-builder.mjs",
-      "document-builder.sh",
-      "document-builder.py",
-      "spreadsheet-builder.sh",
-      "spreadsheet-builder.py",
       "templates/index.html",
       "templates/style.css",
       "templates/app.js",
-      "templates/mini-app/index.jsx",
-      "templates/mini-app/mobius.json",
-      "templates/visualization/index.html",
-      "templates/visualization/visualization.css",
-      "templates/visualization/data.js",
-      "templates/visualization/visualization.js",
-      "templates/document.md",
-      "templates/sheet.csv",
-      "templates/presentation/index.html",
-      "templates/artwork/document.png",
-      "templates/artwork/spreadsheet.png",
-      "templates/artwork/presentation.png"
+      "latest-request.js"
     ],
     "skills": [
       "webstudio-project.md"
@@ -927,8 +1156,8 @@ export const MANIFEST_SNAPSHOTS = {
       {
         "id": "website",
         "name": "Website",
-        "description": "Build a local website with project chats and a previewable website artifact.",
-        "guidance": "Work directly inside the project root. Keep index.html and every local asset together, avoid external load-time dependencies, and build the HTML entry as a website artifact.",
+        "description": "Build a local website with project chats and a previewable website Creation.",
+        "guidance": "Work directly inside the project root. Keep index.html and every local asset together, avoid external load-time dependencies, and build the HTML entry as a website Creation.",
         "skills": [
           "webstudio-project.md"
         ],
@@ -942,8 +1171,8 @@ export const MANIFEST_SNAPSHOTS = {
           {
             "id": "website",
             "name": "Website",
-            "kind": "html",
-            "path": "index.html"
+            "source": "index.html",
+            "builder": "website"
           }
         ],
         "artifact_types": [
@@ -958,183 +1187,8 @@ export const MANIFEST_SNAPSHOTS = {
             "script": "project-builder.sh",
             "output": "{source}"
           }
-        ]
-      },
-      {
-        "id": "mini-app",
-        "name": "Mini-app",
-        "description": "Build a real React mini-app package with a live browser artifact.",
-        "guidance": "Treat index.jsx as the app entry and mobius.json as its package contract. Build one useful interaction first, keep it keyboard-accessible and self-contained, and verify the browser artifact after meaningful changes.",
-        "skills": [
-          "webstudio-project.md"
         ],
-        "dependencies": [],
-        "files": {
-          "index.jsx": "templates/mini-app/index.jsx",
-          "mobius.json": "templates/mini-app/mobius.json"
-        },
-        "previews": [
-          {
-            "id": "app",
-            "name": "Mini-app",
-            "kind": "html",
-            "path": "index.jsx"
-          }
-        ],
-        "artifact_types": [
-          {
-            "id": "mini-app",
-            "name": "Mini-app",
-            "extensions": [
-              "jsx",
-              "tsx"
-            ],
-            "preview": "html",
-            "script": "mini-app-builder.sh",
-            "output": "index.html"
-          }
-        ]
-      },
-      {
-        "id": "visualization",
-        "name": "Interactive visualization",
-        "description": "Explore first-class data and rendering source through a presentation-ready chart.",
-        "guidance": "Keep sample data in data.js and rendering behavior in visualization.js. Prioritize legible labels, keyboard interaction, an informative empty state, and no external load-time dependencies.",
-        "skills": [
-          "webstudio-project.md"
-        ],
-        "dependencies": [],
-        "files": {
-          "index.html": "templates/visualization/index.html",
-          "visualization.css": "templates/visualization/visualization.css",
-          "data.js": "templates/visualization/data.js",
-          "visualization.js": "templates/visualization/visualization.js"
-        },
-        "previews": [
-          {
-            "id": "visualization",
-            "name": "Visualization",
-            "kind": "html",
-            "path": "index.html"
-          }
-        ],
-        "artifact_types": [
-          {
-            "id": "website",
-            "name": "Visualization",
-            "extensions": [
-              "html",
-              "htm"
-            ],
-            "preview": "html",
-            "script": "project-builder.sh",
-            "output": "{source}"
-          }
-        ]
-      },
-      {
-        "id": "document",
-        "name": "Document",
-        "description": "Draft in Markdown with a live reading view and a typeset document artifact.",
-        "guidance": "Write for the reader in document.md. Use semantic headings, concise sections, lists, emphasis, links, and blockquotes; save to rebuild the self-contained reading artifact.",
-        "skills": [
-          "webstudio-project.md"
-        ],
-        "dependencies": [],
-        "files": {
-          "document.md": "templates/document.md",
-          "assets/cover.png": "templates/artwork/document.png"
-        },
-        "previews": [
-          {
-            "id": "document",
-            "name": "Document",
-            "kind": "html",
-            "path": "document.md"
-          }
-        ],
-        "artifact_types": [
-          {
-            "id": "document",
-            "name": "Document",
-            "extensions": [
-              "md",
-              "markdown"
-            ],
-            "preview": "html",
-            "script": "document-builder.sh",
-            "output": "index.html"
-          }
-        ]
-      },
-      {
-        "id": "spreadsheet",
-        "name": "Spreadsheet",
-        "description": "Edit durable CSV cells in a live grid and publish a responsive data view.",
-        "guidance": "Treat sheet.csv as the source of truth. Keep a clear header row and one record per row; use the grid editor for routine changes and rebuild the self-contained data artifact after saving.",
-        "skills": [
-          "webstudio-project.md"
-        ],
-        "dependencies": [],
-        "files": {
-          "sheet.csv": "templates/sheet.csv",
-          "assets/cover.png": "templates/artwork/spreadsheet.png"
-        },
-        "previews": [
-          {
-            "id": "sheet",
-            "name": "Spreadsheet",
-            "kind": "html",
-            "path": "sheet.csv"
-          }
-        ],
-        "artifact_types": [
-          {
-            "id": "spreadsheet",
-            "name": "Spreadsheet",
-            "extensions": [
-              "csv"
-            ],
-            "preview": "html",
-            "script": "spreadsheet-builder.sh",
-            "output": "index.html"
-          }
-        ]
-      },
-      {
-        "id": "presentation",
-        "name": "Presentation",
-        "description": "Shape a responsive narrative deck with a live, presentation-ready preview.",
-        "guidance": "Build the story directly in index.html. Keep every slide semantic, concise, keyboard-accessible, responsive, and self-contained without external load-time dependencies.",
-        "skills": [
-          "webstudio-project.md"
-        ],
-        "dependencies": [],
-        "files": {
-          "index.html": "templates/presentation/index.html",
-          "assets/cover.png": "templates/artwork/presentation.png"
-        },
-        "previews": [
-          {
-            "id": "presentation",
-            "name": "Presentation",
-            "kind": "html",
-            "path": "index.html"
-          }
-        ],
-        "artifact_types": [
-          {
-            "id": "presentation",
-            "name": "Presentation",
-            "extensions": [
-              "html",
-              "htm"
-            ],
-            "preview": "html",
-            "script": "project-builder.sh",
-            "output": "{source}"
-          }
-        ]
+        "kind": "web"
       }
     ]
   },
@@ -1183,7 +1237,7 @@ export const MANIFEST_SNAPSHOTS = {
   "habits": {
     "id": "habits",
     "name": "Habits",
-    "version": "1.0.12",
+    "version": "1.0.14",
     "description": "Track daily habits with streaks, a strength score, a calendar heatmap, and per-habit reminders.",
     "author": "mobius-os",
     "license": "MIT",
@@ -1230,7 +1284,7 @@ export const MANIFEST_SNAPSHOTS = {
   "beat-machine": {
     "id": "beat-machine",
     "name": "Beat Machine",
-    "version": "1.0.17",
+    "version": "1.0.20",
     "description": "A native Möbius 32-step sequencer with drum-kit voices, custom recordings, BPM control, and simple effects.",
     "author": "mobius-os",
     "license": "MIT",
@@ -1279,7 +1333,7 @@ export const MANIFEST_SNAPSHOTS = {
   "atlas": {
     "id": "atlas",
     "name": "Atlas",
-    "version": "1.10.3",
+    "version": "1.10.5",
     "description": "Spin the globe, tap the countries you've visited, and watch your map fill in.",
     "author": "mobius-os",
     "license": "MIT AND CC-BY-3.0-IGO",
@@ -1296,7 +1350,9 @@ export const MANIFEST_SNAPSHOTS = {
     "storage_seeds": {
       "visited.json": [],
       "wishlist.json": [],
-      "countries.geo.json": "countries.geo.json"
+      "countries.geo.json": "countries.geo.json",
+      "textures/blue-marble-2004-10-4096.webp": "assets/blue-marble-2004-10-4096.webp",
+      "textures/blue-marble-2004-10-2048.webp": "assets/blue-marble-2004-10-2048.webp"
     },
     "offline": {
       "reads": true,
@@ -1321,9 +1377,8 @@ export const MANIFEST_SNAPSHOTS = {
       "theme.js",
       "domain.js",
       "storage.js",
+      "sync.js",
       "earthTexture.js",
-      "earthTextureDataA.js",
-      "earthTextureDataB.js",
       "ui/Globe.jsx",
       "ui/BottomSheet.jsx",
       "ui/SyncPill.jsx",
@@ -1333,8 +1388,8 @@ export const MANIFEST_SNAPSHOTS = {
   "latex": {
     "id": "latex",
     "name": "LaTeX",
-    "version": "3.0.0",
-    "description": "Create LaTeX Projects whose source, chats, PDF artifacts, and build history stay together.",
+    "version": "3.0.2",
+    "description": "A Project app for LaTeX documents and PDF Creations.",
     "author": "mobius-os",
     "license": "MIT",
     "homepage": "https://github.com/mobius-os/app-latex",
@@ -1342,10 +1397,11 @@ export const MANIFEST_SNAPSHOTS = {
     "source_files": [
       "latex-project.md",
       "project-builder.sh",
-      "templates/main.tex"
+      "templates/main.tex",
+      "latest-request.js"
     ],
     "icon": "icon.png",
-    "offline_capable": true,
+    "offline_capable": false,
     "permissions": {
       "cross_app_access": "none",
       "share_with_apps": "read"
@@ -1359,7 +1415,7 @@ export const MANIFEST_SNAPSHOTS = {
       "esm_deps": []
     },
     "offline": {
-      "reads": true,
+      "reads": false,
       "writes": "none",
       "execution": "none"
     },
@@ -1371,8 +1427,8 @@ export const MANIFEST_SNAPSHOTS = {
       {
         "id": "document",
         "name": "LaTeX document",
-        "description": "Write source with project chats and compile it into a PDF artifact.",
-        "guidance": "Work directly inside the project root. Keep LaTeX source and local assets together, and build the root .tex file as a PDF artifact.",
+        "description": "Write source with project chats and compile it into a PDF Creation.",
+        "guidance": "Work directly inside the project root. Keep LaTeX source and local assets together, and build the root .tex file as a PDF Creation.",
         "skills": [
           "latex-project.md"
         ],
@@ -1386,8 +1442,8 @@ export const MANIFEST_SNAPSHOTS = {
           {
             "id": "document",
             "name": "Document",
-            "kind": "pdf",
-            "path": "main.pdf"
+            "source": "main.tex",
+            "builder": "latex"
           }
         ],
         "artifact_types": [
@@ -1401,14 +1457,15 @@ export const MANIFEST_SNAPSHOTS = {
             "script": "project-builder.sh",
             "output": "{stem}.pdf"
           }
-        ]
+        ],
+        "kind": "latex"
       }
     ]
   },
   "tandem": {
     "id": "tandem",
     "name": "Tandem",
-    "version": "0.14.8",
+    "version": "0.14.9",
     "description": "Split-pane bilingual reader for language learning. Wide screens show the languages left/right; phones and narrow windows stack them top/bottom. The panes sync-scroll and the divider resizes them. Choose languages and level, then describe the story you want in one free-form prompt — ask for a fresh story or to continue an earlier one. Pick the generation agent (Claude or OpenAI Codex) in settings; tap a word for its exact glossary match or honest aligned-sentence context.",
     "offline_capable": true,
     "offline": {
@@ -1426,6 +1483,7 @@ export const MANIFEST_SNAPSHOTS = {
       "story-schema.mjs",
       "text-align.mjs",
       "gen-model.mjs",
+      "model_selection.py",
       "scroll-sync.mjs",
       "reader-layout.mjs",
       "constants.js",
@@ -1489,7 +1547,7 @@ export const MANIFEST_SNAPSHOTS = {
       "assets/galaxy-C3_ymqtx.jpg": "build/assets/galaxy-C3_ymqtx.jpg",
       "assets/galaxyTextureBW-zfjMfs6Y.png": "build/assets/galaxyTextureBW-zfjMfs6Y.png",
       "assets/grid-rainbow-NLNqsQ2s.png": "build/assets/grid-rainbow-NLNqsQ2s.png",
-      "assets/index-CFxvGjiA.js": "build/assets/index-CFxvGjiA.js",
+      "assets/index-BxWVu8i0.js": "build/assets/index-BxWVu8i0.js",
       "assets/index-zMxea8Gk.css": "build/assets/index-zMxea8Gk.css",
       "assets/intro-loop-sDtpJoqj.mp3": "build/assets/intro-loop-sDtpJoqj.mp3",
       "assets/main-nodrums-D4uCkcWB.mp3": "build/assets/main-nodrums-D4uCkcWB.mp3",
@@ -1499,16 +1557,11 @@ export const MANIFEST_SNAPSHOTS = {
       "assets/speedup-DfjeVIc7.mp3": "build/assets/speedup-DfjeVIc7.mp3",
       "cuberun-logo.png": "build/cuberun-logo.png",
       "favicon.png": "build/favicon.png",
-      "fonts.css": "build/fonts.css",
-      "fonts/Road_Rage.otf": "build/fonts/Road_Rage.otf",
-      "fonts/commando.ttf": "build/fonts/commando.ttf",
       "index.html": "build/index.html",
       "logo192.png": "build/logo192.png",
       "logo512.png": "build/logo512.png",
       "manifest.json": "build/manifest.json",
-      "regular.PNG": "build/regular.PNG",
-      "robots.txt": "build/robots.txt",
-      "tunnelred.PNG": "build/tunnelred.PNG"
+      "robots.txt": "build/robots.txt"
     },
     "runtime": {
       "imports": [
@@ -1520,8 +1573,9 @@ export const MANIFEST_SNAPSHOTS = {
   },
   "kanban": {
     "id": "kanban",
+    "package_id": "urn:uuid:5130825e-905c-4527-8ad0-4bdd2a7357c0",
     "name": "Kanban",
-    "version": "0.5.3",
+    "version": "0.7.0",
     "description": "Kanban boards that open where you left off: drag-and-drop lists, due dates and assignees, and live collaboration with people on their own Möbius.",
     "author": "mobius-os",
     "license": "MIT",
@@ -1531,7 +1585,9 @@ export const MANIFEST_SNAPSHOTS = {
     "offline_capable": true,
     "permissions": {
       "cross_app_access": "none",
-      "share_with_apps": "none"
+      "share_with_apps": "none",
+      "identity_manage": true,
+      "github_access": true
     },
     "runtime": {
       "imports": [
@@ -1547,15 +1603,35 @@ export const MANIFEST_SNAPSHOTS = {
       "execution": "full"
     },
     "source_files": [
+      "boardRepository.js",
+      "activity.js",
+      "attachments.js",
       "domain.js",
+      "assignment.js",
       "operations.js",
       "pendingOps.js",
       "storage.js",
+      "boardDeletion.js",
+      "capacityAlerts.js",
       "sync.js",
+      "request-guard.js",
       "theme.js",
+      "ui/focusableElements.js",
       "ui/modalFocus.js",
       "ui/Home.jsx",
-      "ui/Board.jsx"
+      "ui/Board.jsx",
+      "ui/CardParts.jsx",
+      "prMatching.js",
+      "scripts/kanban.mjs",
+      "kanban-agent.md",
+      "service.py",
+      "collaboration/__init__.py",
+      "collaboration/net_utils.py",
+      "collaboration/service.py",
+      "collaboration/store.py",
+      "collaboration/transport.py",
+      "publication.js",
+      "visibility.js"
     ],
     "store": {
       "tagline": "Boards that open where you left off — and that your friends can join.",
@@ -1572,13 +1648,22 @@ export const MANIFEST_SNAPSHOTS = {
           "label": "Room to think on the desktop"
         }
       ]
+    },
+    "skills": [
+      "kanban-agent.md"
+    ],
+    "service": {
+      "id": "kanban",
+      "entry": "service.py",
+      "access": "public"
     }
   },
   "social": {
     "id": "social",
+    "package_id": "urn:uuid:33fae9ec-b2fb-4351-8a4e-85bcc362b546",
     "previous_id": "common",
     "name": "Social",
-    "version": "0.3.0",
+    "version": "0.6.2",
     "description": "Federated social for Möbius people — private messages between instances, a community board, and people search.",
     "author": "hamzamerzic",
     "license": "MIT",
@@ -1590,13 +1675,39 @@ export const MANIFEST_SNAPSHOTS = {
       "identity_manage": true
     },
     "service": {
+      "id": "social",
       "entry": "service.py",
-      "access": "public"
+      "access": "public",
+      "max_bytes": 62914560,
+      "route_limits": [
+        {
+          "method": "GET",
+          "path": "/actor",
+          "max_bytes": 1048576
+        },
+        {
+          "method": "POST",
+          "path": "/activity",
+          "max_bytes": 1048576
+        }
+      ],
+      "aliases": [
+        "common"
+      ]
     },
     "source_files": [
       "api.js",
+      "avatarCache.js",
+      "avatarHints.js",
+      "boardMediaCache.js",
+      "message_ui_state.js",
       "community.js",
       "participation.js",
+      "board_payload.js",
+      "media_limits.js",
+      "profile.js",
+      "links.js",
+      "emoji_art.js",
       "reconciliation.js",
       "service.py",
       "service_io.py",
@@ -1604,25 +1715,36 @@ export const MANIFEST_SNAPSHOTS = {
       "common_protocol.py",
       "common_public.py",
       "common_transport.py",
+      "message_history.py",
+      "dns_resolver.py",
       "net_utils.py",
       "social_routes.py",
       "social_groups.py",
       "social_objects.py",
       "theme.js",
       "ui/Board.jsx",
+      "ui/RichText.jsx",
       "ui/Messages.jsx",
       "ui/Thread.jsx",
       "ui/GroupThread.jsx",
+      "ui/useMessageTimeline.jsx",
       "ui/People.jsx",
       "ui/Media.jsx",
       "ui/MessageBubble.jsx",
-      "ui/landingImage.js",
+      "ui/MessageInput.jsx",
+      "ui/interactionRules.js",
+      "ui/historyScroll.js",
       "ui/modalFocus.js",
-      "ui/GroupDetails.jsx"
+      "ui/GroupDetails.jsx",
+      "boardNavigation.js",
+      "ui/Composer.jsx",
+      "ui/ReactionControls.jsx",
+      "ui/OwnActions.jsx",
+      "ui/boardEdits.js"
     ],
     "store": {
       "tagline": "Your people, across every Möbius.",
-      "description": "Social gives every Möbius a direct way to reach people on other instances. Find someone by handle, send private one-to-one messages, create group conversations, or post to a shared community board.\n\nMessages travel directly between each person's Möbius and each side keeps its own copy. Everyone browses one global board and opt-in People directory. Private conversations stay on the participants’ own instances.",
+      "description": "Social gives every Möbius a direct way to reach people on other instances. Find someone by handle, send private one-to-one messages, create group conversations, or post to a shared community board.\n\nMessages travel directly between each person's Möbius and each side keeps its own copy. Everyone can read the global Community board; join to search People, message, or post. Private conversations stay on the participants’ own instances.",
       "screenshots": [
         {
           "src": "static/store/messages.png",

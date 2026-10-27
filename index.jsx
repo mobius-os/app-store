@@ -59,7 +59,8 @@ import {
   resolveCatalogItemIntent,
   setInstalledMatchViewer,
   sourceBackedInstalledApps,
-  shouldRefreshCatalogManifest,
+  needsLiveManifestFirst,
+  showsSnapshotManifest,
   sortCatalogForDisplay,
   updateCandidateUrlsByInstalledId,
 } from './domain.js'
@@ -166,7 +167,8 @@ export {
   isTrustedHost,
   scheduleSummary,
   sourceBackedInstalledApps,
-  shouldRefreshCatalogManifest,
+  needsLiveManifestFirst,
+  showsSnapshotManifest,
   sortCatalogForDisplay,
   updateBatchDisposition,
   updateCandidateUrlsByInstalledId,
@@ -643,14 +645,14 @@ export default function App({ appId, token }) {
         setCatalogLoadError(remote === null)
         const entries = mergeCatalogEntries(CATALOG, remote)
         // A baked manifest gives every discovery card a fast first paint, but
-        // it must not freeze an installed app at the last Store release. Fetch
-        // the live manifest for installed apps as well so human-facing release
-        // labels remain current beside the authoritative source check.
+        // it must not freeze a listing at the last Store release. Installed
+        // apps refresh here, before the startup source check; every other
+        // listing refreshes in the background once the catalog has settled.
         const hydrated = await mapWithConcurrency(
           entries,
           MANIFEST_FETCH_CONCURRENCY,
           async (c) => {
-            if (!shouldRefreshCatalogManifest(c, apps)) {
+            if (!needsLiveManifestFirst(c, apps)) {
               return { ...c, error: null }
             }
             try {
@@ -677,12 +679,32 @@ export default function App({ appId, token }) {
         // Always run the startup check with the live catalog and a fresh
         // installed list, even if an event superseded the first-paint read.
         void refreshInstalled({ checkAll: true })
+        void refreshSnapshotListings(entries.filter((c) => !needsLiveManifestFirst(c, apps)))
       } finally {
         if (!cancelled) {
           setLoadingCatalog(false)
           setCatalogHydrated(true)
         }
       }
+    }
+    // Replace each remaining snapshot with its live manifest in one commit, so
+    // the grid re-renders once; an open detail page takes it in place. A
+    // failed read keeps the snapshot, which the detail view labels as cached.
+    async function refreshSnapshotListings(listings) {
+      const live = new Map()
+      await mapWithConcurrency(listings, MANIFEST_FETCH_CONCURRENCY, async (c) => {
+        try {
+          live.set(c.id, await fetchManifest(c.manifest_url, token))
+        } catch {
+          // Keep the snapshot; the next Store open tries again.
+        }
+      })
+      if (cancelled || live.size === 0) return
+      const withLive = (c) => (
+        c && live.has(c.id) && showsSnapshotManifest(c) ? { ...c, manifest: live.get(c.id) } : c
+      )
+      setCatalog((current) => current.map(withLive))
+      setDetail(withLive)
     }
     load()
     return () => {
