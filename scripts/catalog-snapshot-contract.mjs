@@ -37,3 +37,27 @@ export function assertCompleteCatalogSnapshots(catalog, snapshots) {
     }
   }
 }
+
+// Snapshots are a first-paint floor, not a release record, so they drift
+// whenever an app ships. Report each app whose snapshot no longer matches its
+// live manifest, naming the top-level fields that differ.
+export function catalogSnapshotDrift(current, live) {
+  const drift = []
+  const ids = new Set([...Object.keys(current || {}), ...Object.keys(live || {})])
+  for (const id of [...ids].sort()) {
+    const before = current?.[id]
+    const after = live?.[id]
+    if (!before || !after) {
+      drift.push({ id, fields: [before ? 'removed' : 'added'] })
+      continue
+    }
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+    const fields = [...keys].sort().filter(
+      (key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]),
+    )
+    if (fields.length) {
+      drift.push({ id, fields, from: before.version, to: after.version })
+    }
+  }
+  return drift
+}

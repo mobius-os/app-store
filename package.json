@@ -2,7 +2,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.mjs && python3 -m unittest discover -s tests -p 'test_*.py'",
-    "refresh-catalog": "node scripts/refresh-manifest-snapshots.mjs"
+    "refresh-catalog": "node scripts/refresh-manifest-snapshots.mjs",
+    "check-catalog": "node scripts/refresh-manifest-snapshots.mjs --check"
   },
   "devDependencies": {
     "jsdom": "^26.1.0",

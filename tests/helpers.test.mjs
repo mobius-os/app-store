@@ -1121,7 +1121,7 @@ test('otherInstalledCatalogItems does not duplicate a live community listing', a
 })
 
 test('installed catalog apps refresh their live manifest for update detection', async () => {
-  const { shouldRefreshCatalogManifest } = await bundle()
+  const { needsLiveManifestFirst } = await bundle()
   const item = {
     id: 'beat-machine',
     manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-beat-machine/main/mobius.json',
@@ -1133,9 +1133,21 @@ test('installed catalog apps refresh their live manifest for update detection', 
     version: '1.0.14',
   }]
 
-  assert.equal(shouldRefreshCatalogManifest(item, installed), true)
-  assert.equal(shouldRefreshCatalogManifest(item, []), false)
-  assert.equal(shouldRefreshCatalogManifest({ ...item, manifest: null }, []), true)
+  assert.equal(needsLiveManifestFirst(item, installed), true)
+  assert.equal(needsLiveManifestFirst(item, []), false)
+  assert.equal(needsLiveManifestFirst({ ...item, manifest: null }, []), true)
+})
+
+test('only the bundled snapshot object counts as a cached manifest', async () => {
+  // Import the source modules directly: identity only holds within one module graph.
+  const { showsSnapshotManifest } = await import(pathToFileURL(join(root, '..', 'domain.js')))
+  const { MANIFEST_SNAPSHOTS } = await import(pathToFileURL(join(root, '..', 'manifest-snapshots.js')))
+  const snapshot = MANIFEST_SNAPSHOTS.voice
+  assert.equal(showsSnapshotManifest({ id: 'voice', manifest: snapshot }), true)
+  assert.equal(showsSnapshotManifest({ id: 'voice', manifest: { ...snapshot } }), false,
+    'a live read with identical content is no longer the placeholder')
+  assert.equal(showsSnapshotManifest({ id: 'voice', manifest: null }), false)
+  assert.equal(showsSnapshotManifest({ id: 'community:voice', manifest: snapshot }), false)
 })
 
 test('appIcon paints installed icons directly and keeps remote icons as discovery fallback', async () => {
@@ -2578,6 +2590,27 @@ test('catalog publication requires one complete baked snapshot per entry', async
     }),
     /voice: snapshot is missing version/,
   )
+})
+
+test('snapshot drift names each app whose live manifest moved', async () => {
+  const { catalogSnapshotDrift } = await import(
+    pathToFileURL(join(root, '..', 'scripts', 'catalog-snapshot-contract.mjs'))
+  )
+  const notes = { id: 'notes', version: '1.0.0', description: 'Notes.' }
+  const voice = { id: 'voice', version: '2.0.0', description: 'Voice.' }
+
+  assert.deepEqual(catalogSnapshotDrift({ notes, voice }, { notes: { ...notes }, voice }), [])
+  assert.deepEqual(
+    catalogSnapshotDrift(
+      { notes, voice },
+      { notes: { ...notes, version: '1.1.0', description: 'Better notes.' }, voice, kanban: voice },
+    ),
+    [
+      { id: 'kanban', fields: ['added'] },
+      { id: 'notes', fields: ['description', 'version'], from: '1.0.0', to: '1.1.0' },
+    ],
+  )
+  assert.deepEqual(catalogSnapshotDrift({ notes }, {}), [{ id: 'notes', fields: ['removed'] }])
 })
 
 test('app publication requires a complete source_files import tree', async () => {

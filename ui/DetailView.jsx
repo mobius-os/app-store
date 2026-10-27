@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, hasAccessRows, isTrustedHost, scheduleSummary, sourceAvailabilityStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, hasAccessRows, isTrustedHost, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -101,9 +101,14 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   useEffect(() => {
     if (accessChanged) setTechnicalOpen(true)
   }, [accessChanged])
+  // Until a live manifest arrives (the access preview reads one), the bundled
+  // snapshot's version must not look authoritative.
+  const catalogVersion = m === item.manifest && showsSnapshotManifest(item)
+    ? `v${m.version} (cached)`
+    : `v${m.version}`
   const releaseSummary = storeInstalled && installedVer && installedVer !== m.version
-    ? `Installed label v${installedVer} · catalog label v${m.version}`
-    : `Version label v${m.version}`
+    ? `Installed label v${installedVer} · catalog label ${catalogVersion}`
+    : `Version label ${catalogVersion}`
   const sourceAvailability = item.community
     ? sourceAvailabilityStatus(item.community.cache)
     : null

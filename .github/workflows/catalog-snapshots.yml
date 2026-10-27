@@ -1,0 +1,26 @@
+name: Catalog snapshots
+
+# The bundled manifest snapshots are a first-paint floor that drifts whenever a
+# catalog app ships a release. That drift comes from other repositories, so it
+# is reported on a schedule instead of failing unrelated pull requests here.
+# A red run means: run `npm run refresh-catalog` and commit the result.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Compare snapshots with live manifests
+        run: npm run check-catalog

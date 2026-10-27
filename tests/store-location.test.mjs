@@ -813,3 +813,48 @@ test('detail host Back cancels a waiting app intent', async () => {
     assert.deepEqual(nav.opened, ['app-store-detail'])
   } finally { registry.resolve(json({ schema: 1, apps: [] })); await view.close() }
 })
+
+// The bundled snapshot is only a first-paint placeholder for a listing that is
+// not installed: its live manifest replaces it in place, and until then (or
+// when the read fails) the version is labelled as cached.
+const releaseMeta = dom => dom.window.document.querySelector('.st-technical-summary-meta')?.textContent || ''
+
+test('an uninstalled listing replaces its snapshot with the live manifest in place', async () => {
+  const { MANIFEST_SNAPSHOTS } = await import('../manifest-snapshots.js')
+  const kanban = deferred()
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'kanban' })
+  const view = await mountStore(nav, path => (
+    path.startsWith('/api/proxy?') && decodeURIComponent(path).includes('app-kanban')
+      ? kanban.promise
+      : undefined
+  ))
+  try {
+    await until(() => releaseMeta(view.dom).includes('Version label'), 'Kanban detail')
+    assert.equal(releaseMeta(view.dom), `Version label v${MANIFEST_SNAPSHOTS.kanban.version} (cached)`)
+
+    kanban.resolve(json({ ...MANIFEST_SNAPSHOTS.kanban, version: '99.0.0' }))
+    await until(() => releaseMeta(view.dom) === 'Version label v99.0.0', 'live Kanban manifest')
+    assert.equal(nav.opened.length, 1, 'the open detail page updates without reopening')
+  } finally {
+    kanban.resolve(json({}, 404))
+    await view.close()
+  }
+})
+
+test('a listing whose live manifest cannot be read keeps its snapshot labelled as cached', async () => {
+  const { MANIFEST_SNAPSHOTS } = await import('../manifest-snapshots.js')
+  let answered = false
+  const nav = fakeNav({ tab: 'browse', category: 'all', detail: 'kanban' })
+  const view = await mountStore(nav, path => {
+    if (!path.startsWith('/api/proxy?') || !decodeURIComponent(path).includes('app-kanban')) return undefined
+    answered = true
+    return json({}, 404)
+  })
+  try {
+    await until(() => answered && releaseMeta(view.dom).includes('Version label'), 'Kanban detail')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    assert.equal(releaseMeta(view.dom), `Version label v${MANIFEST_SNAPSHOTS.kanban.version} (cached)`)
+  } finally {
+    await view.close()
+  }
+})

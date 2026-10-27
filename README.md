@@ -112,9 +112,14 @@ actual source with its recorded upstream revision, preserving a clean merge
 base when local changes exist. A content change surfaces even when the version
 string does not move, while a local version bump cannot hide or manufacture an
 update. The detail view shows the short source revision and the last successful
-verification time. The snapshots keep first paint fast and resilient; refresh
-them when publishing Store changes, but app installation and updating still
-resolve the live manifest URL at click time.
+verification time. The snapshots keep first paint fast and resilient, and
+the detail view labels a version as cached until the live manifest replaces
+it; app installation and updating still resolve the live manifest URL at click
+time. A daily `Catalog snapshots` workflow runs `npm run check-catalog` and
+fails when the snapshots drift from the live manifests; refresh them with
+`npm run refresh-catalog`. Drift comes from app releases in other
+repositories, so it is reported on that schedule rather than failing unrelated
+pull requests here.
 
 ## Permissions
 

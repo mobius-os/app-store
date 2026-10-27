@@ -1,4 +1,5 @@
 import { CATALOG_COLLECTIONS, PERM_EXPLAIN, TRUSTED_HOSTS } from './constants.js'
+import { MANIFEST_SNAPSHOTS } from './manifest-snapshots.js'
 
 export function catalogItemIdFromIntent(intent) {
   if (typeof intent !== 'string') return null
@@ -574,12 +575,19 @@ export function updateCandidateUrlsByInstalledId(installed = [], catalog = []) {
 }
 
 
-// A baked manifest gives an uninstalled discovery card a fast, offline-safe
-// first paint. Installed apps still refresh their live manifest so their
-// human-facing labels stay current; source provenance remains the only update
+// A baked manifest is only a first-paint placeholder. Installed apps and
+// entries without one need their live manifest before the catalog settles and
+// the startup update check runs; every other listing paints from its snapshot
+// and refreshes in the background. Source provenance remains the only update
 // authority.
-export function shouldRefreshCatalogManifest(item, installed = []) {
+export function needsLiveManifestFirst(item, installed = []) {
   return !item?.manifest || Boolean(findInstalled(installed, item))
+}
+
+// True while a listing still shows its bundled snapshot rather than a manifest
+// read live, so its version can be labelled as cached.
+export function showsSnapshotManifest(item) {
+  return Boolean(item?.manifest) && item.manifest === MANIFEST_SNAPSHOTS[item.id]
 }
 
 export function busyLabelForAction(actionKind) {
