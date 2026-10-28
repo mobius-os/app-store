@@ -401,10 +401,11 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
-  // Apps still recoverable after an uninstall, loaded when a page opens to note it there.
+  // Apps still recoverable after an uninstall, loaded when the Store opens (and again when a page opens) so
+  // the note is already there by the time a page shows.
   const [uninstalledApps, setUninstalledApps] = useState([])
   useEffect(() => {
-    if (!detail || !token) return undefined
+    if (!token) return undefined
     let cancelled = false
     fetchUninstalledApps(token).then(rows => { if (!cancelled) setUninstalledApps(rows) }).catch(() => {})
     return () => { cancelled = true }
