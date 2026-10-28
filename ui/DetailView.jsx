@@ -38,9 +38,11 @@ function communityAuthorName(author) {
 
 export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
-  // The recovery note must not outlive its deadline on a page left open: re-evaluate when it passes.
+  // The recovery note must not outlive its deadline: re-read the clock whenever the deadline changes (the
+  // list can arrive after the page opened) and again when it passes.
   const [clock, setClock] = useState(() => new Date())
   useEffect(() => {
+    setClock(new Date())
     const left = Date.parse(uninstalledApp?.expires_at) - Date.now()
     if (!(left > 0)) return undefined
     const timer = setTimeout(() => setClock(new Date()), left + 50)

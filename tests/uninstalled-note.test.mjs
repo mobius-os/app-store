@@ -92,6 +92,13 @@ test('the app page shows the note above Install only for an app that can still b
     assert.match(note.textContent, /Previously installed.*You uninstalled this app on .+brings everything back\./)
     await render(null)
     assert.equal(dom.window.document.querySelector('.st-detail-note'), null)
+
+    // Data that arrives after the page opened, already past its deadline, must not show the note: the
+    // deadline falls between the page opening and the data arriving.
+    const opened = Date.now()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    await render({ ...recoverable, expires_at: new Date(opened + 100).toISOString() })
+    assert.equal(dom.window.document.querySelector('.st-detail-note'), null)
   } finally {
     await act(async () => root.unmount()); restore()
     await rm(buildDir, { recursive: true, force: true })
