@@ -1257,16 +1257,11 @@ export default function App({ appId, token }) {
     }
   }, [token])
 
-  // Installs run inline from DetailView. Reviewed updates never come here:
+  // Fresh installs run inline from DetailView, with no access check first. Reviewed updates never come here:
   // they run as batches (see createBatchController). `busy` keeps the
   // initiating surface dimensionally stable while the install is in flight.
   const handleInstall = async (item, _opts = {}) => {
     if (busy) return { ok: false, reason: 'busy' }
-    if (!_opts.capabilityDigest) {
-      reviewCapabilities(item)
-      setToast({ kind: 'error', message: 'Review this app’s live access before installing.' })
-      return { ok: false, reason: 'capability_review' }
-    }
     setBusy(true)
     setBusyItemId(item?.id || null)
     setBusyActionKind('install')
@@ -1281,7 +1276,6 @@ export default function App({ appId, token }) {
         manifest: item.manifest,
         raw_base: item.raw_base,
         token,
-        reviewed_capability_digest: _opts.capabilityDigest,
       })
       // A local mutation is newer than any background probe already in flight.
       // Invalidate only this app's answer; unrelated checks can still finish.
@@ -1361,29 +1355,6 @@ export default function App({ appId, token }) {
       // commit on the same surface the user committed it from. The user
       // can use the back arrow / device-back to dismiss when ready.
     } catch (e) {
-      if (e?.code === 'capability_changed') {
-        let preview = e.preview
-        try {
-          preview = await previewApp({
-            manifest_url: item.manifest_url,
-            manifest: item.manifest,
-            raw_base: item.raw_base,
-            token,
-          })
-        } catch {
-          // The 409 already carried the current server-derived contract. Keep
-          // it visible even if the follow-up diff refresh is temporarily down.
-        }
-        setCapabilityReviews(prev => ({
-          ...prev,
-          [item.id]: { status: 'refused', preview, error: '' },
-        }))
-        setToast({
-          kind: 'error',
-          message: 'This app changed its access after review. Nothing was installed; review the current access and click again.',
-        })
-        return { ok: false, reason: 'capability_changed' }
-      }
       const message = e.message || String(e)
       // A transient failure (the platform says `retryable`, or the request
       // never got an answer) offers the same reviewed install again.
