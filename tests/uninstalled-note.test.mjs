@@ -16,6 +16,13 @@ const frontend = process.env.MOBIUS_FRONTEND_NODE_MODULES
 
 const uninstalled = { id: 5, name: 'Maps', deleted_at: '2026-10-27T10:00:00Z', expires_at: '2026-11-03T10:00:00Z' }
 
+test('the note stops at the deadline: shown before it, gone at and after it', () => {
+  const before = new Date('2026-11-03T09:59:59Z')
+  assert.ok(recoveryNote(uninstalled, before))
+  assert.equal(recoveryNote(uninstalled, new Date('2026-11-03T10:00:00Z')), null)
+  assert.equal(recoveryNote(uninstalled, new Date('2026-11-04T00:00:00Z')), null)
+})
+
 test('the note is a full sentence with the dates written out, and the year only when it is not this year', () => {
   const now = new Date('2026-10-28T09:00:00Z')
   const note = recoveryNote(uninstalled, now)
@@ -25,8 +32,9 @@ test('the note is a full sentence with the dates written out, and the year only 
   assert.match(note.detail, /Möbius keeps the data of uninstalled apps for 7 days, so reinstalling this app by .+ brings everything back\.$/)
   assert.doesNotMatch(note.detail, /;/)
   assert.doesNotMatch(note.detail, /2026/, 'no year within the same year')
-  const lastYear = recoveryNote({ deleted_at: '2025-12-30T10:00:00Z', expires_at: '2026-01-06T10:00:00Z' }, now)
-  assert.match(lastYear.detail, /2025/)
+  const newYear = new Date('2026-01-02T09:00:00Z')
+  const lastYear = recoveryNote({ deleted_at: '2025-12-30T10:00:00Z', expires_at: '2026-01-06T10:00:00Z' }, newYear)
+  assert.match(lastYear.detail, /2025/, 'a date from another year carries its year')
   assert.equal(recoveryNote(null), null)
   assert.equal(recoveryNote({ deleted_at: 'nonsense', expires_at: 'nonsense' }), null)
 })

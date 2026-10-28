@@ -38,6 +38,15 @@ function communityAuthorName(author) {
 
 export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
+  // The recovery note must not outlive its deadline on a page left open: re-evaluate when it passes.
+  const [clock, setClock] = useState(() => new Date())
+  useEffect(() => {
+    const left = Date.parse(uninstalledApp?.expires_at) - Date.now()
+    if (!(left > 0)) return undefined
+    const timer = setTimeout(() => setClock(new Date()), left + 50)
+    return () => clearTimeout(timer)
+  }, [uninstalledApp?.expires_at])
+  const recovery = recoveryNote(uninstalledApp, clock)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const downloadSize = formatDownloadSize(capabilityReview?.preview?.download_bytes)
@@ -451,10 +460,10 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           reserves space for the secondary action, so the busy label swap
           ("Open App" -> "Updating…") never reflows the surrounding layout. */}
       <div className="st-detail-footer">
-        {!storeInstalled && recoveryNote(uninstalledApp) && (
+        {!storeInstalled && recovery && (
           <div className="st-detail-note" role="status">
-            <strong>{recoveryNote(uninstalledApp).title}</strong>
-            <span>{recoveryNote(uninstalledApp).detail}</span>
+            <strong>{recovery.title}</strong>
+            <span>{recovery.detail}</span>
           </div>
         )}
         <button

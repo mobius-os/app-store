@@ -1719,6 +1719,8 @@ function noteDate(value, now = new Date()) {
 // saying when it was uninstalled, why its data is still there, and until when reinstalling brings it back.
 export function recoveryNote(uninstalledApp, now = new Date()) {
   if (!uninstalledApp) return null
+  // Past its deadline the data is gone, so the promise must go with it.
+  if (!(Date.parse(uninstalledApp.expires_at) > now.getTime())) return null
   const removed = noteDate(uninstalledApp.deleted_at, now)
   const until = noteDate(uninstalledApp.expires_at, now)
   if (!removed || !until) return null
