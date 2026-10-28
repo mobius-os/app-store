@@ -1260,7 +1260,7 @@ export default function App({ appId, token }) {
   // Fresh installs run inline from DetailView, with no access check first. Reviewed updates never come here:
   // they run as batches (see createBatchController). `busy` keeps the
   // initiating surface dimensionally stable while the install is in flight.
-  const handleInstall = async (item, _opts = {}) => {
+  const handleInstall = async item => {
     if (busy) return { ok: false, reason: 'busy' }
     setBusy(true)
     setBusyItemId(item?.id || null)
@@ -1359,7 +1359,7 @@ export default function App({ appId, token }) {
       // A transient failure (the platform says `retryable`, or the request
       // never got an answer) offers the same reviewed install again.
       const retry = e?.retryable === true || !e?.status
-        ? () => { void handleInstallRef.current(item, _opts) }
+        ? () => { void handleInstallRef.current(item) }
         : null
       setCardErrors(prev => ({ ...prev, [item.id]: message }))
       setCardErrorRetries(prev => retry ? { ...prev, [item.id]: retry } : withoutKey(prev, item.id))
@@ -2326,7 +2326,7 @@ export default function App({ appId, token }) {
           onBack={closeDetail}
           onInstall={(item, opts) => opts?.isUpdate
             ? handleCatalogUpdate(item, opts)
-            : handleInstall(item, opts)}
+            : handleInstall(item)}
           onUninstall={handleUninstall}
           onOpenInstalled={handleOpenInstalled}
           onSetup={handleSetup}

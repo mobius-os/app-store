@@ -64,7 +64,7 @@ test('a fresh install is available at once and installs with no access check or 
     assert.equal(cta.disabled, false)
     assert.doesNotMatch(cta.textContent, /Reviewing access|Access unavailable/)
     await act(async () => cta.click())
-    assert.deepEqual(installs, [[item, { isUpdate: false }]])
+    assert.deepEqual(installs, [[item]])
   } finally {
     await act(async () => root.unmount()); restore()
     await rm(buildDir, { recursive: true, force: true })

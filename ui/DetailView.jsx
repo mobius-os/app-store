@@ -472,7 +472,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
               capabilityDigest: capabilityReview.preview.capability_digest,
             })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
-            else onInstall(item, { isUpdate: false })
+            else onInstall(item)
           }}
         >
           {busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind)
