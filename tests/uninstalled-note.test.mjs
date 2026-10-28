@@ -82,8 +82,11 @@ test('the app page shows the note above Install only for an app that can still b
   const render = uninstalledApp => act(async () => root.render(React.createElement(DetailView, {
     item, installed: [], uninstalledApp, onBack() {}, onInstall() {}, token: 't',
   })))
+  // Dates relative to now, because the page reads the real clock: a fixed date would start failing at its deadline.
+  const day = 24 * 60 * 60 * 1000
+  const recoverable = { id: 5, name: 'Maps', deleted_at: new Date(Date.now() - day).toISOString(), expires_at: new Date(Date.now() + 6 * day).toISOString() }
   try {
-    await render(uninstalled)
+    await render(recoverable)
     const note = dom.window.document.querySelector('.st-detail-note')
     assert.ok(note, 'the note renders')
     assert.match(note.textContent, /Previously installed.*You uninstalled this app on .+brings everything back\./)
