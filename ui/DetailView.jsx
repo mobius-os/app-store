@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, hasAccessRows, isTrustedHost, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, hasAccessRows, isTrustedHost, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -36,7 +36,7 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
@@ -451,6 +451,9 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           reserves space for the secondary action, so the busy label swap
           ("Open App" -> "Updating…") never reflows the surrounding layout. */}
       <div className="st-detail-footer">
+        {!storeInstalled && recoveryNote(uninstalledApp) && (
+          <p className="st-detail-note" role="status">{recoveryNote(uninstalledApp)}</p>
+        )}
         <button
           className="st-btn st-btn-primary st-detail-cta"
           disabled={primaryActionDisabled}

@@ -1705,3 +1705,17 @@ export function publicationViewerHandle(payload) {
   const handle = payload && typeof payload === 'object' ? payload.viewer?.handle : ''
   return typeof handle === 'string' ? handle.trim() : ''
 }
+
+// The note under an app page for an app the owner uninstalled and can still recover: when it was removed,
+// how long its data is kept, and that installing it again brings it back.
+export function recoveryNote(uninstalledApp) {
+  if (!uninstalledApp) return ''
+  const day = value => {
+    const when = new Date(value)
+    return Number.isNaN(when.getTime()) ? '' : when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  }
+  const removed = day(uninstalledApp.deleted_at)
+  const until = day(uninstalledApp.expires_at)
+  if (!removed || !until) return ''
+  return `You uninstalled this app on ${removed}. Its data is kept until ${until}, and installing it again brings it back.`
+}

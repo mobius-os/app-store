@@ -1134,3 +1134,11 @@ export function openChat(chatId) {
     window.location.origin,
   )
 }
+
+// Apps uninstalled within their recovery window. Only a hint for the app page, so a failure shows no note.
+export async function fetchUninstalledApps(token) {
+  const res = await fetch('/api/apps/uninstalled', { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) return []
+  const rows = await res.json()
+  return Array.isArray(rows) ? rows : []
+}
