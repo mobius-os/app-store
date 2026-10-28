@@ -1716,7 +1716,7 @@ function noteDate(value, now = new Date()) {
 }
 
 // The note beside Install for an app the owner uninstalled and can still recover: a headline and one line
-// saying when it was uninstalled, why its data is still there, and until when reinstalling restores it.
+// saying when it was uninstalled, why its data is still there, and until when reinstalling brings it back.
 export function recoveryNote(uninstalledApp, now = new Date()) {
   if (!uninstalledApp) return null
   const removed = noteDate(uninstalledApp.deleted_at, now)
@@ -1724,6 +1724,6 @@ export function recoveryNote(uninstalledApp, now = new Date()) {
   if (!removed || !until) return null
   return {
     title: 'Previously installed',
-    detail: `You uninstalled this app on ${removed}. Möbius keeps its data for 7 days, so reinstalling it by ${until} brings everything back.`,
+    detail: `You uninstalled this app on ${removed}. Möbius keeps the data of uninstalled apps for 7 days, so reinstalling this app by ${until} brings everything back.`,
   }
 }
