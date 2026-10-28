@@ -16,10 +16,17 @@ const frontend = process.env.MOBIUS_FRONTEND_NODE_MODULES
 
 const uninstalled = { id: 5, name: 'Maps', deleted_at: '2026-10-27T10:00:00Z', expires_at: '2026-11-03T10:00:00Z' }
 
-test('the note says when the app was uninstalled, why its data is still there, and until when reinstalling restores it', () => {
-  const note = recoveryNote(uninstalled)
+test('the note is a full sentence with the dates written out, and the year only when it is not this year', () => {
+  const now = new Date('2026-10-28T09:00:00Z')
+  const note = recoveryNote(uninstalled, now)
   assert.equal(note.title, 'Previously installed')
-  assert.match(note.detail, /^Uninstalled .+\. Möbius keeps its data for 7 days; reinstall by .+ to restore it\.$/)
+  assert.match(note.detail, /^You uninstalled this app on .+\. Möbius keeps its data/)
+  assert.doesNotMatch(note.detail, /\b(Oct|Nov)\b\.?\s/, 'the month is written out, not abbreviated')
+  assert.match(note.detail, /Möbius keeps its data for 7 days, so reinstalling it by .+ restores it\.$/)
+  assert.doesNotMatch(note.detail, /;/)
+  assert.doesNotMatch(note.detail, /2026/, 'no year within the same year')
+  const lastYear = recoveryNote({ deleted_at: '2025-12-30T10:00:00Z', expires_at: '2026-01-06T10:00:00Z' }, now)
+  assert.match(lastYear.detail, /2025/)
   assert.equal(recoveryNote(null), null)
   assert.equal(recoveryNote({ deleted_at: 'nonsense', expires_at: 'nonsense' }), null)
 })
@@ -71,7 +78,7 @@ test('the app page shows the note above Install only for an app that can still b
     await render(uninstalled)
     const note = dom.window.document.querySelector('.st-detail-note')
     assert.ok(note, 'the note renders')
-    assert.match(note.textContent, /Previously installed.*Uninstalled .+reinstall by .+ to restore it/)
+    assert.match(note.textContent, /Previously installed.*You uninstalled this app on .+restores it\./)
     await render(null)
     assert.equal(dom.window.document.querySelector('.st-detail-note'), null)
   } finally {
