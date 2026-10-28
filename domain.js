@@ -1705,3 +1705,27 @@ export function publicationViewerHandle(payload) {
   const handle = payload && typeof payload === 'object' ? payload.viewer?.handle : ''
   return typeof handle === 'string' ? handle.trim() : ''
 }
+
+// A date for the note, with the month written out and the year only when it is not this year: "27 October".
+function noteDate(value, now = new Date()) {
+  const when = new Date(value)
+  if (Number.isNaN(when.getTime())) return ''
+  const options = { day: 'numeric', month: 'long' }
+  if (when.getFullYear() !== now.getFullYear()) options.year = 'numeric'
+  return when.toLocaleDateString(undefined, options)
+}
+
+// The note beside Install for an app the owner uninstalled and can still recover: a headline and one line
+// saying when it was uninstalled, why its data is still there, and until when reinstalling brings it back.
+export function recoveryNote(uninstalledApp, now = new Date()) {
+  if (!uninstalledApp) return null
+  // Past its deadline the data is gone, so the promise must go with it.
+  if (!(Date.parse(uninstalledApp.expires_at) > now.getTime())) return null
+  const removed = noteDate(uninstalledApp.deleted_at, now)
+  const until = noteDate(uninstalledApp.expires_at, now)
+  if (!removed || !until) return null
+  return {
+    title: 'Previously installed',
+    detail: `You uninstalled this app on ${removed}. Möbius keeps the data of uninstalled apps for 7 days, so reinstalling this app by ${until} brings everything back.`,
+  }
+}

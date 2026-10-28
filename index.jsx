@@ -76,6 +76,7 @@ import {
   watchUpdateBatch,
   fetchCatalog,
   fetchManifest,
+  fetchUninstalledApps,
   fetchUpdateCheck,
   hasConnectedProvider,
   installApp,
@@ -400,6 +401,15 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
+  // Apps still recoverable after an uninstall, loaded when the Store opens (and again when a page opens) so
+  // the note is already there by the time a page shows.
+  const [uninstalledApps, setUninstalledApps] = useState([])
+  useEffect(() => {
+    if (!token) return undefined
+    let cancelled = false
+    fetchUninstalledApps(token).then(rows => { if (!cancelled) setUninstalledApps(rows) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [detail?.id, token])
   // A section the open detail should scroll to ('reviews'), owned by the
   // navigation entry that requested it; see openDetailEntry.
   const [detailFocus, setDetailFocus] = useState('')
@@ -2321,6 +2331,7 @@ export default function App({ appId, token }) {
           item={detail}
           focusSection={detailFocus}
           capabilityReview={capabilityReviews[detail.id]}
+          uninstalledApp={findInstalled(uninstalledApps, detail)}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
           installed={installed}
           onBack={closeDetail}

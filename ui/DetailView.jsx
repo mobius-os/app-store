@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, hasAccessRows, isTrustedHost, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, communityFeedbackOf, formatDownloadSize, hasAccessRows, isTrustedHost, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -36,8 +36,19 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
+  // The recovery note must not outlive its deadline: re-read the clock whenever the deadline changes (the
+  // list can arrive after the page opened) and again when it passes.
+  const [clock, setClock] = useState(() => new Date())
+  useEffect(() => {
+    setClock(new Date())
+    const left = Date.parse(uninstalledApp?.expires_at) - Date.now()
+    if (!(left > 0)) return undefined
+    const timer = setTimeout(() => setClock(new Date()), left + 50)
+    return () => clearTimeout(timer)
+  }, [uninstalledApp?.expires_at])
+  const recovery = recoveryNote(uninstalledApp, clock)
   const m = capabilityReview?.preview?.manifest || item.manifest
   const reviewedItem = m === item.manifest ? item : { ...item, manifest: m }
   const downloadSize = formatDownloadSize(capabilityReview?.preview?.download_bytes)
@@ -453,6 +464,12 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           reserves space for the secondary action, so the busy label swap
           ("Open App" -> "Updating…") never reflows the surrounding layout. */}
       <div className="st-detail-footer">
+        {!storeInstalled && recovery && (
+          <div className="st-detail-note" role="status">
+            <strong>{recovery.title}</strong>
+            <span>{recovery.detail}</span>
+          </div>
+        )}
         <button
           className="st-btn st-btn-primary st-detail-cta"
           disabled={primaryActionDisabled}
