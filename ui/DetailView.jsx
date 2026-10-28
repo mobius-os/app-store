@@ -58,7 +58,9 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   // Conflict resolution reuses the candidate already reviewed and journaled by
   // the backend. Do not disable its durable resolver action just because a new
   // read-only capability preview is temporarily unavailable.
-  const requiresCapabilityReview = !blockedUpdate && (!storeInstalled || hasUpdate)
+  // Only an update waits for the access check: it shows what changes. A fresh install does not, because
+  // an app asks what it may do the first time it opens.
+  const requiresCapabilityReview = !blockedUpdate && hasUpdate
   const capabilityReviewReady = ['ready', 'changed', 'refused'].includes(capabilityReview?.status)
     && hasAccessRows(capabilityReview?.preview)
   const canRetryInstalled = typeof onRetryInstalled === 'function'
@@ -470,10 +472,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
               capabilityDigest: capabilityReview.preview.capability_digest,
             })
             else if (storeInstalled) onOpenInstalled(storeInstalled.id)
-            else onInstall(item, {
-              isUpdate: false,
-              capabilityDigest: capabilityReview.preview.capability_digest,
-            })
+            else onInstall(item)
           }}
         >
           {busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind)

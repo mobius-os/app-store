@@ -1872,7 +1872,8 @@ test('both update entry points use one reviewed server batch with bound digests'
   for (const reviewed of ['capability_digest', 'source_digest', 'upstream_commit', 'manifest_url', 'app_id']) {
     assert.match(controller, new RegExp(`${reviewed}: entry\\.prepared`))
   }
-  assert.ok(indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
+  // A fresh install carries no digest and waits for no access check; an app asks at first open.
+  assert.ok(!indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
   // The per-app fallback for a Möbius without batches binds the same review.
   assert.ok(indexSource.includes('reviewed_source_digest: preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_upstream_commit: preview.upstream_commit'))
@@ -2410,7 +2411,7 @@ test('successful updates clear stale git update checks and inline errors', async
   assert.ok(source.includes('setCardErrors(prev => withoutKey(prev, item.id))'))
   assert.ok(source.includes('clearSettledUpdateArtifacts(itemIdsSettledByChecks'))
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
-  assert.ok(detailSource.includes('!blockedUpdate && (!storeInstalled || hasUpdate)'))
+  assert.ok(detailSource.includes('!blockedUpdate && hasUpdate'))
 })
 
 test('app details keep stable access information in a bottom disclosure', async () => {
