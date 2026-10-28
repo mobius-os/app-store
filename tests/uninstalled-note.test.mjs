@@ -22,7 +22,7 @@ test('the note is a full sentence with the dates written out, and the year only 
   assert.equal(note.title, 'Previously installed')
   assert.match(note.detail, /^You uninstalled this app on .+\. Möbius keeps its data/)
   assert.doesNotMatch(note.detail, /\b(Oct|Nov)\b\.?\s/, 'the month is written out, not abbreviated')
-  assert.match(note.detail, /Möbius keeps its data for 7 days, so reinstalling it by .+ restores it\.$/)
+  assert.match(note.detail, /Möbius keeps its data for 7 days, so reinstalling it by .+ brings everything back\.$/)
   assert.doesNotMatch(note.detail, /;/)
   assert.doesNotMatch(note.detail, /2026/, 'no year within the same year')
   const lastYear = recoveryNote({ deleted_at: '2025-12-30T10:00:00Z', expires_at: '2026-01-06T10:00:00Z' }, now)
@@ -78,7 +78,7 @@ test('the app page shows the note above Install only for an app that can still b
     await render(uninstalled)
     const note = dom.window.document.querySelector('.st-detail-note')
     assert.ok(note, 'the note renders')
-    assert.match(note.textContent, /Previously installed.*You uninstalled this app on .+restores it\./)
+    assert.match(note.textContent, /Previously installed.*You uninstalled this app on .+brings everything back\./)
     await render(null)
     assert.equal(dom.window.document.querySelector('.st-detail-note'), null)
   } finally {
