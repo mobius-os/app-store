@@ -1724,6 +1724,6 @@ export function recoveryNote(uninstalledApp, now = new Date()) {
   if (!removed || !until) return null
   return {
     title: 'Previously installed',
-    detail: `You uninstalled this app on ${removed}. Möbius keeps its data for 7 days, so reinstalling it by ${until} restores it.`,
+    detail: `You uninstalled this app on ${removed}. Möbius keeps its data for 7 days, so reinstalling it by ${until} brings everything back.`,
   }
 }
