@@ -452,7 +452,10 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           ("Open App" -> "Updating…") never reflows the surrounding layout. */}
       <div className="st-detail-footer">
         {!storeInstalled && recoveryNote(uninstalledApp) && (
-          <p className="st-detail-note" role="status">{recoveryNote(uninstalledApp)}</p>
+          <div className="st-detail-note" role="status">
+            <strong>{recoveryNote(uninstalledApp).title}</strong>
+            <span>{recoveryNote(uninstalledApp).detail}</span>
+          </div>
         )}
         <button
           className="st-btn st-btn-primary st-detail-cta"

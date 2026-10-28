@@ -1706,16 +1706,19 @@ export function publicationViewerHandle(payload) {
   return typeof handle === 'string' ? handle.trim() : ''
 }
 
-// The note under an app page for an app the owner uninstalled and can still recover: when it was removed,
-// how long its data is kept, and that installing it again brings it back.
+// The note beside Install for an app the owner uninstalled and can still recover: a headline and one line
+// saying when it was uninstalled, why its data is still there, and until when reinstalling restores it.
 export function recoveryNote(uninstalledApp) {
-  if (!uninstalledApp) return ''
+  if (!uninstalledApp) return null
   const day = value => {
     const when = new Date(value)
     return Number.isNaN(when.getTime()) ? '' : when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   }
   const removed = day(uninstalledApp.deleted_at)
   const until = day(uninstalledApp.expires_at)
-  if (!removed || !until) return ''
-  return `You uninstalled this app on ${removed}. Its data is kept until ${until}, and installing it again brings it back.`
+  if (!removed || !until) return null
+  return {
+    title: 'Previously installed',
+    detail: `Uninstalled ${removed}. Möbius keeps its data for 7 days; reinstall by ${until} to restore it.`,
+  }
 }

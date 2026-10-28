@@ -16,10 +16,12 @@ const frontend = process.env.MOBIUS_FRONTEND_NODE_MODULES
 
 const uninstalled = { id: 5, name: 'Maps', deleted_at: '2026-10-27T10:00:00Z', expires_at: '2026-11-03T10:00:00Z' }
 
-test('the note says when the app was removed, until when its data is kept, and that installing brings it back', () => {
-  assert.match(recoveryNote(uninstalled), /^You uninstalled this app on .+\. Its data is kept until .+, and installing it again brings it back\.$/)
-  assert.equal(recoveryNote(null), '')
-  assert.equal(recoveryNote({ deleted_at: 'nonsense', expires_at: 'nonsense' }), '')
+test('the note says when the app was uninstalled, why its data is still there, and until when reinstalling restores it', () => {
+  const note = recoveryNote(uninstalled)
+  assert.equal(note.title, 'Previously installed')
+  assert.match(note.detail, /^Uninstalled .+\. Möbius keeps its data for 7 days; reinstall by .+ to restore it\.$/)
+  assert.equal(recoveryNote(null), null)
+  assert.equal(recoveryNote({ deleted_at: 'nonsense', expires_at: 'nonsense' }), null)
 })
 
 async function bundleDetailView() {
@@ -69,7 +71,7 @@ test('the app page shows the note above Install only for an app that can still b
     await render(uninstalled)
     const note = dom.window.document.querySelector('.st-detail-note')
     assert.ok(note, 'the note renders')
-    assert.match(note.textContent, /You uninstalled this app on .+installing it again brings it back/)
+    assert.match(note.textContent, /Previously installed.*Uninstalled .+reinstall by .+ to restore it/)
     await render(null)
     assert.equal(dom.window.document.querySelector('.st-detail-note'), null)
   } finally {

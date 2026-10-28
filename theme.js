@@ -1335,7 +1335,9 @@ export const CSS = `
    actions read as one consistent control family. */
 .st-detail-cta { width: 100%; font-size: 15px; }
 /* The "you uninstalled this app" note sits with the primary action; on a wide window it fills the space to its left. */
-.st-detail-note { flex: 1; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.st-detail-note { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 13px; line-height: 1.4; }
+.st-detail-note strong { color: var(--text); font-weight: 650; }
+.st-detail-note span { color: var(--muted); }
 /* Full-width solid accent button for the update-notice "Review in chat" /
    "Resolve in chat" action. (The detail-footer CTA and modal confirm both
    use the canonical st-btn now; this stays for the in-flow update notice.) */
