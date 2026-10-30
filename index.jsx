@@ -401,15 +401,9 @@ export default function App({ appId, token }) {
   const [systemSetupComplete, setSystemSetupComplete] = useState(() => readSystemSetupReady())
   const [providerStatus, setProviderStatus] = useState(null)
   const [detail, setDetail] = useState(null)  // {id, manifest, raw_base}
-  // Apps still recoverable after an uninstall, loaded when the Store opens (and again when a page opens) so
-  // the note is already there by the time a page shows.
+  // Apps still recoverable after an uninstall. Read together with the installed apps (see refreshInstalled), so
+  // both lists change on the same triggers and a note never outlives its app.
   const [uninstalledApps, setUninstalledApps] = useState([])
-  useEffect(() => {
-    if (!token) return undefined
-    let cancelled = false
-    fetchUninstalledApps(token).then(rows => { if (!cancelled) setUninstalledApps(rows) }).catch(() => {})
-    return () => { cancelled = true }
-  }, [detail?.id, token])
   // A section the open detail should scroll to ('reviews'), owned by the
   // navigation entry that requested it; see openDetailEntry.
   const [detailFocus, setDetailFocus] = useState('')
@@ -606,6 +600,9 @@ export default function App({ appId, token }) {
       if (generation !== installedReadGenerationRef.current) return latestInstalledReadRef.current
       setInstalled(apps)
       setInstalledLoadError('')
+      void fetchUninstalledApps(token).then(rows => {
+        if (generation === installedReadGenerationRef.current) setUninstalledApps(rows)
+      }).catch(() => {})
       void refreshUpdateChecks(apps)
       return apps
     })()
