@@ -50,6 +50,7 @@ async function mount(fetchApps, { catalog = [], hidden = false, catalogGate = nu
   Object.defineProperty(dom.window, 'parent', { value: parent })
   Object.defineProperty(dom.window.document, 'visibilityState', { value: 'hidden', configurable: true })
   const signals = []
+  const uninstalledReads = []
   const manifests = []
   const batchSnapshots = new Map()
   dom.window.mobius = { signal(name, data) { signals.push({ name, data }) } }
@@ -61,6 +62,7 @@ async function mount(fetchApps, { catalog = [], hidden = false, catalogGate = nu
     IS_REACT_ACT_ENVIRONMENT: true,
     fetch: async (url, options = {}) => {
       const path = String(url)
+      if (path === '/api/apps/uninstalled') { uninstalledReads.push(path); return json([]) }
       // The server batch owner, played by this fixture: it applies each
       // reviewed update through the same install fixture and reports the
       // finished batch. The browser itself never calls /install for updates.
@@ -104,7 +106,7 @@ async function mount(fetchApps, { catalog = [], hidden = false, catalogGate = nu
   await act(async () => root.render(React.createElement(App, { appId: 999, token: 'tok' })))
   Object.defineProperty(dom.window.document, 'visibilityState', { value: hidden ? 'hidden' : 'visible', configurable: true })
   return {
-    dom, signals, manifests,
+    dom, signals, manifests, uninstalledReads,
     async foreground() {
       Object.defineProperty(dom.window.document, 'visibilityState', { value: 'visible', configurable: true })
       await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')))
@@ -134,6 +136,18 @@ async function mount(fetchApps, { catalog = [], hidden = false, catalogGate = nu
     },
   }
 }
+
+test('the recoverable-apps list is read with the installed apps, so a shell event refreshes both', async () => {
+  const view = await mount(async () => json(installed()))
+  try {
+    const opened = view.uninstalledReads.length
+    assert.ok(opened >= 1, 'read when the Store opens')
+    await view.message()
+    assert.equal(view.uninstalledReads.length, opened + 1)
+  } finally {
+    await view.close()
+  }
+})
 
 test('resolver completion refreshes an open Store, including repeated events during a read', async () => {
   let reads = 0
