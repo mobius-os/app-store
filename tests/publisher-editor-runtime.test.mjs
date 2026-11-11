@@ -61,3 +61,66 @@ test('unfinished listing opens the full existing editor with its AI-help actions
     await rm(buildDir, { recursive: true, force: true })
   }
 })
+
+test('the release names the platform’s license and a refused license change shows at the picker', async () => {
+  const require = createRequire(join(process.env.MOBIUS_FRONTEND_NODE_MODULES, 'package.json'))
+  const { rolldown } = await import(pathToFileURL(require.resolve('rolldown')).href)
+  const dir = `${buildDir}-license`
+  await mkdir(dir, { recursive: true })
+  const build = await rolldown({ input: join(here, '..', 'ui', 'PublisherTab.jsx'), platform: 'node', tsconfig: false,
+    external: ['react', 'react/jsx-runtime'],
+    resolve: { alias: { '@openai/apps-sdk-ui/components/Icon': join(here, 'runtime-icon-stub.mjs') } },
+    transform: { jsx: 'react-jsx' } })
+  const output = join(dir, 'publisher.mjs')
+  await build.write({ file: output, format: 'es' }); await build.close()
+  const { PublisherTab } = await import(pathToFileURL(output).href)
+  const dom = new JSDOM('<div id="root"></div>')
+  const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const doc = dom.window.document
+  const app = { id: 42, name: 'Pocket List', slug: 'pocket-list', source_dir: '/data/apps/pocket-list' }
+  const message = 'This app already has license text (LICENSE). Change it in the source, or ask an agent to, keeping any notices it must carry.'
+  const saves = []
+  async function click(label) {
+    const button = [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === label)
+    assert.ok(button, label)
+    await act(async () => button.click())
+  }
+  try {
+    await act(async () => root.render(React.createElement(PublisherTab, {
+      installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
+      onRefreshPublicationStates() {},
+      onPreviewLocal: async () => ({ ready: true, accepted_commit: 'a'.repeat(40), name: 'Pocket List',
+        license_options: [{ spdx: 'MIT', name: 'MIT License' }, { spdx: 'MPL-2.0', name: 'Mozilla Public License 2.0' }],
+        listing: { tagline: 'Lists', description: 'D', license: 'MPL-2.0', screenshots: [] },
+        draft: { tagline: 'Lists', description: 'D', license: 'MPL-2.0', declared_license: 'MPL-2.0', screenshots: [] },
+        checklist: [] }),
+      onSaveListing: async (...args) => {
+        saves.push(args)
+        throw Object.assign(new Error(message), { status: 409, code: 'listing_license_text_exists' })
+      },
+    })))
+    await click('Publish an app')
+    await click('Prepare listing')
+    assert.equal(doc.querySelector('.st-publish-license strong').textContent, 'Mozilla Public License 2.0')
+    await click('Change')
+    await act(async () => doc.querySelector('.st-edit-license input[value="MIT"]').click())
+    await click('Save listing')
+    assert.equal(saves.length, 1)
+    assert.equal(saves[0][1].license, 'MIT')
+    const refusal = doc.querySelector('.st-edit-license [role="alert"]')
+    assert.ok(refusal)
+    assert.match(refusal.textContent, /already has license text \(LICENSE\)/)
+    assert.deepEqual([...doc.querySelectorAll('.st-edit-error')].filter((node) => !node.closest('.st-edit-license')), [],
+      'the refusal is not repeated as a generic save error')
+    await click('Keep Mozilla Public License 2.0')
+    assert.equal(doc.querySelector('.st-edit-license input[value="MPL-2.0"]').checked, true)
+    assert.equal(doc.querySelector('.st-edit-license [role="alert"]'), null)
+  } finally {
+    await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
+    await rm(dir, { recursive: true, force: true })
+  }
+})

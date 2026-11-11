@@ -1,4 +1,6 @@
-import { CATALOG_COLLECTIONS, PERM_EXPLAIN, TRUSTED_HOSTS } from './constants.js'
+import {
+  CATALOG_COLLECTIONS, FALLBACK_LICENSE_OPTIONS, LICENSE_SUMMARIES, PERM_EXPLAIN, TRUSTED_HOSTS,
+} from './constants.js'
 import { MANIFEST_SNAPSHOTS } from './manifest-snapshots.js'
 
 export function catalogItemIdFromIntent(intent) {
@@ -1329,6 +1331,24 @@ export function textWithinByteLimit(value, maxBytes) {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   return trimmed && utf8Length(trimmed) <= maxBytes ? trimmed : undefined
+}
+
+// The license choice a Store preview offers: the platform's options in its
+// order (the first is its recommendation), each with the Store's meaning when
+// it has one, and the license the source declares now, offered or not.
+export function listingLicensing(preview) {
+  const offered = Array.isArray(preview?.license_options) ? preview.license_options : FALLBACK_LICENSE_OPTIONS
+  const options = offered.filter((item) => typeof item?.spdx === 'string' && item.spdx).map((item) => ({
+    id: item.spdx,
+    name: String(item.name || item.spdx),
+    summary: Object.hasOwn(LICENSE_SUMMARIES, item.spdx) ? LICENSE_SUMMARIES[item.spdx] : '',
+  }))
+  const declared = preview?.draft?.declared_license
+  return { options, declared: typeof declared === 'string' ? declared.trim() : '' }
+}
+
+export function licenseName(licensing, id) {
+  return licensing.options.find((item) => item.id === id)?.name || id
 }
 
 // The editable listing a Store preview describes, with image URLs resolved

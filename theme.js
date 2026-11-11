@@ -1865,6 +1865,8 @@ export const CSS = `
 .st-license-badge { padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--st-accent-text, var(--accent)); font: 650 11px/1.5 var(--font); }
 .st-license-summary { color: var(--muted); font: 400 13px/1.45 var(--font); }
 .st-edit-hint.is-needed { color: var(--text); font-weight: 600; }
+.st-license-refusal { display: grid; gap: 4px; margin-top: 8px; }
+.st-edit-license .st-edit-hint { overflow-wrap: anywhere; }
 .st-publish-license { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 13px; }
 .st-publish-license > span { color: var(--muted); font-size: 12px; font-weight: 700; }
 .st-publish-license > strong { flex: 1 1 auto; color: var(--text); font-weight: 650; }

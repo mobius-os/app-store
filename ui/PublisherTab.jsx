@@ -12,8 +12,9 @@ import {
   publishCheckState,
   publishedAppView,
   savedListingSurvived,
+  licenseName,
+  listingLicensing,
 } from '../domain.js'
-import { storeLicense } from '../constants.js'
 import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
 import { PublishCheck } from './PublishCheck.jsx'
 import { PublishedAppPage, YourAppsList } from './PublishedApps.jsx'
@@ -131,6 +132,8 @@ export function PublisherTab({
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  // The platform refused the last save's license change: { appId, commit, message }.
+  const [licenseRefusal, setLicenseRefusal] = useState(null)
   const [editing, setEditing] = useState(false)
   const [localRepositoryName, setLocalRepositoryName] = useState('')
   const [repository, setRepository] = useState('')
@@ -317,6 +320,12 @@ export function PublisherTab({
       showPreview(app, result)
     } catch (error) {
       if (!previewGateRef.current.isCurrent(requestId)) return
+      // Existing license text the Store didn't write changes only in the
+      // source; the picker says so where the choice was made.
+      if (error?.code === 'listing_license_text_exists') {
+        setLicenseRefusal({ appId: app.id, commit: preview?.accepted_commit, message: error.message })
+        return
+      }
       setSaveError(error instanceof Error ? error.message : 'The listing could not be saved.')
     } finally {
       setSaving(false)
@@ -355,6 +364,12 @@ export function PublisherTab({
   }
 
   const listing = preview?.listing
+  const licensing = {
+    ...listingLicensing(preview),
+    // A refusal holds for the app revision it was made against.
+    refusal: licenseRefusal && licenseRefusal.appId === candidate?.id
+      && licenseRefusal.commit === preview?.accepted_commit ? licenseRefusal.message : '',
+  }
   const renderApp = (app) => {
     const state = publicationStates[app.id]
     const label = publicationLabel(state, app.hosted_publication)
@@ -495,6 +510,7 @@ export function PublisherTab({
                   draft={draft}
                   setDraft={(change) => { setDirty(true); setDraft(change) }}
                   app={candidate}
+                  licensing={licensing}
                   detailsNeedAgent={(preview.checklist || []).some((item) => (
                     item.id === 'details' && !item.done && item.automatic === false
                   ))}
@@ -539,7 +555,7 @@ export function PublisherTab({
                 {listing?.license ? (
                   <div className="st-publish-license">
                     <span>License</span>
-                    <strong>{storeLicense(listing.license)?.title || listing.license}</strong>
+                    <strong>{licenseName(licensing, listing.license)}</strong>
                     <button type="button" className="st-link-btn" disabled={!!publishingId}
                             onClick={() => { setConfirmed(false); setEditing(true) }}>
                       Change

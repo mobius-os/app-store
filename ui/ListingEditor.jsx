@@ -5,8 +5,8 @@ import {
   CheckCircleFilled, Circle, ImageSquare, Plus, Sparkles, Trash,
 } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useEffect, useId, useRef, useState } from 'react'
-import { LISTING_LIMITS, STORE_LICENSES } from '../constants.js'
-import { utf8Length } from '../domain.js'
+import { LISTING_LIMITS } from '../constants.js'
+import { licenseName, utf8Length } from '../domain.js'
 
 const {
   taglineBytes: TAGLINE_MAX,
@@ -85,6 +85,7 @@ export function ListingChecklist({ checklist, agentBusy, onAgent }) {
 export function ListingEditor({
   draft, setDraft, app, detailsNeedAgent, saving, saveError, dirty,
   onPrepareImage, onSave,
+  licensing,
 }) {
   const [imageError, setImageError] = useState('')
   const [preparing, setPreparing] = useState('')
@@ -147,7 +148,7 @@ export function ListingEditor({
       </label>
 
       {typeof draft.license === 'string' ? (
-        <LicensePicker value={draft.license} onChange={(license) => update({ license })} />
+        <LicensePicker value={draft.license} licensing={licensing} onChange={(license) => update({ license })} />
       ) : null}
 
       <fieldset className="st-edit-field">
@@ -228,14 +229,28 @@ export function ListingEditor({
 
 // How others may use the app once its source is public. Publishing requires
 // one; saving writes the choice and the license's full text into the source.
-function LicensePicker({ value, onChange }) {
+// `licensing` is listingLicensing's options and the license the source
+// declares now, plus the platform's refusal of the last save, if it refused.
+function LicensePicker({ value, licensing, onChange }) {
   const ids = useId()
+  const { options, declared, refusal } = licensing
+  const current = options.some((license) => license.id === declared) ? declared : ''
+  const changing = !!declared && value !== declared
   return (
     <fieldset className="st-edit-field st-edit-license">
       <legend className="st-edit-label">License</legend>
       <p className="st-edit-hint">Publishing makes your app’s source public. Choose how others may use it.</p>
+      {changing ? (
+        <p className="st-edit-hint is-needed">
+          {current
+            ? `This app’s license is currently ${licenseName(licensing, declared)}.`
+            : `This app currently declares ${declared}, which the Store doesn’t offer.`}
+          {' '}
+          {value ? `Saving changes it to ${licenseName(licensing, value)}.` : 'Choosing one of these changes the app’s license.'}
+        </p>
+      ) : null}
       <div className="st-license-options" role="radiogroup" aria-label="License">
-        {STORE_LICENSES.map((license) => {
+        {options.map((license, index) => {
           const checked = value === license.id
           return (
             <label key={license.id} className={`st-license-option${checked ? ' is-active' : ''}`}>
@@ -243,16 +258,23 @@ function LicensePicker({ value, onChange }) {
                      onChange={() => onChange(license.id)} />
               <span className="st-license-copy">
                 <span className="st-license-title">
-                  {license.title}
-                  {license.recommended ? <span className="st-license-badge">Recommended</span> : null}
+                  {license.name}
+                  {index === 0 ? <span className="st-license-badge">Recommended</span> : null}
                 </span>
-                <span className="st-license-summary">{license.summary}</span>
+                {license.summary ? <span className="st-license-summary">{license.summary}</span> : null}
               </span>
             </label>
           )
         })}
       </div>
-      {!value ? <p className="st-edit-hint is-needed">Pick a license to publish this app.</p> : null}
+      {refusal && value !== current ? (
+        <div className="st-license-refusal" role="alert">
+          <p className="st-edit-error">{refusal}</p>
+          <button type="button" className="st-link-btn" onClick={() => onChange(current)}>
+            {current ? `Keep ${licenseName(licensing, current)}` : 'Keep the current license'}
+          </button>
+        </div>
+      ) : !value ? <p className="st-edit-hint is-needed">Pick a license to publish this app.</p> : null}
     </fieldset>
   )
 }

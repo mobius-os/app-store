@@ -32,8 +32,7 @@ function communityRequestKey(action) {
 
 async function communityResponse(response, fallback) {
   if (response.ok) return response.status === 204 ? {} : response.json()
-  const detail = await readErrorDetail(response, fallback)
-  throw Object.assign(new Error(detail), { status: response.status })
+  throw await responseErrorOf(response, fallback)
 }
 
 export async function loadCommunityIdentity(token) {
