@@ -186,6 +186,14 @@ test('the License row leads to the owner’s picker and never shows agent work',
     assert.deepEqual(asked, [])
 
     await act(async () => root.render(React.createElement(ListingChecklist, {
+      checklist: checklist([]), agentBusy: false, agent: { parts: ['description'], awaitingOwner: true },
+      onAgent: (id) => asked.push(id), onViewAgent() {}, onChooseLicense() {},
+    })))
+    const ask = [...dom.window.document.querySelectorAll('button')].filter((b) => /Ask an agent|Do the rest too/.test(b.textContent))
+    assert.equal(ask.length, 2)
+    assert.ok(ask.every((b) => b.disabled), 'no new request while the agent waits on the owner’s answer')
+
+    await act(async () => root.render(React.createElement(ListingChecklist, {
       checklist: checklist([]), agentBusy: false, onAgent() {}, onViewAgent() {},
     })))
     const plain = [...dom.window.document.querySelectorAll('li')].find((row) => row.textContent.includes('License'))

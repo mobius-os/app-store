@@ -48,6 +48,8 @@ export function ListingChecklist({ checklist, agentBusy, agent = null, onAgent, 
   const done = required.filter((item) => item.done).length
   const parts = agent?.parts || []
   const working = (id) => !!agent && (parts.includes('all') || parts.includes(id))
+  // Möbius refuses new requests while the agent's question card is open.
+  const askDisabled = agentBusy || !!agent?.awaitingOwner
   const agentNote = agent?.awaitingOwner ? 'Needs your answer' : 'Agent working…'
   return (
     <section className="st-checklist" aria-label="What this listing needs">
@@ -71,7 +73,7 @@ export function ListingChecklist({ checklist, agentBusy, agent = null, onAgent, 
             </button>
           ) : null}
           {!parts.includes('all') ? (
-            <button type="button" className="st-btn st-btn-secondary" disabled={agentBusy}
+            <button type="button" className="st-btn st-btn-secondary" disabled={askDisabled}
                     onClick={() => onAgent('')}>
               <Sparkles width="16" height="16" aria-hidden="true" />
               {agentBusy ? 'Opening agent…' : agent ? 'Do the rest too' : 'Do it all with an agent'}
@@ -106,7 +108,7 @@ export function ListingChecklist({ checklist, agentBusy, agent = null, onAgent, 
                   {agentNote}
                 </button>
               ) : (
-                <button type="button" className="st-check-agent" disabled={agentBusy}
+                <button type="button" className="st-check-agent" disabled={askDisabled}
                         onClick={() => onAgent(item.id)}>
                   Ask an agent
                 </button>
