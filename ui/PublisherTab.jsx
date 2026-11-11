@@ -193,6 +193,7 @@ export function PublisherTab({
   const confirmHeadingRef = useRef(null)
   const confirmShownRef = useRef(false)
   const previewGateRef = useRef(null)
+  const listingWorkRef = useRef(null)
   // Latest form state for the agent refresh, which runs from a timer.
   const liveRef = useRef({})
   const saveEpochRef = useRef(0)
@@ -345,7 +346,7 @@ export function PublisherTab({
   }
 
   async function saveListing() {
-    if (!candidate || !draft || saving) return
+    if (!candidate || !draft || saving || agentActive) return
     const app = candidate
     const requestId = previewGateRef.current.begin()
     saveEpochRef.current += 1
@@ -415,6 +416,15 @@ export function PublisherTab({
     if (agentRun?.chatId) onOpenChat?.(agentRun.chatId)
   }
 
+  // The License row leads to the editor's license picker, which writes the
+  // license's canonical text; the owner chooses, never an agent.
+  function chooseLicense() {
+    const picker = listingWorkRef.current?.querySelector('.st-edit-license')
+    picker?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    const option = picker?.querySelector('input:checked') || picker?.querySelector('input')
+    option?.focus({ preventScroll: true })
+  }
+
   // A newer accepted listing (the agent applied a part) merges into the open
   // form: untouched fields take it, the owner's edits stay. Skipped while a
   // save is in flight, whose own reload is authoritative.
@@ -467,12 +477,31 @@ export function PublisherTab({
     setDirty(Object.keys(LISTING_FIELD_LABELS).some((name) => listingFieldsDiffer(next, saved, name)))
   }
 
-  // While the listing agent works, follow its chat and the accepted listing.
+  // While the listing agent works, follow its chat, and re-read the accepted
+  // listing only when it can have changed: Möbius reports the app updated (the
+  // agent applied a part), or the agent's turn ended or paused for the owner.
+  // The preview scans the whole accepted tree, so it is not read every poll.
   useEffect(() => {
     if (!agentActive || !candidate) return undefined
     const app = candidate
     let cancelled = false
     let busy = false
+    let lastState = null
+    let refreshing = null
+    let again = false
+    const refresh = () => {
+      if (refreshing) {
+        again = true
+        return refreshing
+      }
+      refreshing = (async () => {
+        do {
+          again = false
+          await refreshListingFromSource(app)
+        } while (again && !cancelled)
+      })().finally(() => { refreshing = null })
+      return refreshing
+    }
     const tick = async () => {
       if (busy || window.mobius?.visible === false) return
       busy = true
@@ -481,23 +510,34 @@ export function PublisherTab({
         try {
           status = await onListingAgentStatus?.(app)
         } catch {
-          status = undefined
+          return
         }
         if (cancelled) return
-        await refreshListingFromSource(app)
-        if (cancelled || status === undefined) return
+        const state = status?.running ? 'running' : status?.awaitingOwner ? 'asking' : 'quiet'
+        if (state !== lastState && state !== 'running') await refresh()
+        lastState = state
+        if (cancelled) return
         setAgentRun((run) => (run?.appId === app.id ? listingAgentRunAfterStatus(run, status) : run))
       } finally {
         busy = false
       }
     }
+    const appUpdated = (event) => {
+      if (event.source !== window.parent || event.data?.type !== 'moebius:managed-app-event') return
+      if (event.data.event?.type === 'app_updated' && String(event.data.event.appId) === String(app.id)) void refresh()
+    }
     const timer = setInterval(tick, LISTING_AGENT_POLL_MS)
-    return () => { cancelled = true; clearInterval(timer) }
+    window.addEventListener('message', appUpdated)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+      window.removeEventListener('message', appUpdated)
+    }
   }, [agentActive, candidate?.id])
 
   function askAgentForListing(focus) {
     const missing = (preview?.checklist || [])
-      .filter((item) => !item.done && item.message)
+      .filter((item) => !item.done && item.message && item.id !== 'license')
       .map((item) => `${item.label}: ${item.message}`)
       .join(' ')
     askAgent(focus ? '' : missing, focus)
@@ -641,10 +681,11 @@ export function PublisherTab({
               </div>
             </div>
           ) : !preview.ready || editing ? (
-            <div className="st-listing-work">
+            <div className="st-listing-work" ref={listingWorkRef}>
               <ListingChecklist checklist={preview.checklist || []} agentBusy={askingAgent}
                                 agent={agentActive ? agentRun : null}
-                                onAgent={askAgentForListing} onViewAgent={viewAgent} />
+                                onAgent={askAgentForListing} onViewAgent={viewAgent}
+                                onChooseLicense={typeof draft?.license === 'string' ? chooseLicense : null} />
               <AgentConflicts conflicts={agentConflicts} onResolve={resolveAgentConflict} />
               {draft ? (
                 <ListingEditor
@@ -658,6 +699,11 @@ export function PublisherTab({
                   saving={saving}
                   saveError={saveError}
                   dirty={dirty}
+                  saveBlocked={agentActive
+                    ? (agentRun.awaitingOwner
+                      ? 'The agent is waiting for your answer. Save when it finishes, or stop it in its chat.'
+                      : 'The agent is still working. Save when it finishes, or stop it in its chat.')
+                    : ''}
                   onPrepareImage={onPrepareImage}
                   onSave={saveListing}
                 />

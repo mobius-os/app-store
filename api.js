@@ -1102,27 +1102,54 @@ export async function watchUpdateBatch(id, token, onSnapshot, { signal } = {}) {
   }
 }
 
-export async function createAppChat(title, token, { ownerVisible = false, scope, scopeLabel } = {}) {
+export async function createAppChat(title, token, { ownerVisible = false } = {}) {
   const res = await fetch('/api/app-chats', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      title,
-      owner_visible: ownerVisible,
-      ...(scope ? { scope, scope_label: scopeLabel || undefined } : {}),
-    }),
+    body: JSON.stringify({ title, owner_visible: ownerVisible }),
   })
   return await readJsonOrThrow(res, 'Could not create review chat')
+}
+
+// Send one request to the scope's single owner-visible agent chat. Möbius
+// creates or reuses that chat under a per-scope lock and admits `first` as its
+// first turn in the same step, so two panes or devices asking at once still
+// reach one agent. A chat that already started gets `followUp` instead.
+// Deleting the chat releases the scope; the Store never cancels one.
+export async function sendToScopedAgentChat(token, { title, scope, scopeLabel, first, followUp }) {
+  const res = await fetch('/api/app-chats/start', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      title, scope, ...(scopeLabel ? { scope_label: scopeLabel } : {}), owner_visible: true, content: first,
+    }),
+  })
+  if (!res.ok) {
+    const error = await responseErrorOf(res, 'Could not start the agent.')
+    if (error.code === 'scope_cancelled') {
+      error.message = 'Möbius closed this agent conversation, so it cannot take new requests.'
+    }
+    throw error
+  }
+  const started = await res.json()
+  const chatId = started?.chat_id ? String(started.chat_id) : ''
+  if (!chatId) throw new Error('Could not start the agent.')
+  if (started.outcome !== 'reused') return { chatId, reused: false }
+  await seedChatMessage(chatId, followUp, token)
+  return { chatId, reused: true }
 }
 
 // The Store's newest chat in one scope (most recent first from the server),
 // with whether its agent is working now or waiting for the owner; null when
 // there is none. Rows are matched by their own scope: a Möbius that predates
-// scoped chats ignores the filter, and reusing an unrelated chat would be
-// worse than starting a new one.
+// scoped chats ignores the filter, and following an unrelated chat would show
+// another agent's progress on this listing.
 export async function latestScopedAppChat(scope, token) {
   const res = await fetch(`/api/app-chats?${new URLSearchParams({ scope })}`, {
     headers: { Authorization: `Bearer ${token}` },

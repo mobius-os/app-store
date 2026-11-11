@@ -40,8 +40,10 @@ function ImagePicker({ label, onPick, disabled, children, className = '' }) {
 
 // `agent` is the one agent working on this listing, if any: rows it was asked
 // for show its progress instead of a second request, and asking for another
-// part adds that part to the same agent's chat.
-export function ListingChecklist({ checklist, agentBusy, agent = null, onAgent, onViewAgent }) {
+// part adds that part to the same agent's chat. The license is the owner's
+// own choice: its row leads to the editor's picker (`onChooseLicense`, given
+// only while that picker is shown) and is never handed to an agent.
+export function ListingChecklist({ checklist, agentBusy, agent = null, onAgent, onViewAgent, onChooseLicense }) {
   const required = checklist.filter((item) => !item.optional)
   const done = required.filter((item) => item.done).length
   const parts = agent?.parts || []
@@ -91,7 +93,13 @@ export function ListingChecklist({ checklist, agentBusy, agent = null, onAgent, 
                 </span>
                 {!item.done && item.message ? <span className="st-check-note">{item.message}</span> : null}
               </div>
-              {item.done || automatic ? <span /> : working(item.id) ? (
+              {item.done || automatic ? <span /> : item.id === 'license' ? (
+                onChooseLicense ? (
+                  <button type="button" className="st-check-agent" onClick={onChooseLicense}>
+                    Choose below
+                  </button>
+                ) : <span />
+              ) : working(item.id) ? (
                 <button type="button" className="st-check-agent is-working" onClick={onViewAgent}
                         aria-label={`${item.label}: ${agentNote} View the agent’s chat`}>
                   {agent.awaitingOwner ? null : <span className="st-agent-pulse" aria-hidden="true" />}
@@ -111,8 +119,10 @@ export function ListingChecklist({ checklist, agentBusy, agent = null, onAgent, 
   )
 }
 
+// `saveBlocked` explains why saving waits (an agent is still changing this
+// listing's source); the owner can keep editing meanwhile.
 export function ListingEditor({
-  draft, setDraft, app, detailsNeedAgent, saving, saveError, dirty,
+  draft, setDraft, app, detailsNeedAgent, saving, saveError, dirty, saveBlocked = '',
   onPrepareImage, onSave,
 }) {
   const [imageError, setImageError] = useState('')
@@ -241,9 +251,10 @@ export function ListingEditor({
       <div className="st-edit-actions">
         <span>{detailsNeedAgent
           ? 'An agent needs to set up this app’s details before the listing can be saved.'
-          : dirty ? 'Saving updates the app’s source; nothing is published.' : 'All changes saved.'}</span>
+          : saveBlocked && dirty ? saveBlocked
+            : dirty ? 'Saving updates the app’s source; nothing is published.' : 'All changes saved.'}</span>
         <button type="submit" className="st-btn st-btn-primary"
-                disabled={!dirty || busy || overLimit || detailsNeedAgent}>
+                disabled={!dirty || busy || overLimit || detailsNeedAgent || !!saveBlocked}>
           {saving ? 'Saving…' : 'Save listing'}
         </button>
       </div>

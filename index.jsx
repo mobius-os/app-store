@@ -68,6 +68,7 @@ import {
 import {
   createAppChat,
   latestScopedAppChat,
+  sendToScopedAgentChat,
   createConflictResolverChat,
   createConflictResolverBatch,
   submitUpdateBatch,
@@ -1945,14 +1946,17 @@ export default function App({ appId, token }) {
     const name = app.name || app.slug
     const scope = listingAgentScope(app.id)
     try {
-      const existing = await latestScopedAppChat(scope, token)
-      const chatId = existing?.id
-        || (await createAppChat(`Get ${name} ready to publish`, token, { ownerVisible: true, scope, scopeLabel: name })).id
-      await seedChatMessage(chatId, buildListingAgentMessage({ app, problem, focus, followUp: !!existing }), token)
+      const { chatId, reused } = await sendToScopedAgentChat(token, {
+        title: `Get ${name} ready to publish`,
+        scope,
+        scopeLabel: name,
+        first: buildListingAgentMessage({ app, problem, focus }),
+        followUp: buildListingAgentMessage({ app, problem, focus, followUp: true }),
+      })
       setToast({
         kind: 'success',
-        message: existing?.running
-          ? `Added to the agent already working on ${name}.`
+        message: reused
+          ? `Sent to the agent for the ${name} listing. You can keep working here.`
           : `An agent is preparing ${name}. You can keep working here.`,
         action: { label: 'View work', onClick: () => openChat(chatId) },
       })

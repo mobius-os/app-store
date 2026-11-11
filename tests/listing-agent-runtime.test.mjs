@@ -10,25 +10,20 @@ import React, { act } from 'react'
 const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-listing-agent')
 
-async function loadPublisherTab() {
+async function loadUi(file) {
   const require = createRequire(join(process.env.MOBIUS_FRONTEND_NODE_MODULES, 'package.json'))
   const { rolldown } = await import(pathToFileURL(require.resolve('rolldown')).href)
   await mkdir(buildDir, { recursive: true })
-  const build = await rolldown({ input: join(here, '..', 'ui', 'PublisherTab.jsx'), platform: 'node', tsconfig: false,
+  const build = await rolldown({ input: join(here, '..', 'ui', file), platform: 'node', tsconfig: false,
     external: ['react', 'react/jsx-runtime'],
     resolve: { alias: { '@openai/apps-sdk-ui/components/Icon': join(here, 'runtime-icon-stub.mjs') } },
     transform: { jsx: 'react-jsx' } })
-  const output = join(buildDir, 'publisher.mjs')
+  const output = join(buildDir, file.replace(/\.jsx$/, '.mjs'))
   await build.write({ file: output, format: 'es' }); await build.close()
-  return (await import(pathToFileURL(output).href)).PublisherTab
+  return import(pathToFileURL(output).href)
 }
 
-const checklist = (done) => ['description', 'screenshots', 'license'].map((id) => ({
-  id, label: id[0].toUpperCase() + id.slice(1), done: done.includes(id), message: done.includes(id) ? '' : `Add ${id}`,
-}))
-
-test('one agent works the listing: rows lock, its parts fill the form, the owner’s edits stay', async () => {
-  const PublisherTab = await loadPublisherTab()
+async function withDom(run) {
   const dom = new JSDOM('<div id="root"></div>')
   const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
   const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
@@ -36,92 +31,166 @@ test('one agent works the listing: rows lock, its parts fill the form, the owner
     HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
   // Loaded after the document exists, so React listens for real typing.
   const { createRoot } = await import('react-dom/client')
-  mock.timers.enable({ apis: ['setInterval'] })
   const root = createRoot(dom.window.document.getElementById('root'))
-  const doc = dom.window.document
-  const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
-  const requests = []
-  const opened = []
-  let status = null
-  let preview = { ready: false, accepted_commit: 'a'.repeat(40),
-    draft: { tagline: 'Keep score.', description: '', screenshots: [] }, checklist: checklist([]) }
-  const buttons = (label) => [...doc.querySelectorAll('button')].filter(b => b.textContent.trim() === label)
-  async function click(label) {
-    const [button] = buttons(label)
-    assert.ok(button, label)
-    await act(async () => button.click())
-  }
-  async function poll() {
-    await act(async () => {
-      mock.timers.tick(5000)
-      for (let i = 0; i < 20; i += 1) await Promise.resolve()
-    })
-  }
-  const tagline = () => doc.querySelector('.st-edit-field > input')
   try {
-    await act(async () => root.render(React.createElement(PublisherTab, {
-      installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
-      onRefreshPublicationStates() {},
-      onListingAgent: async (...args) => { requests.push(args); status = { id: 'c1', running: true }; return { chatId: 'c1' } },
-      onListingAgentStatus: async () => status,
-      onOpenChat: (id) => opened.push(id),
-      onPreviewLocal: async () => preview,
-    })))
-    await click('Publish an app')
-    await click('Prepare listing')
-    assert.equal(buttons('Ask an agent').length, 3)
-
-    await click('Ask an agent')
-    assert.equal(requests[0][2], 'description')
-    assert.equal(buttons('Ask an agent').length, 2, 'the part being worked on cannot be asked for twice')
-    assert.equal(buttons('Agent working…').length, 1)
-    await click('Agent working…')
-    assert.deepEqual(opened, ['c1'], 'its row opens the agent’s chat')
-    assert.equal(buttons('Do the rest too').length, 1)
-
-    // The owner keeps editing while the agent works.
-    await act(async () => {
-      const input = tagline()
-      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, 'My tagline')
-      input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
-    })
-    assert.equal(tagline().value, 'My tagline')
-    assert.match(doc.body.textContent, /Saving updates the app’s source/, 'the edit is unsaved')
-
-    // The agent applies the description (and its own tagline idea).
-    preview = { ...preview, accepted_commit: 'b'.repeat(40),
-      draft: { tagline: 'Agent tagline', description: 'A tiny score keeper.', screenshots: [] },
-      checklist: checklist(['description']) }
-    const editorBefore = doc.querySelector('.st-listing-editor')
-    await poll()
-    assert.equal(doc.querySelector('.st-listing-editor textarea').value, 'A tiny score keeper.', 'filled in without copy and paste')
-    assert.equal(tagline().value, 'My tagline', 'the owner’s edit is never overwritten')
-    assert.equal(doc.querySelector('.st-listing-editor'), editorBefore, 'the form is not remounted under the owner')
-    assert.match(doc.querySelector('.st-agent-conflicts').textContent, /The agent wrote a new tagline/)
-    assert.match(doc.querySelector('.st-agent-conflicts').textContent, /Agent tagline/)
-    assert.equal(buttons('Agent working…').length, 0, 'a finished part shows done, not working')
-
-    await click('Use the agent’s')
-    assert.equal(tagline().value, 'Agent tagline')
-    assert.equal(doc.querySelector('.st-agent-conflicts'), null)
-
-    // Another part goes to the same agent.
-    await click('Ask an agent')
-    assert.equal(requests.length, 2)
-    assert.equal(requests[1][2], 'screenshots')
-    assert.equal(buttons('Agent working…').length, 1)
-
-    // It finishes: two quiet polls end the working state.
-    status = { id: 'c1', running: false, awaitingOwner: false }
-    await poll()
-    assert.equal(buttons('View agent work').length, 1)
-    await poll()
-    assert.equal(buttons('View agent work').length, 0)
-    assert.equal(buttons('Do it all with an agent').length, 1)
-    assert.equal(buttons('Ask an agent').length, 2)
+    await run(dom, root)
   } finally {
-    mock.timers.reset()
     await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
-    await rm(buildDir, { recursive: true, force: true })
   }
+}
+
+const checklist = (done) => ['description', 'screenshots', 'license'].map((id) => ({
+  id, label: id[0].toUpperCase() + id.slice(1), done: done.includes(id), message: done.includes(id) ? '' : `Add ${id}`,
+}))
+
+test('one agent works the listing: rows lock, its parts fill the form, the owner’s edits stay', async () => {
+  const { PublisherTab } = await loadUi('PublisherTab.jsx')
+  await withDom(async (dom, root) => {
+    mock.timers.enable({ apis: ['setInterval'] })
+    const doc = dom.window.document
+    const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
+    const requests = []
+    const opened = []
+    let status = null
+    let previewReads = 0
+    let preview = { ready: false, accepted_commit: 'a'.repeat(40),
+      draft: { tagline: 'Keep score.', description: '', screenshots: [] }, checklist: checklist([]) }
+    const buttons = (label) => [...doc.querySelectorAll('button')].filter(b => b.textContent.trim() === label)
+    async function click(label) {
+      const [button] = buttons(label)
+      assert.ok(button, label)
+      await act(async () => button.click())
+    }
+    async function poll() {
+      await act(async () => {
+        mock.timers.tick(5000)
+        for (let i = 0; i < 20; i += 1) await Promise.resolve()
+      })
+    }
+    const tagline = () => doc.querySelector('.st-edit-field > input')
+    const save = () => buttons('Save listing')[0]
+    async function typeTagline(value) {
+      await act(async () => {
+        const input = tagline()
+        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, value)
+        input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      })
+    }
+    async function appUpdated(appId) {
+      await act(async () => {
+        dom.window.dispatchEvent(new dom.window.MessageEvent('message', { source: dom.window,
+          data: { type: 'moebius:managed-app-event', event: { type: 'app_updated', appId: String(appId) } } }))
+        for (let i = 0; i < 20; i += 1) await Promise.resolve()
+      })
+    }
+    try {
+      await act(async () => root.render(React.createElement(PublisherTab, {
+        installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
+        onRefreshPublicationStates() {},
+        onListingAgent: async (...args) => { requests.push(args); status = { id: 'c1', running: true }; return { chatId: 'c1' } },
+        onListingAgentStatus: async () => status,
+        onOpenChat: (id) => opened.push(id),
+        onPreviewLocal: async () => { previewReads += 1; return preview },
+      })))
+      await click('Publish an app')
+      await click('Prepare listing')
+      assert.equal(buttons('Ask an agent').length, 2, 'the license is the owner’s choice, never an agent’s')
+
+      await click('Ask an agent')
+      assert.equal(requests[0][2], 'description')
+      assert.equal(buttons('Ask an agent').length, 1, 'the part being worked on cannot be asked for twice')
+      assert.equal(buttons('Agent working…').length, 1)
+      await click('Agent working…')
+      assert.deepEqual(opened, ['c1'], 'its row opens the agent’s chat')
+      assert.equal(buttons('Do the rest too').length, 1)
+
+      // The owner keeps editing while the agent works, but saving waits for it:
+      // a save now would race the agent's own writes to the same source.
+      await typeTagline('My tagline')
+      assert.equal(tagline().value, 'My tagline')
+      assert.equal(save().disabled, true)
+      assert.match(doc.body.textContent, /The agent is still working\. Save when it finishes/)
+
+      // Polls while the agent works read only its status, not the whole listing.
+      const readsBefore = previewReads
+      await poll()
+      await poll()
+      assert.equal(previewReads, readsBefore)
+
+      // The agent applies the description (and its own tagline idea).
+      preview = { ...preview, accepted_commit: 'b'.repeat(40),
+        draft: { tagline: 'Agent tagline', description: 'A tiny score keeper.', screenshots: [] },
+        checklist: checklist(['description']) }
+      const editorBefore = doc.querySelector('.st-listing-editor')
+      await appUpdated(8)
+      assert.equal(previewReads, readsBefore, 'another app’s update is not this listing')
+      await appUpdated(7)
+      assert.equal(previewReads, readsBefore + 1)
+      assert.equal(doc.querySelector('.st-listing-editor textarea').value, 'A tiny score keeper.', 'filled in without copy and paste')
+      assert.equal(tagline().value, 'My tagline', 'the owner’s edit is never overwritten')
+      assert.equal(doc.querySelector('.st-listing-editor'), editorBefore, 'the form is not remounted under the owner')
+      assert.match(doc.querySelector('.st-agent-conflicts').textContent, /The agent wrote a new tagline/)
+      assert.match(doc.querySelector('.st-agent-conflicts').textContent, /Agent tagline/)
+      assert.equal(buttons('Agent working…').length, 0, 'a finished part shows done, not working')
+
+      await click('Use the agent’s')
+      assert.equal(tagline().value, 'Agent tagline')
+      assert.equal(doc.querySelector('.st-agent-conflicts'), null)
+
+      // Another part goes to the same agent.
+      await click('Ask an agent')
+      assert.equal(requests.length, 2)
+      assert.equal(requests[1][2], 'screenshots')
+      assert.equal(buttons('Agent working…').length, 1)
+
+      // It finishes: the turn's end re-reads the listing once, and two quiet
+      // polls end the working state.
+      preview = { ...preview, accepted_commit: 'c'.repeat(40),
+        draft: { ...preview.draft, screenshots: [{ path: 'static/store/a.png', alt: 'Scores', label: '' }] },
+        checklist: checklist(['description', 'screenshots']) }
+      status = { id: 'c1', running: false, awaitingOwner: false }
+      const readsAtEnd = previewReads
+      await poll()
+      assert.equal(previewReads, readsAtEnd + 1, 'a finished turn picks up parts the app events missed')
+      assert.equal(doc.querySelectorAll('.st-edit-shot').length, 1)
+      assert.equal(buttons('View agent work').length, 1)
+      await poll()
+      assert.equal(previewReads, readsAtEnd + 1)
+      assert.equal(buttons('View agent work').length, 0)
+      assert.equal(buttons('Do it all with an agent').length, 1)
+      assert.equal(buttons('Ask an agent').length, 0)
+      await typeTagline('Final tagline')
+      assert.equal(save().disabled, false, 'saving is open again once the agent is done')
+    } finally {
+      mock.timers.reset()
+    }
+  })
 })
+
+test('the License row leads to the owner’s picker and never shows agent work', async () => {
+  const { ListingChecklist } = await loadUi('ListingEditor.jsx')
+  await withDom(async (dom, root) => {
+    let chosen = 0
+    const asked = []
+    await act(async () => root.render(React.createElement(ListingChecklist, {
+      checklist: checklist([]), agentBusy: false,
+      agent: { parts: ['all'], awaitingOwner: false },
+      onAgent: (id) => asked.push(id), onViewAgent() {}, onChooseLicense: () => { chosen += 1 },
+    })))
+    const rows = [...dom.window.document.querySelectorAll('li')]
+    const license = rows.find((row) => row.textContent.includes('License'))
+    assert.equal(rows.filter((row) => /Agent working/.test(row.textContent)).length, 2, 'the agent works the other rows')
+    assert.doesNotMatch(license.textContent, /Agent working|Ask an agent/)
+    await act(async () => license.querySelector('button').click())
+    assert.equal(chosen, 1)
+    assert.deepEqual(asked, [])
+
+    await act(async () => root.render(React.createElement(ListingChecklist, {
+      checklist: checklist([]), agentBusy: false, onAgent() {}, onViewAgent() {},
+    })))
+    const plain = [...dom.window.document.querySelectorAll('li')].find((row) => row.textContent.includes('License'))
+    assert.equal(plain.querySelector('button'), null, 'no picker on this Möbius: nothing to hand off either')
+  })
+})
+
+test.after(() => rm(buildDir, { recursive: true, force: true }))

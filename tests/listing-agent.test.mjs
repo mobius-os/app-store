@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { latestScopedAppChat } from '../api.js'
+import { latestScopedAppChat, sendToScopedAgentChat } from '../api.js'
 import {
   buildListingAgentMessage,
   LISTING_AGENT_START_GRACE_MS,
@@ -26,28 +26,34 @@ test('every listing request for one app shares one agent chat scope', () => {
   assert.notEqual(listingAgentScope(7), listingAgentScope(8))
 })
 
-test('a follow-up asks the existing agent for the next part without restarting its brief', () => {
+test('a follow-up carries the whole brief, so a chat picked up weeks later still has it', () => {
   const first = buildListingAgentMessage({ app, problem: '', focus: 'description' })
   assert.match(first, /Please get Scorekeeper ready to publish/)
   assert.match(first, /may ask for more parts of this listing in this same chat/)
   const next = buildListingAgentMessage({ app, problem: '', focus: 'screenshots', followUp: true })
-  assert.match(next, /Another request from the App Store for the Scorekeeper listing \(app id 7/)
+  assert.match(next, /Another request from the App Store for the Scorekeeper listing/)
   assert.match(next, /Finish anything you are already doing for it first/)
   assert.match(next, /1–5 truthful screenshots/)
+  assert.match(next, /source is in \/data\/apps\/scorekeeper \(app id 7\)/)
+  assert.match(next, /Follow "Store listing" in \/data\/shared\/skills\/building-apps\.md/)
+  assert.match(next, /never the owner's own data/)
   assert.match(next, /preview\?app_id=7/)
-  assert.match(next, /never use the owner's own data/)
   assert.match(next, /Do not publish/)
+  assert.doesNotMatch(next, /Same rules as before/)
   assert.doesNotMatch(next, /Please get Scorekeeper ready/)
 })
 
-test('asking an agent for the license leaves the choice to the owner', () => {
-  const brief = buildListingAgentMessage({ app, problem: '', focus: 'license' })
-  assert.match(brief, /one part of the App Store listing of Scorekeeper: Set the license/)
-  assert.match(brief, /owner's decision/)
-  assert.match(brief, /question card/)
-  assert.match(brief, /MIT[\s\S]*Apache-2\.0[\s\S]*GPL-3\.0-or-later/)
-  assert.match(brief, /LICENSE file/)
-  assert.doesNotMatch(brief, /wants to revise/)
+test('every brief leaves the license to the owner, including "do it all"', () => {
+  for (const brief of [
+    buildListingAgentMessage({ app, problem: 'License: Choose a free license.' }),
+    buildListingAgentMessage({ app, problem: '', focus: 'description' }),
+    buildListingAgentMessage({ app, problem: '', followUp: true }),
+  ]) {
+    assert.match(brief, /Leave the license to the owner; they choose it in the Store's listing editor\./)
+    assert.doesNotMatch(brief, /LICENSE file|question card/)
+  }
+  const license = buildListingAgentMessage({ app, problem: '', focus: 'license' })
+  assert.doesNotMatch(license, /one part of the App Store listing/, 'the license is never a task for an agent')
 })
 
 test('an agent part fills untouched fields and never overwrites the owner’s edits', () => {
@@ -139,6 +145,52 @@ test('only a chat in this listing’s own scope is reused', async () => {
     assert.match(asked, /scope=store-listing%3A7/)
     assert.equal(await latestScopedAppChat('store-listing:8', 't'), null,
       'a Möbius that ignores the scope filter never hands back another chat')
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('two panes asking at once reach one agent: every request goes through the scoped start', async () => {
+  const oldFetch = globalThis.fetch
+  const calls = []
+  let outcome = 'started'
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url, body: init.body ? JSON.parse(init.body) : null })
+    if (url === '/api/app-chats/start') {
+      return new Response(JSON.stringify({ chat_id: 'c1', outcome, response: null }), { status: 200 })
+    }
+    return new Response(JSON.stringify({ status: 'queued' }), { status: 202 })
+  }
+  const request = { title: 'Get Scorekeeper ready to publish', scope: 'store-listing:7', scopeLabel: 'Scorekeeper',
+    first: 'first brief', followUp: 'follow-up brief' }
+  try {
+    assert.deepEqual(await sendToScopedAgentChat('t', request), { chatId: 'c1', reused: false })
+    assert.deepEqual(calls.map((call) => call.url), ['/api/app-chats/start'], 'a new scope admits the first brief itself')
+    assert.deepEqual(calls[0].body, { title: request.title, scope: 'store-listing:7', scope_label: 'Scorekeeper',
+      owner_visible: true, content: 'first brief' })
+
+    calls.length = 0
+    outcome = 'reused'
+    assert.deepEqual(await sendToScopedAgentChat('t', request), { chatId: 'c1', reused: true })
+    assert.deepEqual(calls.map((call) => call.url), ['/api/app-chats/start', '/api/chats/c1/messages'])
+    assert.equal(calls[1].body.content, 'follow-up brief', 'the existing agent gets the follow-up, not a second first brief')
+    assert.ok(!calls.some((call) => call.url === '/api/app-chats'), 'never a check-then-create from the client')
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('a cancelled scope is reported, not retried into a parallel agent', async () => {
+  const oldFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url) => {
+    calls.push(url)
+    return new Response(JSON.stringify({ detail: { code: 'scope_cancelled', chat_id: 'c1', message: 'cancelled' } }), { status: 409 })
+  }
+  try {
+    await assert.rejects(sendToScopedAgentChat('t', { title: 'x', scope: 'store-listing:7', first: 'a', followUp: 'b' }),
+      (error) => error.code === 'scope_cancelled' && /cannot take new requests/.test(error.message))
+    assert.deepEqual(calls, ['/api/app-chats/start'])
   } finally {
     globalThis.fetch = oldFetch
   }
