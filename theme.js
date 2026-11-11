@@ -2152,7 +2152,7 @@ export const CSS = `
 .st-card.is-compact .st-card-state-row, .st-card.is-list .st-card-state-row { grid-column: 2; grid-row: 4; margin: 0; min-height: 0; justify-content: flex-start; }
 .st-card.is-compact .st-card-status-row, .st-card.is-list .st-card-status-row { grid-column: 3; grid-row: 1 / span 4; margin: 0; align-self: center; }
 .st-card.is-compact .st-card-action, .st-card.is-list .st-card-action { width: auto; min-width: 60px; min-height: 44px; height: auto; padding: 8px 13px; border: 0; border-radius: 999px; background: var(--surface); color: var(--text); font: 650 12px/1.3 var(--font); }
-.st-card.is-compact .st-card-action.is-update, .st-card.is-list .st-card-action.is-update { background: var(--accent); color: var(--accent-text, white); }
+.st-card.is-compact .st-card-action.is-update, .st-card.is-list .st-card-action.is-update { background: var(--accent-hover, var(--accent)); color: var(--accent-fg); }
 .st-card.is-compact .st-card-inline-error, .st-card.is-list .st-card-inline-error { grid-column: 1 / -1; grid-row: auto; }
 .st-catalog-sections.is-list .st-catalog-grid { gap: 0; }
 .st-catalog-sections.is-list .st-card + .st-card { border-top: 1px solid var(--border); }
