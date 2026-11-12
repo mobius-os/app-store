@@ -146,13 +146,16 @@ test('one agent works the listing: rows lock, its parts fill the form, the owner
       // It finishes: the turn's end re-reads the listing once, and two quiet
       // polls end the working state.
       preview = { ...preview, accepted_commit: 'c'.repeat(40),
-        draft: { ...preview.draft, screenshots: [{ path: 'static/store/a.png', alt: 'Scores', label: '' }] },
+        asset_root: '/assets/',
+        draft: { ...preview.draft, screenshots: [{ src: 'static/store/a.png', alt: 'Scores', label: '' }] },
         checklist: checklist(['description', 'screenshots']) }
       status = { id: 'c1', running: false, awaitingOwner: false }
       const readsAtEnd = previewReads
       await poll()
       assert.equal(previewReads, readsAtEnd + 1, 'a finished turn picks up parts the app events missed')
       assert.equal(doc.querySelectorAll('.st-edit-shot').length, 1)
+      assert.equal(doc.querySelector('.st-edit-shot img')?.getAttribute('src'), '/assets/static/store/a.png',
+        'the agent’s screenshot arrives as its image, not an empty slot')
       assert.equal(buttons('View agent work').length, 1)
       await poll()
       assert.equal(previewReads, readsAtEnd + 1)
@@ -164,6 +167,67 @@ test('one agent works the listing: rows lock, its parts fill the form, the owner
     } finally {
       mock.timers.reset()
     }
+  })
+})
+
+test('publish consent names one revision: an agent’s new revision asks for it again', async () => {
+  const { PublisherTab } = await loadUi('PublisherTab.jsx')
+  await withDom(async (dom, root) => {
+    const doc = dom.window.document
+    const app = { id: 7, name: 'Scorekeeper', slug: 'scorekeeper', source_dir: '/data/apps/scorekeeper' }
+    const commitA = 'a'.repeat(40)
+    const commitB = 'b'.repeat(40)
+    const published = []
+    let status = null
+    let preview = { ready: true, accepted_commit: commitA, name: 'Scorekeeper', icon_url: '',
+      repository_name: 'scorekeeper', listing: { tagline: 'Keep score.', description: 'A score keeper.' },
+      draft: { tagline: 'Keep score.', description: 'A score keeper.', screenshots: [] },
+      checklist: checklist(['description', 'screenshots', 'license']) }
+    const button = (label) => [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === label)
+    const consent = () => doc.querySelector('.st-publish-consent input')
+    async function click(element) {
+      assert.ok(element)
+      await act(async () => element.click())
+    }
+    await act(async () => root.render(React.createElement(PublisherTab, {
+      installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
+      onRefreshPublicationStates() {},
+      onListingAgent: async () => { status = { id: 'c1', running: true }; return { chatId: 'c1' } },
+      onListingAgentStatus: async () => status,
+      onPreviewLocal: async () => preview,
+      onPublishLocal: async (...args) => { published.push(args); return false },
+    })))
+    await click(button('Publish an app'))
+    await click(button('Prepare listing'))
+    await click(button('Revise with an agent'))
+    assert.ok(button('Agent working… View'), 'the agent works on the listing')
+
+    // The owner reviews revision A and consents to it, up to the last step.
+    await click(consent())
+    assert.equal(consent().checked, true)
+    await click(button('Publish…'))
+    assert.ok(button('Publish'), 'the final confirmation is open')
+
+    // The agent applies a part: revision B is now the accepted one.
+    preview = { ...preview, accepted_commit: commitB,
+      listing: { ...preview.listing, tagline: 'Agent tagline' },
+      draft: { ...preview.draft, tagline: 'Agent tagline' } }
+    await act(async () => {
+      dom.window.dispatchEvent(new dom.window.MessageEvent('message', { source: dom.window,
+        data: { type: 'moebius:managed-app-event', event: { type: 'app_updated', appId: '7' } } }))
+      for (let i = 0; i < 20; i += 1) await Promise.resolve()
+    })
+    assert.match(doc.querySelector('.st-listing-hero-copy').textContent, /Agent tagline/, 'revision B is shown')
+    assert.equal(consent().checked, false, 'consent given for A does not carry over to B')
+    assert.equal(button('Publish'), undefined, 'the confirmation given for A is closed')
+    assert.equal(button('Publish…').disabled, true, 'B cannot be published without fresh consent')
+    assert.deepEqual(published, [])
+
+    // Fresh consent publishes exactly the revision now shown.
+    await click(consent())
+    await click(button('Publish…'))
+    await click(button('Publish'))
+    assert.deepEqual(published, [[7, 'scorekeeper', commitB]])
   })
 })
 

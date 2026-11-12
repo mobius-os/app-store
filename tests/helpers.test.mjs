@@ -1434,7 +1434,15 @@ test('editing and accepting a new listing revision invalidate publish consent', 
   const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
   const showPreview = source.slice(source.indexOf('function showPreview('), source.indexOf('async function prepare('))
   const saveListing = source.slice(source.indexOf('async function saveListing('), source.indexOf('function closePreview('))
-  assert.match(showPreview, /setConfirmed\(false\)/)
+  // Consent names one revision: every adopted preview (shown, saved, or an
+  // agent's part merged in) goes through one path that clears it.
+  const adoptPreview = source.slice(source.indexOf('function adoptPreview('), source.indexOf('function showPreview('))
+  assert.match(adoptPreview, /setConfirmed\(false\)/)
+  assert.match(adoptPreview, /setConfirmingAnyway\(false\)/)
+  const outside = source.replace(adoptPreview, '')
+  assert.deepEqual([...new Set(outside.match(/setPreview\([^)]*\)/g))], ['setPreview(null)'],
+    'only clearing the preview bypasses adoptPreview')
+  assert.match(showPreview, /adoptPreview\(result\)/)
   assert.match(saveListing, /setConfirmed\(false\)/)
   assert.match(source, /onClick=\{\(\) => \{ setConfirmed\(false\); setEditing\(true\) \}\}/)
   assert.match(source, /const publishDisabled = !confirmed \|\| !localRepositoryValid/)

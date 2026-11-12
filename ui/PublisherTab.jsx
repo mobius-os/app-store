@@ -307,15 +307,23 @@ export function PublisherTab({
     return !needle || `${app.name || ''} ${app.slug || ''}`.toLowerCase().includes(needle)
   })
 
+  // Every preview the form adopts goes through here. Publish consent names one
+  // exact accepted revision, so it never carries over to another one (an
+  // agent's applied part, a save, or a re-read after the app moved).
+  function adoptPreview(result) {
+    setPreview(result || null)
+    setConfirmed(false)
+    setConfirmingAnyway(false)
+  }
+
   function showPreview(app, result) {
     const nextDraft = listingDraftFromPreview(result, app)
-    setPreview(result || null)
+    adoptPreview(result)
     setDraft(nextDraft)
     setDirty(false)
     setEditing(false)
     setAgentConflicts({})
     setEditorEpoch((epoch) => epoch + 1)
-    setConfirmed(false)
     if (result?.repository_name) setLocalRepositoryName(result.repository_name)
   }
 
@@ -370,7 +378,7 @@ export function PublisherTab({
       const moved = movedBefore || !savedListingSurvived(saved, result?.draft)
       if (!previewGateRef.current.isCurrent(requestId)) return
       if (moved) {
-        setPreview(result || null)
+        adoptPreview(result)
         setSaveError('This app changed since you opened its listing. Your edits are kept: check them, then save again to use them on the new version.')
         return
       }
@@ -452,7 +460,7 @@ export function PublisherTab({
     const theirs = listingDraftFromPreview(result, app)
     const merged = mergeListingUpdate(listingDraftFromPreview(live.preview, app), live.draft, theirs)
     liveRef.current = { ...live, preview: result, draft: merged.draft }
-    setPreview(result)
+    adoptPreview(result)
     setDraft(merged.draft)
     setDirty(merged.dirty)
     setAgentConflicts((current) => {
