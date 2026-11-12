@@ -1487,7 +1487,15 @@ test('editing and accepting a new listing revision invalidate publish consent', 
   const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
   const showPreview = source.slice(source.indexOf('function showPreview('), source.indexOf('async function prepare('))
   const saveListing = source.slice(source.indexOf('async function saveListing('), source.indexOf('function closePreview('))
-  assert.match(showPreview, /setConfirmed\(false\)/)
+  // Consent names one revision: every adopted preview (shown, saved, or an
+  // agent's part merged in) goes through one path that clears it.
+  const adoptPreview = source.slice(source.indexOf('function adoptPreview('), source.indexOf('function showPreview('))
+  assert.match(adoptPreview, /setConfirmed\(false\)/)
+  assert.match(adoptPreview, /setConfirmingAnyway\(false\)/)
+  const outside = source.replace(adoptPreview, '')
+  assert.deepEqual([...new Set(outside.match(/setPreview\([^)]*\)/g))], ['setPreview(null)'],
+    'only clearing the preview bypasses adoptPreview')
+  assert.match(showPreview, /adoptPreview\(result\)/)
   assert.match(saveListing, /setConfirmed\(false\)/)
   assert.match(source, /onClick=\{\(\) => \{ setConfirmed\(false\); setEditing\(true\) \}\}/)
   assert.match(source, /const publishDisabled = !confirmed \|\| !localRepositoryValid/)
@@ -1497,7 +1505,10 @@ test('editing and accepting a new listing revision invalidate publish consent', 
 test('a late image preparation cannot change a different listing draft', async () => {
   const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
   const editor = await readFile(join(root, '..', 'ui', 'ListingEditor.jsx'), 'utf8')
-  assert.match(source, /key=\{`\$\{candidate\.id\}:\$\{preview\.accepted_commit\}`\}/)
+  // The editor remounts (ending any pending pick) for another app or a full
+  // reload; an agent's part merging into the same draft does not remount it.
+  assert.match(source, /key=\{`\$\{candidate\.id\}:\$\{editorEpoch\}`\}/)
+  assert.match(source, /function showPreview\([^)]*\) \{[\s\S]*?setEditorEpoch\(\(epoch\) => epoch \+ 1\)[\s\S]*?\n  \}/)
   assert.match(editor, /useEffect\(\(\) => \(\) => \{ pickSession\.current \+= 1 \}, \[\]\)/)
   assert.match(editor, /const session = pickSession\.current/)
   assert.match(editor, /if \(session === pickSession\.current\) apply\(image\)/)
