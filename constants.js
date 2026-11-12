@@ -17,11 +17,29 @@ export const CATALOG_URL =
 
 // Human-facing release label for diagnostics. The Store's self-update banner
 // uses verified source provenance, not this value, to decide availability.
-export const STORE_VERSION = '1.25.0'
+export const STORE_VERSION = '1.26.0'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
 }
+
+// Which free licenses publishing offers, their names and their order
+// (recommended first) are the platform's: its listing review returns them as
+// `license_options`. The Store adds only a plain-language meaning per SPDX id;
+// a license it has no words for yet shows by name alone.
+export const LICENSE_SUMMARIES = Object.freeze({
+  MIT: 'Anyone can use, change and share your app, even commercially, as long as your name stays on it.',
+  'Apache-2.0': 'Just as open as MIT, and also promises people can use any patents in your app.',
+  'GPL-3.0-or-later': 'Anyone can use and change it, but anything they share built from it must stay open under the same license.',
+})
+
+// What a Möbius that requires a license but predates `license_options`
+// accepts. Remove once every supported platform sends the list.
+export const FALLBACK_LICENSE_OPTIONS = Object.freeze([
+  Object.freeze({ spdx: 'MIT', name: 'MIT License' }),
+  Object.freeze({ spdx: 'Apache-2.0', name: 'Apache License 2.0' }),
+  Object.freeze({ spdx: 'GPL-3.0-or-later', name: 'GNU GPL v3.0 or later' }),
+])
 
 // The platform's Store listing contract, in UTF-8 bytes as the publisher
 // checks it. Catalog text is bounded here, never at a display width: cards and

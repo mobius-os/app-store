@@ -1418,6 +1418,59 @@ test('an edited listing saves as one whole listing, keeping unchanged images by 
   assert.equal(listingPayload(legacy).icon, undefined)
 })
 
+test('a license is sent once chosen, and only to a Möbius that requires one', async () => {
+  const { listingDraftFromPreview, listingPayload, savedListingSurvived } = await import('../domain.js')
+  const older = listingDraftFromPreview({ draft: { tagline: 'T', description: 'D', screenshots: [] } }, {})
+  assert.equal(older.license, null)
+  assert.equal('license' in listingPayload(older), false)
+  const unchosen = listingDraftFromPreview({ draft: { tagline: 'T', description: 'D', license: '', screenshots: [] } }, {})
+  assert.equal(unchosen.license, '')
+  assert.equal('license' in listingPayload(unchosen), false, 'no choice keeps whatever the source has')
+  const sent = listingPayload({ ...unchosen, license: 'Apache-2.0' })
+  assert.equal(sent.license, 'Apache-2.0')
+  const readBack = { tagline: 'T', description: 'D', screenshots: [] }
+  assert.equal(savedListingSurvived(sent, { ...readBack, license: 'Apache-2.0' }), true)
+  assert.equal(savedListingSurvived(sent, { ...readBack, license: 'MIT' }), false)
+})
+
+test('a refused listing save keeps the platform’s reason code for the license picker', async () => {
+  const { saveLocalListing } = await import('../api.js')
+  const message = 'This app already has license text (LICENSE). Change it in the source, or ask an agent to, keeping any notices it must carry.'
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({ detail: { code: 'listing_license_text_exists', message } }), {
+    status: 409, headers: { 'Content-Type': 'application/json' },
+  })
+  try {
+    await assert.rejects(saveLocalListing('owner-token', 42, { license: 'MIT' }), (error) => (
+      error.status === 409 && error.code === 'listing_license_text_exists' && error.message === message
+    ))
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('the license picker offers what the platform offers, in its order, with the Store’s meaning', async () => {
+  const { listingLicensing, licenseName } = await import('../domain.js')
+  const licensing = listingLicensing({
+    license_options: [{ spdx: 'Apache-2.0', name: 'Apache License 2.0' }, { spdx: 'MPL-2.0', name: 'Mozilla Public License 2.0' }],
+    draft: { declared_license: ' BSD-3-Clause ' },
+  })
+  assert.deepEqual(licensing.options.map((item) => [item.id, item.name]), [
+    ['Apache-2.0', 'Apache License 2.0'], ['MPL-2.0', 'Mozilla Public License 2.0'],
+  ])
+  assert.match(licensing.options[0].summary, /patents/)
+  assert.equal(licensing.options[1].summary, '', 'a license the Store has no words for shows by name')
+  assert.equal(licensing.declared, 'BSD-3-Clause')
+  assert.equal(licenseName(licensing, 'MPL-2.0'), 'Mozilla Public License 2.0')
+  assert.equal(licenseName(licensing, 'BSD-3-Clause'), 'BSD-3-Clause')
+  assert.equal(listingLicensing({ license_options: [{ spdx: 'constructor', name: 'X' }] }).options[0].summary, '')
+  // A Möbius that requires a license but predates the list offers its three.
+  const older = listingLicensing({ draft: { license: '' } })
+  assert.deepEqual(older.options.map((item) => item.id), ['MIT', 'Apache-2.0', 'GPL-3.0-or-later'])
+  assert.ok(older.options.every((item) => item.name && item.summary))
+  assert.equal(older.declared, '')
+})
+
 test('the publish review lets the owner fill in the listing by hand', async () => {
   const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
   const editor = await readFile(join(root, '..', 'ui', 'ListingEditor.jsx'), 'utf8')

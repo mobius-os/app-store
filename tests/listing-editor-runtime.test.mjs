@@ -62,3 +62,93 @@ test('listing editor explains disabled Save for over-limit UTF-8 caption and alt
     await rm(buildDir, { recursive: true, force: true })
   }
 })
+
+test('the license picker offers the platform’s licenses, says what the app declares, and shows a refusal', async () => {
+  const require = createRequire(join(process.env.MOBIUS_FRONTEND_NODE_MODULES, 'package.json'))
+  const { rolldown } = await import(pathToFileURL(require.resolve('rolldown')).href)
+  const dir = `${buildDir}-license`
+  await mkdir(dir, { recursive: true })
+  const build = await rolldown({
+    input: join(here, '..', 'ui', 'ListingEditor.jsx'), platform: 'node', tsconfig: false,
+    external: ['react', 'react/jsx-runtime'],
+    resolve: { alias: { '@openai/apps-sdk-ui/components/Icon': join(here, 'runtime-icon-stub.mjs') } },
+    transform: { jsx: 'react-jsx' },
+  })
+  const output = join(dir, 'editor.mjs')
+  await build.write({ file: output, format: 'es' })
+  await build.close()
+  const { ListingEditor } = await import(pathToFileURL(output).href)
+  const { listingLicensing } = await import('../domain.js')
+  const dom = new JSDOM('<div id="root"></div>')
+  const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  const root = createRoot(dom.window.document.getElementById('root'))
+  let draft = { tagline: 'T', description: 'D', icon: null, hero: null, screenshots: [], license: '' }
+  let licensing = {
+    ...listingLicensing({
+      license_options: [{ spdx: 'MIT', name: 'MIT License' }, { spdx: 'Apache-2.0', name: 'Apache License 2.0' },
+        { spdx: 'MPL-2.0', name: 'Mozilla Public License 2.0' }],
+      draft: { declared_license: 'BSD-3-Clause' },
+    }),
+    refusal: '',
+  }
+  const render = () => act(async () => root.render(React.createElement(ListingEditor, {
+    draft, dirty: true, app: { name: 'Example' }, onSave() {}, licensing,
+    setDraft(change) { draft = typeof change === 'function' ? change(draft) : change },
+  })))
+  const picker = () => dom.window.document.querySelector('.st-edit-license')
+  try {
+    await render()
+    const radios = [...picker().querySelectorAll('input[type="radio"]')]
+    assert.deepEqual(radios.map((radio) => radio.value), ['MIT', 'Apache-2.0', 'MPL-2.0'])
+    assert.ok(radios.every((radio) => !radio.checked))
+    assert.equal(picker().querySelectorAll('.st-license-badge').length, 1)
+    assert.match(picker().querySelector('.st-license-option').textContent, /MIT License\s*Recommended/)
+    assert.match(radios[2].closest('label').textContent, /^Mozilla Public License 2\.0$/)
+    assert.match(picker().textContent, /currently declares BSD-3-Clause, which the Store doesn’t offer\. Choosing one of these changes the app’s license\./)
+    assert.match(picker().textContent, /Pick a license to publish/)
+    await act(async () => radios[1].click())
+    assert.equal(draft.license, 'Apache-2.0')
+    await render()
+    assert.equal(picker().querySelector('input[value="Apache-2.0"]').checked, true)
+    assert.match(picker().textContent, /Saving changes it to Apache License 2\.0\./)
+    assert.doesNotMatch(picker().textContent, /Pick a license to publish/)
+
+    // The platform kept license text it did not write: the refusal shows at
+    // the picker, which can go back to the license the app has now.
+    const message = 'This app already has license text (LICENSE). Change it in the source, or ask an agent to, keeping any notices it must carry.'
+    licensing = { ...licensing, refusal: message }
+    await render()
+    assert.equal(picker().querySelector('[role="alert"] .st-edit-error').textContent, message)
+    const keep = [...picker().querySelectorAll('button')].find((button) => button.textContent === 'Keep the current license')
+    assert.ok(keep)
+    await act(async () => keep.click())
+    assert.equal(draft.license, '')
+    await render()
+    assert.equal(picker().querySelector('[role="alert"]'), null)
+
+    // An offered license the app already has is selected and says nothing more.
+    licensing = { ...licensing, declared: 'MIT', refusal: message }
+    draft = { ...draft, license: 'MIT' }
+    await render()
+    assert.equal(picker().querySelector('input[value="MIT"]').checked, true)
+    assert.doesNotMatch(picker().textContent, /currently|Saving changes/)
+    assert.equal(picker().querySelector('[role="alert"]'), null)
+    await act(async () => picker().querySelector('input[value="MPL-2.0"]').click())
+    await render()
+    assert.match(picker().textContent, /license is currently MIT License\. Saving changes it to Mozilla Public License 2\.0\./)
+    const keepMit = [...picker().querySelectorAll('button')].find((button) => button.textContent === 'Keep MIT License')
+    assert.ok(keepMit)
+
+    // A Möbius that does not require a license yet gets no picker.
+    draft = { ...draft, license: null }
+    await render()
+    assert.equal(picker(), null)
+  } finally {
+    await act(async () => root.unmount())
+    dom.window.close()
+    Object.assign(globalThis, old)
+    await rm(dir, { recursive: true, force: true })
+  }
+})

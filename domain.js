@@ -1,4 +1,6 @@
-import { CATALOG_COLLECTIONS, PERM_EXPLAIN, TRUSTED_HOSTS } from './constants.js'
+import {
+  CATALOG_COLLECTIONS, FALLBACK_LICENSE_OPTIONS, LICENSE_SUMMARIES, PERM_EXPLAIN, TRUSTED_HOSTS,
+} from './constants.js'
 import { MANIFEST_SNAPSHOTS } from './manifest-snapshots.js'
 
 export function catalogItemIdFromIntent(intent) {
@@ -1331,6 +1333,24 @@ export function textWithinByteLimit(value, maxBytes) {
   return trimmed && utf8Length(trimmed) <= maxBytes ? trimmed : undefined
 }
 
+// The license choice a Store preview offers: the platform's options in its
+// order (the first is its recommendation), each with the Store's meaning when
+// it has one, and the license the source declares now, offered or not.
+export function listingLicensing(preview) {
+  const offered = Array.isArray(preview?.license_options) ? preview.license_options : FALLBACK_LICENSE_OPTIONS
+  const options = offered.filter((item) => typeof item?.spdx === 'string' && item.spdx).map((item) => ({
+    id: item.spdx,
+    name: String(item.name || item.spdx),
+    summary: Object.hasOwn(LICENSE_SUMMARIES, item.spdx) ? LICENSE_SUMMARIES[item.spdx] : '',
+  }))
+  const declared = preview?.draft?.declared_license
+  return { options, declared: typeof declared === 'string' ? declared.trim() : '' }
+}
+
+export function licenseName(licensing, id) {
+  return licensing.options.find((item) => item.id === id)?.name || id
+}
+
 // The editable listing a Store preview describes, with image URLs resolved
 // against the accepted revision. Uploaded images carry their bytes instead.
 export function listingDraftFromPreview(preview, app) {
@@ -1340,6 +1360,8 @@ export function listingDraftFromPreview(preview, app) {
   return {
     tagline: draft.tagline || '',
     description: draft.description || '',
+    // null when this Möbius does not require a license yet; the picker stays hidden.
+    license: typeof draft.license === 'string' ? draft.license : null,
     icon: draft.icon ? kept(draft.icon) : (app?.icon_url ? { url: app.icon_url } : null),
     iconChanged: false,
     hero: kept(draft.hero),
@@ -1365,6 +1387,8 @@ export function listingPayload(draft) {
   return {
     tagline: draft.tagline.trim(),
     description: draft.description.trim(),
+    // Only a chosen license is sent: omitting it keeps the current one.
+    ...(draft.license ? { license: draft.license } : {}),
     ...(draft.iconChanged && draft.icon?.data ? { icon: { data_base64: draft.icon.data } } : {}),
     hero: imagePayload(draft.hero),
     screenshots: draft.screenshots
@@ -1398,6 +1422,7 @@ export function savedListingSurvived(sent, draft) {
   const text = (value) => (typeof value === 'string' ? value.trim() : '')
   return text(draft.tagline) === sent.tagline
     && text(draft.description) === sent.description
+    && (sent.license === undefined || text(draft.license) === sent.license)
     && (!sent.icon || !!text(draft.icon))
     && savedArtSurvived(sent.hero, draft.hero)
     && shots.length === sent.screenshots.length
