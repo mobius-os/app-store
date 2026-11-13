@@ -327,13 +327,13 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
     }
     await Promise.resolve().then(refresh).then(result => { if (!result) refreshFailed() }).catch(refreshFailed)
   }
-  async function resolveEntries(ids) {
+  async function resolveEntries(ids, agent) {
     if (!idle()) return
     const conflicts = state.entries.filter(entry => entry.status === 'conflict' && !entry.resolver && ids.includes(appId(entry)))
     if (!conflicts.length) return
     emit({ phase: 'resolving' })
     try {
-      const resolver = await resolve([...new Set(conflicts.map(appId))])
+      const resolver = await resolve([...new Set(conflicts.map(appId))], agent)
       if (!resolver?.chat_id) throw new Error('The resolver chat was not returned. Try again.')
       const bound = Array.isArray(resolver.app_ids) && resolver.app_ids.length ? new Set(resolver.app_ids.map(Number)) : null
       for (const entry of conflicts) {
@@ -394,8 +394,8 @@ export function createUpdateBatch({ prepare, submit, read, watch, resolve, refre
       const entry = state.entries.find(entry => entry.item.id === id && entry.status === 'failed')
       if (entry?.item?.manifest_url) await check([entry.item])
     },
-    resolveOne(id) { return resolveEntries([Number(id)]) },
-    resolveAll() { return resolveEntries(state.entries.filter(entry => entry.status === 'conflict' && !entry.resolver).map(appId)) },
+    resolveOne(id, agent) { return resolveEntries([Number(id)], agent) },
+    resolveAll(agent) { return resolveEntries(state.entries.filter(entry => entry.status === 'conflict' && !entry.resolver).map(appId), agent) },
     // A resolver finishes in its own chat. The shared update check is the
     // authority on whether that app is now current.
     reconcile(checks) {

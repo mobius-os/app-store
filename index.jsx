@@ -124,7 +124,7 @@ import { LibraryHealth } from './ui/LibraryHealth.jsx'
 import { PublisherTab } from './ui/PublisherTab.jsx'
 import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
-import { UpdateReviewModal } from './ui/UpdateReviewModal.jsx'
+import { UpdateReviewModal, UpdateAgentChooser } from './ui/UpdateReviewModal.jsx'
 import { Search, X } from '@openai/apps-sdk-ui/components/Icon'
 
 export {
@@ -512,6 +512,8 @@ export default function App({ appId, token }) {
     for (const controller of batchControllersRef.current.values()) controller.dispose()
   }, [])
   const [agentReviewingUpdate, setAgentReviewingUpdate] = useState(false)
+  const [updateAgentRequest, setUpdateAgentRequest] = useState(null)
+  const chooseUpdateAgent = (title, run) => setUpdateAgentRequest({ title, run })
   const [agentErrorItemId, setAgentErrorItemId] = useState(null)
   const [cardErrors, setCardErrors] = useState({})
   // A card error the same action may get past offers "Try again" (keyed by
@@ -1448,7 +1450,11 @@ export default function App({ appId, token }) {
   const handleInstallRef = useRef(handleInstall)
   handleInstallRef.current = handleInstall
 
-  const handleReviewUpdate = async (notice) => {
+  const handleReviewUpdate = async (notice, agent = null) => {
+    if (!agent) {
+      chooseUpdateAgent('Resolve update with agent', choice => handleReviewUpdateRef.current(notice, choice))
+      return
+    }
     if (busy || !notice) return
     setBusy(true)
     setBusyItemId(notice.itemId || null)
@@ -1460,12 +1466,13 @@ export default function App({ appId, token }) {
         notice.appId,
         'preserve_local',
         token,
+        agent,
       )
       openChat(resolver.chat_id)
     } catch (e) {
       const message = e.message || String(e)
       const retry = e?.retryable === true || !e?.status
-        ? () => { void handleReviewUpdateRef.current(notice) }
+        ? () => { void handleReviewUpdateRef.current(notice, agent) }
         : null
       setCardErrors(prev => ({ ...prev, [notice.itemId]: message }))
       if (retry) setCardErrorRetries(prev => ({ ...prev, [notice.itemId]: retry }))
@@ -1718,7 +1725,7 @@ export default function App({ appId, token }) {
       read: (id, options) => loadUpdateBatch(id, token, options),
       watch: (id, onSnapshot, options) => watchUpdateBatch(id, token, onSnapshot, options),
       newId: randomUuid,
-      resolve: appIds => createConflictResolverBatch(appIds, 'preserve_local', token),
+      resolve: (appIds, agent) => createConflictResolverBatch(appIds, 'preserve_local', token, agent),
       refresh: () => refreshInstalled(),
       applyOne: applyReviewedUpdate,
       batchesMissing,
@@ -1971,15 +1978,19 @@ export default function App({ appId, token }) {
 
   // One owner-visible chat reviews the selected updates: ready releases are
   // reviewed before anything applies, failed ones are investigated.
-  const handleAgentUpdateReview = async (entries) => {
+  const handleAgentUpdateReview = async (entries, agent = null) => {
     const pending = (entries || []).filter(entry => entry.status === 'ready' || entry.status === 'failed')
     if (!pending.length || agentReviewingUpdate) return
+    if (!agent) {
+      chooseUpdateAgent('Choose review agent', choice => handleAgentUpdateReview(pending, choice))
+      return
+    }
     setAgentReviewingUpdate(true)
     try {
       const title = pending.length === 1
         ? `${pending[0].status === 'failed' ? 'Investigate' : 'Review'} ${pending[0].item.manifest?.name || pending[0].item.name || pending[0].item.id} update`
         : `Review ${pending.length} app updates`
-      const chat = await createAppChat(title, token, { ownerVisible: true })
+      const chat = await createAppChat(title, token, { ownerVisible: true, agent, archiveOnGoalComplete: true })
       const content = pending.map(entry => {
         const context = {
           item: entry.item,
@@ -1990,7 +2001,7 @@ export default function App({ appId, token }) {
           ? buildUpdateFailureMessage({ ...context, error: entry.error })
           : buildUpdateReviewMessage(context)
       }).join('\n\n---\n\n')
-      await seedChatMessage(chat.id, content, token)
+      await seedChatMessage(chat.id, `/goal ${content}`, token)
       openChat(chat.id)
     } catch (error) {
       setToast({ kind: 'error', message: error.message || 'Could not open an agent review.' })
@@ -2074,20 +2085,24 @@ export default function App({ appId, token }) {
     loadCommunityReviews(token, communityAppId)
   ), [token])
 
-  const handleAskAgentAboutError = useCallback(async (item, error) => {
+  const handleAskAgentAboutError = useCallback(async (item, error, agent = null) => {
     if (!item || !error || agentErrorItemId) return
+    if (!agent) {
+      chooseUpdateAgent('Investigate update failure', choice => handleAskAgentAboutError(item, error, choice))
+      return
+    }
     const installedApp = findInstalled(installed, item)
     setAgentErrorItemId(item.id)
     try {
       const title = `Investigate ${item.manifest?.name || item.id} update`
-      const chat = await createAppChat(title, token, { ownerVisible: true })
+      const chat = await createAppChat(title, token, { ownerVisible: true, agent, archiveOnGoalComplete: true })
       const content = buildUpdateFailureMessage({
         item,
         installedApp,
         preview: null,
         error,
       })
-      await seedChatMessage(chat.id, content, token)
+      await seedChatMessage(chat.id, `/goal ${content}`, token)
       openChat(chat.id)
     } catch (askError) {
       setToast({
@@ -2229,8 +2244,12 @@ export default function App({ appId, token }) {
   // Shared "Resolve all" action: start the preserving resolver for every
   // conflicting app at once. The backend spawn is idempotent per app+upstream,
   // so this never duplicates a resolver already started from a card.
-  const handleResolveAllConflicts = async () => {
+  const handleResolveAllConflicts = async (agent = null) => {
     if (busy || resolvingAll || !conflictItems.length) return
+    if (!agent) {
+      chooseUpdateAgent('Resolve all conflicts', choice => handleResolveAllConflicts(choice))
+      return
+    }
     setResolvingAll(true)
     setCategory('update')
     let started = 0
@@ -2241,7 +2260,7 @@ export default function App({ appId, token }) {
         const appId = lifecycleById.get(item.id)?.installedApp?.id
         if (!appId) { failed += 1; continue }
         try {
-          const resolver = await createConflictResolverChat(appId, 'preserve_local', token)
+          const resolver = await createConflictResolverChat(appId, 'preserve_local', token, agent)
           if (resolver?.chat_id) {
             started += 1
             if (!firstChatId) firstChatId = resolver.chat_id
@@ -2445,14 +2464,15 @@ export default function App({ appId, token }) {
             onClose={closeUpdateTransaction}
             onConfirm={() => updateBatchRef.current?.confirm()}
             onRetry={itemId => updateBatchRef.current?.retry(itemId)}
-            onResolveAll={() => updateBatchRef.current?.resolveAll()}
-            onResolveOne={id => updateBatchRef.current?.resolveOne(id)}
+            onResolveAll={() => chooseUpdateAgent('Resolve update conflicts', agent => updateBatchRef.current?.resolveAll(agent))}
+            onResolveOne={id => chooseUpdateAgent('Resolve update conflict', agent => updateBatchRef.current?.resolveOne(id, agent))}
             onOpenChat={openChat}
             onAskAgent={handleAgentUpdateReview}
             onOpenBatch={handleOpenRunningBatch}
           />
         )}
-        <Toast toast={toast} onDismiss={() => setToast(null)} />
+        {updateAgentRequest && <UpdateAgentChooser token={token} title={updateAgentRequest.title} onStart={updateAgentRequest.run} onCancel={() => setUpdateAgentRequest(null)} />}
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
       </div>
     )
   }
@@ -2738,14 +2758,15 @@ export default function App({ appId, token }) {
           onClose={closeUpdateTransaction}
           onConfirm={() => updateBatchRef.current?.confirm()}
           onRetry={itemId => updateBatchRef.current?.retry(itemId)}
-          onResolveAll={() => updateBatchRef.current?.resolveAll()}
-          onResolveOne={id => updateBatchRef.current?.resolveOne(id)}
+          onResolveAll={() => chooseUpdateAgent('Resolve update conflicts', agent => updateBatchRef.current?.resolveAll(agent))}
+          onResolveOne={id => chooseUpdateAgent('Resolve update conflict', agent => updateBatchRef.current?.resolveOne(id, agent))}
           onOpenChat={openChat}
           onAskAgent={handleAgentUpdateReview}
           onOpenBatch={handleOpenRunningBatch}
         />
       )}
 
+      {updateAgentRequest && <UpdateAgentChooser token={token} title={updateAgentRequest.title} onStart={updateAgentRequest.run} onCancel={() => setUpdateAgentRequest(null)} />}
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   )

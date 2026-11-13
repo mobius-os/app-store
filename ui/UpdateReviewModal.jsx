@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react'
-import { X } from '@openai/apps-sdk-ui/components/Icon'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, X } from '@openai/apps-sdk-ui/components/Icon'
+import { loadUpdateAgentChoices, visibleUpdateAgentChoices } from '../api.js'
 import { capabilityDiffNeedsReview } from '../domain.js'
 import { batchProgress, failedEntryActions, updateBatchBusy } from '../update-batch.js'
 import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
@@ -7,6 +8,94 @@ import FileDiffList from './diff/FileDiffList.jsx'
 import { CapabilityContract } from './CapabilityContract.jsx'
 
 const appName = entry => entry.item?.manifest?.name || entry.item?.name || String(entry.item?.id ?? '')
+const providerNames = { codex: 'OpenAI Codex', claude: 'Claude Code', mobius: 'Möbius' }
+
+// Reused at each update-agent boundary. Cancel never creates a chat; a bound
+// resolver may still reuse its original agent regardless of this selection.
+export function UpdateAgentChooser({ token, title, onStart, onCancel }) {
+  const dialogRef = useRef(null)
+  const [choices, setChoices] = useState(null)
+  const [selected, setSelected] = useState('')
+  const [effort, setEffort] = useState('')
+  const [expanded, setExpanded] = useState(false)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const dialog = dialogRef.current
+    const opener = document.activeElement
+    dialog?.showModal()
+    let back = window.mobius?.nav?.open('store-update-agent', {
+      onBack: () => { back = null; dialog?.close() },
+    })
+    return () => { back?.close(); opener?.focus?.() }
+  }, [])
+  useEffect(() => {
+    let active = true
+    const controller = new AbortController()
+    loadUpdateAgentChoices(token, { signal: controller.signal }).then(data => {
+      if (!active) return
+      setChoices(data)
+      const { selected: saved } = visibleUpdateAgentChoices(data)
+      if (saved) {
+        setSelected(`${saved.provider}:${saved.id}`)
+        setEffort(data.savedAgent.effort)
+      }
+    }).catch(err => { if (active) setError(err.message || 'Could not load agent choices.') })
+    return () => { active = false; controller.abort() }
+  }, [token])
+  const { rows } = visibleUpdateAgentChoices(choices)
+  const model = rows.find(row => `${row.provider}:${row.id}` === selected)
+  const efforts = Array.isArray(model?.effort_levels) ? model.effort_levels : []
+  const effortIndex = efforts.indexOf(effort)
+  const invalidEffort = !!model && !!effort && efforts.length > 0 && effortIndex < 0
+  const close = () => { if (!busy) onCancel() }
+  const start = async () => {
+    if (!model || busy || invalidEffort) return
+    setBusy(true); setError('')
+    try {
+      await onStart({ provider: model.provider, model: model.id, ...(effort && efforts.includes(effort) ? { effort } : {}) })
+      onCancel()
+    } catch (err) {
+      setError(err.message || 'Could not start the agent.')
+    } finally { setBusy(false) }
+  }
+  return (
+    <dialog ref={dialogRef} className="st-agent-choice" aria-labelledby="st-agent-choice-title" onCancel={event => { if (busy) event.preventDefault() }} onClose={close}>
+      <div className="st-agent-choice-inner">
+        <h2 id="st-agent-choice-title">{title || 'Choose an update agent'}</h2>
+        <p>Uses your latest chat agent. An existing resolver keeps its original agent.</p>
+        <button type="button" className="st-agent-choice-current" aria-label="Change update agent" aria-expanded={expanded} aria-controls="st-agent-choice-list" disabled={busy || !rows.length} onClick={() => setExpanded(value => !value)}>
+          <span><strong>{model ? model.label || model.id : 'Choose an agent'}</strong><span className="st-agent-choice-caption">{model ? providerNames[model.provider] || model.provider : 'No agent selected'}</span></span>
+          {model && effort ? <span className="st-agent-choice-badge">{effort}</span> : null}
+          <ChevronDown width={18} height={18} aria-hidden="true" />
+        </button>
+        {expanded ? <div id="st-agent-choice-list" className="st-agent-choice-list" role="group" aria-label="Available agents">
+          {rows.map(row => {
+            const key = `${row.provider}:${row.id}`
+            return <button type="button" key={key} className={`st-agent-choice-row${selected === key ? ' is-selected' : ''}`} aria-pressed={selected === key} disabled={busy} onClick={() => { setSelected(key); setEffort('') }}>
+              <span><span className="st-agent-choice-provider">{providerNames[row.provider] || row.provider}</span><span className="st-agent-choice-model">{row.label || row.id}</span></span>
+              {selected === key ? <Check className="st-agent-choice-check" width="1em" height="1em" aria-hidden="true" /> : null}
+            </button>
+          })}
+        </div> : null}
+        {expanded && model && efforts.length ? <div className="st-agent-choice-effort">
+          <label htmlFor="st-agent-choice-effort">Effort <strong>{effort || 'Default'}</strong></label>
+          <input id="st-agent-choice-effort" type="range" min="0" max={efforts.length} step="1" value={effortIndex < 0 ? 0 : effortIndex + 1} disabled={busy} onChange={e => setEffort(e.target.value === '0' ? '' : efforts[Number(e.target.value) - 1])} />
+          <div className="st-agent-choice-effort-scale"><span>Default</span><span>{efforts.at(-1)}</span></div>
+        </div> : null}
+        {!choices && !error ? <p role="status">Loading available agents…</p> : null}
+        {choices && !rows.length ? <p role="status">No connected provider has a visible model. Connect a provider in Settings.</p> : null}
+        {choices && rows.length && !model ? <p role="alert">Your saved agent is unavailable or hidden. Choose another model to continue.</p> : null}
+        {invalidEffort ? <p role="alert">Your saved effort is unavailable for this model. Choose an effort to continue.</p> : null}
+        {error ? <p className="st-agent-choice-error" role="alert">{error}</p> : null}
+        <div className="st-agent-choice-actions">
+          <button type="button" className="st-btn st-btn-secondary" onClick={close} disabled={busy}>Cancel</button>
+          <button type="button" className="st-btn st-btn-primary" onClick={start} disabled={busy || !model || invalidEffort}>{busy ? 'Starting…' : 'Start agent'}</button>
+        </div>
+      </div>
+    </dialog>
+  )
+}
 
 const STATUS = {
   checking: ['Checking…', 'ready'],
@@ -174,6 +263,7 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
 
   useEffect(() => {
     const onKeyDown = event => {
+      if (!dialogRef.current?.contains(document.activeElement)) return
       if (event.key === 'Escape') { event.preventDefault(); requestClose(); return }
       if (event.key !== 'Tab' || !dialogRef.current) return
       const focusable = [...dialogRef.current.querySelectorAll(

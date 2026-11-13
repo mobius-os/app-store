@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import test from 'node:test'
-import { hasConnectedProvider } from '../api.js'
+import { hasConnectedProvider, loadUpdateAgentChoices, visibleUpdateAgentChoices } from '../api.js'
 import { MICROPHONE, platformContract, platformPreview } from './capability-fixtures.mjs'
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -13,6 +13,47 @@ const buildDir = join(root, '.build')
 const bundled = join(buildDir, 'index.mjs')
 const reactStub = join(root, 'react-stub.mjs')
 const iconStub = join(root, 'sdk-icon-stub.mjs')
+
+test('update agent choices do not ignore unreadable visibility and recency preferences', async t => {
+  t.mock.method(globalThis, 'fetch', async url => new Response(JSON.stringify(
+    url === '/api/owner/model-prefs' ? { detail: 'Preference read failed' } : {},
+  ), { status: url === '/api/owner/model-prefs' ? 503 : 200 }))
+  await assert.rejects(loadUpdateAgentChoices('test-token'), /Preference read failed/)
+})
+
+test('update agent default is the exact saved agent, never a recent or fallback model', () => {
+  const choices = {
+    providers: {
+      codex: [{ id: 'newer', label: 'Newer', available: true }, { id: 'saved', label: 'Saved', available: true }],
+      claude: [{ id: 'hidden', label: 'Hidden', available: true }],
+    },
+    status: { codex: { configured: true, available: true }, claude: { configured: true, available: true } },
+    hiddenIds: ['hidden'], recentIds: ['newer', 'saved'],
+    savedAgent: { provider: 'codex', model: 'saved', effort: 'high' },
+  }
+  const visible = visibleUpdateAgentChoices(choices)
+  assert.deepEqual(visible.rows.map(row => row.id), ['newer', 'saved'])
+  assert.equal(visible.selected.id, 'saved')
+  assert.equal(visibleUpdateAgentChoices({ ...choices, savedAgent: { provider: 'claude', model: 'hidden' } }).selected, null)
+  assert.equal(visibleUpdateAgentChoices({ ...choices, status: { ...choices.status, codex: { configured: true, available: false } } }).selected, null)
+})
+
+test('update agent choice read includes exact owner settings and cancellable requests', async t => {
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, signal: options.signal })
+    const body = url === '/api/models' ? { providers: { codex: [{ id: 'saved', label: 'Saved' }] } }
+      : url === '/api/owner/model-prefs' ? {
+        hidden_ids: [], recent_ids: ['saved'], selected_agent: { provider: 'codex', model: 'saved', effort: 'high' },
+      }
+        : { codex: { configured: true } }
+    return new Response(JSON.stringify(body), { status: 200 })
+  })
+  const result = await loadUpdateAgentChoices('token')
+  assert.deepEqual(result.savedAgent, { provider: 'codex', model: 'saved', effort: 'high' })
+  assert.deepEqual(requests.map(request => request.url), ['/api/models', '/api/owner/model-prefs', '/api/auth/providers/status'])
+  assert.ok(requests.every(request => request.signal instanceof AbortSignal))
+})
 
 test('setup readiness follows the canonical configured provider status', () => {
   assert.equal(hasConnectedProvider({ claude: { configured: true } }), true)
@@ -1994,6 +2035,40 @@ test('resolver chat request binds the selected whole-tree policy', async () => {
     assert.deepEqual(JSON.parse(request.options.body), {
       resolution_policy: 'preserve_local',
     })
+    await createConflictResolverChat(80, 'preserve_local', 'token', { provider: 'codex', model: 'gpt-test', effort: 'high' })
+    assert.deepEqual(JSON.parse(request.options.body), {
+      resolution_policy: 'preserve_local', agent: { provider: 'codex', model: 'gpt-test', effort: 'high' },
+    })
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})
+
+test('only update work opts app chats into archive after Goal completion', async () => {
+  const { createAppChat, seedChatMessage } = await import(pathToFileURL(join(root, '..', 'api.js')))
+  const indexSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
+  const oldFetch = globalThis.fetch
+  const requests = []
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url: String(url), body: JSON.parse(options.body) })
+    return new Response(JSON.stringify({ id: 'chat' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })
+  }
+  try {
+    await createAppChat('Publish fix', 'token', { ownerVisible: true })
+    await createAppChat('Update review', 'token', {
+      ownerVisible: true, agent: { provider: 'codex', model: 'test' }, archiveOnGoalComplete: true,
+    })
+    await seedChatMessage('chat', '/goal Review this update', 'token')
+    assert.deepEqual(requests[0].body, { title: 'Publish fix', owner_visible: true })
+    assert.deepEqual(requests[1].body, {
+      title: 'Update review', owner_visible: true, provider: 'codex', model: 'test', archive_on_goal_complete: true,
+    })
+    assert.equal(requests[2].body.content, '/goal Review this update')
+    assert.equal((indexSource.match(/archiveOnGoalComplete: true/g) || []).length, 2)
+    assert.equal((indexSource.match(/seedChatMessage\(chat\.id, `\/goal \$\{content\}`/g) || []).length, 2)
+    assert.match(indexSource, /seedChatMessage\(chat\.id, buildPublishFixMessage/)
   } finally {
     globalThis.fetch = oldFetch
   }
@@ -2013,7 +2088,7 @@ test('confirmed conflicts are handed to one preserving resolver chat', async () 
     })
   }
   try {
-    assert.deepEqual(await createConflictResolverBatch([80, 81], 'preserve_local', 'token'), {
+    assert.deepEqual(await createConflictResolverBatch([80, 81], 'preserve_local', 'token', { provider: 'claude', model: 'claude-test' }), {
       chat_id: 'one-chat',
     })
     // An app already bound to a running resolver reuses that chat, for the
@@ -2029,12 +2104,13 @@ test('confirmed conflicts are handed to one preserving resolver chat', async () 
     assert.deepEqual(JSON.parse(request.options.body), {
       app_ids: [80, 81],
       resolution_policy: 'preserve_local',
+      agent: { provider: 'claude', model: 'claude-test' },
     })
   } finally {
     globalThis.fetch = oldFetch
   }
   // Batch conflicts are never handed to an agent without the owner's Resolve.
-  assert.match(indexSource, /resolve: appIds => createConflictResolverBatch\(appIds, 'preserve_local', token\)/)
+  assert.match(indexSource, /resolve: \(appIds, agent\) => createConflictResolverBatch\(appIds, 'preserve_local', token, agent\)/)
 })
 
 test('Update all applies verified non-widening releases and reviews wider access', async () => {

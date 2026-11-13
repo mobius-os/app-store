@@ -2310,4 +2310,30 @@ export const CSS = `
 .st-card-secondary:hover { background: var(--surface); }
 .st-card.is-list .st-card-status-row { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 @media (max-width: 640px) { .st-card.is-list .st-card-status-row { justify-content: flex-start; } }
+.st-agent-choice { box-sizing: border-box; width: min(440px, calc(100% - 24px)); max-height: 85dvh; margin: auto; padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / .3); }
+.st-agent-choice::backdrop { background: rgb(0 0 0 / .55); }
+.st-agent-choice-inner { display: grid; gap: 10px; padding: 24px; }
+.st-agent-choice h2 { margin: 0; font-size: 19px; }
+.st-agent-choice p { margin: 0 0 4px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.st-agent-choice label { margin-top: 5px; font-size: 13px; font-weight: 650; }
+.st-agent-choice-current { display: flex; width: 100%; text-align: left; font: inherit; background: var(--surface-2); color: var(--text); align-items: center; gap: 12px; min-height: 54px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.st-agent-choice-current > span:first-child { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.st-agent-choice-current strong { font-size: 14px; overflow-wrap: anywhere; }
+.st-agent-choice-caption, .st-agent-choice-provider { color: var(--muted); font-size: 12px; }
+.st-agent-choice-current > svg { flex-shrink: 0; }
+.st-agent-choice-badge { border-radius: 999px; padding: 3px 7px; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.st-agent-choice-list { display: grid; max-height: min(270px, 40dvh); overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; overscroll-behavior: contain; }
+.st-agent-choice-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; width: 100%; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.st-agent-choice-row:last-child { border-bottom: 0; }
+.st-agent-choice-row.is-selected { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.st-agent-choice-row > span:first-child { display: grid; gap: 2px; }
+.st-agent-choice-model { font-size: 14px; font-weight: 650; }
+.st-agent-choice-check { color: var(--accent-text); font-weight: 700; }
+.st-agent-choice-effort { display: grid; gap: 8px; }
+.st-agent-choice-effort label { display: flex; justify-content: space-between; }
+.st-agent-choice-effort input { width: 100%; min-height: 44px; accent-color: var(--accent); }
+.st-agent-choice-effort-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; text-transform: capitalize; }
+.st-agent-choice button:focus-visible, .st-agent-choice input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-agent-choice .st-agent-choice-error { color: var(--danger-text); }
+.st-agent-choice-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 `
