@@ -50,6 +50,7 @@ import {
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
   communityFeedbackOf,
+  reviewAccountAction,
   communityRatingAggregate,
   communityReceiptAfterInstall,
   communityReceiptToReconcile,
@@ -334,6 +335,30 @@ function itemIdsSettledByChecks(items, apps, checks) {
     if (app && available === false) settled.add(item.id)
   }
   return settled
+}
+
+// Runs `recheck` each time the owner comes back to the Store while `active`.
+// Inside the shell, returning from Settings or another app only makes the
+// frame's document visible again (app-frame.html turns the shell's verdict
+// into visibilitychange; the frame is not focused); a browser tab also gets
+// focus. A return while a recheck is still running joins it.
+function useOwnerReturn(active, recheck) {
+  const recheckRef = useRef(recheck)
+  useLayoutEffect(() => { recheckRef.current = recheck })
+  useEffect(() => {
+    if (!active) return undefined
+    let running = null
+    const onReturn = () => {
+      if (document.visibilityState === 'hidden' || running) return
+      running = Promise.resolve(recheckRef.current()).finally(() => { running = null })
+    }
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onReturn)
+    }
+  }, [active])
 }
 
 export default function App({ appId, token }) {
@@ -796,6 +821,17 @@ export default function App({ appId, token }) {
     }
   }, [token, showPublications])
 
+  // One reading of the Möbius account (a Promise.allSettled entry), at startup
+  // and each time it is re-read. A failed read keeps the last known account.
+  const showCommunityIdentity = useCallback((read) => {
+    if (read.status === 'fulfilled') {
+      setCommunityIdentity(read.value)
+      setCommunityIdentityError('')
+    } else {
+      setCommunityIdentityError(read.reason?.message || 'Identity is unavailable right now.')
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     Promise.allSettled([
@@ -805,12 +841,7 @@ export default function App({ appId, token }) {
       loadEditorialSpotlight(token),
     ]).then(([identityResult, publicationsResult, githubResult, spotlightResult]) => {
       if (cancelled) return
-      if (identityResult.status === 'fulfilled') {
-        setCommunityIdentity(identityResult.value)
-        setCommunityIdentityError('')
-      } else {
-        setCommunityIdentityError(identityResult.reason?.message || 'Identity is unavailable right now.')
-      }
+      showCommunityIdentity(identityResult)
       if (publicationsResult.status === 'fulfilled') {
         showPublications(publicationsResult.value)
       } else {
@@ -828,7 +859,7 @@ export default function App({ appId, token }) {
       }
     })
     return () => { cancelled = true }
-  }, [token, showPublications])
+  }, [token, showCommunityIdentity, showPublications])
 
   useEffect(() => {
     if (tab !== 'browse') return undefined
@@ -870,32 +901,14 @@ export default function App({ appId, token }) {
 
   // Contribute owns connection setup. Refresh the inherited status when the
   // owner comes back from it; App Store never starts a second OAuth flow.
-  useEffect(() => {
-    if (tab !== 'publish' || githubIdentity?.connected) return undefined
-    const onFocus = () => { void refreshGithubIdentity() }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [githubIdentity, refreshGithubIdentity, tab])
+  useOwnerReturn(tab === 'publish' && !githubIdentity?.connected, refreshGithubIdentity)
 
   // Settings › Accounts › Möbius owns sign-in and the handle; the handle
-  // arrives with the publications viewer. Re-read both when the owner comes
-  // back while either is missing or could not be read.
+  // arrives with the publications viewer, so a re-read takes both.
   const refreshMobiusAccount = useCallback(async () => {
-    try {
-      setCommunityIdentity(await loadCommunityIdentity(token))
-      setCommunityIdentityError('')
-    } catch (error) {
-      setCommunityIdentityError(error?.message || 'Identity is unavailable right now.')
-    }
-    await refreshPublicationStates()
-  }, [token, refreshPublicationStates])
-
-  useEffect(() => {
-    if (tab !== 'publish' || (communityIdentity?.linked && !communityIdentityError && publisherHandle)) return undefined
-    const onFocus = () => { void refreshMobiusAccount() }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [communityIdentity, communityIdentityError, publisherHandle, refreshMobiusAccount, tab])
+    const [identity] = await Promise.allSettled([loadCommunityIdentity(token), refreshPublicationStates()])
+    showCommunityIdentity(identity)
+  }, [token, refreshPublicationStates, showCommunityIdentity])
 
   useEffect(() => {
     setInstalledMatchViewer(githubIdentity?.login || '')
@@ -1037,6 +1050,28 @@ export default function App({ appId, token }) {
     })
     return () => { active = false }
   }, [detail?.community?.id, detail?.community_feedback?.id, token, updateCommunityFeedback])
+
+  const refreshReviewEligibility = useCallback(async (communityId) => {
+    const row = await loadCommunityApp(token, communityId)
+    updateCommunityFeedback(communityId, (current) => ({
+      ...current,
+      review_eligibility: String(row.review_eligibility || current.review_eligibility),
+      has_verified_install: row.has_verified_install === true,
+      user_review: row.user_review || null,
+    }))
+  }, [token, updateCommunityFeedback])
+
+  // Publish without an account or handle, and a detail page's review gate,
+  // both send the owner to Settings › Accounts › Möbius. Coming back re-reads
+  // the account, and a gated listing's eligibility, so the prompt clears.
+  const detailFeedback = communityFeedbackOf(detail)
+  const reviewGateId = reviewAccountAction(detailFeedback?.review_eligibility) ? detailFeedback.id : ''
+  const mobiusAccountPending = tab === 'publish'
+    && !(communityIdentity?.linked && !communityIdentityError && publisherHandle)
+  useOwnerReturn(mobiusAccountPending || !!reviewGateId, () => Promise.allSettled([
+    refreshMobiusAccount(),
+    reviewGateId && refreshReviewEligibility(reviewGateId),
+  ]))
 
   const handleCommunityFeedback = useCallback(async (stars, body) => {
     const feedback = communityFeedbackOf(detail)
@@ -1231,15 +1266,16 @@ export default function App({ appId, token }) {
     })
   }, [])
 
+  const openSettings = useCallback((section) => {
+    openSystemSettings(section, () => {
+      setToast({ kind: 'error', message: 'Open Settings from the drawer.' })
+    })
+  }, [])
+
   const handleSetup = useCallback((item, installedApp) => {
     const setup = item?.setup || {}
     if (setup.scope === 'system') {
-      openSystemSettings(setup.section || 'background-agents', () => {
-        setToast({
-          kind: 'error',
-          message: 'Open Settings from the drawer.',
-        })
-      })
+      openSettings(setup.section || 'background-agents')
       return
     }
     if (installedApp?.id) {
@@ -1253,7 +1289,7 @@ export default function App({ appId, token }) {
         },
       })
     }
-  }, [])
+  }, [openSettings])
 
   const reviewCapabilities = useCallback(async (item) => {
     if (!item?.id) return
@@ -2152,11 +2188,7 @@ export default function App({ appId, token }) {
 
   // Publishing and reviews need a linked mobius.you account with a handle.
   // Signing in and choosing the handle happen in Settings › Accounts › Möbius.
-  const openMobiusAccount = useCallback(() => {
-    openSystemSettings('mobius-account', () => {
-      setToast({ kind: 'error', message: 'Open Settings from the drawer.' })
-    })
-  }, [])
+  const openMobiusAccount = useCallback(() => openSettings('mobius-account'), [openSettings])
 
   // Apps a server batch is applying (or may be, for an unconfirmed
   // submission) show as updating and stay out of another "Update all".

@@ -648,7 +648,7 @@ export function PublisherTab({
         <div className="st-notice is-warning" role="status">
           <div className="st-notice-row">
             <span>{identityError
-              ? 'Your Möbius account could not be checked. Sign in to it in Settings to publish an app.'
+              ? 'Your Möbius account couldn’t be checked. Settings › Accounts › Möbius shows whether you’re signed in.'
               : 'Sign in to your Möbius account in Settings to publish an app.'}</span>
             <button type="button" className="st-btn st-btn-primary st-notice-action"
                     onClick={() => onOpenMobiusAccount?.()}>
