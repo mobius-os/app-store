@@ -877,6 +877,26 @@ export default function App({ appId, token }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [githubIdentity, refreshGithubIdentity, tab])
 
+  // Settings › Accounts › Möbius owns sign-in and the handle; the handle
+  // arrives with the publications viewer. Re-read both when the owner comes
+  // back while either is missing or could not be read.
+  const refreshMobiusAccount = useCallback(async () => {
+    try {
+      setCommunityIdentity(await loadCommunityIdentity(token))
+      setCommunityIdentityError('')
+    } catch (error) {
+      setCommunityIdentityError(error?.message || 'Identity is unavailable right now.')
+    }
+    await refreshPublicationStates()
+  }, [token, refreshPublicationStates])
+
+  useEffect(() => {
+    if (tab !== 'publish' || (communityIdentity?.linked && !communityIdentityError && publisherHandle)) return undefined
+    const onFocus = () => { void refreshMobiusAccount() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [communityIdentity, communityIdentityError, publisherHandle, refreshMobiusAccount, tab])
+
   useEffect(() => {
     setInstalledMatchViewer(githubIdentity?.login || '')
   }, [githubIdentity])
