@@ -977,11 +977,23 @@ function communityAuthor(row) {
   return handle ? { ...author, handle } : null
 }
 
+// The Store's own reading of the Möbius account. The last account it read
+// stays in force, so a failed re-read matters only while none said signed in:
+// 'signed_in', 'signed_out', 'unchecked' (no reading succeeded), or 'loading'.
+export function mobiusAccountStatus(identity, error) {
+  if (identity?.linked) return 'signed_in'
+  if (error) return 'unchecked'
+  return identity ? 'signed_out' : 'loading'
+}
+
 // Reviews need a mobius.you account with a handle; both are set up in
-// Möbius · You, so these states offer a way there.
-export function reviewAccountAction(eligibility) {
-  if (eligibility === 'account_required') return 'Sign in with Möbius · You'
+// Settings › Accounts › Möbius, so these states offer a way there. Rating also
+// needs the Store's own account reading to say signed in, whatever the
+// listing's eligibility says.
+export function reviewAccountAction(eligibility, account) {
+  if (eligibility === 'account_required') return 'Sign in to Möbius'
   if (eligibility === 'handle_required') return 'Choose a handle'
+  if (account === 'signed_out' || account === 'unchecked') return 'Sign in to Möbius'
   return null
 }
 

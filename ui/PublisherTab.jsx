@@ -21,6 +21,7 @@ import {
   savedListingSurvived,
   licenseName,
   listingLicensing,
+  mobiusAccountStatus,
 } from '../domain.js'
 import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
 import { PublishCheck } from './PublishCheck.jsx'
@@ -140,7 +141,7 @@ export function PublisherTab({
   publisherHandle = '',
   publicationStatesError,
   onRefreshPublicationStates,
-  onLogInToMobiusYou,
+  onOpenMobiusAccount,
   onNavigate,
   catalog = [],
   spotlightFeed = null,
@@ -156,8 +157,7 @@ export function PublisherTab({
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
     || String(left.name || '').localeCompare(String(right.name || ''))
   ))
-  const identityReady = !!identity && !identityError
-  const signedIn = identityReady && !!identity?.linked
+  const signedIn = mobiusAccountStatus(identity, identityError) === 'signed_in'
   const githubReady = viewer?.github?.connected === true
   const githubLogin = String(viewer?.github?.login || '')
   const [candidate, setCandidate] = useState(null)
@@ -606,8 +606,8 @@ export function PublisherTab({
           <div className="st-publish-heading-actions">
             {!signedIn ? (
               <button type="button" className="st-publish-connection st-publish-connection-action"
-                      onClick={() => onLogInToMobiusYou?.()}>
-                Log in to Möbius · You
+                      onClick={() => onOpenMobiusAccount?.()}>
+                Sign in to Möbius
               </button>
             ) : null}
             {signedIn && githubReady ? <span className="st-publish-account">Publishing as {publisherHandle || githubLogin}</span> : null}
@@ -648,11 +648,11 @@ export function PublisherTab({
         <div className="st-notice is-warning" role="status">
           <div className="st-notice-row">
             <span>{identityError
-              ? 'Your Möbius · You identity is unavailable. Log in to publish.'
-              : 'Log in to Möbius · You to publish an app.'}</span>
+              ? 'Your Möbius account couldn’t be checked. Settings › Accounts › Möbius shows whether you’re signed in.'
+              : 'Sign in to your Möbius account in Settings to publish an app.'}</span>
             <button type="button" className="st-btn st-btn-primary st-notice-action"
-                    onClick={() => onLogInToMobiusYou?.()}>
-              Log in to Möbius · You
+                    onClick={() => onOpenMobiusAccount?.()}>
+              Sign in to Möbius
             </button>
           </div>
         </div>

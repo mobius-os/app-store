@@ -50,6 +50,8 @@ import {
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
   communityFeedbackOf,
+  mobiusAccountStatus,
+  reviewAccountAction,
   communityRatingAggregate,
   communityReceiptAfterInstall,
   communityReceiptToReconcile,
@@ -102,7 +104,7 @@ import {
   registerCommunityRevision,
   saveCommunityReview,
   withdrawCommunityApp,
-  confirmCommunityInstallReceipt,
+  recordCommunityInstall,
   uploadEditorialArtwork,
   openChat,
   openInstalledApp,
@@ -197,7 +199,7 @@ export {
   publishEditorialSpotlight,
   registerCommunityRevision,
   saveCommunityReview,
-  confirmCommunityInstallReceipt,
+  recordCommunityInstall,
   withdrawCommunityApp,
   uploadEditorialArtwork,
   previewApp,
@@ -336,6 +338,44 @@ function itemIdsSettledByChecks(items, apps, checks) {
   return settled
 }
 
+// Runs `recheck` each time the owner comes back to the Store while `active`.
+// Inside the shell, returning from Settings or another app only makes the
+// frame's document visible again (app-frame.html turns the shell's verdict
+// into visibilitychange; the frame is not focused); a browser tab also gets
+// focus. A return while a recheck is still running joins it.
+function useOwnerReturn(active, recheck) {
+  const recheckRef = useRef(recheck)
+  useLayoutEffect(() => { recheckRef.current = recheck })
+  useEffect(() => {
+    if (!active) return undefined
+    let running = null
+    const onReturn = () => {
+      if (document.visibilityState === 'hidden' || running) return
+      running = Promise.resolve(recheckRef.current()).finally(() => { running = null })
+    }
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onReturn)
+    }
+  }, [active])
+}
+
+// Newest read wins. Several readers refresh the same resource (startup, a
+// return from Settings, an install receipt's follow-up read) and their
+// responses can settle in any order. A read takes a turn for its resource when
+// it is issued, and only the resource's latest turn may commit, so a response
+// that settles late never overwrites a newer one.
+function useNewestRead() {
+  const latestRef = useRef(new Map())
+  return useCallback((resource) => {
+    const turn = {}
+    latestRef.current.set(resource, turn)
+    return () => latestRef.current.get(resource) === turn
+  }, [])
+}
+
 export default function App({ appId, token }) {
   const [savedLocation] = useState(() => {
     const nav = window.mobius?.nav
@@ -389,10 +429,6 @@ export default function App({ appId, token }) {
   installedRef.current = installed
   const contributeApp = useMemo(
     () => installed.find((app) => app?.slug === 'contribute') || null,
-    [installed],
-  )
-  const identityApp = useMemo(
-    () => installed.find((app) => app?.slug === 'identity') || null,
     [installed],
   )
   // Git-native update state per installed app, keyed by numeric app id. Each
@@ -792,47 +828,31 @@ export default function App({ appId, token }) {
     refreshPublicationListings(payload?.items)
   }, [refreshPublicationListings])
 
-  const refreshPublicationStates = useCallback(async () => {
-    try {
-      showPublications(await loadCommunityPublications(token))
-    } catch (error) {
-      setPublicationStatesError(error?.message || 'Publication status is unavailable right now.')
-    }
-  }, [token, showPublications])
+  const newestRead = useNewestRead()
 
-  useEffect(() => {
-    let cancelled = false
-    Promise.allSettled([
-      loadCommunityIdentity(token),
-      loadCommunityPublications(token),
-      loadLocalGithubIdentity(token),
-      loadEditorialSpotlight(token),
-    ]).then(([identityResult, publicationsResult, githubResult, spotlightResult]) => {
-      if (cancelled) return
-      if (identityResult.status === 'fulfilled') {
-        setCommunityIdentity(identityResult.value)
-        setCommunityIdentityError('')
-      } else {
-        setCommunityIdentityError(identityResult.reason?.message || 'Identity is unavailable right now.')
-      }
-      if (publicationsResult.status === 'fulfilled') {
-        showPublications(publicationsResult.value)
-      } else {
-        setPublicationStatesError(publicationsResult.reason?.message || 'Publication status is unavailable right now.')
-      }
-      if (githubResult.status === 'fulfilled') {
-        setGithubIdentity(githubResult.value)
-        setGithubIdentityError('')
-      } else {
-        setGithubIdentity({ connected: false, login: '' })
-        setGithubIdentityError(githubResult.reason?.message || 'GitHub connection is unavailable right now.')
-      }
-      if (spotlightResult.status === 'fulfilled') {
-        setSpotlightFeed(spotlightResult.value)
-      }
-    })
-    return () => { cancelled = true }
-  }, [token, showPublications])
+  // The publications viewer also carries the owner's handle.
+  const refreshPublicationStates = useCallback(async () => {
+    const isNewest = newestRead('publications')
+    try {
+      const payload = await loadCommunityPublications(token)
+      if (isNewest()) showPublications(payload)
+    } catch (error) {
+      if (isNewest()) setPublicationStatesError(error?.message || 'Publication status is unavailable right now.')
+    }
+  }, [token, newestRead, showPublications])
+
+  // A failed read keeps the last known account; see mobiusAccountStatus.
+  const refreshCommunityIdentity = useCallback(async () => {
+    const isNewest = newestRead('identity')
+    try {
+      const identity = await loadCommunityIdentity(token)
+      if (!isNewest()) return
+      setCommunityIdentity(identity)
+      setCommunityIdentityError('')
+    } catch (error) {
+      if (isNewest()) setCommunityIdentityError(error?.message || 'Identity is unavailable right now.')
+    }
+  }, [token, newestRead])
 
   useEffect(() => {
     if (tab !== 'browse') return undefined
@@ -864,22 +884,39 @@ export default function App({ appId, token }) {
 
 
   const refreshGithubIdentity = useCallback(async () => {
+    const isNewest = newestRead('github')
     try {
-      setGithubIdentity(await loadLocalGithubIdentity(token))
+      const identity = await loadLocalGithubIdentity(token)
+      if (!isNewest()) return
+      setGithubIdentity(identity)
       setGithubIdentityError('')
     } catch (error) {
-      setGithubIdentityError(error?.message || 'GitHub connection is unavailable right now.')
+      if (isNewest()) setGithubIdentityError(error?.message || 'GitHub connection is unavailable right now.')
     }
-  }, [token])
+  }, [token, newestRead])
 
   // Contribute owns connection setup. Refresh the inherited status when the
   // owner comes back from it; App Store never starts a second OAuth flow.
+  useOwnerReturn(tab === 'publish' && !githubIdentity?.connected, refreshGithubIdentity)
+
+  // Settings › Accounts › Möbius owns sign-in and the handle; the handle
+  // arrives with the publications viewer, so a re-read takes both.
+  const refreshMobiusAccount = useCallback(
+    () => Promise.allSettled([refreshCommunityIdentity(), refreshPublicationStates()]),
+    [refreshCommunityIdentity, refreshPublicationStates],
+  )
+
+  // Startup reads each resource through the same reader a later refresh uses,
+  // so whichever was issued last wins; Spotlight holds nothing else back.
   useEffect(() => {
-    if (tab !== 'publish' || githubIdentity?.connected) return undefined
-    const onFocus = () => { void refreshGithubIdentity() }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [githubIdentity, refreshGithubIdentity, tab])
+    void refreshMobiusAccount()
+    void refreshGithubIdentity()
+    let cancelled = false
+    loadEditorialSpotlight(token).then((feed) => {
+      if (!cancelled) setSpotlightFeed(feed)
+    }, () => {})
+    return () => { cancelled = true }
+  }, [token, refreshMobiusAccount, refreshGithubIdentity])
 
   useEffect(() => {
     setInstalledMatchViewer(githubIdentity?.login || '')
@@ -957,23 +994,33 @@ export default function App({ appId, token }) {
     })
   }, [])
 
+  // A listing's review eligibility for this owner. The return from Settings
+  // and an install receipt both re-read it here; the newest read wins.
+  const refreshReviewEligibility = useCallback(async (communityId) => {
+    const isNewest = newestRead(`listing:${communityId}`)
+    const row = await loadCommunityApp(token, communityId)
+    if (!isNewest()) return
+    updateCommunityFeedback(communityId, (current) => ({
+      ...current,
+      review_eligibility: String(row.review_eligibility || current.review_eligibility),
+      has_verified_install: row.has_verified_install === true,
+      user_review: row.user_review || null,
+    }))
+  }, [token, newestRead, updateCommunityFeedback])
+
   const confirmCommunityInstall = useCallback(async (item, installedApp, revisionId) => {
     const feedback = communityFeedbackOf(item)
     if (!feedback?.id || !revisionId || !installedApp?.id) return false
     const feedbackKey = `${feedback.id}:${feedback.revision_id}`
     try {
-      const refreshed = await confirmCommunityInstallReceipt(
+      await recordCommunityInstall(
         token,
         feedback.id,
         revisionId,
         `app:${installedApp.id}:${installedApp.slug || item.manifest?.id || 'community'}`,
       )
-      updateCommunityFeedback(feedback.id, (current) => ({
-        ...current,
-        review_eligibility: String(refreshed.review_eligibility || current.review_eligibility),
-        has_verified_install: refreshed.has_verified_install === true,
-        user_review: refreshed.user_review || null,
-      }))
+      // Read only after the receipt lands, so a read issued before it is older.
+      await refreshReviewEligibility(feedback.id)
       setCommunityActionError((current) => (
         current.key === feedbackKey ? { key: feedbackKey, message: '' } : current
       ))
@@ -985,7 +1032,7 @@ export default function App({ appId, token }) {
       })
       return false
     }
-  }, [token, updateCommunityFeedback])
+  }, [token, refreshReviewEligibility])
 
   // Reconcile a missed receipt when an installed app's detail opens; see
   // communityReceiptToReconcile for when one is due and which revision it names.
@@ -1021,6 +1068,20 @@ export default function App({ appId, token }) {
     })
     return () => { active = false }
   }, [detail?.community?.id, detail?.community_feedback?.id, token, updateCommunityFeedback])
+
+  // Publish without an account or handle, and a detail page's review gate,
+  // both send the owner to Settings › Accounts › Möbius. Coming back re-reads
+  // the account, and a gated listing's eligibility, until the prompt clears:
+  // the gate stays while either reading still asks for the account.
+  const mobiusAccount = mobiusAccountStatus(communityIdentity, communityIdentityError)
+  const detailFeedback = communityFeedbackOf(detail)
+  const reviewGateId = detailFeedback?.id
+    && reviewAccountAction(detailFeedback.review_eligibility, mobiusAccount) ? detailFeedback.id : ''
+  const mobiusAccountPending = tab === 'publish' && !(mobiusAccount === 'signed_in' && publisherHandle)
+  useOwnerReturn(mobiusAccountPending || !!reviewGateId, () => Promise.allSettled([
+    refreshMobiusAccount(),
+    reviewGateId && refreshReviewEligibility(reviewGateId),
+  ]))
 
   const handleCommunityFeedback = useCallback(async (stars, body) => {
     const feedback = communityFeedbackOf(detail)
@@ -1215,15 +1276,16 @@ export default function App({ appId, token }) {
     })
   }, [])
 
+  const openSettings = useCallback((section) => {
+    openSystemSettings(section, () => {
+      setToast({ kind: 'error', message: 'Open Settings from the drawer.' })
+    })
+  }, [])
+
   const handleSetup = useCallback((item, installedApp) => {
     const setup = item?.setup || {}
     if (setup.scope === 'system') {
-      openSystemSettings(setup.section || 'background-agents', () => {
-        setToast({
-          kind: 'error',
-          message: 'Open Settings from the drawer.',
-        })
-      })
+      openSettings(setup.section || 'background-agents')
       return
     }
     if (installedApp?.id) {
@@ -1237,7 +1299,7 @@ export default function App({ appId, token }) {
         },
       })
     }
-  }, [])
+  }, [openSettings])
 
   const reviewCapabilities = useCallback(async (item) => {
     if (!item?.id) return
@@ -2134,25 +2196,9 @@ export default function App({ appId, token }) {
     }
   }, [displayCatalog, lifecycleById])
 
-  // Publishing needs a linked Möbius · You identity. Rather than a dead-end
-  // "Link identity" label, send the owner to where that sign-in actually
-  // happens: the installed Möbius · You app, or its Store listing to install
-  // it first when it is missing.
-  const logInToMobiusYou = useCallback(() => {
-    if (identityApp) {
-      openInstalledApp(identityApp.id)
-      return
-    }
-    const listing = displayCatalog.find((item) => item?.manifest?.id === 'identity')
-    selectTab('browse')
-    if (listing?.manifest) {
-      openDetail(listing)
-    } else {
-      // A detail page covers the grid, so leave it for the search to show.
-      closeDetail()
-      setQuery('Möbius · You')
-    }
-  }, [identityApp, displayCatalog, selectTab, openDetail, closeDetail])
+  // Publishing and reviews need a linked mobius.you account with a handle.
+  // Signing in and choosing the handle happen in Settings › Accounts › Möbius.
+  const openMobiusAccount = useCallback(() => openSettings('mobius-account'), [openSettings])
 
   // Apps a server batch is applying (or may be, for an unconfirmed
   // submission) show as updating and stay out of another "Update all".
@@ -2377,8 +2423,8 @@ export default function App({ appId, token }) {
           communityError={communityActionError.key === detailCommunityFeedbackKey
             ? communityActionError.message
             : ''}
-          communityIdentityLinked={!!communityIdentity?.linked}
-          onLogInToMobiusYou={logInToMobiusYou}
+          mobiusAccount={mobiusAccount}
+          onOpenMobiusAccount={openMobiusAccount}
           token={token}
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}
@@ -2667,7 +2713,7 @@ export default function App({ appId, token }) {
             token={token}
             onUploadSpotlightArtwork={handleUploadSpotlightArtwork}
             onPublishSpotlight={handlePublishSpotlight}
-            onLogInToMobiusYou={logInToMobiusYou}
+            onOpenMobiusAccount={openMobiusAccount}
             contributeAvailable={!!contributeApp}
             onOpenContributions={(localAppId) => openInstalledApp(
               contributeApp.id,
