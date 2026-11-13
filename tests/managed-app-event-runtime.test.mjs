@@ -56,12 +56,20 @@ async function mount(fetchApps, { catalog = [], hidden = false, catalogGate = nu
   dom.window.mobius = { signal(name, data) { signals.push({ name, data }) } }
   dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   dom.window.HTMLElement.prototype.scrollIntoView = () => {}
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  dom.window.HTMLDialogElement.prototype.close = function () {
+    this.open = false
+    this.dispatchEvent(new dom.window.Event('close'))
+  }
   Object.assign(globalThis, {
     window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement,
     ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
     IS_REACT_ACT_ENVIRONMENT: true,
     fetch: async (url, options = {}) => {
       const path = String(url)
+      if (path === '/api/models') return json({ providers: { codex: [{ id: 'test-agent', label: 'Test agent', effort_levels: ['high'] }] } })
+      if (path === '/api/owner/model-prefs') return json({ selected_agent: { provider: 'codex', model: 'test-agent', effort: 'high' } })
+      if (path === '/api/auth/providers/status') return json({ codex: { configured: true } })
       if (path === '/api/apps/uninstalled') { uninstalledReads.push(path); return json([]) }
       // The server batch owner, played by this fixture: it applies each
       // reviewed update through the same install fixture and reports the
@@ -649,7 +657,7 @@ test('a batch conflict waits for an explicit Resolve and settles when its resolv
   let conflict = false
   let resolved = false
   let resolvers = 0
-  const view = await mount(async path => {
+  const view = await mount(async (path, options) => {
     if (path === '/api/apps/') return json(installed(resolved ? '2.0.0' : '1.0.0'))
     if (path.includes('/update-candidate-preview')) return preview(11)
     if (path === '/api/apps/install') {
@@ -657,6 +665,7 @@ test('a batch conflict waits for an explicit Resolve and settles when its resolv
       return json({ id: 11, mode: 'conflict', upstream_version: '2.0.0' })
     }
     if (path === '/api/apps/conflict-resolver-batch') {
+      assert.deepEqual(JSON.parse(options.body).agent, { provider: 'codex', model: 'test-agent', effort: 'high' })
       resolvers++
       return json({ chat_id: 'resolver', started: true })
     }
@@ -670,7 +679,14 @@ test('a batch conflict waits for an explicit Resolve and settles when its resolv
     assert.equal(view.voiceAction(), 'Resolve in chat Voice', 'the card shows the conflict the batch reported')
     const resolve = [...modal().querySelectorAll('.st-update-review-section button')].find(button => button.textContent === 'Resolve in chat')
     await act(async () => resolve.click())
-    assert.equal(resolvers, 1, 'the explicit Resolve starts the agent')
+    assert.equal(resolvers, 0, 'opening the chooser never starts an agent')
+    const chooser = () => view.dom.window.document.querySelector('.st-agent-choice')
+    await act(async () => chooser().querySelector('.st-btn-secondary').click())
+    assert.equal(resolvers, 0, 'cancelling the chooser never starts an agent')
+    assert.equal(chooser(), null)
+    await act(async () => resolve.click())
+    await act(async () => chooser().querySelector('.st-btn-primary').click())
+    assert.equal(resolvers, 1, 'confirming the chosen agent starts the resolver once')
     assert.match(modal().textContent, /Open resolver chat/)
     resolved = true
     await view.message()
