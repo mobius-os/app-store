@@ -45,6 +45,8 @@ function useDom() {
   const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT', 'fetch', 'ResizeObserver']
   const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
   dom.window.ResizeObserver = globalThis.ResizeObserver
   dom.window.HTMLElement.prototype.scrollIntoView = () => {}
@@ -62,6 +64,9 @@ async function mountApp(dom, routes) {
   const { MANIFEST_SNAPSHOTS } = await import('../manifest-snapshots.js')
   globalThis.fetch = async (url, options = {}) => {
     const path = String(url)
+    if (path === '/api/models') return json({ providers: { codex: [{ id: 'test', label: 'Test agent' }] } })
+    if (path === '/api/owner/model-prefs') return json({ selected_agent: { provider: 'codex', model: 'test' } })
+    if (path === '/api/auth/providers/status') return json({ codex: { configured: true } })
     const answer = await routes(path, options)
     if (answer) return answer
     if (path.startsWith('/api/proxy?')) {
@@ -479,8 +484,9 @@ test('a stale update-check meets a conflict-blocked preview: card and review bot
     assert.equal(modal.querySelector('.st-update-review-actions button.st-btn-primary'), null, 'nothing can be confirmed')
     assert.equal(cardAction()?.getAttribute('aria-label'), 'Resolve in chat Voice', 'the card behind the review flips too')
     await act(async () => { modal.querySelector('.st-update-review-section button').click(); await wait(20) })
+    await act(async () => { doc.querySelector('.st-agent-choice-actions button.st-btn-primary').click(); await wait(20) })
     assert.deepEqual(posts, ['/api/apps/conflict-resolver-batch'], 'resolving starts the resolver and installs nothing')
-    await act(async () => { [...modal.querySelectorAll('button')].find(button => button.textContent === 'Open resolver chat').click() })
+    await act(async () => { [...modal.querySelectorAll('button')].find(button => button.textContent === 'Open resolver chat').click(); await wait(20) })
     assert.deepEqual(openedChats, ['resolver-chat'])
   } finally {
     if (root) await act(async () => root.unmount())

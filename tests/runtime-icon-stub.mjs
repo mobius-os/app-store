@@ -16,6 +16,7 @@ export const Pause = icon
 export const Play = icon
 
 export const ChevronLeft = icon
+export const ChevronDown = icon
 export const ChevronRight = icon
 export const CheckCircleFilled = icon
 export const Circle = icon
