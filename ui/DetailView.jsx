@@ -36,7 +36,7 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onLogInToMobiusYou, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onOpenMobiusAccount, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   // The recovery note must not outlive its deadline: re-read the clock whenever the deadline changes (the
   // list can arrive after the page opened) and again when it passes.
@@ -440,7 +440,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             feedback={communityFeedback}
             canRate={verifiedCommunityInstall}
             onSubmitFeedback={onCommunityFeedback}
-            onLogInToMobiusYou={onLogInToMobiusYou}
+            onOpenMobiusAccount={onOpenMobiusAccount}
             busy={communityBusy}
             error={communityError}
           />

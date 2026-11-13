@@ -391,10 +391,6 @@ export default function App({ appId, token }) {
     () => installed.find((app) => app?.slug === 'contribute') || null,
     [installed],
   )
-  const identityApp = useMemo(
-    () => installed.find((app) => app?.slug === 'identity') || null,
-    [installed],
-  )
   // Git-native update state per installed app, keyed by numeric app id. Each
   // answered check carries availability and the pending resolution/replay
   // phase; a missing/null answer is unknown and never becomes a version-based
@@ -2134,25 +2130,13 @@ export default function App({ appId, token }) {
     }
   }, [displayCatalog, lifecycleById])
 
-  // Publishing needs a linked Möbius · You identity. Rather than a dead-end
-  // "Link identity" label, send the owner to where that sign-in actually
-  // happens: the installed Möbius · You app, or its Store listing to install
-  // it first when it is missing.
-  const logInToMobiusYou = useCallback(() => {
-    if (identityApp) {
-      openInstalledApp(identityApp.id)
-      return
-    }
-    const listing = displayCatalog.find((item) => item?.manifest?.id === 'identity')
-    selectTab('browse')
-    if (listing?.manifest) {
-      openDetail(listing)
-    } else {
-      // A detail page covers the grid, so leave it for the search to show.
-      closeDetail()
-      setQuery('Möbius · You')
-    }
-  }, [identityApp, displayCatalog, selectTab, openDetail, closeDetail])
+  // Publishing and reviews need a linked mobius.you account with a handle.
+  // Signing in and choosing the handle happen in Settings › Accounts › Möbius.
+  const openMobiusAccount = useCallback(() => {
+    openSystemSettings('mobius-account', () => {
+      setToast({ kind: 'error', message: 'Open Settings from the drawer.' })
+    })
+  }, [])
 
   // Apps a server batch is applying (or may be, for an unconfirmed
   // submission) show as updating and stay out of another "Update all".
@@ -2378,7 +2362,7 @@ export default function App({ appId, token }) {
             ? communityActionError.message
             : ''}
           communityIdentityLinked={!!communityIdentity?.linked}
-          onLogInToMobiusYou={logInToMobiusYou}
+          onOpenMobiusAccount={openMobiusAccount}
           token={token}
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}
@@ -2667,7 +2651,7 @@ export default function App({ appId, token }) {
             token={token}
             onUploadSpotlightArtwork={handleUploadSpotlightArtwork}
             onPublishSpotlight={handlePublishSpotlight}
-            onLogInToMobiusYou={logInToMobiusYou}
+            onOpenMobiusAccount={openMobiusAccount}
             contributeAvailable={!!contributeApp}
             onOpenContributions={(localAppId) => openInstalledApp(
               contributeApp.id,

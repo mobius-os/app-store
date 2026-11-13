@@ -15,7 +15,7 @@ export function StarIcon({ filled }) {
   )
 }
 
-export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback, onLogInToMobiusYou, busy, error }) {
+export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback, onOpenMobiusAccount, busy, error }) {
   const [rating, setRating] = useState(feedback?.user_review?.stars || 0)
   const accountAction = reviewAccountAction(feedback?.review_eligibility)
   const [draft, setDraft] = useState(feedback?.user_review?.review_text || '')
@@ -46,13 +46,13 @@ export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback,
         <div className="st-review-eligibility st-review-gate">
           <span>
             {feedback.review_eligibility === 'handle_required'
-              ? 'Choose a mobius.you handle to rate or review this app.'
+              ? 'Choose a handle for your Möbius account in Settings to rate or review this app.'
               : feedback.review_eligibility === 'account_required'
-                ? 'Sign in to mobius.you to rate or review this app.'
+                ? 'Sign in to your Möbius account in Settings to rate or review this app.'
                 : 'Install this app to leave verified feedback.'}
           </span>
-          {onLogInToMobiusYou && accountAction ? (
-            <button type="button" className="st-btn st-btn-secondary" onClick={onLogInToMobiusYou}>
+          {onOpenMobiusAccount && accountAction ? (
+            <button type="button" className="st-btn st-btn-secondary" onClick={onOpenMobiusAccount}>
               {accountAction}
             </button>
           ) : null}

@@ -539,12 +539,11 @@ test('local publishing is one reviewed action through the inherited GitHub accou
   )
 })
 
-test('publish identity prompt sends the owner to Möbius · You instead of a dead label', async () => {
+test('publish sign-in prompt is a working action, not a dead label', async () => {
   const publisherSource = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
   assert.doesNotMatch(publisherSource, /Link identity/)
   assert.doesNotMatch(publisherSource, /Link a Möbius identity before publishing/)
-  assert.match(publisherSource, /Log in to Möbius · You/)
-  assert.match(publisherSource, /onLogInToMobiusYou\?\.\(\)/)
+  assert.match(publisherSource, /onOpenMobiusAccount\?\.\(\)/)
 })
 
 test('hosted Spotlight reads and publishes an ordered app-and-artwork feed', async () => {
@@ -2969,15 +2968,15 @@ test('the Store sends and reconciles receipts through the shared decisions', asy
   assert.match(feedbackSource, /review_eligibility === 'account_required'/)
 })
 
-test('review prompts that need an account or handle hand off to Möbius · You', async () => {
+test('review prompts that need an account or handle hand off to the Möbius account in Settings', async () => {
   const { reviewAccountAction } = await import('../domain.js')
-  assert.equal(reviewAccountAction('account_required'), 'Sign in with Möbius · You')
+  assert.equal(reviewAccountAction('account_required'), 'Sign in to Möbius')
   assert.equal(reviewAccountAction('handle_required'), 'Choose a handle')
   assert.equal(reviewAccountAction('eligible'), null)
   assert.equal(reviewAccountAction('install_required'), null)
   assert.equal(reviewAccountAction(undefined), null)
   const appSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
-  assert.match(appSource, /onLogInToMobiusYou=\{logInToMobiusYou\}/)
-  assert.match(detailSource, /onLogInToMobiusYou=\{onLogInToMobiusYou\}/)
+  assert.match(appSource, /onOpenMobiusAccount=\{openMobiusAccount\}/)
+  assert.match(detailSource, /onOpenMobiusAccount=\{onOpenMobiusAccount\}/)
 })

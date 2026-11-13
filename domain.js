@@ -978,9 +978,9 @@ function communityAuthor(row) {
 }
 
 // Reviews need a mobius.you account with a handle; both are set up in
-// Möbius · You, so these states offer a way there.
+// Settings › Accounts › Möbius, so these states offer a way there.
 export function reviewAccountAction(eligibility) {
-  if (eligibility === 'account_required') return 'Sign in with Möbius · You'
+  if (eligibility === 'account_required') return 'Sign in to Möbius'
   if (eligibility === 'handle_required') return 'Choose a handle'
   return null
 }
