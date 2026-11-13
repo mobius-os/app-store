@@ -15,9 +15,9 @@ export function StarIcon({ filled }) {
   )
 }
 
-export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback, onOpenMobiusAccount, busy, error }) {
+export function CommunityFeedback({ feedback, account, canRate = false, onSubmitFeedback, onOpenMobiusAccount, busy, error }) {
   const [rating, setRating] = useState(feedback?.user_review?.stars || 0)
-  const accountAction = reviewAccountAction(feedback?.review_eligibility)
+  const accountAction = reviewAccountAction(feedback?.review_eligibility, account)
   const [draft, setDraft] = useState(feedback?.user_review?.review_text || '')
   useEffect(() => {
     setRating(feedback?.user_review?.stars || 0)
@@ -47,9 +47,11 @@ export function CommunityFeedback({ feedback, canRate = false, onSubmitFeedback,
           <span>
             {feedback.review_eligibility === 'handle_required'
               ? 'Choose a handle for your Möbius account in Settings to rate or review this app.'
-              : feedback.review_eligibility === 'account_required'
+              : feedback.review_eligibility === 'account_required' || account === 'signed_out'
                 ? 'Sign in to your Möbius account in Settings to rate or review this app.'
-                : 'Install this app to leave verified feedback.'}
+                : account === 'unchecked'
+                  ? 'Your Möbius account couldn’t be checked. Settings › Accounts › Möbius shows whether you’re signed in.'
+                  : 'Install this app to leave verified feedback.'}
           </span>
           {onOpenMobiusAccount && accountAction ? (
             <button type="button" className="st-btn st-btn-secondary" onClick={onOpenMobiusAccount}>

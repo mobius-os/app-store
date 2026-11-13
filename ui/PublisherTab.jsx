@@ -21,6 +21,7 @@ import {
   savedListingSurvived,
   licenseName,
   listingLicensing,
+  mobiusAccountStatus,
 } from '../domain.js'
 import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
 import { PublishCheck } from './PublishCheck.jsx'
@@ -156,8 +157,7 @@ export function PublisherTab({
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
     || String(left.name || '').localeCompare(String(right.name || ''))
   ))
-  const identityReady = !!identity && !identityError
-  const signedIn = identityReady && !!identity?.linked
+  const signedIn = mobiusAccountStatus(identity, identityError) === 'signed_in'
   const githubReady = viewer?.github?.connected === true
   const githubLogin = String(viewer?.github?.login || '')
   const [candidate, setCandidate] = useState(null)

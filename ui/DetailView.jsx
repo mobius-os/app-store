@@ -36,7 +36,7 @@ function communityAuthorName(author) {
   return String(author.handle || author.login || author.name || 'Möbius creator')
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onOpenMobiusAccount, canCommunityWithdraw = false, communityBusy = false, communityError = '', communityIdentityLinked = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onOpenMobiusAccount, canCommunityWithdraw = false, communityBusy = false, communityError = '', mobiusAccount = 'loading', token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '' }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   // The recovery note must not outlive its deadline: re-read the clock whenever the deadline changes (the
   // list can arrive after the page opened) and again when it passes.
@@ -135,7 +135,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   }, [focusSection, item?.id, communityFeedback?.id])
   // The service decides eligibility per app from any verified install, so an
   // owner who reviewed and later uninstalled can still edit their review.
-  const verifiedCommunityInstall = communityIdentityLinked
+  const verifiedCommunityInstall = mobiusAccount === 'signed_in'
     && communityFeedback?.review_eligibility === 'eligible'
   const previewUrl = item.preview && storeAppId
     ? catalogAssetUrl(storeAppId, item.preview)
@@ -438,6 +438,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           <CommunityFeedback
             key={communityFeedback.revision_id}
             feedback={communityFeedback}
+            account={mobiusAccount}
             canRate={verifiedCommunityInstall}
             onSubmitFeedback={onCommunityFeedback}
             onOpenMobiusAccount={onOpenMobiusAccount}

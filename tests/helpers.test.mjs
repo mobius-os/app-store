@@ -380,7 +380,7 @@ test('ratings and optional written reviews use one account-bound community mutat
 test('install receipt retries use the exact installed release and enable feedback on acceptance', async () => {
   const {
     rememberCommunityInstallRevision, installedCommunityRevision,
-    attemptCommunityReceiptOnce, confirmCommunityInstallReceipt,
+    attemptCommunityReceiptOnce, recordCommunityInstall, loadCommunityApp,
   } = await bundle()
   const values = new Map()
   const storage = {
@@ -424,10 +424,11 @@ test('install receipt retries use the exact installed release and enable feedbac
     let eligibility = 'install_required'
     const confirm = async () => {
       try {
-        const refreshed = await confirmCommunityInstallReceipt(
+        await recordCommunityInstall(
           'owner-token', community.id, installedCommunityRevision(installed, community.id, storage),
           'app:42:notes',
         )
+        const refreshed = await loadCommunityApp('owner-token', community.id)
         eligibility = refreshed.review_eligibility
         return true
       } catch {
@@ -2835,7 +2836,7 @@ test('an official app installed from its curated row sends a receipt for its com
   // send the owner's receipt, or official apps can never be reviewed.
   const { mergeOfficialCommunityFeedback, communityReceiptAfterInstall, attemptCommunityReceiptOnce } =
     await import('../domain.js')
-  const { confirmCommunityInstallReceipt } = await import('../api.js')
+  const { recordCommunityInstall, loadCommunityApp } = await import('../api.js')
   const curated = [{
     id: 'notes', collection: 'everyday', manifest: { id: 'notes' },
     manifest_url: 'https://raw.githubusercontent.com/octo/app-notes/main/mobius.json',
@@ -2866,9 +2867,10 @@ test('an official app installed from its curated row sends a receipt for its com
   }
   try {
     const attempts = new Set()
-    const refreshed = await attemptCommunityReceiptOnce(attempts, receipt.attemptKey, () => (
-      confirmCommunityInstallReceipt('owner-token', receipt.communityId, receipt.revisionId, 'app:42:notes')
-    ))
+    const refreshed = await attemptCommunityReceiptOnce(attempts, receipt.attemptKey, async () => {
+      await recordCommunityInstall('owner-token', receipt.communityId, receipt.revisionId, 'app:42:notes')
+      return loadCommunityApp('owner-token', receipt.communityId)
+    })
     assert.equal(refreshed.review_eligibility, 'eligible')
     assert.equal(attemptCommunityReceiptOnce(attempts, receipt.attemptKey, () => null), null,
       'the same install is not receipted twice in one Store session')
@@ -2963,7 +2965,7 @@ test('the Store sends and reconciles receipts through the shared decisions', asy
   assert.doesNotMatch(appSource, /const communityFeedback = item\.community\b/)
   assert.doesNotMatch(appSource, /older install has no recorded release/)
   // Review access is the service's per-app eligibility, not a current install.
-  assert.match(detailSource, /verifiedCommunityInstall = communityIdentityLinked\n\s*&& communityFeedback\?\.review_eligibility === 'eligible'/)
+  assert.match(detailSource, /verifiedCommunityInstall = mobiusAccount === 'signed_in'\n\s*&& communityFeedback\?\.review_eligibility === 'eligible'/)
   // Only a missing account asks the owner to sign in.
   assert.match(feedbackSource, /review_eligibility === 'account_required'/)
 })
@@ -2975,6 +2977,11 @@ test('review prompts that need an account or handle hand off to the Möbius acco
   assert.equal(reviewAccountAction('eligible'), null)
   assert.equal(reviewAccountAction('install_required'), null)
   assert.equal(reviewAccountAction(undefined), null)
+  // The Store's own account reading must also say signed in before stars work.
+  assert.equal(reviewAccountAction('eligible', 'unchecked'), 'Sign in to Möbius')
+  assert.equal(reviewAccountAction('eligible', 'signed_out'), 'Sign in to Möbius')
+  assert.equal(reviewAccountAction('eligible', 'signed_in'), null)
+  assert.equal(reviewAccountAction('eligible', 'loading'), null)
   const appSource = await readFile(join(root, '..', 'index.jsx'), 'utf8')
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   assert.match(appSource, /onOpenMobiusAccount=\{openMobiusAccount\}/)

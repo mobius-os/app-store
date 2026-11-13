@@ -58,8 +58,12 @@ const gatedListing = {
 }
 
 // Mounts the whole Store. `account` is the Möbius account (and GitHub
-// connection) the platform reports right now; a test may change it between
-// reads, or hold a read open with `account.hold`.
+// connection, installed apps and the listing's review state) the platform
+// reports right now; a test may change it between reads. Each response is what
+// the platform said when the request arrived, even if the test holds it open
+// with `account.hold` (identity), `account.holdListing` (the next listing read)
+// or `account.holdSpotlight`. `account.identityFailures` fails that many
+// identity reads.
 async function mountStore(account) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://store.test/' })
   const keys = ['window', 'document', 'HTMLElement', 'ResizeObserver', 'fetch', 'IS_REACT_ACT_ENVIRONMENT']
@@ -85,13 +89,22 @@ async function mountStore(account) {
     window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement,
     ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
     IS_REACT_ACT_ENVIRONMENT: true,
-    fetch: async (url) => {
+    fetch: async (url, options = {}) => {
       const path = String(url)
-      if (path === '/api/apps/' || path === '/api/apps/uninstalled') return json([])
+      const listingRow = () => ({
+        ...gatedListing, review_eligibility: account.eligibility, has_verified_install: !!account.verified,
+      })
+      if (path === '/api/apps/') return json(account.installed || [])
+      if (path === '/api/apps/uninstalled') return json([])
       if (path === '/api/community/identity') {
         reads.push(path)
+        if (account.identityFailures > 0) {
+          account.identityFailures -= 1
+          return json({ detail: 'The account service is unavailable.' }, 503)
+        }
+        const identity = { linked: account.linked, issuer: 'iss', subject: 'owner', instance_id: 'inst' }
         if (account.hold) await account.hold.promise
-        return json({ linked: account.linked })
+        return json(identity)
       }
       if (path.startsWith('/api/community/publications?')) {
         reads.push('/api/community/publications')
@@ -101,12 +114,24 @@ async function mountStore(account) {
         reads.push(path)
         return json({ connected: account.github !== false, login: 'example-dev' })
       }
-      if (path.startsWith('/api/community/apps?')) {
-        return json({ items: [{ ...gatedListing, review_eligibility: account.eligibility }] })
+      if (path === '/api/community/editorial/spotlight') {
+        if (account.holdSpotlight) await account.holdSpotlight.promise
+        return json({}, 404)
+      }
+      if (path.startsWith('/api/community/apps?')) return json({ items: [listingRow()] })
+      if (path === `/api/community/apps/${gatedListing.id}/revisions/rev-1/installs` && options.method === 'POST') {
+        reads.push('receipt')
+        account.eligibility = 'eligible'
+        account.verified = true
+        return json({ recorded: true })
       }
       if (path === `/api/community/apps/${gatedListing.id}`) {
         reads.push(path)
-        return json({ ...gatedListing, review_eligibility: account.eligibility })
+        const row = listingRow()
+        const hold = account.holdListing
+        account.holdListing = null
+        if (hold) await hold.promise
+        return json(row)
       }
       if (path === `/api/community/apps/${gatedListing.id}/reviews`) return json({ items: [] })
       return json({}, 404)
@@ -123,6 +148,13 @@ async function mountStore(account) {
   return {
     doc, posted, reads,
     signInButtons: () => [...doc.querySelectorAll('button')].filter(button => button.textContent === 'Sign in to Möbius'),
+    canRate: () => doc.querySelector('[aria-label="5 stars"]')?.disabled === false,
+    // Lets every settled response commit, so a late one has had its chance.
+    async settle() {
+      for (let turn = 0; turn < 10; turn += 1) {
+        await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
+      }
+    },
     // The shell hides the Store's frame while Settings is open and shows it
     // again on the way back; the frame sees only visibilitychange, no focus.
     async leaveForSettings() { await setVisibility('hidden') },
@@ -243,6 +275,90 @@ test('coming back from Settings re-reads a detail page review gate that asked fo
     await until(() => view.signInButtons().length === 0, 'the review gate to update')
     assert.match(view.doc.body.textContent, /Install this app to leave verified feedback\./)
     assert.ok(view.reads.includes(`/api/community/apps/${gatedListing.id}`))
+  } finally {
+    await view.close()
+  }
+})
+
+async function openSharedNotes(view) {
+  await until(() => view.doc.querySelector('[aria-label="Shared Notes — open details"]'), 'the shared listing')
+  await act(async () => view.doc.querySelector('[aria-label="Shared Notes — open details"]').click())
+  await until(() => view.signInButtons().length === 1, 'the review gate')
+}
+
+test('a failed account check after signing in keeps the review gate retrying instead of asking for an install', async () => {
+  const account = { linked: false, handle: '', eligibility: 'account_required' }
+  const view = await mountStore(account)
+  try {
+    await openSharedNotes(view)
+    await view.leaveForSettings()
+    account.linked = true
+    account.handle = 'example'
+    account.eligibility = 'eligible'
+    account.identityFailures = 1
+    await view.returnToStore()
+    await until(() => /couldn’t be checked/.test(view.doc.body.textContent), 'the failed account check')
+    assert.equal(view.canRate(), false)
+    assert.equal(view.signInButtons().length, 1, 'the gate still offers Settings')
+    assert.doesNotMatch(view.doc.body.textContent, /Install this app to leave verified feedback\./)
+
+    const identityReads = () => view.reads.filter(path => path === '/api/community/identity').length
+    const before = identityReads()
+    await view.leaveForSettings()
+    await view.returnToStore()
+    assert.equal(identityReads(), before + 1, 'the next return checks the account again')
+    await until(() => view.canRate(), 'stars to open once the account reads as signed in')
+    assert.equal(view.signInButtons().length, 0)
+  } finally {
+    await view.close()
+  }
+})
+
+test('a listing read issued before the install receipt cannot undo the eligibility the receipt confirmed', async () => {
+  const account = {
+    linked: false, handle: '', eligibility: 'account_required',
+    installed: [{
+      id: 7, slug: 'shared-notes', name: 'Shared Notes', updated_at: '2026-11-01T00:00:00Z',
+      source_manifest: { url: gatedListing.latest_revision.manifest_url, id: 'shared-notes' },
+    }],
+  }
+  const view = await mountStore(account)
+  try {
+    await openSharedNotes(view)
+    await view.leaveForSettings()
+    account.linked = true
+    account.handle = 'example'
+    account.eligibility = 'install_required'
+    const olderRead = deferred()
+    account.holdListing = olderRead
+    await view.returnToStore()
+    // The return's listing read answered install_required and is still open;
+    // the signed-in account sends the receipt, whose own read says eligible.
+    await until(() => view.reads.includes('receipt') && view.canRate(), 'the receipt to open the stars')
+    await act(async () => olderRead.resolve())
+    await view.settle()
+    assert.equal(view.canRate(), true, 'the older install_required answer is dropped')
+    assert.doesNotMatch(view.doc.body.textContent, /Install this app to leave verified feedback\./)
+    assert.equal(view.reads.filter(path => path === 'receipt').length, 1)
+  } finally {
+    await view.close()
+  }
+})
+
+test('a slow startup read cannot restore the signed-out account after a sign-in refresh', async () => {
+  const account = { linked: false, handle: '', holdSpotlight: deferred() }
+  const view = await openPublish(account)
+  try {
+    await until(() => view.signInButtons().length === 2, 'the signed-out Publish prompt')
+    await view.leaveForSettings()
+    account.linked = true
+    account.handle = 'example'
+    await view.returnToStore()
+    await until(() => view.signInButtons().length === 0, 'the sign-in refresh')
+    await act(async () => account.holdSpotlight.resolve())
+    await view.settle()
+    assert.equal(view.signInButtons().length, 0, 'the startup snapshot does not sign the owner out again')
+    assert.match(view.doc.body.textContent, /Publishing as example/)
   } finally {
     await view.close()
   }
