@@ -9,6 +9,9 @@ import { CapabilityContract } from './CapabilityContract.jsx'
 
 const appName = entry => entry.item?.manifest?.name || entry.item?.name || String(entry.item?.id ?? '')
 const providerNames = { codex: 'OpenAI Codex', claude: 'Claude Code', mobius: 'Möbius' }
+// The platform model registry uses this scale when effort_levels is omitted.
+// An explicit empty scale means the model accepts no effort setting.
+const defaultEfforts = ['low', 'medium', 'high']
 
 // Reused at each update-agent boundary. Cancel never creates a chat; a bound
 // resolver may still reuse its original agent regardless of this selection.
@@ -38,14 +41,14 @@ export function UpdateAgentChooser({ token, title, onStart, onCancel }) {
       const { selected: saved } = visibleUpdateAgentChoices(data)
       if (saved) {
         setSelected(`${saved.provider}:${saved.id}`)
-        setEffort(data.savedAgent.effort)
+        setEffort(Array.isArray(saved.effort_levels) && !saved.effort_levels.length ? '' : data.savedAgent.effort || '')
       }
     }).catch(err => { if (active) setError(err.message || 'Could not load agent choices.') })
     return () => { active = false; controller.abort() }
   }, [token])
   const { rows } = visibleUpdateAgentChoices(choices)
   const model = rows.find(row => `${row.provider}:${row.id}` === selected)
-  const efforts = Array.isArray(model?.effort_levels) ? model.effort_levels : []
+  const efforts = model ? (Array.isArray(model.effort_levels) ? model.effort_levels : defaultEfforts) : []
   const effortIndex = efforts.indexOf(effort)
   const invalidEffort = !!model && !!effort && efforts.length > 0 && effortIndex < 0
   const close = () => { if (!busy) onCancel() }

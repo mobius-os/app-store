@@ -2596,7 +2596,7 @@ export default function App({ appId, token }) {
                     updateAllDisabled={busy || resolvingAll || !!checkingUpdateItemId || !!installedLoadError || !!updateTransaction}
                     onUpdateAll={handleUpdateAll}
                     conflictCount={conflictItems.length}
-                    onResolveAll={handleResolveAllConflicts}
+                    onResolveAll={() => handleResolveAllConflicts()}
                     resolveAllDisabled={busy || resolvingAll || checkingAllUpdates || !!installedLoadError}
                     resolveAllState={resolvingAll ? 'resolving' : 'idle'}
                     mode={tab}
