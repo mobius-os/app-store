@@ -525,6 +525,40 @@ export async function loadProviderStatus(token, opts = {}) {
   })
 }
 
+export async function loadUpdateAgentChoices(token, { signal: externalSignal } = {}) {
+  const headers = { Authorization: `Bearer ${token}` }
+  return withReadDeadline({ signal: externalSignal }, async ({ signal }) => {
+    const [modelsResponse, prefsResponse, statusResponse] = await Promise.all([
+      fetch('/api/models', { headers, signal }),
+      fetch('/api/owner/model-prefs', { headers, signal }),
+      fetch('/api/auth/providers/status', { headers, signal }),
+    ])
+    if (!modelsResponse.ok) throw await responseErrorOf(modelsResponse, 'Could not load agent models')
+    const models = await jsonWithin(modelsResponse, signal, 'agent models')
+    if (!prefsResponse.ok) throw await responseErrorOf(prefsResponse, 'Could not load model preferences')
+    const prefs = await jsonWithin(prefsResponse, signal, 'model preferences')
+    if (!statusResponse.ok) throw await responseErrorOf(statusResponse, 'Could not load provider status')
+    const status = await jsonWithin(statusResponse, signal, 'provider status')
+    return {
+      providers: models.providers || {}, hiddenIds: prefs.hidden_ids || [], recentIds: prefs.recent_ids || [], status,
+      savedAgent: prefs.selected_agent || null,
+    }
+  })
+}
+
+export function visibleUpdateAgentChoices(choices) {
+  const hidden = new Set(choices?.hiddenIds || [])
+  const recent = new Map((choices?.recentIds || []).map((id, index) => [id, index]))
+  const rows = Object.entries(choices?.providers || {}).flatMap(([provider, models]) =>
+    (choices?.status?.[provider]?.configured === true && choices.status[provider].available !== false ? models : [])
+      .filter(model => model.available !== false && !hidden.has(model.id))
+      .map(model => ({ provider, ...model })))
+    .sort((left, right) => (recent.get(left.id) ?? Infinity) - (recent.get(right.id) ?? Infinity))
+  const saved = choices?.savedAgent
+  const selected = rows.find(row => row.provider === saved?.provider && row.id === saved?.model) || null
+  return { rows, selected }
+}
+
 // External resources (catalog manifests + icons) live on public git hosts
 // (raw.githubusercontent.com etc). Prod's CSP is connect-src 'self' /
 // img-src 'self' data:, so a direct fetch() or <img src="https://…"> to
@@ -577,6 +611,9 @@ async function withReadDeadline(opts, read) {
   const deadlineMs = opts.deadlineMs ?? READ_DEADLINE_MS
   const deadlineAt = Date.now() + deadlineMs
   const controller = new AbortController()
+  const abort = () => controller.abort()
+  opts.signal?.addEventListener('abort', abort, { once: true })
+  if (opts.signal?.aborted) controller.abort()
   const timer = setTimeout(() => controller.abort(), deadlineMs)
   const { signal } = controller
   const wait = async ms => {
@@ -588,6 +625,7 @@ async function withReadDeadline(opts, read) {
     return await read({ signal, wait })
   } finally {
     clearTimeout(timer)
+    opts.signal?.removeEventListener('abort', abort)
   }
 }
 
@@ -981,26 +1019,26 @@ export async function loadUpdateCandidatePreview(appId, manifestUrl, token, { si
   return await readJsonOrThrow(res, 'Update changes could not be loaded')
 }
 
-export async function createConflictResolverChat(appId, resolutionPolicy, token) {
+export async function createConflictResolverChat(appId, resolutionPolicy, token, agent = null) {
   const res = await fetch(`/api/apps/${appId}/conflict-resolver-chat`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ resolution_policy: resolutionPolicy }),
+    body: JSON.stringify({ resolution_policy: resolutionPolicy, ...(agent ? { agent } : {}) }),
   })
   return await readJsonOrThrow(res, 'Could not open resolver chat')
 }
 
-export async function createConflictResolverBatch(appIds, resolutionPolicy, token) {
+export async function createConflictResolverBatch(appIds, resolutionPolicy, token, agent = null) {
   const res = await fetch('/api/apps/conflict-resolver-batch', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ app_ids: appIds, resolution_policy: resolutionPolicy }),
+    body: JSON.stringify({ app_ids: appIds, resolution_policy: resolutionPolicy, ...(agent ? { agent } : {}) }),
   })
   if (res.status === 409) {
     const error = await responseErrorOf(res, 'Could not open resolver chat')
@@ -1096,14 +1134,17 @@ export async function watchUpdateBatch(id, token, onSnapshot, { signal } = {}) {
   }
 }
 
-export async function createAppChat(title, token, { ownerVisible = false } = {}) {
+export async function createAppChat(title, token, { ownerVisible = false, agent = null, archiveOnGoalComplete = false } = {}) {
   const res = await fetch('/api/app-chats', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ title, owner_visible: ownerVisible }),
+    body: JSON.stringify({
+      title, owner_visible: ownerVisible, ...(agent || {}),
+      ...(archiveOnGoalComplete ? { archive_on_goal_complete: true } : {}),
+    }),
   })
   return await readJsonOrThrow(res, 'Could not create review chat')
 }

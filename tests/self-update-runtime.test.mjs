@@ -48,8 +48,15 @@ async function mount(fetchImpl) {
     document: dom.window.document,
     HTMLElement: dom.window.HTMLElement,
     IS_REACT_ACT_ENVIRONMENT: true,
-    fetch: fetchImpl,
+    fetch: (url, options) => {
+      if (url === '/api/models') return Promise.resolve(json({ providers: { codex: [{ id: 'test', label: 'Test agent' }] } }))
+      if (url === '/api/owner/model-prefs') return Promise.resolve(json({ selected_agent: { provider: 'codex', model: 'test' } }))
+      if (url === '/api/auth/providers/status') return Promise.resolve(json({ codex: { configured: true } }))
+      return fetchImpl(url, options)
+    },
   })
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   const root = createRoot(dom.window.document.getElementById('root'))
   const { SelfUpdateBanner } = await bannerModule()
   await act(async () => root.render(React.createElement(SelfUpdateBanner, { appId: 1, token: 'test-token' })))
@@ -87,9 +94,10 @@ test('an existing self-update conflict offers the agent even when preview fails'
     assert.match(view.dom.window.document.body.textContent, /Resolve with agent/)
     assert.doesNotMatch(view.dom.window.document.body.textContent, /Retry/)
     await view.click('Resolve with agent')
+    await view.click('Start agent')
     const resolverCalls = requests.filter(request => request.url.includes('/conflict-resolver-chat'))
     assert.equal(resolverCalls.length, 1)
-    assert.deepEqual(JSON.parse(resolverCalls[0].options.body), { resolution_policy: 'preserve_local' })
+    assert.deepEqual(JSON.parse(resolverCalls[0].options.body), { resolution_policy: 'preserve_local', agent: { provider: 'codex', model: 'test' } })
     assert.equal(posted[0].chatId, 'resolver-chat')
     await view.click('Open agent')
     assert.equal(requests.filter(request => request.url.includes('/conflict-resolver-chat')).length, 1)
@@ -128,6 +136,7 @@ test('a new self-update conflict switches from Update to the agent, not Retry', 
     assert.doesNotMatch(view.dom.window.document.body.textContent, /Retry/)
     assert.equal(installs, 1)
     await view.click('Resolve with agent')
+    await view.click('Start agent')
     assert.equal(resolvers, 1)
     assert.equal(installs, 1)
   } finally {

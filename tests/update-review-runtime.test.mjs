@@ -45,6 +45,8 @@ function useDom() {
   const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT', 'fetch', 'ResizeObserver']
   const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new dom.window.Event('close')) }
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
   dom.window.ResizeObserver = globalThis.ResizeObserver
   dom.window.HTMLElement.prototype.scrollIntoView = () => {}
@@ -62,6 +64,9 @@ async function mountApp(dom, routes) {
   const { MANIFEST_SNAPSHOTS } = await import('../manifest-snapshots.js')
   globalThis.fetch = async (url, options = {}) => {
     const path = String(url)
+    if (path === '/api/models') return json({ providers: { codex: [{ id: 'test', label: 'Test agent' }] } })
+    if (path === '/api/owner/model-prefs') return json({ selected_agent: { provider: 'codex', model: 'test' } })
+    if (path === '/api/auth/providers/status') return json({ codex: { configured: true } })
     const answer = await routes(path, options)
     if (answer) return answer
     if (path.startsWith('/api/proxy?')) {
@@ -93,6 +98,68 @@ function entry(id, status = 'ready', extra = {}) {
     ...extra,
   }
 }
+
+test('update agent chooser inherits omitted effort levels, respects empty levels, and uses custom levels', async () => {
+  const { dom, restore } = useDom()
+  const { UpdateAgentChooser } = await modalModule()
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const started = []
+  try {
+    for (const [levels, savedEffort, expectedEffort, scale] of [
+      [undefined, 'high', 'high', 'high'],
+      [[], 'high', undefined, null],
+      [['low', 'max', 'ultra'], 'max', 'max', 'ultra'],
+    ]) {
+      globalThis.fetch = async url => json(url === '/api/models'
+        ? { providers: { codex: [{ id: 'test', label: 'Test', ...(levels === undefined ? {} : { effort_levels: levels }) }] } }
+        : url === '/api/owner/model-prefs'
+          ? { selected_agent: { provider: 'codex', model: 'test', effort: savedEffort } }
+          : { codex: { configured: true } })
+      await act(async () => { root.render(React.createElement(UpdateAgentChooser, { token: 'tok', onStart: agent => started.push(agent), onCancel() {} })); await wait(5) })
+      const doc = dom.window.document
+      assert.equal(doc.querySelector('.st-agent-choice-badge')?.textContent, expectedEffort)
+      await act(async () => doc.querySelector('.st-agent-choice-current').click())
+      assert.equal(doc.querySelector('.st-agent-choice-effort-scale span:last-child')?.textContent ?? null, scale)
+      await act(async () => doc.querySelector('.st-agent-choice-actions button.st-btn-primary').click())
+      assert.deepEqual(started.at(-1), { provider: 'codex', model: 'test', ...(expectedEffort ? { effort: expectedEffort } : {}) })
+      await act(async () => root.render(null))
+    }
+  } finally {
+    await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('Library Resolve all opens agent chooser before starting any resolver', async () => {
+  const { dom, restore } = useDom()
+  const posts = []
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (options.method === 'POST') posts.push({ path, body: JSON.parse(options.body || '{}') })
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (/^\/api\/apps\/11\/update-check/.test(path)) return json({ update_available: true, pending_update_state: 'needs_resolution' })
+      if (path === '/api/apps/11/conflict-resolver-chat') return json({ chat_id: 'resolver-chat' })
+      return null
+    })
+    const doc = dom.window.document
+    const resolveAll = doc.querySelector('.st-resolve-all-trigger')
+    assert.ok(resolveAll, 'conflict appears in Library filters')
+    await act(async () => { resolveAll.click(); await wait(5) })
+    assert.ok(doc.querySelector('.st-agent-choice'), 'the click event must not become the agent choice')
+    assert.deepEqual(posts, [], 'no resolver starts before agent confirmation')
+    await act(async () => { doc.querySelector('.st-agent-choice-actions button.st-btn-primary').click(); await wait(5) })
+    assert.deepEqual(posts, [{ path: '/api/apps/11/conflict-resolver-chat', body: {
+      resolution_policy: 'preserve_local', agent: { provider: 'codex', model: 'test' },
+    } }])
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
 
 test('failed entries offer Try again or Ask agent by retryability, and only confirmation applies', async () => {
   const { dom, restore } = useDom()
@@ -479,8 +546,9 @@ test('a stale update-check meets a conflict-blocked preview: card and review bot
     assert.equal(modal.querySelector('.st-update-review-actions button.st-btn-primary'), null, 'nothing can be confirmed')
     assert.equal(cardAction()?.getAttribute('aria-label'), 'Resolve in chat Voice', 'the card behind the review flips too')
     await act(async () => { modal.querySelector('.st-update-review-section button').click(); await wait(20) })
+    await act(async () => { doc.querySelector('.st-agent-choice-actions button.st-btn-primary').click(); await wait(20) })
     assert.deepEqual(posts, ['/api/apps/conflict-resolver-batch'], 'resolving starts the resolver and installs nothing')
-    await act(async () => { [...modal.querySelectorAll('button')].find(button => button.textContent === 'Open resolver chat').click() })
+    await act(async () => { [...modal.querySelectorAll('button')].find(button => button.textContent === 'Open resolver chat').click(); await wait(20) })
     assert.deepEqual(openedChats, ['resolver-chat'])
   } finally {
     if (root) await act(async () => root.unmount())

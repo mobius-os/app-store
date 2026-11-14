@@ -3,6 +3,7 @@ import { STORE_SELF } from '../constants.js'
 import { createConflictResolverChat, fetchUpdateCheck, installApp, loadUpdateCandidatePreview, openChat } from '../api.js'
 import { capabilityDiffNeedsReview, hasAccessRows, MISSING_ACCESS_ROWS } from '../domain.js'
 import { CapabilityContract } from './CapabilityContract.jsx'
+import { UpdateAgentChooser } from './UpdateReviewModal.jsx'
 
 // Self-update banner. The store is bootstrapped separately from its catalog
 // grid, so it checks for its OWN updates here: preview the published candidate
@@ -16,6 +17,7 @@ export function SelfUpdateBanner({ appId, token }) {
   const [phase, setPhase] = useState('idle')   // idle | updating | resolving | done | error
   const [msg, setMsg] = useState('')
   const [resolverChatId, setResolverChatId] = useState(null)
+  const [choosingAgent, setChoosingAgent] = useState(false)
   const needsResolution = updateCheck?.pendingUpdateState === 'needs_resolution'
 
   // A transient unknown check must not erase a known conflict; a confirmed
@@ -68,11 +70,12 @@ export function SelfUpdateBanner({ appId, token }) {
   const previousAccessUnrecorded = accessDiff?.unknown_previous === true
   if (phase !== 'done' && !needsResolution && !hasUpdate) return null
 
-  const onResolve = async () => {
+  const onResolve = async (agent = null) => {
     if (resolverChatId) return openChat(resolverChatId)
+    if (!agent) { setChoosingAgent(true); return }
     setPhase('resolving'); setMsg('')
     try {
-      const resolver = await createConflictResolverChat(appId, 'preserve_local', token)
+      const resolver = await createConflictResolverChat(appId, 'preserve_local', token, agent)
       setResolverChatId(resolver.chat_id)
       setPhase('idle')
       openChat(resolver.chat_id)
@@ -131,9 +134,10 @@ export function SelfUpdateBanner({ appId, token }) {
             App Store {conflictVersion ? `v${conflictVersion} ` : ''}needs help merging changes. Your current version stays available.
             {msg ? ` ${msg}` : ''}
           </div>
-          <button className="st-banner-btn" disabled={phase === 'resolving'} onClick={onResolve}>
+          <button className="st-banner-btn" disabled={phase === 'resolving'} onClick={() => onResolve()}>
             {phase === 'resolving' ? 'Starting agent…' : resolverChatId ? 'Open agent' : 'Resolve with agent'}
           </button>
+          {choosingAgent && <UpdateAgentChooser token={token} title="Resolve App Store update" onStart={onResolve} onCancel={() => setChoosingAgent(false)} />}
         </>
       ) : (
         <>
