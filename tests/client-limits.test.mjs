@@ -55,7 +55,7 @@ test('catalog text within the platform listing contract reaches the UI whole', a
     apps: [catalogEntry('long', {
       description, summary: tagline, listing: { tagline, description, screenshots },
     })],
-  }), () => fetchCatalog('https://raw.example/catalog.json', 'owner-token'))
+  }), () => fetchCatalog('https://raw.example/catalog.json', 'owner-token').then(({ apps }) => apps))
 
   assert.equal(item.description, description.trim())
   assert.equal(item.summary, tagline.trim())
@@ -70,14 +70,15 @@ test('catalog text within the platform listing contract reaches the UI whole', a
 
 test('the checked-in catalog is never shortened by the Store sanitizer', async () => {
   const registry = JSON.parse(await readFile(join(root, 'catalog.json'), 'utf8'))
-  const items = await withFetch(
+  const { apps: items, communityCategories } = await withFetch(
     async () => jsonResponse(registry),
     () => fetchCatalog('https://raw.example/catalog.json', 'owner-token'),
   )
+  assert.deepEqual(communityCategories, registry.community_categories)
   const byId = new Map(items.map(item => [item.id, item]))
   for (const entry of registry.apps) {
     const item = byId.get(entry.id)
-    for (const field of ['name', 'description', 'summary', 'categories', 'keywords', 'capabilities', 'setup', 'listing', 'preview', 'audience', 'collection']) {
+    for (const field of ['name', 'description', 'summary', 'categories', 'keywords', 'capabilities', 'setup', 'listing', 'preview', 'audience', 'collection', 'category']) {
       if (entry[field] === undefined) continue
       if (field === 'setup' || field === 'listing') {
         for (const [key, value] of Object.entries(entry[field])) {
@@ -105,7 +106,7 @@ test('catalog omits over-limit metadata without fabricating shortened copy', asy
         screenshots: [{ src: 'shot.png', alt: tooLong(LISTING_LIMITS.altBytes), label: tooLong(LISTING_LIMITS.captionBytes) }],
       },
     })],
-  }), () => fetchCatalog('https://raw.example/catalog.json', 'owner-token'))
+  }), () => fetchCatalog('https://raw.example/catalog.json', 'owner-token').then(({ apps }) => apps))
   assert.equal(item.name, 'n'.repeat(141))
   assert.equal(item.description, undefined)
   assert.equal(item.summary, undefined)
@@ -272,7 +273,7 @@ test('a response body that stalls past the deadline reads as unreachable', async
 
 test('catalog search retains every capability string, including Workflows lifecycle', async () => {
   const registry = JSON.parse(await readFile(join(root, 'catalog.json'), 'utf8'))
-  const items = await withFetch(async () => jsonResponse(registry), () => fetchCatalog('https://raw.example/catalog.json', 'tok'))
+  const items = await withFetch(async () => jsonResponse(registry), () => fetchCatalog('https://raw.example/catalog.json', 'tok').then(({ apps }) => apps))
   assert.ok(filterCatalog(items, { query: 'lifecycle' }).some(item => item.id === 'workflows'))
   for (const entry of registry.apps) {
     for (const capability of entry.capabilities || []) {
@@ -286,7 +287,7 @@ test('catalog trims and deduplicates categories and setup without guessed non-La
   const setup = { required: true, scope: 'system', section: ' models ', label: '界'.repeat(48), description: '界'.repeat(220), action: '界'.repeat(48), fields: [' 模型 ', '模型', '界'.repeat(48)] }
   const [item] = await withFetch(async () => jsonResponse({ schema: 1, apps: [catalogEntry('padded', {
     name: ` ${name} `, categories: [' System ', 'System', ' system '], setup,
-  })] }), () => fetchCatalog('https://raw.example/catalog.json', 'tok'))
+  })] }), () => fetchCatalog('https://raw.example/catalog.json', 'tok').then(({ apps }) => apps))
   assert.equal(item.name, name)
   assert.deepEqual(item.categories, ['System'])
   assert.ok(isSystemCatalogItem(item))

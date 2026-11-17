@@ -170,13 +170,22 @@ async function mountStore(account) {
   }
 }
 
+// Publishing opens from the profile button beside search.
 async function openPublish(account) {
   const view = await mountStore(account)
-  await act(async () => view.doc.querySelector('#st-tab-publish').click())
+  await act(async () => view.doc.querySelector('.st-profile-bubble').click())
   return view
 }
 
-test('the Publish tab sends a signed-out owner to Settings › Accounts › Möbius', async () => {
+// Shared listings show in the Apps tab.
+async function openSharedListing(view) {
+  const tab = [...view.doc.querySelectorAll('button.st-tab')].find(button => button.textContent.startsWith('Apps'))
+  await act(async () => tab.click())
+  await until(() => view.doc.querySelector('[aria-label="Shared Notes — open details"]'), 'the shared listing')
+  await act(async () => view.doc.querySelector('[aria-label="Shared Notes — open details"]').click())
+}
+
+test('publishing sends a signed-out owner to Settings › Accounts › Möbius', async () => {
   const view = await openPublish({ linked: false, handle: '' })
   try {
     assert.match(view.doc.body.textContent, /Sign in to your Möbius account in Settings to publish an app\./)
@@ -189,7 +198,7 @@ test('the Publish tab sends a signed-out owner to Settings › Accounts › Möb
       { message: { type: 'moebius:open-settings', section: 'mobius-account' }, origin: 'https://store.test' },
       { message: { type: 'moebius:open-settings', section: 'mobius-account' }, origin: 'https://store.test' },
     ])
-    assert.equal(view.doc.querySelector('#st-tab-publish').getAttribute('aria-selected'), 'true',
+    assert.equal(view.doc.querySelector('.st-profile-bubble').getAttribute('aria-current'), 'page',
       'the Store stays on Publish instead of opening another listing')
   } finally {
     await view.close()
@@ -260,8 +269,7 @@ test('coming back from Settings re-reads a detail page review gate that asked fo
   const account = { linked: false, handle: '', eligibility: 'account_required' }
   const view = await mountStore(account)
   try {
-    await until(() => view.doc.querySelector('[aria-label="Shared Notes — open details"]'), 'the shared listing')
-    await act(async () => view.doc.querySelector('[aria-label="Shared Notes — open details"]').click())
+    await openSharedListing(view)
     await until(() => view.signInButtons().length === 1, 'the review gate')
     assert.match(view.doc.body.textContent, /Sign in to your Möbius account in Settings to rate or review this app\./)
     await act(async () => view.signInButtons()[0].click())
@@ -281,8 +289,7 @@ test('coming back from Settings re-reads a detail page review gate that asked fo
 })
 
 async function openSharedNotes(view) {
-  await until(() => view.doc.querySelector('[aria-label="Shared Notes — open details"]'), 'the shared listing')
-  await act(async () => view.doc.querySelector('[aria-label="Shared Notes — open details"]').click())
+  await openSharedListing(view)
   await until(() => view.signInButtons().length === 1, 'the review gate')
 }
 

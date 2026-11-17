@@ -1,6 +1,7 @@
 /* StoreImage renders accepted listing artwork from local or remote app packages. */
 import { useEffect, useState } from 'react'
 import { proxyUrl } from '../api.js'
+import { useNearView } from './nearView.js'
 
 const remoteImages = new Map()
 const CATALOG_ASSET_RE = /^[a-z0-9][a-z0-9._-]*\.(?:png|webp|jpe?g)$/i
@@ -21,9 +22,14 @@ function hostedEditorialAssetUrl(value) {
   }
 }
 
-function remoteImage(url, token) {
-  if (remoteImages.has(url)) return remoteImages.get(url)
-  const request = fetch(proxyUrl(url), {
+// Listing art is at most a wide banner; profile pictures are small.
+const ART_WIDTH = 1400
+const PICTURE_WIDTH = 160
+
+function remoteImage(url, token, width = ART_WIDTH) {
+  const key = `${width}|${url}`
+  if (remoteImages.has(key)) return remoteImages.get(key)
+  const request = fetch(proxyUrl(url, { width }), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
     .then((response) => {
@@ -31,9 +37,9 @@ function remoteImage(url, token) {
       return response.blob()
     })
     .finally(() => {
-      if (remoteImages.get(url) === request) remoteImages.delete(url)
+      if (remoteImages.get(key) === request) remoteImages.delete(key)
     })
-  remoteImages.set(url, request)
+  remoteImages.set(key, request)
   return request
 }
 
@@ -142,10 +148,12 @@ export function StoreImage({ item, path, token, alt = '', className = '', loadin
 
   const url = urls[attempt] || ''
   const external = /^https:\/\//i.test(url)
+  const [viewRef, near] = useNearView(external)
 
   useEffect(() => {
     if (!url) { setSrc(''); setFailed(true); return }
     if (!external) { setSrc(url); return }
+    if (!near) return
     let active = true
     let objectUrl = ''
     remoteImage(url, token)
@@ -164,13 +172,33 @@ export function StoreImage({ item, path, token, alt = '', className = '', loadin
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
     // candidatesKey covers urls; attempt selects within them.
-  }, [url, external, token, attempt, candidatesKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [url, external, token, attempt, candidatesKey, near]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const advance = () => {
     if (attempt + 1 < urls.length) { setSrc(''); setAttempt((a) => a + 1) }
     else setFailed(true)
   }
 
-  if (!src || failed) return <span className={`${className} st-store-image-placeholder`} aria-hidden="true" />
+  if (!src || failed) return <span ref={viewRef} className={`${className} st-store-image-placeholder`} aria-hidden="true" />
   return <img src={src} alt={alt} className={className} loading={loading} decoding="async" onError={advance} />
+}
+
+// Account pictures use the same authenticated image transport as listing art.
+// Failure is ordinary: the creator initial remains visible underneath.
+export function CreatorPicture({ url, token, name }) {
+  const [image, setImage] = useState(null)
+  useEffect(() => {
+    let active = true
+    let reader
+    setImage(null)
+    if (url) remoteImage(url, token, PICTURE_WIDTH).then(blob => {
+      if (!active || !blob.type.startsWith('image/')) return
+      reader = new FileReader()
+      reader.onload = () => { if (active) setImage({ url, src: reader.result }) }
+      reader.readAsDataURL(blob)
+    }).catch(() => { /* Keep the initial if a profile picture cannot be read. */ })
+    return () => { active = false; if (reader?.readyState === 1) reader.abort() }
+  }, [url, token])
+  if (!image || image.url !== url) return null
+  return <img src={image.src} alt={`${name} profile picture`} onError={() => setImage(null)} />
 }

@@ -1,5 +1,5 @@
 import {
-  CATALOG_COLLECTIONS, FALLBACK_LICENSE_OPTIONS, LICENSE_SUMMARIES, PERM_EXPLAIN, TRUSTED_HOSTS,
+  FALLBACK_LICENSE_OPTIONS, LICENSE_SUMMARIES, PERM_EXPLAIN, STORE_CATEGORIES, TRUSTED_HOSTS,
 } from './constants.js'
 import { MANIFEST_SNAPSHOTS } from './manifest-snapshots.js'
 
@@ -710,8 +710,8 @@ export function appLifecycleFor(item, {
     }
     return {
       key: 'conflict',
-      statusLabel: 'Update blocked',
-      actionLabel: 'Resolve in chat',
+      statusLabel: 'Waiting for you',
+      actionLabel: 'Fix',
       actionKind: 'resolve',
       cardVariant: 'conflict',
       installedApp,
@@ -854,42 +854,183 @@ export function catalogAudience(item) {
   return isSystemCatalogItem(item) ? 'developer' : 'general'
 }
 
-const CATALOG_COLLECTION_IDS = new Set(CATALOG_COLLECTIONS.map(({ id }) => id))
+const CATEGORY_BY_ID = new Map(STORE_CATEGORIES.map((category) => [category.id, category]))
 
-// Editorial placement is a discovery lens, while these app identities have a
-// durable owner-facing job: understanding and organizing agent work. Keep the
-// classification stable even when an older published catalog temporarily
-// overlays the checked-in taxonomy during a rolling Store update.
+// The category record for one stable id, or null for anything unknown.
+export function storeCategory(id) {
+  return CATEGORY_BY_ID.get(String(id || '').trim().toLowerCase()) || null
+}
+
+function knownCategoryId(value) {
+  return storeCategory(value)?.id || ''
+}
+
+// These app identities have a durable owner-facing job, understanding and
+// organizing agent work, even when an older catalog copy files them elsewhere.
 const AGENT_PRODUCTIVITY_IDS = new Set(['memory', 'skills', 'tasks'])
 
-export function catalogCollection(item) {
-  // A merged curated+community app lives in its curated collection; only an
-  // app whose sole home is the community channel lands in that section.
-  const curatedHome = String(item?.collection || '').trim().toLowerCase()
-  if (item?.community && (!curatedHome || curatedHome === 'community')) {
-    return 'community'
-  }
-  if (item?.community && curatedHome) {
-    return CATALOG_COLLECTION_IDS.has(curatedHome) ? curatedHome : 'community'
-  }
-  if (AGENT_PRODUCTIVITY_IDS.has(String(item?.id || '').toLowerCase())) {
-    return 'productivity'
-  }
-  const curated = String(item?.collection || '').trim().toLowerCase()
-  if (CATALOG_COLLECTION_IDS.has(curated)) return curated
-
+// Entries from an older catalog copy or a manifest with only free-form
+// categories still land somewhere sensible. No signal means no category:
+// such apps appear under More apps rather than in a wrong home.
+function inferredCategory(item) {
+  if (AGENT_PRODUCTIVITY_IDS.has(String(item?.id || '').toLowerCase())) return 'productivity'
+  const collection = String(item?.collection || '').trim().toLowerCase()
   const categories = itemCategories(item).map((category) => category.toLowerCase())
-  if (catalogAudience(item) === 'developer' || categories.includes('system')) {
-    return 'developer'
-  }
-  if (categories.includes('games') || categories.includes('music')) return 'play'
-  if (categories.includes('reference') || categories.includes('learning')) {
-    return 'explore'
-  }
-  if (categories.includes('creative') || categories.includes('development')) {
-    return 'create'
-  }
-  return 'everyday'
+  const has = (...names) => names.some((name) => categories.includes(name))
+  if (has('music')) return 'music'
+  if (collection === 'play' || has('games', 'game')) return 'action'
+  if (collection === 'developer') return 'developer'
+  if (has('system', 'agents')) return item?.community ? 'agent' : 'developer'
+  if (['productivity', 'everyday', 'create', 'explore'].includes(collection)) return collection
+  if (has('reference', 'learning', 'education')) return 'explore'
+  if (has('finance', 'business', 'money')) return 'money'
+  if (has('news', 'information', 'social')) return 'news'
+  if (has('creative', 'development', 'writing')) return 'create'
+  if (has('productivity')) return 'productivity'
+  if (has('health', 'lifestyle', 'accessibility', 'media')) return 'everyday'
+  return ''
+}
+
+// Where an app lives in the Apps and Games tabs. The curated catalog decides
+// for official apps; otherwise the creator's own `store.category` wins, then
+// the Store's assignment for listings published before creators could choose.
+export function catalogCategory(item) {
+  return knownCategoryId(item?.category)
+    || knownCategoryId(item?.manifest?.store?.category)
+    || knownCategoryId(item?.assigned_category)
+    || inferredCategory(item)
+}
+
+export function catalogKind(item) {
+  return storeCategory(catalogCategory(item))?.kind || 'apps'
+}
+
+// Attach the catalog's community assignments (lowercase owner/repo → id).
+// A creator's own choice still wins inside catalogCategory.
+export function withAssignedCategories(items, assignments = {}) {
+  if (!assignments || typeof assignments !== 'object') return items
+  return (items || []).map((item) => {
+    if (item?.category) return item
+    const assigned = knownCategoryId(assignments[catalogRepoIdentity(item).toLowerCase()])
+    return assigned ? { ...item, assigned_category: assigned } : item
+  })
+}
+
+// The registry's public feedback block for a listing, community or official.
+function feedbackOf(item) {
+  return item?.community || item?.community_feedback || null
+}
+
+function nameOf(item) {
+  return String(item?.manifest?.name || item?.name || item?.id || '')
+}
+
+// Highest average first, then more ratings. Only apps people actually rated.
+// A fair rating: a few votes are pulled toward a neutral 3.5 stars, so one
+// 5-star rating cannot outrank 4.8 stars from twenty people.
+const RATING_PRIOR_VOTES = 3
+const RATING_PRIOR_STARS = 3.5
+export function ratingScore(item) {
+  const feedback = feedbackOf(item) || {}
+  const count = feedback.rating_count || 0
+  const average = feedback.rating_average || 0
+  return (count * average + RATING_PRIOR_VOTES * RATING_PRIOR_STARS) / (count + RATING_PRIOR_VOTES)
+}
+export function topRatedApps(items) {
+  return (items || [])
+    .filter((item) => (feedbackOf(item)?.rating_count || 0) > 0)
+    .sort((a, b) => (ratingScore(b) - ratingScore(a))
+      || (feedbackOf(b).rating_count - feedbackOf(a).rating_count)
+      || nameOf(a).localeCompare(nameOf(b)))
+}
+
+// Discovery lists never go empty and never reach far back. A list keeps what
+// is current (rated 4 stars or more, published or updated in the last 30
+// days, at most 24) and, when that is too few to fill a shelf, tops up with
+// the next best rather than hiding or reaching for everything.
+export const FRESH_WINDOW_DAYS = 30
+export const FRESH_LIST_MAX = 24
+export const LIST_MINIMUM = { fresh: 6, rated: 4 }
+const DAY_MS = 24 * 60 * 60 * 1000
+function topUp(sorted, keep, minimum, maximum = sorted.length) {
+  const kept = sorted.filter(keep)
+  return (kept.length >= minimum ? kept : sorted.slice(0, minimum)).slice(0, maximum)
+}
+
+export function highestRated(items) {
+  return topUp(topRatedApps(items), (item) => (feedbackOf(item)?.rating_average || 0) >= 4, LIST_MINIMUM.rated)
+}
+export function newArrivals(items, now = Date.now()) {
+  return topUp(newestPublications(items), (item) => now - publishedTime(item) <= FRESH_WINDOW_DAYS * DAY_MS,
+    LIST_MINIMUM.fresh, FRESH_LIST_MAX)
+}
+export function recentUpdates(items, now = Date.now()) {
+  const released = (item) => Date.parse(feedbackOf(item)?.released_at || '') || 0
+  return topUp(recentlyUpdatedApps(items), (item) => now - released(item) <= FRESH_WINDOW_DAYS * DAY_MS,
+    LIST_MINIMUM.fresh, FRESH_LIST_MAX)
+}
+
+// A release after the first publication, newest first. Publishing once is an
+// arrival, not an update.
+export function recentlyUpdatedApps(items) {
+  const releasedAt = (item) => Date.parse(feedbackOf(item)?.released_at || '') || 0
+  const publishedAt = (item) => Date.parse(feedbackOf(item)?.published_at || '') || 0
+  return (items || [])
+    .filter((item) => releasedAt(item) - publishedAt(item) > 60 * 60 * 1000)
+    .sort((a, b) => releasedAt(b) - releasedAt(a) || nameOf(a).localeCompare(nameOf(b)))
+}
+
+// Trending and Most downloaded follow the registry's own ranking. The registry
+// keeps the install counts behind them private and only returns the order of
+// apps that clear its public minimum. A ranking is a list of community app
+// ids, used only when the registry confirms it applied that sort: an older
+// registry or platform ignores the parameter and returns the newest updates.
+export const COMMUNITY_RANKINGS = ['trending', 'installs']
+export function communityRanking(payload, sort) {
+  if (!payload || payload.sort !== sort || !Array.isArray(payload.items)) return []
+  return payload.items.map((row) => String(row?.id || '')).filter(Boolean)
+}
+
+// A ranked shelf keeps the registry's order for the apps in this view. Until
+// at least three apps qualify there is no honest ranking and it stays hidden.
+export const RANKED_SHELF_MINIMUM_APPS = 3
+export function rankedApps(items, ranking) {
+  const rank = new Map((ranking || []).map((id, index) => [id, index]))
+  const ranked = (items || [])
+    .filter((item) => rank.has(feedbackOf(item)?.id))
+    .sort((a, b) => rank.get(feedbackOf(a).id) - rank.get(feedbackOf(b).id))
+  return ranked.length >= RANKED_SHELF_MINIMUM_APPS ? ranked : []
+}
+
+// All-time installs as other stores show them: "50+", "1K+".
+export function installsLabel(item) {
+  const count = feedbackOf(item)?.installs_at_least || 0
+  if (!count) return ''
+  return count >= 1000 ? `${count / 1000}K+ installs` : `${count}+ installs`
+}
+
+// One category page's order. "top" ranks rated apps first, then official
+// apps, then the most recent release; nothing is invented for unrated apps.
+export function sortCategoryApps(items, sort = 'top') {
+  const feedback = (item) => feedbackOf(item) || {}
+  const time = (value) => Date.parse(value || '') || 0
+  const released = (item) => time(feedback(item).released_at || feedback(item).published_at || item?.published_at)
+  const published = (item) => time(feedback(item).published_at || item?.published_at)
+  const list = [...(items || [])]
+  if (sort === 'new') return list.sort((a, b) => published(b) - published(a) || nameOf(a).localeCompare(nameOf(b)))
+  if (sort === 'updated') return list.sort((a, b) => released(b) - released(a) || nameOf(a).localeCompare(nameOf(b)))
+  return list.sort((a, b) => {
+    const fa = feedback(a)
+    const fb = feedback(b)
+    const rated = Number((fb.rating_count || 0) > 0) - Number((fa.rating_count || 0) > 0)
+    if (rated) return rated
+    if ((fa.rating_count || 0) > 0) {
+      const byRating = (fb.rating_average - fa.rating_average) || (fb.rating_count - fa.rating_count)
+      if (byRating) return byRating
+    }
+    const official = Number(!b.community) - Number(!a.community)
+    return official || released(b) - released(a) || nameOf(a).localeCompare(nameOf(b))
+  })
 }
 
 export function sortCatalogForDisplay(items) {
@@ -1054,6 +1195,7 @@ export function communityCatalogItems(payload) {
             login: String(row.publisher.login || ''),
             // The publisher's Möbius handle, when the registry has one.
             handle: typeof row.publisher.handle === 'string' ? row.publisher.handle : '',
+            avatar_url: typeof row.publisher.avatar_url === 'string' ? row.publisher.avatar_url : '',
           }
         : null,
       error: null,
@@ -1062,6 +1204,10 @@ export function communityCatalogItems(payload) {
         revision_id: String(latest.id || latest.revision_id || row.revision_id || ''),
         author: communityAuthor(row),
         published_at: String(row.created_at || ''),
+        released_at: String(latest.created_at || row.created_at || ''),
+        // All-time installs, already rounded down to a public step by the
+        // registry; null (shown as nothing) below its first step.
+        installs_at_least: Number.isInteger(row.installs_at_least) && row.installs_at_least > 0 ? row.installs_at_least : 0,
         rating_average: Number(row.rating_average ?? row.rating?.average ?? 0) || 0,
         rating_count: Number(row.rating_count ?? row.rating?.count ?? 0) || 0,
         user_review: row.user_review && typeof row.user_review === 'object'
@@ -1440,6 +1586,8 @@ export function listingDraftFromPreview(preview, app) {
   return {
     tagline: draft.tagline || '',
     description: draft.description || '',
+    // null when this Möbius cannot save a category yet; the picker stays hidden.
+    category: typeof draft.category === 'string' ? draft.category : null,
     // null when this Möbius does not require a license yet; the picker stays hidden.
     license: typeof draft.license === 'string' ? draft.license : null,
     icon: draft.icon ? kept(draft.icon) : (app?.icon_url ? { url: app.icon_url } : null),
@@ -1521,6 +1669,7 @@ export function listingPayload(draft) {
   return {
     tagline: draft.tagline.trim(),
     description: draft.description.trim(),
+    ...(typeof draft.category === 'string' ? { category: draft.category } : {}),
     // Only a chosen license is sent: omitting it keeps the current one.
     ...(draft.license ? { license: draft.license } : {}),
     ...(draft.iconChanged && draft.icon?.data ? { icon: { data_base64: draft.icon.data } } : {}),
@@ -1556,6 +1705,7 @@ export function savedListingSurvived(sent, draft) {
   const text = (value) => (typeof value === 'string' ? value.trim() : '')
   return text(draft.tagline) === sent.tagline
     && text(draft.description) === sent.description
+    && (sent.category === undefined || text(draft.category) === sent.category)
     && (sent.license === undefined || text(draft.license) === sent.license)
     && (!sent.icon || !!text(draft.icon))
     && savedArtSurvived(sent.hero, draft.hero)
@@ -1605,10 +1755,12 @@ export function hostnameOf(raw) {
 }
 
 // Publication time, never revision time: an update must not become a new arrival.
+function publishedTime(item) {
+  return Date.parse(item.published_at || (item.community || item.community_feedback)?.published_at) || 0
+}
 export function newestPublications(items) {
-  const published = item => Date.parse(item.published_at || (item.community || item.community_feedback)?.published_at) || 0
-  return items.filter(item => published(item) > 0)
-    .sort((a, b) => published(b) - published(a) || a.id.localeCompare(b.id))
+  return items.filter(item => publishedTime(item) > 0)
+    .sort((a, b) => publishedTime(b) - publishedTime(a) || a.id.localeCompare(b.id))
 }
 
 // Curated entries retain their own source identity when community feedback
@@ -1620,6 +1772,54 @@ export function catalogPublisher(item) {
   const repo = catalogRepoIdentity(item)
   if (repo) return repo.split('/')[0]
   return item.manifest?.author || item.community?.author?.handle || 'Community'
+}
+
+// Only the registry's linked Möbius identity may supply a creator picture.
+// A matching GitHub login is not proof that a Möbius account is theirs.
+export function creatorPictureUrl(publisher) {
+  if (!publisher?.handle?.trim()) return ''
+  try {
+    const url = new URL(publisher.avatar_url)
+    const host = url.hostname.toLowerCase()
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return ''
+    return host === 'mobius.you' || host === 'www.mobius.you' || host.endsWith('.googleusercontent.com')
+      ? url.href : ''
+  } catch { return '' }
+}
+
+// The current viewer comes from the existing publication/GitHub identity
+// reads. Never infer a linked Möbius photo from a matching username alone.
+export function storeViewerProfile(items, handle = '', github = null) {
+  const login = github?.connected ? String(github.login || '').trim() : ''
+  const mobiusHandle = String(handle || '').trim()
+  const own = (items || []).filter(item =>
+    (mobiusHandle && item.publisher?.handle === mobiusHandle)
+    || (login && String(item.publisher?.login || '').toLowerCase() === login.toLowerCase()))
+  return {
+    name: mobiusHandle || login || 'Your profile',
+    initial: Array.from(mobiusHandle || login)[0]?.toUpperCase() || '',
+    handle: mobiusHandle,
+    picture: own.map(item => creatorPictureUrl(item.publisher)).find(Boolean) || '',
+  }
+}
+
+export function creatorStorefront(items, name) {
+  const work = sortCategoryApps((items || []).filter(item => item.manifest && catalogPublisher(item) === name))
+  const linked = work.map(item => item.publisher).find(publisher => publisher?.handle?.trim())
+  const logins = [...new Set(work.map(item => item.publisher?.login || catalogRepoIdentity(item).split('/')[0]).filter(Boolean))]
+  const categories = [...new Set(work.map(item => storeCategory(catalogCategory(item))?.title).filter(Boolean))]
+  const hero = item => {
+    const listing = item.community ? item.manifest?.store : item.listing || item.manifest?.store
+    return typeof listing?.hero === 'string' ? listing.hero : listing?.hero?.path
+  }
+  return {
+    name, items: work,
+    handle: linked?.handle?.trim() || '',
+    picture: work.map(item => creatorPictureUrl(item.publisher)).find(Boolean) || '',
+    githubUrl: logins.length === 1 && /^[a-z0-9_.-]+$/i.test(logins[0]) ? `https://github.com/${logins[0]}` : '',
+    categories,
+    featured: work.length > 1 ? work.find(hero) || null : null,
+  }
 }
 
 export function libraryCollections(items, lifecycleById) {
@@ -1887,4 +2087,14 @@ export function recoveryNote(uninstalledApp, now = new Date()) {
     title: 'Previously installed',
     detail: `You uninstalled this app on ${removed}. Möbius keeps the data of uninstalled apps for 7 days, so reinstalling this app by ${until} brings everything back.`,
   }
+}
+
+// A short, local date for a release: "30 Oct" this year, "30 Oct 2025" otherwise.
+export function shortDate(value) {
+  const time = Date.parse(value || '')
+  if (!time) return ''
+  const when = new Date(time)
+  return when.toLocaleDateString(undefined, {
+    day: 'numeric', month: 'short', year: when.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+  })
 }

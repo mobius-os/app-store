@@ -129,8 +129,10 @@ async function mount(fetchApps, { catalog = [], hidden = false, catalogGate = nu
         for (const appId of ids) dom.window.dispatchEvent(new dom.window.MessageEvent('message', { source: parent, data: { type: 'moebius:managed-app-event', event: { type: 'app_updated', appId } } }))
       })
     },
-    async library() {
+    // Library opens on what needs you; Installed lists every app with its action.
+    async library(libraryTab = 'installed') {
       await act(async () => dom.window.document.querySelector('#st-tab-library').click())
+      await act(async () => dom.window.document.querySelector(`[data-library-tab="${libraryTab}"]`)?.click())
     },
     voiceAction() {
       return [...dom.window.document.querySelectorAll('.st-card-action')]
@@ -173,7 +175,7 @@ test('resolver completion refreshes an open Store, including repeated events dur
   })
   try {
     await view.library()
-    assert.match(view.voiceAction(), /Resolve/)
+    assert.match(view.voiceAction(), /Fix/)
     assert.equal(reads, 2)
     assert.equal(checks, 1)
     await view.message({ source: view.dom.window })
@@ -193,7 +195,7 @@ test('resolver completion refreshes an open Store, including repeated events dur
     await act(async () => release())
     assert.equal(reads, 5, 'a newer event never waits for the in-flight installed read')
     assert.equal(checks, 3)
-    assert.match(view.voiceAction(), /Resolve/)
+    assert.match(view.voiceAction(), /Fix/)
   } finally {
     release?.()
     await view.close()
@@ -399,7 +401,7 @@ test('an event during hung startup checks probes only its app and preserves unre
     assert.equal(view.voiceAction(), 'Open Voice', 'older startup state cannot overwrite the event result')
     const mapsAction = [...view.dom.window.document.querySelectorAll('.st-card-action')]
       .find(button => button.getAttribute('aria-label')?.endsWith(' Maps'))?.getAttribute('aria-label')
-    assert.match(mapsAction, /Resolve/, 'the unaffected startup answer is not discarded')
+    assert.match(mapsAction, /Fix/, 'the unaffected startup answer is not discarded')
   } finally { await act(async () => releaseMaps?.()); await view.close() }
 })
 
@@ -412,7 +414,7 @@ test('a local update supersedes an older background check without waiting for it
     if (path.startsWith('/api/apps/11/update-candidate-preview')) return json({
       app_id: 11, upstream_version: '2.0.0', upstream_diff: '', source_digest: 'a'.repeat(64),
       upstream_commit: 'b'.repeat(40), capability_preview: {
-        capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [], capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
+        capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [], capability_diff: { unknown_previous: false, widens: true, added: [], removed: [], changed: [] },
       },
     })
     if (path === '/api/apps/install') {
@@ -445,7 +447,7 @@ test('a local update supersedes an older background check without waiting for it
 const preview = id => json({
   app_id: id, upstream_version: '2.0.0', upstream_diff: '', source_digest: 'a'.repeat(64),
   upstream_commit: 'b'.repeat(40), capability_preview: {
-    capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [], capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] },
+    capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [], capability_diff: { unknown_previous: false, widens: true, added: [], removed: [], changed: [] },
   },
 })
 const updateResult = id => json({
@@ -624,7 +626,7 @@ test('an authoritative installed read in flight survives a server batch submissi
     return json({ update_available: true, pending_update_state: 'none' })
   })
   try {
-    await view.library()
+    await view.library('update')
     holdRead = true
     await view.foreground()
     assert.ok(releaseRead)
@@ -676,8 +678,8 @@ test('a batch conflict waits for an explicit Resolve and settles when its resolv
     assert.equal(resolvers, 0, 'confirming updates never starts an agent')
     const modal = () => view.dom.window.document.querySelector('.st-update-review')
     assert.match(modal()?.textContent || '', /Local edits need review/)
-    assert.equal(view.voiceAction(), 'Resolve in chat Voice', 'the card shows the conflict the batch reported')
-    const resolve = [...modal().querySelectorAll('.st-update-review-section button')].find(button => button.textContent === 'Resolve in chat')
+    assert.equal(view.voiceAction(), 'Fix Voice', 'the card shows the conflict the batch reported')
+    const resolve = [...modal().querySelectorAll('.st-update-review-section button')].find(button => button.textContent === 'Fix in chat')
     await act(async () => resolve.click())
     assert.equal(resolvers, 0, 'opening the chooser never starts an agent')
     const chooser = () => view.dom.window.document.querySelector('.st-agent-choice')

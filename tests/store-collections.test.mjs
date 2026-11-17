@@ -65,7 +65,9 @@ test('category and detail navigation require host ownership and support reversib
   assert.match(source,/nav.open\('app-store-collection'/)
   assert.match(readFileSync(new URL('../store-navigation.js',import.meta.url),'utf8'), /nav.open\('app-store-detail'/)
   assert.match(source,/status !== 'owned'/)
-  assert.match(source,/onForward: \(\) => \{\s*setTab\('browse'\)/)
+  // Forward returns to the tab the collection was opened from.
+  assert.match(source,/const fromTab = DISCOVERY_TABS\.has\(tab\) \? tab : 'browse'/)
+  assert.match(source,/onForward: \(\) => \{\s*setTab\(fromTab\)/)
   assert.doesNotMatch(source,/nav-push ack timeout|Older shell without ack/)
 })
 
@@ -98,4 +100,22 @@ test('bundled Spotlight has explicit order and requires artwork', () => {
   items.find(item => item.id === 'voice').listing.hero = {path: 'voice.png'}
   assert.deepEqual(bundledSpotlights(items).map(item => item.id), ['voice', 'beat-machine', 'connect'])
   assert.deepEqual(bundledSpotlights([]), [])
+})
+
+test('categories show a colored icon on a soft tint of its hue, never dots or glow halos', async () => {
+  const { STORE_CATEGORIES } = await import('../constants.js')
+  assert.ok(STORE_CATEGORIES.every((category) => /^#[0-9a-f]{6}$/.test(category.color)))
+  const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
+  assert.match(theme, /\.st-cat-icon \{[\s\S]*?background: color-mix\(in srgb, var\(--cat, var\(--accent\)\) 20%, transparent\)/)
+  assert.doesNotMatch(theme, /st-cat-dot|st-shelf-badge/)
+  // No glow halos (a frosted backdrop-filter bar is fine).
+  assert.doesNotMatch(theme, /[^-]filter: blur\(/)
+})
+
+test('every Store category has its own icon, so a newly used category never shows up blank', async () => {
+  const {STORE_CATEGORIES} = await import('../constants.js')
+  const source = readFileSync(new URL('../ui/CategoryBrowse.jsx', import.meta.url), 'utf8')
+  const icons = source.slice(source.indexOf('const CATEGORY_ICONS = {'), source.indexOf('}', source.indexOf('const CATEGORY_ICONS = {')))
+  for (const {id} of STORE_CATEGORIES) assert.match(icons, new RegExp(`\\n  ${id}: [A-Z]`), id)
+  assert.equal(new Set(STORE_CATEGORIES.map(({id}) => id)).size, STORE_CATEGORIES.length)
 })

@@ -36,6 +36,10 @@ const modalModule = () => bundle(join('ui', 'UpdateReviewModal.jsx'), 'modal')
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const capabilityPreview = { capability_digest: 'c'.repeat(64), access_rows: [], installed_access_rows: [], capability_diff: { unknown_previous: false, added: [], removed: [], changed: [] } }
+// An update that widens access: the Store still reviews it before applying,
+// so it exercises the review dialog's confirmation, progress and retries.
+const wideningPreview = { ...capabilityPreview, capability_diff: { ...capabilityPreview.capability_diff, widens: true } }
+const reviewedCandidate = id => ({ ...candidate(id), capability_preview: wideningPreview })
 const candidate = id => ({ app_id: id, upstream_version: '2.0.0', upstream_diff: '', source_digest: 'a'.repeat(64), upstream_commit: 'b'.repeat(40), capability_preview: capabilityPreview })
 const voiceRow = { id: 11, slug: 'voice', name: 'Voice', manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main#manifest-id=voice', source_manifest: { id: 'voice', url: 'https://raw.githubusercontent.com/mobius-os/app-voice/main/mobius.json' }, manifest: { id: 'voice', name: 'Voice', version: '1.0.0' } }
 const memoryRow = { id: 12, slug: 'memory', name: 'Memory', manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main#manifest-id=memory', source_manifest: { id: 'memory', url: 'https://raw.githubusercontent.com/mobius-os/app-memory/main/mobius.json' }, manifest: { id: 'memory', name: 'Memory', version: '1.0.0' } }
@@ -82,6 +86,8 @@ async function mountApp(dom, routes) {
   await act(async () => root.render(React.createElement(App, { appId: 999, token: 'tok' })))
   await act(async () => { await wait(20) })
   await act(async () => dom.window.document.querySelector('#st-tab-library').click())
+  // Update all and update results live in Library's Updates tab.
+  await act(async () => dom.window.document.querySelector('[data-library-tab="update"]')?.click())
   return root
 }
 
@@ -173,8 +179,12 @@ test('Library Resolve all opens agent chooser before starting any resolver', asy
       return null
     })
     const doc = dom.window.document
+    // Fix all lives in Library › Needs you.
+    const libraryTab = [...doc.querySelectorAll('button.st-tab')].find(button => button.textContent.startsWith('Library'))
+    await act(async () => { libraryTab.click(); await wait(5) })
+    await act(async () => { doc.querySelector('[data-library-tab="needs"]').click(); await wait(5) })
     const resolveAll = doc.querySelector('.st-resolve-all-trigger')
-    assert.ok(resolveAll, 'conflict appears in Library filters')
+    assert.ok(resolveAll, 'conflict appears in Library › Needs you')
     await act(async () => { resolveAll.click(); await wait(5) })
     assert.ok(doc.querySelector('.st-agent-choice'), 'the click event must not become the agent choice')
     assert.deepEqual(posts, [], 'no resolver starts before agent confirmation')
@@ -278,7 +288,7 @@ test('update review leads with verified changes and keeps technical details coll
     await render([entry('Local edits', 'conflict')])
     assert.match(dom.window.document.body.textContent, /Local edits need review/)
     assert.match(dom.window.document.body.textContent, /Local changes must be reconciled before updating/)
-    assert.deepEqual([...dom.window.document.querySelectorAll('.st-update-review-section button')].map(b => b.textContent), ['Resolve in chat'], 'a conflict offers only the resolver')
+    assert.deepEqual([...dom.window.document.querySelectorAll('.st-update-review-section button')].map(b => b.textContent), ['Fix in chat'], 'a conflict offers only the resolver')
     assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
     await render([entry('Pocket List', 'updated')], { batchId: 'b' })
     assert.match(dom.window.document.body.textContent, /Update results/)
@@ -427,7 +437,7 @@ test('App submits one server batch despite repeated confirmation; a retry needs 
       if (path === '/api/apps/update-batches') return json({ batches: [...batchSnapshots.values()].reverse() })
       if (path.startsWith('/api/apps/update-batches/')) return batchSnapshots.has(path.split('/')[4]) ? json(batchSnapshots.get(path.split('/')[4])) : json({ detail: 'App update batch not found.' }, 404)
       if (/^\/api\/apps\/(11|12)\/update-check/.test(path)) return json({ update_available: true, pending_update_state: 'none' })
-      if (/^\/api\/apps\/(11|12)\/update-candidate-preview/.test(path)) return json(candidate(Number(path.match(/apps\/(\d+)/)[1])))
+      if (/^\/api\/apps\/(11|12)\/update-candidate-preview/.test(path)) return json(reviewedCandidate(Number(path.match(/apps\/(\d+)/)[1])))
       if (path === '/api/apps/install') throw new Error('A reviewed update must not be applied by the browser')
       return null
     })
@@ -500,7 +510,7 @@ test('closing an accepted batch keeps live progress; reopening shows it from the
       }
       if (path.startsWith('/api/apps/update-batches/')) return json(batch)
       if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
-      if (path.includes('/update-candidate-preview')) return json(candidate(11))
+      if (path.includes('/update-candidate-preview')) return json(reviewedCandidate(11))
       if (path === '/api/apps/install') throw new Error('Browser must not apply an accepted batch')
       return null
     })
@@ -562,6 +572,8 @@ test('a stale update-check meets a conflict-blocked preview: card and review bot
       return null
     })
     const doc = dom.window.document
+    // Installed lists every app with its live action, so a card can be followed as it changes.
+    await act(async () => doc.querySelector('[data-library-tab="installed"]').click())
     const cardAction = () => doc.querySelector('.st-card-status-row button[aria-label$=" Voice"]')
     assert.equal(cardAction()?.getAttribute('aria-label'), 'Update Voice', 'the stale check offers an update')
     await act(async () => { cardAction().click(); await wait(20) })
@@ -569,10 +581,10 @@ test('a stale update-check meets a conflict-blocked preview: card and review bot
     assert.ok(modal, 'the update review opens')
     assert.match(modal.textContent, /Local edits need review/)
     const modalButtons = [...modal.querySelectorAll('.st-update-review-section button')].map(button => button.textContent)
-    assert.deepEqual(modalButtons, ['Resolve in chat'], 'retrying would only meet the same conflict')
+    assert.deepEqual(modalButtons, ['Fix in chat'], 'retrying would only meet the same conflict')
     assert.doesNotMatch(modal.textContent, /Access changes|Access review/)
     assert.equal(modal.querySelector('.st-update-review-actions button.st-btn-primary'), null, 'nothing can be confirmed')
-    assert.equal(cardAction()?.getAttribute('aria-label'), 'Resolve in chat Voice', 'the card behind the review flips too')
+    assert.equal(cardAction()?.getAttribute('aria-label'), 'Fix Voice', 'the card behind the review flips too')
     await act(async () => { modal.querySelector('.st-update-review-section button').click(); await wait(20) })
     await act(async () => { doc.querySelector('.st-agent-choice-actions button.st-btn-primary').click(); await wait(20) })
     assert.deepEqual(posts, ['/api/apps/conflict-resolver-batch'], 'resolving starts the resolver and installs nothing')
@@ -599,6 +611,8 @@ test('a candidate the platform would not apply says why on the card and in the r
       return null
     })
     const doc = dom.window.document
+    // Installed lists every app with its live action, so a card can be followed as it changes.
+    await act(async () => doc.querySelector('[data-library-tab="installed"]').click())
     const card = name => [...doc.querySelectorAll('.st-card')].find(node => node.querySelector('.st-card-open')?.textContent === name)
     assert.match(card('Voice').textContent, /Repository moved/)
     assert.match(card('Voice').textContent, /another repository/)
@@ -651,7 +665,7 @@ test('a refusal after the dialog closed during Starting leaves no stuck placehol
       if (path === '/api/apps/update-batches' && options.method === 'POST') return new Promise(resolve => { answer = resolve })
       if (path === '/api/apps/update-batches') return json({ batches: [] })
       if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
-      if (path.includes('/update-candidate-preview')) return json(candidate(11))
+      if (path.includes('/update-candidate-preview')) return json(reviewedCandidate(11))
       return null
     })
     const doc = dom.window.document
@@ -748,6 +762,8 @@ test('a Möbius without server batches still updates through the per-app reviewe
       return null
     })
     const doc = dom.window.document
+    // Installed lists every app with its live action, so a card can be followed as it changes.
+    await act(async () => doc.querySelector('[data-library-tab="installed"]').click())
     assert.equal(doc.querySelector('[role="alert"]'), null, 'a missing batch list is not an error')
     await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
     await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
@@ -826,6 +842,60 @@ test('on a Möbius with batches, an app removed after its check is reported, nev
   } finally {
     if (root) await act(async () => root.unmount())
     restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('an update that keeps the same access applies at once; one that widens access waits for confirmation', async () => {
+  const { dom, restore } = useDom()
+  const submitted = []
+  let widens = false
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches' && options.method === 'POST') {
+        const payload = JSON.parse(options.body)
+        submitted.push(payload)
+        return json({ id: payload.id, phase: 'applying', entries: [{ app_id: 11, name: 'Voice', status: 'queued', error: '', warnings: [], version: null }] })
+      }
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (/^\/api\/apps\/update-batches\/[^/]+\/events$/.test(path)) return new Response(new ReadableStream({ start() {} }), { headers: { 'content-type': 'text/event-stream' } })
+      if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json(widens ? reviewedCandidate(11) : candidate(11))
+      if (path === '/api/apps/install') throw new Error('A reviewed update must not be applied by the browser')
+      return null
+    })
+    const doc = dom.window.document
+    await act(async () => { doc.querySelector('button[aria-label="Update Voice"]').click(); await wait(30) })
+    assert.equal(submitted.length, 1, 'unchanged access: submitted without a dialog')
+    assert.deepEqual(Object.keys(submitted[0].updates[0]).sort(), ['app_id', 'capability_digest', 'manifest_url', 'source_digest', 'upstream_commit'])
+    assert.equal(submitted[0].updates[0].source_digest, 'a'.repeat(64), 'the exact checked source')
+    assert.equal(doc.querySelector('.st-update-review'), null, 'no review dialog for a plain update')
+    assert.match(doc.querySelector('.st-update-batch-list')?.textContent || '', /update progress/i, 'progress stays reachable from Library')
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+  }
+  const second = useDom()
+  widens = true
+  submitted.length = 0
+  try {
+    root = await mountApp(second.dom, async (path, options) => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches' && options.method === 'POST') { submitted.push(JSON.parse(options.body)); return json({ id: 'x', phase: 'applying', entries: [] }) }
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+      if (path.includes('/update-candidate-preview')) return json(reviewedCandidate(11))
+      return null
+    })
+    const doc = second.dom.window.document
+    await act(async () => { doc.querySelector('button[aria-label="Update Voice"]').click(); await wait(30) })
+    assert.equal(submitted.length, 0, 'widening access is never applied without confirmation')
+    assert.ok(doc.querySelector('.st-update-review-actions button.st-btn-primary'), 'the review dialog asks first')
+  } finally {
+    if (root) await act(async () => root.unmount())
+    second.restore()
     await rm(buildDir, { recursive: true, force: true })
   }
 })

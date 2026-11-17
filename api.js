@@ -1,4 +1,4 @@
-import { LISTING_LIMITS } from './constants.js'
+import { LISTING_LIMITS, STORE_CATEGORY_IDS } from './constants.js'
 import { sleep } from './sleep.js'
 import { publicationListingFacts, textWithinByteLimit, validateManifestUrl } from './domain.js'
 
@@ -60,8 +60,9 @@ export async function loadLocalGithubIdentity(token) {
   }
 }
 
-export async function loadCommunityApps(token, { query = '', limit = 50, offset = 0, signal } = {}) {
+export async function loadCommunityApps(token, { query = '', limit = 50, offset = 0, sort = '', signal } = {}) {
   const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset) })
+  if (sort) params.set('sort', sort)
   const response = await fetch(`/api/community/apps?${params}`, {
     signal,
     headers: communityHeaders(token),
@@ -567,8 +568,11 @@ export function visibleUpdateAgentChoices(choices) {
 // (so it clears the connect-src 'self' rule). The proxy streams the raw
 // upstream body back with the upstream status + content-type, so callers
 // treat the response exactly like a direct fetch.
-export function proxyUrl(extUrl) {
-  return `/api/proxy?url=${encodeURIComponent(extUrl)}`
+// `width` asks the proxy for an image no wider than that many pixels; a
+// Möbius without image downscaling ignores it and returns the original.
+export function proxyUrl(extUrl, { width } = {}) {
+  const sized = Number.isInteger(width) && width > 0 ? `&w=${width}` : ''
+  return `/api/proxy?url=${encodeURIComponent(extUrl)}${sized}`
 }
 
 function retryableFetchStatus(status) {
@@ -687,7 +691,8 @@ export async function fetchManifest(url, token, opts = {}) {
 // callers derive a shelf from categories when it is absent.
 // Release manifests never belong in the live registry. The caller merges these
 // discovery fields over the checked-in CATALOG, preserving its generated
-// snapshot for known apps and fetching only genuinely new entries.
+// snapshot for known apps and fetching only genuinely new entries. Resolves to
+// `{ apps, communityCategories }`.
 export async function fetchCatalog(url, token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
@@ -805,6 +810,7 @@ export async function fetchCatalog(url, token, opts = {}) {
     const collection = [
       'productivity', 'everyday', 'create', 'explore', 'play', 'developer',
     ].includes(e.collection) ? e.collection : null
+    const category = STORE_CATEGORY_IDS.includes(e.category) ? e.category : null
     // The catalog summary plays the listing tagline's role, so it shares its bound.
     const summary = textWithinByteLimit(e.summary, LISTING_LIMITS.taglineBytes)
     const preview = typeof e.preview === 'string' && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(e.preview)
@@ -823,13 +829,26 @@ export async function fetchCatalog(url, token, opts = {}) {
       raw_base: e.raw_base,
       ...(audience ? { audience } : {}),
       ...(collection ? { collection } : {}),
+      ...(category ? { category } : {}),
       categories: cleanList(e.categories),
       keywords: cleanList(e.keywords),
       capabilities: cleanList(e.capabilities),
       setup: normalizeSetup(e.setup),
     })
   }
-  return entries
+  // Store-assigned categories for community listings, keyed by lowercase
+  // GitHub owner/repo. Unknown repositories or categories are dropped.
+  const communityCategories = {}
+  const assigned = body.community_categories
+  if (assigned && typeof assigned === 'object' && !Array.isArray(assigned)) {
+    for (const [repo, value] of Object.entries(assigned)) {
+      const key = repo.trim().toLowerCase()
+      if (/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(key) && STORE_CATEGORY_IDS.includes(value)) {
+        communityCategories[key] = value
+      }
+    }
+  }
+  return { apps: entries, communityCategories }
 }
 
 function installRequestBody({
@@ -1221,4 +1240,48 @@ export async function fetchUninstalledApps(token) {
   if (!res.ok) return []
   const rows = await res.json()
   return Array.isArray(rows) ? rows : []
+}
+
+// The change list behind an app's own update, read from its public GitHub
+// repository through the proxy: every non-merge commit between the installed
+// revision and the candidate commit, newest first, plus the candidate's date.
+// Anything that cannot be read (a non-GitHub source, rate limits, offline)
+// resolves to null; the update itself never depends on it.
+export async function fetchReleaseNotes({ manifestUrl, fromCommit, toCommit, token }) {
+  const repo = githubRepoOf(manifestUrl)
+  if (!repo || !toCommit) return null
+  const headers = { Authorization: `Bearer ${token}` }
+  try {
+    if (fromCommit && fromCommit !== toCommit) {
+      const res = await fetch(proxyUrl(`https://api.github.com/repos/${repo}/compare/${fromCommit}...${toCommit}`), { headers })
+      if (!res.ok) return null
+      const body = await res.json()
+      const commits = Array.isArray(body?.commits) ? body.commits : []
+      const notes = commits
+        .filter(c => !(Array.isArray(c?.parents) && c.parents.length > 1))
+        .map(c => String(c?.commit?.message || '').split('\n')[0].trim())
+        .filter(Boolean)
+        .reverse()
+      const last = commits[commits.length - 1]
+      return { notes, releasedAt: last?.commit?.committer?.date || last?.commit?.author?.date || '' }
+    }
+    const res = await fetch(proxyUrl(`https://api.github.com/repos/${repo}/commits/${toCommit}`), { headers })
+    if (!res.ok) return null
+    const body = await res.json()
+    return { notes: [], releasedAt: body?.commit?.committer?.date || body?.commit?.author?.date || '' }
+  } catch {
+    return null
+  }
+}
+
+// "owner/repo" for a manifest served from raw.githubusercontent.com; null otherwise.
+export function githubRepoOf(manifestUrl) {
+  try {
+    const url = new URL(manifestUrl)
+    if (url.hostname !== 'raw.githubusercontent.com') return null
+    const [owner, repo] = url.pathname.split('/').filter(Boolean)
+    return owner && repo ? `${owner}/${repo}` : null
+  } catch {
+    return null
+  }
 }

@@ -4,9 +4,12 @@ import { readFileSync } from 'node:fs'
 
 const updateReview = readFileSync(new URL('../ui/UpdateReviewModal.jsx', import.meta.url), 'utf8')
 const catalogList = readFileSync(new URL('../ui/CatalogList.jsx', import.meta.url), 'utf8')
+const spotlight = readFileSync(new URL('../ui/Spotlight.jsx', import.meta.url), 'utf8')
+const theme = readFileSync(new URL('../theme.js', import.meta.url), 'utf8')
+const categoryBrowse = readFileSync(new URL('../ui/CategoryBrowse.jsx', import.meta.url), 'utf8')
 const catalogCard = readFileSync(new URL('../ui/CatalogCard.jsx', import.meta.url), 'utf8')
-const catalogFilters = readFileSync(new URL('../ui/CatalogFilters.jsx', import.meta.url), 'utf8')
-const libraryHealth = readFileSync(new URL('../ui/LibraryHealth.jsx', import.meta.url), 'utf8')
+const libraryActions = readFileSync(new URL('../ui/LibraryActions.jsx', import.meta.url), 'utf8')
+const libraryTabs = readFileSync(new URL('../ui/LibraryTabs.jsx', import.meta.url), 'utf8')
 const detailView = readFileSync(new URL('../ui/DetailView.jsx', import.meta.url), 'utf8')
 
 const app = readFileSync(new URL('../index.jsx', import.meta.url), 'utf8')
@@ -29,15 +32,23 @@ test('a retry needs a fresh check and confirmation; agent review stays available
   assert.match(app, /buildUpdateFailureMessage\(\{ \.\.\.context, error: entry\.error \}\)/)
 })
 
-test('Browse, Library, and Publish form one keyboard-navigable tab set', () => {
-  assert.match(app, /const order = \['browse', 'library', 'publish'\]/)
-  assert.match(app, /role="tablist" aria-label="Browse mode"/)
-  for (const destination of ['browse', 'library', 'publish']) {
-    assert.match(app, new RegExp(`id="st-tab-${destination}"`))
-    assert.match(app, new RegExp(`aria-selected=\{tab === '${destination}'\}`))
+test('Discover, Apps, Games and Library form one keyboard-navigable tab set', () => {
+  assert.match(app, /const order = \['browse', 'apps', 'games', 'library'\]/)
+  assert.match(app, /role="tablist" aria-label="Store sections"/)
+  for (const [id, label] of [['browse', 'Discover'], ['apps', 'Apps'], ['games', 'Games'], ['library', 'Library']]) {
+    assert.match(app, new RegExp(`\\{ id: '${id}', label: '${label}' \\}`))
   }
+  assert.match(app, /id=\{`st-tab-\$\{id\}`\}/)
+  assert.match(app, /aria-selected=\{selected\}/)
+  // Publish lives inside Library and keeps Library selected.
+  assert.match(app, /id === 'library' && tab === 'publish'/)
+  assert.match(app, /className="st-upload-btn" onClick=\{openPublish\}/)
   assert.match(app, /role="tabpanel"/)
-  assert.match(app, /aria-labelledby=\{`st-tab-\$\{tab\}`\}/)
+  // Wider screens label the panel by its header tab; phones (no header tabs)
+  // name it directly, and the bottom bar adds Search.
+  assert.match(app, /aria-labelledby=\{phone \? undefined : `st-tab-\$\{tab\}`\}/)
+  assert.match(app, /aria-label=\{phone \? PHONE_TABS\.find/)
+  assert.match(app, /const PHONE_TABS = \[\.\.\.STORE_TABS, \{ id: 'search', label: 'Search' \}\]/)
 })
 
 test('provider setup status never gates the baked catalog first paint', () => {
@@ -55,27 +66,32 @@ test('App Store preserves its reviewed immersive hold gesture', () => {
   assert.match(app, /window\.mobius\.immersive\.holdToToggle/)
 })
 
-test('Browse presents a pausable auto-advancing spotlight while keeping ordinary category rows', () => {
-  assert.match(catalogList, /discover \? bundledSpotlights\(items\) : \[\]/)
+test('Discover keeps its pausable auto-advancing spotlight carousel at the top', () => {
+  assert.match(catalogList, /hostedSpotlights\.length \? hostedSpotlights : bundledSpotlights\(items\)/)
   assert.match(catalogList, /Array\.isArray\(spotlightFeed\?\.items\)/)
-  assert.match(catalogList, /hostedSpotlights\.length/)
-  assert.match(catalogList, /className="st-spotlight-stage"/)
-  assert.match(catalogList, /className="st-spotlight-pagination"/)
-  assert.match(catalogList, /aria-current=\{index === activeSpotlightIndex/)
-  assert.match(catalogList, /window\.setTimeout/)
-  assert.match(catalogList, /6000/)
-  assert.match(catalogList, /prefers-reduced-motion: reduce/)
-  assert.match(catalogList, /document\.visibilityState !== 'hidden'/)
-  assert.match(catalogList, /onMouseEnter=/)
-  assert.match(catalogList, /onFocusCapture=/)
-  assert.match(catalogList, /'Pause spotlight'/)
-  assert.match(catalogList, /'Resume spotlight'/)
-  assert.doesNotMatch(catalogList, /setInterval|autoPlay|autoplay/)
-  assert.match(catalogList, /className="st-spotlight-open"/)
-  assert.match(catalogList, /const groupedItems = items/)
-  assert.match(catalogList, /renderCard\(item, 'compact'\)/)
-  assert.doesNotMatch(catalogList, /items\.filter\(\(item\) => !editorialIds\.has/)
+  assert.match(spotlight, /className="st-spotlight-stage"/)
+  assert.match(spotlight, /className="st-spotlight-pagination"/)
+  assert.match(spotlight, /aria-current=\{index === activeIndex/)
+  // The visible six-second progress segment is the clock: its end advances,
+  // and pausing pauses the same animation, so the two can never disagree.
+  assert.match(spotlight, /onAnimationEnd=\{\(\) => go\(activeIndex \+ 1\)\}/)
+  assert.match(spotlight, /st-spotlight-fill\$\{autoPaused \? ' is-paused' : ''\}/)
+  assert.match(theme, /animation: st-spot-fill 6s linear forwards/)
+  assert.match(theme, /\.st-spotlight-fill\.is-paused \{ animation-play-state: paused/)
+  // Reduced motion renders no running segment, so nothing advances by itself.
+  assert.match(spotlight, /const playing = count > 1 && !reducedMotion/)
+  assert.match(spotlight, /prefers-reduced-motion: reduce/)
+  assert.match(spotlight, /document\.visibilityState !== 'hidden'/)
+  assert.match(spotlight, /onMouseEnter=/)
+  assert.match(spotlight, /onFocusCapture=/)
+  assert.match(spotlight, /onTouchStart=/)
+  assert.match(spotlight, /`Pause \$\{title\.toLowerCase\(\)\}`/)
+  assert.match(spotlight, /`Resume \$\{title\.toLowerCase\(\)\}`/)
+  assert.doesNotMatch(spotlight, /setInterval|autoPlay|autoplay/)
+  assert.match(spotlight, /className="st-spotlight-open"/)
+  assert.match(catalogList, /renderCard\(item, 'row'\)/)
   assert.doesNotMatch(catalogList, /role="button"/)
+  assert.doesNotMatch(categoryBrowse, /role="button"/)
 })
 
 test('shared-listing refresh stays accessible without inserting a visible progress row', () => {
@@ -87,12 +103,13 @@ test('shared-listing refresh stays accessible without inserting a visible progre
 
 test('browse cards reserve accepted screenshots for the app description', () => {
   assert.doesNotMatch(catalogCard, /StoreImage|st-card-preview|listingScreenshot/)
-  assert.match(detailView, /<p className="st-detail-desc">\{listingDescription\}<\/p>[\s\S]*st-detail-gallery/)
+  assert.match(detailView, /st-detail-gallery[\s\S]*<p className="st-detail-desc">\{listingDescription\}<\/p>/)
   assert.match(detailView, /listingScreenshots\.map/)
+  assert.match(detailView, /function ScreenshotViewer/)
 })
 
 test('catalog cards use one labelled icon action without repeating routine lifecycle text', () => {
-  assert.match(catalogCard, /ArrowRotateCw, ArrowUpRight, Chat, Check, Download/)
+  assert.match(catalogCard, /ArrowRotateCw, ArrowUpRight, Chat, Check, DotsHorizontal, Download/)
   assert.match(catalogCard, /aria-label=\{`\$\{actionLabel\} \$\{m\.name\}`\}/)
   assert.match(catalogCard, /title=\{actionLabel\}/)
   assert.match(catalogCard, /\['unavailable', 'conflict', 'rejected', 'unverified'\]\.includes\(lifecycle\.key\)/)
@@ -100,21 +117,29 @@ test('catalog cards use one labelled icon action without repeating routine lifec
 })
 
 test('Browse keeps update controls in Library instead of spending discovery space', () => {
-  assert.match(catalogFilters, /mode === 'library' \? \(/)
-  assert.match(catalogFilters, /aria-label="Library filters"/)
+  // The full Update all control sits above the Library Updates tab; the only
+  // other one is the small pill beside the Library tab in the header (the
+  // owner's chosen "version 2"), never inside Discover's content.
+  assert.equal(app.match(/<UpdateAllButton /g)?.length, 1)
+  assert.match(app, /libraryTab === 'update' && updateAllCount > 0 \? \(\s*<div className="st-libbar">/)
+  assert.match(app, /className="st-tab-updateall"/)
+  // The pill is a sibling of the tab list, not a tab inside it.
+  assert.match(app, /<div className="st-tablist" role="tablist" aria-label="Store sections"/)
 })
 
-test('Library exposes one Update all action instead of duplicate review controls', () => {
-  assert.match(catalogFilters, /: 'Update all'/)
-  assert.match(catalogFilters, /aria-label=\{`Update all/)
-  assert.doesNotMatch(libraryHealth, /<button/)
-  assert.doesNotMatch(libraryHealth, /Review updates/)
+test('Library exposes one Update all action and keyboard-reachable tabs', () => {
+  assert.match(libraryActions, /: 'Update all'/)
+  assert.match(libraryActions, /aria-label=\{`Update all/)
+  assert.match(libraryTabs, /role="tablist" aria-label="Library"/)
+  assert.match(libraryTabs, /aria-selected=\{selected\}/)
+  assert.match(libraryTabs, /tabIndex=\{selected \? 0 : -1\}/)
+  assert.match(libraryTabs, /event\.key !== 'ArrowLeft' && event\.key !== 'ArrowRight'/)
 })
 
-test('Browse leads with Spotlight, Our picks, New arrivals, then categories', () => {
-  const spotlight = catalogList.indexOf('{activeSpotlight ? (')
-  const picks = catalogList.indexOf('renderGroup(collections[0])')
-  const arrivals = catalogList.indexOf('renderGroup(collections[1])')
-  const categories = catalogList.indexOf('{groups.map(renderGroup)}')
-  assert.ok(spotlight >= 0 && spotlight < picks && picks < arrivals && arrivals < categories)
+test('Discover leads with the Spotlight carousel, then featured cards, rated and picked panels, rankings, honest shelves and categories', () => {
+  const home = catalogList.slice(catalogList.indexOf('if (discover) {'))
+  const order = ['<Spotlight ', 'title="Highest rated"', 'title="Our picks"', "rankedShelf('trending'", "rankedShelf('most-downloaded'", 'id="updated"', 'id="arrivals"', '<CategoryList ']
+    .map(marker => home.indexOf(marker))
+  assert.ok(order.every(index => index >= 0), String(order))
+  assert.deepEqual([...order].sort((a, b) => a - b), order)
 })

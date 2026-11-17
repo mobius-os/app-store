@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "updated": "2026-09-12",
-  "note": "Sole registry of Mobius App Store membership and discovery copy. The Store bundles this file as its offline floor and fetches the published copy at mount so new entries can appear without a Store release. Version-coupled manifest snapshots belong only in manifest-snapshots.js.",
+  "updated": "2026-10-27",
+  "note": "Sole registry of Mobius App Store membership and discovery copy. The Store bundles this file as its offline floor and fetches the published copy at mount so new entries can appear without a Store release. Version-coupled manifest snapshots belong only in manifest-snapshots.js. `category` (and `community_categories`, keyed by lowercase GitHub owner/repo, for community listings whose creators have not chosen one) place apps in the Apps and Games tabs.",
   "apps": [
     {
       "id": "voice",
@@ -30,6 +30,7 @@
       ],
       "audience": "general",
       "collection": "everyday",
+      "category": "everyday",
       "summary": "Give your agent an on-device voice.",
       "listing": {
         "tagline": "Give your agent an on-device voice.",
@@ -85,6 +86,7 @@
       },
       "audience": "developer",
       "collection": "productivity",
+      "category": "productivity",
       "summary": "A private knowledge graph for your agent."
     },
     {
@@ -114,6 +116,7 @@
       ],
       "audience": "developer",
       "collection": "developer",
+      "category": "developer",
       "summary": "Give your agent remote tools, with honest costs.",
       "listing": {
         "tagline": "Give your agent remote tools, with honest costs.",
@@ -158,6 +161,7 @@
       ],
       "audience": "developer",
       "collection": "developer",
+      "category": "developer",
       "summary": "Let Möbius work on your other computers.",
       "listing": {
         "tagline": "Let Möbius work on your other computers.",
@@ -209,6 +213,7 @@
       },
       "audience": "developer",
       "collection": "developer",
+      "category": "developer",
       "summary": "Learns from the snags your agents hit.",
       "listing": {
         "tagline": "Learns from the snags your agents hit.",
@@ -243,6 +248,7 @@
       ],
       "audience": "developer",
       "collection": "developer",
+      "category": "developer",
       "summary": "Choose which agents Möbius can delegate to."
     },
     {
@@ -274,6 +280,7 @@
       ],
       "audience": "developer",
       "collection": "developer",
+      "category": "developer",
       "summary": "See what every background agent did.",
       "listing": {
         "tagline": "See what every background agent did.",
@@ -313,6 +320,7 @@
       ],
       "audience": "developer",
       "collection": "productivity",
+      "category": "productivity",
       "summary": "Browse the playbooks behind your agent.",
       "listing": {
         "tagline": "Browse the playbooks behind your agent.",
@@ -354,6 +362,7 @@
       ],
       "audience": "general",
       "collection": "create",
+      "category": "create",
       "summary": "Create interactive pages and polished reports.",
       "listing": {
         "tagline": "Create interactive pages and polished reports.",
@@ -395,6 +404,7 @@
       ],
       "audience": "general",
       "collection": "explore",
+      "category": "travel",
       "summary": "Turn place ideas into maps you can keep.",
       "listing": {
         "tagline": "Turn place ideas into maps you can keep.",
@@ -433,6 +443,7 @@
       ],
       "audience": "general",
       "collection": "productivity",
+      "category": "productivity",
       "summary": "See every scheduled agent check-in.",
       "listing": {
         "tagline": "See every scheduled agent check-in.",
@@ -480,6 +491,7 @@
       },
       "audience": "general",
       "collection": "developer",
+      "category": "developer",
       "summary": "Review and share improvements to Möbius."
     },
     {
@@ -508,6 +520,7 @@
       ],
       "audience": "general",
       "collection": "everyday",
+      "category": "productivity",
       "summary": "Markdown notes with checklists, images, and search.",
       "listing": {
         "tagline": "Markdown notes with checklists, images, and search.",
@@ -560,6 +573,7 @@
       },
       "audience": "general",
       "collection": "everyday",
+      "category": "news",
       "summary": "A daily briefing on the topics you care about.",
       "listing": {
         "tagline": "A daily briefing on the topics you care about.",
@@ -598,6 +612,7 @@
       ],
       "audience": "developer",
       "collection": "developer",
+      "category": "developer",
       "summary": "Edit any Möbius file yourself or with your agent."
     },
     {
@@ -626,6 +641,7 @@
       ],
       "audience": "general",
       "collection": "create",
+      "category": "create",
       "summary": "Build a website live with your agent."
     },
     {
@@ -658,6 +674,7 @@
       ],
       "audience": "general",
       "collection": "everyday",
+      "category": "health",
       "summary": "Plan routines, log sets, and track strength."
     },
     {
@@ -685,6 +702,7 @@
       ],
       "audience": "general",
       "collection": "everyday",
+      "category": "everyday",
       "summary": "Build lasting routines with streaks and reminders.",
       "listing": {
         "tagline": "Build lasting routines with streaks and reminders.",
@@ -726,6 +744,7 @@
       ],
       "audience": "general",
       "collection": "play",
+      "category": "audio",
       "summary": "Make beats with 32 steps and your own sounds.",
       "listing": {
         "tagline": "Make beats with 32 steps and your own sounds.",
@@ -765,6 +784,7 @@
       ],
       "audience": "general",
       "collection": "explore",
+      "category": "travel",
       "summary": "Mark where you've been on a living 3D globe."
     },
     {
@@ -793,6 +813,7 @@
       ],
       "audience": "general",
       "collection": "create",
+      "category": "create",
       "summary": "Write polished PDFs with live preview."
     },
     {
@@ -834,6 +855,7 @@
       },
       "audience": "general",
       "collection": "explore",
+      "category": "explore",
       "summary": "Learn languages through made-for-you stories.",
       "listing": {
         "tagline": "Learn languages through made-for-you stories.",
@@ -870,6 +892,7 @@
       ],
       "audience": "general",
       "collection": "play",
+      "category": "action",
       "summary": "Chase a high score in a neon 3D world.",
       "listing": {
         "tagline": "Chase a high score in a neon 3D world.",
@@ -912,6 +935,7 @@
       ],
       "audience": "general",
       "collection": "everyday",
+      "category": "productivity",
       "summary": "Shareable drag-and-drop boards.",
       "published_at": "2026-08-31T19:12:46+00:00"
     },
@@ -941,11 +965,58 @@
       ],
       "audience": "general",
       "collection": "everyday",
+      "category": "news",
       "summary": "Your people, across every Möbius.",
       "previous_repositories": [
         "hamzamerzic/app-social"
       ],
       "published_at": "2026-09-02T16:57:55+00:00"
     }
-  ]
+  ],
+  "community_categories": {
+    "aishahodzic/career-scout": "money",
+    "aishahodzic/stock-tracker": "money",
+    "aishahodzic/tunekit": "agent",
+    "aishahodzic/tuning-engine": "agent",
+    "alenbrkic-cod/dobre-vijesti": "news",
+    "amina-glich/evidence-desk": "productivity",
+    "arminkorajlic/inkwell": "productivity",
+    "arminzimic9-gif/agent-marketplace": "agent",
+    "arminzimic9-gif/hackathon-gallery": "worlds",
+    "edincodecta/quick-quiz": "puzzle",
+    "eldarcerim/maak": "everyday",
+    "eldarcerim/psi-poster-hall": "news",
+    "ervin-macic/asset-commons": "agent",
+    "ervin-macic/ball-game": "racing",
+    "ervin-macic/math-at-home": "explore",
+    "ervin-macic/mobius-town": "worlds",
+    "ervin-macic/podcast-cv": "audio",
+    "hamzamerzic/app-kanban": "productivity",
+    "hamzamerzic/app-voice": "everyday",
+    "hamzamerzic/funding-wire": "money",
+    "hamzamerzic/klix-filter": "news",
+    "hamzamerzic/sase-berza": "money",
+    "ibrahimele/finance-desk": "money",
+    "ibrahimele/rat-kingdom": "strategy",
+    "ibrahimele/songio": "audio",
+    "irfancodecta/hackaton-2026": "news",
+    "irfancodecta/pines-key-rush": "music",
+    "krehiclejla/four-seasons-gallery": "worlds",
+    "krehiclejla/game-ink-of-the-oni": "action",
+    "krehiclejla/game-studio": "create",
+    "krehiclejla/mobius-worlds": "worlds",
+    "krehiclejla/voice-conversation": "everyday",
+    "mfehric/app-cv-builder": "money",
+    "mfehric/blockstrike": "action",
+    "pyrcan/telegram-bot-studio": "agent",
+    "pyrcan/telegram-bridge": "agent",
+    "ravennotcrow/stellar-drift": "adventure",
+    "saksijas/agent-office": "agent",
+    "saksijas/the-clankerville": "agent",
+    "selverpepic/any-human-ever-bosnia": "explore",
+    "selverpepic/care-gap-observatory": "explore",
+    "selverpepic/skygazer": "puzzle",
+    "selverpepic/stone-sleeper": "explore",
+    "selverpepic/supply-chain-guesser": "puzzle"
+  }
 }

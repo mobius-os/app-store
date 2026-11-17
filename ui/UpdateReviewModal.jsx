@@ -167,7 +167,7 @@ function ReviewEntry({ entry, locked, onRetry, onAskAgent, onResolveOne, onOpenC
           {entry.resolver?.chat_id ? (
             <button type="button" className="st-btn st-btn-secondary" onClick={() => onOpenChat?.(entry.resolver.chat_id)}>Open resolver chat</button>
           ) : appId != null && onResolveOne ? (
-            <button type="button" className="st-btn st-btn-secondary" onClick={() => onResolveOne(appId)} disabled={locked}>Resolve in chat</button>
+            <button type="button" className="st-btn st-btn-secondary" onClick={() => onResolveOne(appId)} disabled={locked}>Fix in chat</button>
           ) : null}
         </div>
       ) : entry.status === 'failed' ? (
@@ -317,7 +317,7 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
             {checking ? 'Cancel' : localApply ? 'Updating…' : applying ? 'Continue in background' : hasResults ? 'Done' : 'Not now'}
           </button>
           {unresolved.length > 1 && onResolveAll ? (
-            <button type="button" className="st-btn st-btn-secondary" onClick={onResolveAll} disabled={locked}>Resolve all · {unresolved.length}</button>
+            <button type="button" className="st-btn st-btn-secondary" onClick={onResolveAll} disabled={locked}>Fix all · {unresolved.length}</button>
           ) : null}
           {ready.length && onAskAgent ? (
             <button type="button" className="st-btn st-btn-secondary" onClick={() => onAskAgent(ready)} disabled={locked}>

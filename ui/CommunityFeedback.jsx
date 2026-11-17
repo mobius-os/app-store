@@ -15,6 +15,16 @@ export function StarIcon({ filled }) {
   )
 }
 
+// A read-only row of stars, gold up to `value` (whole stars).
+function Stars({ value, label }) {
+  const filled = Math.round(Number(value) || 0)
+  return (
+    <span className="st-stars" role="img" aria-label={label}>
+      {[1, 2, 3, 4, 5].map((n) => <StarIcon key={n} filled={n <= filled} />)}
+    </span>
+  )
+}
+
 export function CommunityFeedback({ feedback, account, canRate = false, onSubmitFeedback, onOpenMobiusAccount, busy, error }) {
   const [rating, setRating] = useState(feedback?.user_review?.stars || 0)
   const accountAction = reviewAccountAction(feedback?.review_eligibility, account)
@@ -32,15 +42,21 @@ export function CommunityFeedback({ feedback, account, canRate = false, onSubmit
   return (
     <section className="st-community-feedback" aria-labelledby="st-community-feedback-title">
       <div className="st-community-feedback-head">
-        <div>
-          <h3 id="st-community-feedback-title">Ratings &amp; reviews</h3>
-          <p>Rate with your mobius.you account after installing this app. Written reviews are optional.</p>
-        </div>
-        <div className="st-rating-summary" aria-label={`${average} from ${feedback.rating_count} ratings`}>
-          <strong>{average}</strong>
-          <span>{feedback.rating_count} {feedback.rating_count === 1 ? 'rating' : 'ratings'}</span>
-        </div>
+        <h3 id="st-community-feedback-title">Ratings &amp; reviews</h3>
+        <p>Rate with your mobius.you account after installing this app. Written reviews are optional.</p>
       </div>
+      {/* The app's score leads the section; your own rating comes after it. */}
+      {feedback.rating_count > 0 ? (
+        <div className="st-rating-summary" aria-label={`${average} from ${feedback.rating_count} ${feedback.rating_count === 1 ? 'rating' : 'ratings'}`}>
+          <strong aria-hidden="true">{average}</strong>
+          <div aria-hidden="true">
+            <Stars value={feedback.rating_average} />
+            <span>{feedback.rating_count} {feedback.rating_count === 1 ? 'rating' : 'ratings'}</span>
+          </div>
+        </div>
+      ) : (
+        <p className="st-review-empty">No ratings yet.</p>
+      )}
 
       {!canRate ? (
         <div className="st-review-eligibility st-review-gate">
@@ -70,6 +86,7 @@ export function CommunityFeedback({ feedback, account, canRate = false, onSubmit
         }}
       >
         <div className="st-rating-picker" role="group" aria-label="Rate this app">
+          <span>{rating ? 'Your rating' : feedback.rating_count ? 'Add your rating' : 'Not rated yet'}</span>
           {[1, 2, 3, 4, 5].map((value) => (
             <button
               type="button"
@@ -82,7 +99,6 @@ export function CommunityFeedback({ feedback, account, canRate = false, onSubmit
               <StarIcon filled={value <= rating} />
             </button>
           ))}
-          <span>{rating ? 'Your rating' : feedback.rating_count ? 'Add your rating' : 'Not rated yet'}</span>
         </div>
         {canRate ? <>
           <label htmlFor="st-review-draft">Add a written review (optional)</label>
@@ -119,8 +135,11 @@ export function CommunityFeedback({ feedback, account, canRate = false, onSubmit
         <div className="st-review-list">
           {reviews.slice(0, 6).map((review, index) => (
             <article key={review.id || index}>
-              <strong>@{review.author_handle || 'mobius-user'} · {review.stars}/5</strong>
-              {review.review_text ? <p>{review.review_text}</p> : null}
+              <div className="st-review-who">
+                <strong>@{review.author_handle || 'mobius-user'}</strong>
+                <Stars value={review.stars} label={`${review.stars} out of 5 stars`} />
+              </div>
+              {review.review_text ? <p>{review.review_text}</p> : <p className="is-quiet">Rated without a written review.</p>}
             </article>
           ))}
         </div>

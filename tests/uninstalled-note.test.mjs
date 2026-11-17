@@ -89,6 +89,8 @@ test('the app page shows the note above Install only for an app that can still b
     await render(recoverable)
     const note = dom.window.document.querySelector('.st-detail-note')
     assert.ok(note, 'the note renders')
+    const cta = dom.window.document.querySelector('.st-dh-acts .st-dbtn.is-primary')
+    assert.ok(note.compareDocumentPosition(cta) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, 'recovery information appears before the install action')
     assert.match(note.textContent, /Previously installed.*You uninstalled this app on .+brings everything back\./)
     await render(null)
     assert.equal(dom.window.document.querySelector('.st-detail-note'), null)

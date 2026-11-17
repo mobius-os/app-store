@@ -9,6 +9,10 @@ export const CATALOG = CATALOG_REGISTRY.apps.map((entry) => ({
   ...entry,
   manifest: MANIFEST_SNAPSHOTS[entry.id] || null,
 }))
+// Store-assigned categories for community listings published before creators
+// could choose one, keyed by lowercase GitHub owner/repo. A creator's own
+// `store.category` always wins.
+export const COMMUNITY_CATEGORIES = Object.freeze({ ...(CATALOG_REGISTRY.community_categories || {}) })
 // The Store fetches the same registry URL at mount so newly published entries
 // can appear without a Store release. This checked-in import is its offline
 // floor; the remote copy may be newer but never defines a second schema.
@@ -17,7 +21,7 @@ export const CATALOG_URL =
 
 // Human-facing release label for diagnostics. The Store's self-update banner
 // uses verified source provenance, not this value, to decide availability.
-export const STORE_VERSION = '1.27.0'
+export const STORE_VERSION = '1.28.0'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
@@ -161,50 +165,74 @@ export const PERM_EXPLAIN = {
   },
 }
 
-export const CATALOG_COLLECTIONS = [
-  {
-    id: 'productivity',
-    title: 'Productivity',
-    description: 'Understand how your agent works and keep work organized.',
-  },
-  {
-    id: 'everyday',
-    title: 'Everyday',
-    description: 'Plan your day, stay informed, and build routines that stick.',
-  },
-  {
-    id: 'create',
-    title: 'Create',
-    description: 'Make websites, documents, and interactive ideas with your agent.',
-  },
-  {
-    id: 'explore',
-    title: 'Explore & learn',
-    description: 'Travel the world and learn something new along the way.',
-  },
-  {
-    id: 'play',
-    title: 'Play',
-    description: 'Make some noise or chase a high score.',
-  },
-  {
-    id: 'developer',
-    title: 'Build & run Möbius',
-    description: 'Shape how Möbius thinks, works, and evolves.',
-  },
-  {
-    id: 'community',
-    title: 'From the community',
-    description: 'Open-source apps you can inspect, install, and improve together.',
-  },
-  {
-    id: 'other-installed',
-    title: 'Other installed apps',
-    description: 'Published apps outside the main catalog, with updates checked at their source.',
-  },
-]
+// One discovery taxonomy for the Apps and Games tabs. `id` is the stable value
+// a creator writes in `mobius.json` `store.category`; `kind` picks the tab;
+// `color` is the category's icon hue, shown Google Play style as a colored
+// glyph on a soft tint of itself. Titles and copy may change freely, ids never.
+export const STORE_CATEGORIES = Object.freeze([
+  { id: 'productivity', kind: 'apps', title: 'Productivity', color: '#3b82f6',
+    description: 'Tasks, notes and boards that keep your work moving.' },
+  { id: 'everyday', kind: 'apps', title: 'Everyday', color: '#16a34a',
+    description: 'Habits, health and helpers for ordinary days.' },
+  { id: 'create', kind: 'apps', title: 'Create', color: '#db2777',
+    description: 'Make websites, documents, audio and games with your agent.' },
+  { id: 'explore', kind: 'apps', title: 'Learn & explore', color: '#d97706',
+    description: 'Maps, history and curious things to discover.' },
+  { id: 'money', kind: 'apps', title: 'Money & work', color: '#0d9488',
+    description: 'Markets, careers and business research.' },
+  { id: 'news', kind: 'apps', title: 'News & social', color: '#ea580c',
+    description: 'Stay informed and do things together.' },
+  { id: 'agent', kind: 'apps', title: 'Agent tools', color: '#65a30d',
+    description: 'Community tools that extend what your agent can do.' },
+  // Categories below stay out of browsing until an app is filed under one;
+  // creators can pick them when they publish.
+  { id: 'health', kind: 'apps', title: 'Health & fitness', color: '#ef4444',
+    description: 'Workouts, sleep, food and feeling better.' },
+  { id: 'photo', kind: 'apps', title: 'Photo & video', color: '#8b5cf6',
+    description: 'Shoot, edit and organize pictures and clips.' },
+  { id: 'audio', kind: 'apps', title: 'Music & audio', color: '#ec4899',
+    description: 'Listen, record, podcast and make sound.' },
+  { id: 'travel', kind: 'apps', title: 'Travel & places', color: '#0ea5e9',
+    description: 'Plan trips, find places and get around.' },
+  { id: 'home', kind: 'apps', title: 'Home & family', color: '#f59e0b',
+    description: 'Run the house, plan meals and keep everyone in sync.' },
+  { id: 'shopping', kind: 'apps', title: 'Shopping', color: '#14b8a6',
+    description: 'Lists, deals and keeping track of what you buy.' },
+  { id: 'utilities', kind: 'apps', title: 'Utilities', color: '#64748b',
+    description: 'Small tools that do one job well.' },
+  { id: 'developer', kind: 'apps', title: 'Build & run Möbius', color: '#7c5cf0',
+    description: 'Official Möbius apps that shape how Möbius thinks, works, and evolves.' },
+  { id: 'action', kind: 'games', title: 'Action', color: '#e11d48',
+    description: 'Fast reflexes, arenas and boss fights.' },
+  { id: 'puzzle', kind: 'games', title: 'Puzzle & brain', color: '#ca8a04',
+    description: 'Quizzes, guessing games and things that make you think.' },
+  { id: 'worlds', kind: 'games', title: 'Worlds', color: '#0891b2',
+    description: 'Walk around, hang out and explore shared places.' },
+  { id: 'music', kind: 'games', title: 'Music', color: '#c026d3',
+    description: 'Play notes, make beats, chase the rhythm.' },
+  { id: 'strategy', kind: 'games', title: 'Strategy', color: '#2563eb',
+    description: 'Plan ahead, build up and outthink the other side.' },
+  { id: 'racing', kind: 'games', title: 'Racing', color: '#f97316',
+    description: 'Tracks, laps and beating the clock.' },
+  { id: 'sports', kind: 'games', title: 'Sports', color: '#16a34a',
+    description: 'Ball games, matches and tournaments.' },
+  { id: 'board', kind: 'games', title: 'Cards & board', color: '#b45309',
+    description: 'Card games, board games and tabletop classics.' },
+  { id: 'adventure', kind: 'games', title: 'Adventure', color: '#0d9488',
+    description: 'Stories, quests and places to discover.' },
+  { id: 'word', kind: 'games', title: 'Word', color: '#7c3aed',
+    description: 'Letters, spelling and word puzzles.' },
+  { id: 'party', kind: 'games', title: 'Party & casual', color: '#db2777',
+    description: 'Quick rounds to play with friends.' },
+])
+export const STORE_CATEGORY_IDS = Object.freeze(STORE_CATEGORIES.map(({ id }) => id))
 
 export const EDITORIAL_COLLECTIONS = [
-  { id: 'picks', title: 'Our picks' },
+  { id: 'trending', title: 'Trending this week', description: 'Most new installs in the last 7 days.' },
+  { id: 'most-downloaded', title: 'Most downloaded', description: 'Installed by the most people across Möbius.' },
+  { id: 'picks', title: 'Our picks', description: 'Hand-picked by the Möbius team.' },
+  { id: 'top-rated', title: 'Top rated', description: 'Highest rated by people who installed them.' },
+  { id: 'updated', title: 'Recently updated', description: 'Creators shipping improvements.' },
   { id: 'arrivals', title: 'New arrivals', description: 'Freshly published, newest first.' },
+  { id: 'uncategorized', title: 'More apps', description: 'Apps whose creators have not picked a category yet.' },
 ]

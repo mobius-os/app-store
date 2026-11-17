@@ -59,7 +59,7 @@ test('a fresh install is available at once and installs with no access check or 
     await act(async () => root.render(React.createElement(DetailView, {
       item, installed: [], capabilityReview: undefined, onBack() {}, onInstall: (...args) => installs.push(args), token: 't',
     })))
-    const cta = dom.window.document.querySelector('.st-detail-cta')
+    const cta = dom.window.document.querySelector('.st-dh-acts .st-dbtn.is-primary')
     assert.ok(cta, 'the primary button renders')
     assert.equal(cta.disabled, false)
     assert.doesNotMatch(cta.textContent, /Reviewing access|Access unavailable/)

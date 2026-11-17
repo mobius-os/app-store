@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { proxyUrl } from '../api.js'
+import { useNearView } from './nearView.js'
 
 // Process-lifetime cache of proxied external icons, keyed by the source
 // (raw.githubusercontent) URL. Each entry is the in-flight (or settled)
@@ -20,10 +21,13 @@ import { proxyUrl } from '../api.js'
 const _iconBlobCache = new Map()
 const _resolvedIconBlobCache = new Map()
 
+// Icons render at 44-128px, so the proxy is asked for a small copy.
+const ICON_WIDTH = 256
+
 function loadIconBlob(srcUrl, token) {
   const cached = _iconBlobCache.get(srcUrl)
   if (cached) return cached
-  const p = fetch(proxyUrl(srcUrl), {
+  const p = fetch(proxyUrl(srcUrl, { width: ICON_WIDTH }), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
     .then(r => {
@@ -74,6 +78,30 @@ export function installedIconUrl(app) {
   return `/api/apps/${app.id}/icon?size=128${version}`
 }
 
+// Real stores show every icon as the same rounded square. Many Möbius icons
+// are cut-out illustrations on a transparent background, so those get a tile
+// behind them; full-bleed square icons are shown as they are. The answer is
+// read once from the icon's corner pixels and cached per image.
+const _cutoutCache = new Map()
+
+function isCutoutIcon(img) {
+  try {
+    const size = 24
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) return false
+    ctx.drawImage(img, 0, 0, size, size)
+    const { data } = ctx.getImageData(0, 0, size, size)
+    const alphaAt = (x, y) => data[(y * size + x) * 4 + 3]
+    const probes = [[1, 1], [size - 2, 1], [1, size - 2], [size - 2, size - 2], [size >> 1, 0], [0, size >> 1]]
+    return probes.filter(([x, y]) => alphaAt(x, y) < 200).length >= 3
+  } catch {
+    return false
+  }
+}
+
 export function IconBox({ item, size = 'normal', token }) {
   const { url, external } = appIcon(item)
   const [errored, setErrored] = useState(false)
@@ -82,6 +110,9 @@ export function IconBox({ item, size = 'normal', token }) {
   const [blobUrl, setBlobUrl] = useState(() => (
     external && url ? (_resolvedIconBlobCache.get(url) || null) : null
   ))
+  // A remote icon already fetched this session paints at once; otherwise it
+  // waits until its spot is about to scroll into view.
+  const [viewRef, near] = useNearView(!!(external && url && !blobUrl))
   // Letter-fallback variant: needs the surface tile so the letter reads
   // on an opaque background. Real icons sit on transparent.
   const isLetter = !((external ? blobUrl : url) && !errored)
@@ -101,21 +132,29 @@ export function IconBox({ item, size = 'normal', token }) {
   // settled promise) so the icon paints without a second round-trip.
   useEffect(() => {
     if (!url || !external) { setBlobUrl(null); return }
+    if (!near) return
     let cancelled = false
     setErrored(false)
     loadIconBlob(url, token)
       .then(objectUrl => { if (!cancelled) setBlobUrl(objectUrl) })
       .catch(() => { if (!cancelled) setErrored(true) })
     return () => { cancelled = true }
-  }, [url, external, token])
+  }, [url, external, token, near])
 
   const src = external ? blobUrl : url
+  const [cutout, setCutout] = useState(() => (src ? _cutoutCache.get(src) : undefined))
+  useEffect(() => { setCutout(src ? _cutoutCache.get(src) : undefined) }, [src])
   if (src && !errored) {
     // wrapClass must be re-evaluated now that we know we have an image.
-    const imgWrapClass = size === 'hero' ? 'st-hero-icon' : 'st-icon-wrap'
+    const imgWrapClass = `${size === 'hero' ? 'st-hero-icon' : 'st-icon-wrap'}${cutout ? ' is-cutout' : ''}`
     return (
       <div className={imgWrapClass}>
         <img src={src} alt="" className="st-icon-img" loading="lazy" decoding="async"
+             onLoad={(event) => {
+               // Every copy of an icon reads the shared answer, measured once.
+               if (!_cutoutCache.has(src)) _cutoutCache.set(src, isCutoutIcon(event.currentTarget))
+               setCutout(_cutoutCache.get(src))
+             }}
              onError={() => setErrored(true)} />
       </div>
     )
@@ -130,7 +169,7 @@ export function IconBox({ item, size = 'normal', token }) {
     const loadingWrapClass = size === 'hero'
       ? 'st-hero-icon st-icon-loading'
       : 'st-icon-wrap st-icon-loading'
-    return <div className={loadingWrapClass} aria-hidden="true" />
+    return <div ref={viewRef} className={loadingWrapClass} aria-hidden="true" />
   }
   const letterWrapClass = size === 'hero' ? 'st-hero-icon is-letter' : 'st-icon-wrap st-icon-wrap--letter'
   return (
