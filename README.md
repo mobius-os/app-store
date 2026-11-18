@@ -130,6 +130,18 @@ installer, so the store never needs cross-app write. It also does
 not request `share_with_apps` (other apps cannot read the store's
 storage).
 
+The agents the Store starts declare `"agent": {"scope": "admin"}` (and
+`embeds_agent: true`). They review a proposed update against the installed
+app's source and its incoming diff, prepare a listing (edit the app's
+`mobius.json`, icon and screenshots, then apply it), run the pre-publish check
+on the app's Git history, and fix what that check flagged. All of that is
+another app's source directory and owner routes (`/api/apps/...`,
+`/api/apps/apply`, `/api/community/publications/...`), which a Tools, Read or
+Edit room cannot reach, so a confined scope would break every one of them.
+Conflict resolvers are owner chats the platform opens
+(`/api/apps/<id>/conflict-resolver-chat`), so this declaration does not
+govern them.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
