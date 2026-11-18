@@ -1274,6 +1274,71 @@ export async function fetchReleaseNotes({ manifestUrl, fromCommit, toCommit, tok
   }
 }
 
+// The changes behind an app's listed version, read from its public GitHub
+// repository through the proxy: commit subjects, newest first, either since
+// `sinceCommit` (the installed revision) or the latest few up to the listed
+// ref. Merges and Möbius's own bookkeeping commits are left out. Anything that
+// cannot be read (a non-GitHub source, rate limits, offline) resolves to null,
+// and each answer is kept for the session so reopening a page reads nothing.
+const CHANGE_BOOKKEEPING = /^(apply app source|install\b|initialize app repo|merge (pull request|branch|remote))/i
+const recentChangesCache = new Map()
+export function fetchRecentChanges({ manifestUrl, sinceCommit = null, token, limit = 5 }) {
+  const key = `${manifestUrl}|${sinceCommit || ''}|${limit}`
+  if (!recentChangesCache.has(key)) {
+    const read = readRecentChanges({ manifestUrl, sinceCommit, token, limit })
+      .then((result) => { if (!result) recentChangesCache.delete(key); return result })
+    recentChangesCache.set(key, read)
+  }
+  return recentChangesCache.get(key)
+}
+
+async function readRecentChanges({ manifestUrl, sinceCommit, token, limit }) {
+  const at = githubRefOf(manifestUrl)
+  if (!at) return null
+  const url = sinceCommit
+    ? `https://api.github.com/repos/${at.repo}/compare/${encodeURIComponent(sinceCommit)}...${encodeURIComponent(at.ref)}`
+    : `https://api.github.com/repos/${at.repo}/commits?sha=${encodeURIComponent(at.ref)}&per_page=30`
+  try {
+    const res = await fetch(proxyUrl(url), { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) return null
+    const body = await res.json()
+    const commits = sinceCommit
+      ? (Array.isArray(body?.commits) ? [...body.commits].reverse() : [])
+      : (Array.isArray(body) ? body : [])
+    const items = commits
+      .filter((c) => !(Array.isArray(c?.parents) && c.parents.length > 1))
+      .map((c) => ({
+        text: readableChange(String(c?.commit?.message || '').split('\n')[0]),
+        date: c?.commit?.committer?.date || c?.commit?.author?.date || '',
+      }))
+      .filter((c) => c.text && !CHANGE_BOOKKEEPING.test(c.text))
+    return { items: items.slice(0, limit), more: items.length > limit, historyUrl: `https://github.com/${at.repo}/commits/${at.ref}` }
+  } catch {
+    return null
+  }
+}
+
+// A commit subject as a plain sentence: no "fix(scope):" prefix and no
+// trailing pull request number.
+function readableChange(subject) {
+  const text = subject.trim()
+    .replace(/\s*\(#\d+\)$/, '')
+    .replace(/^[a-z]+(\([^)]*\))?!?:\s*/i, '')
+  return text ? text[0].toUpperCase() + text.slice(1) : ''
+}
+
+// { repo: "owner/repo", ref } for a manifest served from raw.githubusercontent.com.
+export function githubRefOf(manifestUrl) {
+  try {
+    const url = new URL(manifestUrl)
+    if (url.hostname !== 'raw.githubusercontent.com') return null
+    const [owner, repo, ref] = url.pathname.split('/').filter(Boolean)
+    return owner && repo && ref ? { repo: `${owner}/${repo}`, ref } : null
+  } catch {
+    return null
+  }
+}
+
 // "owner/repo" for a manifest served from raw.githubusercontent.com; null otherwise.
 export function githubRepoOf(manifestUrl) {
   try {

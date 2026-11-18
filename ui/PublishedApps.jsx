@@ -1,6 +1,6 @@
 /* PublishedApps is the creator's view of apps they have already published:
    one simple list, then one page per app with its numbers and reviews. */
-import { ChevronLeft, ChevronRight } from '@openai/apps-sdk-ui/components/Icon'
+import { ChevronLeft } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useEffect, useState } from 'react'
 import { formatCount, publishedStatusLine } from '../domain.js'
 import { StarIcon } from './CommunityFeedback.jsx'
@@ -44,6 +44,19 @@ function RatingCount({ count }) {
   return <span>{formatCount(count)} {count === 1 ? 'rating' : 'ratings'}</span>
 }
 
+// The same row as every other Library tab: icon, name, one line of facts
+// (status, installs, rating) and one quiet action.
+function rowFacts(state) {
+  if (state?.status !== 'live') return []
+  const rating = ratingText(state)
+  return [
+    `${formatCount(state.stats?.installs)} ${state.stats?.installs === 1 ? 'install' : 'installs'}`,
+    rating === '–' ? 'No ratings yet'
+      : rating === '…' || rating === 'Unavailable' ? `Rating ${rating.toLowerCase()}`
+        : <span className="st-mine-rating" aria-label={`Rated ${rating} of 5`}><StarIcon filled />{rating}</span>,
+  ]
+}
+
 export function YourAppsList({ entries, onOpen }) {
   return (
     <ul className="st-mine-list" aria-label="Your published apps">
@@ -53,17 +66,12 @@ export function YourAppsList({ entries, onOpen }) {
             <AppIcon app={app} />
             <span className="st-mine-copy">
               <strong>{app.name}</strong>
-              <StatusLine state={state} hosted={app.hosted_publication} />
+              <span className="st-mine-facts">
+                <StatusLine state={state} hosted={app.hosted_publication} />
+                {rowFacts(state).map((fact, index) => <span key={index}> · {fact}</span>)}
+              </span>
             </span>
-            {state?.status === 'live' ? (
-              <>
-                <span className="st-mine-num"><b>{formatCount(state.stats?.installs)}</b><small>Installs</small></span>
-                <span className="st-mine-num"><b>{ratingText(state)}</b><small>Average Rating</small></span>
-              </>
-            ) : (
-              <span className="st-mine-num is-wide"><small>Stats appear while the app is live</small></span>
-            )}
-            <ChevronRight width="16" height="16" aria-hidden="true" className="st-mine-chevron" />
+            <span className="st-mine-view" aria-hidden="true">View</span>
           </button>
         </li>
       ))}

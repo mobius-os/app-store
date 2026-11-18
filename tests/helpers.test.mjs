@@ -372,10 +372,9 @@ test('source availability distinguishes the immutable Host cache from a reposito
 test('switching Store journeys resets the shared scroll surface', async () => {
   const source = await readFile(new URL('../index.jsx', import.meta.url), 'utf8')
   assert.match(source, /const selectTab = useCallback\(\(next\) => \{[\s\S]*gridScrollRef\.current\.scrollTop = 0[\s\S]*setTab\(next\)/)
-  // Publishing opens and leaves through selectTab too, so it resets the same surface.
-  assert.match(source, /const openPublish = \(\) => \{[\s\S]*?selectTab\('publish'\)/)
-  assert.match(source, /const leavePublish = [\s\S]*?selectTab\(from\.tab\)/)
-  assert.match(source, /className="st-upload-btn" onClick=\{openPublish\}/)
+  // Publishing opens Library through selectTab too, so it resets the same surface.
+  assert.match(source, /const openYourApps = [\s\S]*?selectTab\('library'\)[\s\S]*?scrollTop = 0/)
+  assert.match(source, /className="st-upload-btn" onClick=\{\(\) => openYourApps\('choose'\)\}/)
   assert.match(source, /onClick=\{\(\) => \{ selectTab\(id\)/)
 })
 
@@ -704,6 +703,8 @@ test('catalog app intents preserve origin checks and resolve one safe action', a
 
   assert.equal(catalogItemIdFromIntent('app:voice'), 'voice')
   assert.equal(catalogItemIdFromIntent('  app:NEWS  '), 'news')
+  assert.equal(catalogItemIdFromIntent('app:community:app_49ad11'), 'community:app_49ad11')
+  assert.equal(catalogItemIdFromIntent('app:other:app_1'), null)
   assert.equal(catalogItemIdFromIntent('setup'), null)
   assert.equal(catalogItemIdFromIntent('app:../voice'), null)
   assert.equal(catalogItemIdFromIntent(null), null)
@@ -2644,14 +2645,23 @@ test('successful updates clear stale git update checks and inline errors', async
   assert.ok(detailSource.includes('!blockedUpdate && hasUpdate'))
 })
 
-test('app details show what an app can access and keep update-source facts in a disclosure', async () => {
+test('app details end with a folded access section, then source links and update-source facts', async () => {
   const source = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
-  const access = source.indexOf('title="What it can access"')
+  const similar = source.indexOf('id="st-detail-similar"')
+  const access = source.indexOf('>What it can access</span>')
   const capability = source.indexOf('<CapabilityContract', access)
-  const disclosure = source.indexOf('className="st-technical-details"', capability)
-  assert.ok(access >= 0)
+  const links = source.indexOf('className="st-info-links"')
+  const disclosure = source.indexOf('className="st-technical-details"')
+  // Permissions follow the related-app shelves, folded unless access changed;
+  // the source links and the update-source disclosure close the page.
+  assert.ok(similar >= 0)
+  assert.ok(access > similar)
   assert.ok(capability > access)
-  assert.ok(disclosure > capability)
+  assert.ok(links > capability)
+  assert.ok(disclosure > links)
+  assert.match(source, /aria-expanded=\{accessOpen\}/)
+  assert.match(source, /hidden=\{!accessOpen\}/)
+  assert.match(source, /setAccessOpen\(accessChanged\)\n  \}, \[item\?\.id, accessChanged\]\)/)
   assert.match(source, /Update source/)
   assert.match(source, /Installed source revision/)
   assert.match(source, /Last verified/)
@@ -3171,4 +3181,16 @@ test('discovery lists keep what is current and top up instead of going empty', a
   const ratedApps = [rated('single', 1, 5), rated('crowd', 20, 4.8), rated('meh', 5, 3), rated('good', 6, 4.2), rated('ok', 2, 4)]
   assert.deepEqual(highestRated(ratedApps).map(item => item.id), ['crowd', 'good', 'single', 'ok'])
   assert.deepEqual(highestRated([rated('meh', 5, 3), rated('low', 3, 2)]).map(item => item.id), ['meh', 'low'], 'never empty while anything is rated')
+})
+
+
+test('the stylesheet closes every block it opens, so no rule swallows the ones after it', async () => {
+  const { CSS } = await import('../theme.js')
+  let depth = 0
+  for (const ch of CSS.replace(/\/\*[\s\S]*?\*\//g, '')) {
+    if (ch === '{') depth += 1
+    if (ch === '}') depth -= 1
+    assert.ok(depth >= 0, 'a block closes before it opens')
+  }
+  assert.equal(depth, 0)
 })

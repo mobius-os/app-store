@@ -7,10 +7,10 @@ import { utf8Length } from './domain.js'
 // window.mobius.nav.setLocation keep the previous start-at-Browse behavior.
 
 const COLLECTION_IDS = new Set([...EDITORIAL_COLLECTIONS.map(({ id }) => id), ...STORE_CATEGORY_IDS])
-const TABS = new Set(['browse', 'apps', 'games', 'search', 'library', 'publish'])
+const TABS = new Set(['browse', 'apps', 'games', 'search', 'library'])
 const DISCOVERY_TABS = new Set(['browse', 'apps', 'games', 'search'])
 const CATEGORY_IDS = new Set(STORE_CATEGORY_IDS)
-const FILTERS = new Set(['all', 'needs', 'installed', 'update', 'saved', 'setup'])
+const FILTERS = new Set(['all', 'needs', 'installed', 'update', 'saved', 'yours', 'setup'])
 const QUERY_MAX = 200
 const ID = /^[a-z0-9][a-z0-9:._-]{0,127}$/i
 
@@ -34,6 +34,8 @@ export function storeLocation({ tab, category, query, activeCollection, detailId
 // The saved value is app data that came back through the shell: accept only
 // the known shape and fall back to the start view for anything else.
 export function restoredStoreLocation(value) {
+  // The old Publish page is now Library's Your apps tab.
+  if (value?.tab === 'publish') value = { ...value, tab: 'library', category: 'yours', detail: null }
   if (!value || typeof value !== 'object' || !TABS.has(value.tab)) return null
   return {
     tab: value.tab,

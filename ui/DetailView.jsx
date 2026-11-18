@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Code, Flag, SavedFilledXs, SavedXs, Share, X } from '@openai/apps-sdk-ui/components/Icon'
+import { ChevronDown, ChevronLeft, ChevronRight, Code, Flag, SavedFilledXs, SavedXs, Share, X } from '@openai/apps-sdk-ui/components/Icon'
 import { appLifecycleFor, busyLabelForAction, catalogCategory, catalogPublisher, communityFeedbackOf, formatDownloadSize, storeCategory, hasAccessRows, isTrustedHost, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus, shortDate } from '../domain.js'
-import { CapabilityContract } from './CapabilityContract.jsx'
+import { CapabilityContract, capabilityRows } from './CapabilityContract.jsx'
 import { CategoryIcon } from './CategoryBrowse.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
@@ -9,6 +9,7 @@ import { CatalogStoreImage, StoreImage, catalogAssetUrl } from './StoreImage.jsx
 import { SectionHead } from './StoreSections.jsx'
 import { progressStageFor } from './CatalogCard.jsx'
 import { ProgressFill } from './ProgressFill.jsx'
+import { fetchRecentChanges } from '../api.js'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -107,7 +108,36 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
     sourceCheck?.installedSourceRevision || storeInstalled?.upstream_commit,
   )
   const candidateDigest = shortRevision(sourceCheck?.candidateSourceDigest)
+  // What's new lists real changes: those since the installed version when
+  // there are any, otherwise the app's latest few. No readable history means
+  // no section, rather than a line that says nothing.
+  const changesFrom = sourceCheck?.installedSourceRevision || storeInstalled?.upstream_commit || null
+  const [changes, setChanges] = useState(null)
+  useEffect(() => {
+    let live = true
+    setChanges(null)
+    if (!item.manifest_url) return undefined
+    ;(async () => {
+      const since = changesFrom ? await fetchRecentChanges({ manifestUrl: item.manifest_url, sinceCommit: changesFrom, token }) : null
+      const result = since?.items.length ? { ...since, mode: 'since' }
+        : { ...(await fetchRecentChanges({ manifestUrl: item.manifest_url, token })), mode: 'recent' }
+      if (live) setChanges(result.items?.length ? result : null)
+    })()
+    return () => { live = false }
+  }, [item.manifest_url, changesFrom, token])
   const checkedAt = checkedAtText(sourceCheck?.checkedAt)
+  const [accessOpen, setAccessOpen] = useState(accessChanged)
+  // Each app page starts folded unless its access changed.
+  useEffect(() => {
+    setAccessOpen(accessChanged)
+  }, [item?.id, accessChanged])
+  const accessRows = capabilityReview?.preview?.access_rows
+    ? capabilityRows(capabilityReview.preview.access_rows, capabilityReview.preview.capability_contract)
+    : null
+  const sensitiveCount = accessRows ? accessRows.filter(row => row.critical).length : 0
+  const accessSummary = !accessRows ? 'Checked by your Möbius before anything is installed.'
+    : !accessRows.length ? 'No special access.'
+      : `${accessRows.length} ${accessRows.length === 1 ? 'permission' : 'permissions'}${sensitiveCount ? ` · ${sensitiveCount} sensitive` : ''}`
   // Until a live manifest arrives (the access preview reads one), the bundled
   // snapshot's version must not look authoritative.
   const catalogVersion = m === item.manifest && showsSnapshotManifest(item)
@@ -308,37 +338,9 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           </figure>
         ) : null}
 
-        <section className="st-sec" aria-labelledby="st-detail-new">
-          <SectionHead id="st-detail-new" title="What's new" />
-          <div className="st-wn">
-            {/* One quiet line: the version and when it arrived. No card around a
-                sentence that only says there are no notes. */}
-            <div className="st-wn-top"><b>Version {catalogVersion}</b>{shortDate(releasedAt) ? <span>· {shortDate(releasedAt)}</span> : null}</div>
-            {item.community ? null : <p>Arrives with Möbius updates.</p>}
-            {storeInstalled && installedVer && installedVer !== m.version ? <p>You have version {installedVer}.</p> : null}
-            {item.community?.repository_update ? (
-              <p className="st-wn-note">A newer repository change ({item.community.repository_update.commit_sha.slice(0, 7)}) is waiting; this release stays until its owner lists it.</p>
-            ) : null}
-          </div>
-        </section>
-
         <section className="st-sec" aria-labelledby="st-detail-about">
           <SectionHead id="st-detail-about" title="About" />
           <div className="st-detail-desc-wrap"><p className="st-detail-desc">{listingDescription}</p></div>
-        </section>
-
-        <section className={`st-sec${accessChanged ? ' is-attention' : ''}`} aria-labelledby="st-detail-access">
-          <SectionHead id="st-detail-access" title="What it can access"
-            sub={accessChanged ? 'This version asks for different access.' : 'Checked by your Möbius before anything is installed.'} />
-          <div className="st-access">
-            <CapabilityContract review={capabilityReview} onRetry={onRetryCapabilityReview} isInstalled={!!storeInstalled} />
-            {scheduleText ? (
-              <p className="st-access-note">Runs in the background: {scheduleText}.{capabilityReview.preview.capability_contract.background.user_configurable ? ' You can change the time in the app.' : ''}</p>
-            ) : null}
-            {m.runtime?.esm_deps?.length > 0 ? (
-              <p className="st-access-note">Loads {m.runtime.esm_deps.length === 1 ? 'one library' : `${m.runtime.esm_deps.length} libraries`} from esm.sh on first open: {m.runtime.esm_deps.join(', ')}.</p>
-            ) : null}
-          </div>
         </section>
 
         {communityFeedback ? (
@@ -370,30 +372,37 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             {infoRow(publishedAt ? 'Published' : 'Ships with', publishedAt ? shortDate(publishedAt) : 'Möbius')}
             {sourceAvailability ? infoRow('Release source', sourceAvailability.label) : null}
           </dl>
-          <div className="st-info-links">
-            {sourceUrl ? (
-              <a className="st-lnk" href={sourceUrl} target="_blank" rel="noopener noreferrer"><Code width={16} height={16} aria-hidden="true" /> Source code</a>
+        </section>
+
+        {changes || item.community?.repository_update ? (
+        <section className="st-sec" aria-labelledby="st-detail-new">
+          <SectionHead id="st-detail-new" title="What's new" />
+          <div className="st-wn">
+            <div className="st-wn-top"><b>Version {catalogVersion}</b>{shortDate(releasedAt) ? <span>· {shortDate(releasedAt)}</span> : null}</div>
+            {changes ? (
+              <>
+                <p className="st-wn-lead">{changes.mode === 'since'
+                  ? `New since your version${installedVer ? ` (v${installedVer})` : ''}:`
+                  : 'Latest changes:'}</p>
+                <ul className="st-wn-list">
+                  {changes.items.map((change, index) => (
+                    <li key={`${index}-${change.text}`}>
+                      <span>{change.text}</span>
+                      {shortDate(change.date) ? <time dateTime={change.date}>{shortDate(change.date)}</time> : null}
+                    </li>
+                  ))}
+                </ul>
+                <a className="st-lnk st-wn-all" href={changes.historyUrl} target="_blank" rel="noopener noreferrer">
+                  {changes.more ? 'See all changes' : 'See the full history'}
+                </a>
+              </>
             ) : null}
-            {item.community?.repository_url ? (
-              <a className="st-lnk" href={`${item.community.repository_url.replace(/\/$/, '')}/issues`} target="_blank" rel="noopener noreferrer"><Flag width={16} height={16} aria-hidden="true" /> Report a problem</a>
+            {item.community?.repository_update ? (
+              <p className="st-wn-note">A newer repository change ({item.community.repository_update.commit_sha.slice(0, 7)}) is waiting; this release stays until its owner lists it.</p>
             ) : null}
           </div>
-          {storeInstalled ? (
-            <details className="st-technical-details">
-              <summary className="st-technical-summary"><span className="st-technical-summary-main">Update source</span><span className="st-technical-summary-meta">{releaseSummary}</span></summary>
-              <div className="st-technical-body">
-                <div className="st-esm-note">
-                  {sourceCheck?.available === null ? 'Source verification was unavailable on the last check.'
-                    : sourceCheck ? (sourceCheck.available ? 'A different upstream source was verified.' : 'Installed source matches the verified upstream source.')
-                      : 'Source verification has not completed yet.'}
-                  {installedRevision && <div className="st-esm-dep-list">Installed source revision: {installedRevision}</div>}
-                  {candidateDigest && <div className="st-esm-dep-list">Checked source digest: {candidateDigest}</div>}
-                  {checkedAt && <div className="st-esm-dep-list">Last verified: {checkedAt}</div>}
-                </div>
-              </div>
-            </details>
-          ) : null}
         </section>
+        ) : null}
 
         {canCommunityWithdraw && (
           <div className="st-community-withdraw" role="group" aria-label="Manage your community listing">
@@ -429,6 +438,58 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             <div className="st-grid3">{related.similar.slice(0, 6).map(renderRow)}</div>
           </section>
         ) : null}
+        {/* Permissions close the page, folded by default: the summary line says
+            how much an app asks for, and a change in access opens it. */}
+        <section className={`st-sec st-access-sec${accessChanged ? ' is-attention' : ''}${accessOpen ? ' is-open' : ''}`} aria-labelledby="st-detail-access">
+          <h2 className="st-access-head">
+            <button type="button" id="st-detail-access" className="st-access-summary"
+              aria-expanded={accessOpen} aria-controls="st-detail-access-body" onClick={() => setAccessOpen(open => !open)}>
+              <span className="st-access-summary-text">
+                <span className="st-sh-title">What it can access</span>
+                <span className="st-sh-sub">{accessChanged ? 'This version asks for different access.' : accessSummary}</span>
+              </span>
+              <ChevronDown className="st-access-chev" width={20} height={20} aria-hidden="true" />
+            </button>
+          </h2>
+          <div id="st-detail-access-body" className="st-access" hidden={!accessOpen}>
+            <p className="st-access-note is-lead">Checked by your Möbius before anything is installed.</p>
+            <CapabilityContract review={capabilityReview} onRetry={onRetryCapabilityReview} isInstalled={!!storeInstalled} />
+            {scheduleText ? (
+              <p className="st-access-note">Runs in the background: {scheduleText}.{capabilityReview.preview.capability_contract.background.user_configurable ? ' You can change the time in the app.' : ''}</p>
+            ) : null}
+            {m.runtime?.esm_deps?.length > 0 ? (
+              <p className="st-access-note">Loads {m.runtime.esm_deps.length === 1 ? 'one library' : `${m.runtime.esm_deps.length} libraries`} from esm.sh on first open: {m.runtime.esm_deps.join(', ')}.</p>
+            ) : null}
+          </div>
+        </section>
+
+        {/* Source links and the update-source facts close the page, below
+            what the app can access. */}
+        <div className="st-detail-foot">
+          <div className="st-info-links">
+            {sourceUrl ? (
+              <a className="st-lnk" href={sourceUrl} target="_blank" rel="noopener noreferrer"><Code width={16} height={16} aria-hidden="true" /> Source code</a>
+            ) : null}
+            {item.community?.repository_url ? (
+              <a className="st-lnk" href={`${item.community.repository_url.replace(/\/$/, '')}/issues`} target="_blank" rel="noopener noreferrer"><Flag width={16} height={16} aria-hidden="true" /> Report a problem</a>
+            ) : null}
+          </div>
+          {storeInstalled ? (
+            <details className="st-technical-details">
+              <summary className="st-technical-summary"><span className="st-technical-summary-main">Update source</span><span className="st-technical-summary-meta">{releaseSummary}</span></summary>
+              <div className="st-technical-body">
+                <div className="st-esm-note">
+                  {sourceCheck?.available === null ? 'Source verification was unavailable on the last check.'
+                    : sourceCheck ? (sourceCheck.available ? 'A different upstream source was verified.' : 'Installed source matches the verified upstream source.')
+                      : 'Source verification has not completed yet.'}
+                  {installedRevision && <div className="st-esm-dep-list">Installed source revision: {installedRevision}</div>}
+                  {candidateDigest && <div className="st-esm-dep-list">Checked source digest: {candidateDigest}</div>}
+                  {checkedAt && <div className="st-esm-dep-list">Last verified: {checkedAt}</div>}
+                </div>
+              </div>
+            </details>
+          ) : null}
+        </div>
       </div>
       {viewer >= 0 && shots[viewer] ? (
         <ScreenshotViewer shots={shots} index={viewer} onIndex={setViewer} onClose={() => setViewer(-1)}

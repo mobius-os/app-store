@@ -144,10 +144,6 @@ export const CSS = `
   .st-tabs { justify-self: center; }
   .st-tab { flex: 0 0 auto; padding: 0 16px; min-height: 56px; }
 }
-.st-tab-updateall { align-self: center; flex: none; margin-left: 6px; min-height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--st-accent-fill); color: var(--accent-fg, #fff); font: 600 13px var(--font); cursor: pointer; white-space: nowrap; }
-.st-tab-updateall:disabled { opacity: .52; cursor: default; }
-.st-tab-updateall:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (hover: hover) { .st-tab-updateall:not(:disabled):hover { filter: brightness(1.08); } }
 .st-tab-count {
   min-width: 18px;
   height: 18px;
@@ -1375,8 +1371,8 @@ export const CSS = `
 }
 
 /* Publishing is one compact choose → review → publish journey. */
-/* Your profile and its apps share the Store's content rail, one left edge. */
-.st-publisher, .st-my-profile { width: min(100%, var(--st-rail)); max-width: none !important; margin-inline: auto; }
+/* Publishing shares the Store's content rail, one left edge. */
+.st-publisher { width: min(100%, var(--st-rail)); max-width: none !important; margin-inline: auto; }
 .st-publish-heading {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 24px;
   margin: 4px 0 22px; padding: 22px 0 18px; border-bottom: 1px solid var(--border);
@@ -1387,7 +1383,10 @@ export const CSS = `
 .st-publish-path li { position: relative; counter-increment: publish-step; }
 .st-publish-path li::before { content: counter(publish-step); display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 7px; border: 1px solid var(--border); border-radius: 50%; color: var(--muted); font-size: 12px; }
 .st-publish-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
-.st-publish-account { color: var(--muted); font-size: 12px; }
+/* In Library's Your apps tab the tab names the page, so its actions are one
+   quiet row under the tabs rather than a second page heading. */
+.st-publish-heading.is-home { flex-direction: row; align-items: center; gap: 16px; min-height: 40px; margin: 0 0 -10px; padding: 0; border-bottom: 0; text-align: left; }
+.st-yours-line { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
 .st-publish-connection {
   min-height: 32px; display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px;
   color: var(--muted); background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-weight: 700;
@@ -1398,9 +1397,6 @@ export const CSS = `
 .st-publish-setup { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
 .st-publish-setup > div { flex: 1; min-width: 0; display: grid; gap: 4px; }
 .st-publish-setup span { color: var(--muted); font-size: 12px; line-height: 1.4; }
-.st-publish-list-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 28px 0 14px; }
-.st-publish-list-head h3 { margin: 0; font-size: 14px; }
-.st-publish-list-head p { margin: 0; color: var(--muted); font-size: 12px; }
 .st-publish-search { width: min(260px, 42vw); min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--border); border-radius: 12px; color: var(--muted); background: var(--surface); }
 .st-publish-search:focus-within { border-color: var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 18%, transparent); }
 .st-publish-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; font-size: 13px; }
@@ -1605,7 +1601,7 @@ export const CSS = `
   .st-publisher.is-reviewing .st-publish-heading h2 { font-size: 28px; }
   .st-publisher.is-reviewing .st-publish-path { gap: 8px 16px; margin-top: 12px; }
   .st-publish-heading-actions { justify-content: flex-start; }
-  .st-publish-list-head { align-items: stretch; flex-direction: column; }
+  .st-publish-heading.is-home { flex-direction: column; align-items: flex-start; gap: 12px; }
   .st-publish-search { width: 100%; }
   .st-publish-list { grid-template-columns: 1fr; }
   .st-publish-row { grid-template-columns: auto minmax(0, 1fr); }
@@ -1896,25 +1892,26 @@ export const CSS = `
 /* Publish tab: your published apps, one app page, and the agent check. */
 .st-publish-heading .st-back-btn { margin-bottom: 10px; }
 .st-mine-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); overflow: hidden; margin: 0; padding: 0; list-style: none; }
-.st-mine-list > li { border-bottom: 1px solid var(--border); }
-.st-mine-list > li:last-child { border-bottom: 0; }
+/* Rows match Library's: divider inset past the icon, 76px tall, one action. */
+.st-mine-list > li + li { background: linear-gradient(var(--border), var(--border)) no-repeat 78px 0 / calc(100% - 78px) 1px; }
 .st-mine-row {
-  display: grid; grid-template-columns: 48px minmax(0, 1fr) repeat(2, 112px) 16px; gap: 24px; align-items: center;
-  width: 100%; min-height: 104px; padding: 22px 24px; border: 0;
+  display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; column-gap: 14px; align-items: center;
+  width: 100%; min-height: 76px; padding: 12px 16px; border: 0;
   background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
 .st-mine-row:hover { background: color-mix(in srgb, var(--text) 4%, var(--surface)); }
+.st-mine-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.st-mine-row .st-publish-icon { width: 48px !important; height: 48px !important; border-radius: 12px; }
 .st-mine-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.st-mine-copy strong { font-size: 15px; }
+.st-mine-copy strong { font-size: 15px; font-weight: 600; line-height: 1.3; }
+.st-mine-facts { color: var(--muted); font-size: 14px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-mine-status { color: var(--muted); font-size: 13px; }
+.st-mine-facts .st-mine-status { font-size: 14px; }
 .st-mine-status.is-accent { color: var(--accent); }
+.st-mine-rating { display: inline-flex; align-items: center; gap: 3px; }
+.st-mine-rating svg { width: 13px; height: 13px; color: var(--st-star); }
 .st-mine-status.is-warning { color: var(--orange, #e8b45a); }
-.st-mine-num { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; white-space: nowrap; }
-.st-mine-num b { font-size: 22px; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.st-mine-num small { color: var(--muted); font-size: 12px; line-height: 16px; min-height: 16px; }
-.st-mine-num.is-wide { grid-column: span 2; }
-.st-mine-num.is-wide small { white-space: normal; }
-.st-mine-chevron { color: var(--muted); }
+.st-mine-view { display: inline-grid; place-items: center; min-width: 84px; height: 34px; padding: 0 16px; border-radius: 999px; background: var(--surface-2); color: var(--text); font: 600 13px var(--font); }
 .st-mine-page { display: flex; flex-direction: column; gap: 6px; }
 .st-mine-page > .st-back-btn { align-self: flex-start; }
 .st-mine-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
@@ -1962,8 +1959,7 @@ export const CSS = `
 .st-publish-result .st-publish-result-warning { color: var(--orange, #e8b45a); }
 .st-publish-anyway > span { color: var(--muted); font-size: 13px; line-height: 1.45; }
 @media (max-width: 640px) {
-  .st-mine-row { grid-template-columns: 44px minmax(0, 1fr) 16px; gap: 16px; padding: 18px; min-height: 88px; }
-  .st-mine-num { display: none; }
+  .st-mine-view { min-width: 64px; padding: 0 13px; }
   .st-mine-head .st-btn { width: 100%; }
 }
 .st-card.is-list .st-card-status-row { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
@@ -2372,6 +2368,12 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-wn-top b { font-size: 15px; font-weight: 600; }
 .st-wn-top span { color: var(--muted); font-size: 14px; }
 .st-wn p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.st-wn .st-wn-lead { margin-top: 10px; color: var(--text); font-weight: 600; }
+.st-wn-list { display: grid; gap: 6px; margin: 8px 0 0; padding: 0 0 0 18px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.st-wn-list li { padding-left: 2px; }
+.st-wn-list li::marker { color: var(--border); }
+.st-wn-list time { margin-left: 8px; color: var(--muted); font-size: 12px; opacity: .8; white-space: nowrap; }
+.st-wn-all { margin-top: 10px; font-size: 14px; }
 .st-detail-v2 .st-detail-desc { font-size: 15px; color: var(--muted); margin: 0; }
 /* What it can access: one divided list, not cards inside a box. A change
    to an app's access keeps a highlighted outline so it is not missed. */
@@ -2381,6 +2383,25 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-access .st-capability-list > .st-permission-row:first-child { border-top: 0; }
 .st-sec.is-attention .st-access { padding: 6px 20px 14px; border: 1px solid #d97706; border-radius: 16px; }
 .st-access-note { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
+.st-access-note.is-lead { margin: 0 0 4px; }
+/* Permissions fold at the end of the app page; the button is the section head. */
+.st-access-head { margin: 0; font: inherit; }
+.st-access-summary {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: 44px; padding: 14px 0; border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.st-access-summary-text { display: grid; gap: 2px; min-width: 0; }
+.st-access-summary .st-sh-title { display: block; font-size: 18px; }
+.st-access-chev { flex: none; color: var(--muted); transition: transform .2s ease; }
+.st-access-sec.is-open .st-access-summary { border-bottom-color: transparent; }
+.st-access-sec.is-open .st-access-chev { transform: rotate(180deg); }
+.st-access-sec.is-open > .st-access { padding-top: 4px; padding-bottom: 8px; }
+.st-access[hidden] { display: none; }
+@media (hover: hover) { .st-access-summary:hover .st-sh-title { color: var(--accent); } }
+.st-access-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.st-access-sec.is-attention .st-access-summary .st-sh-sub { color: #d97706; }
+@media (prefers-reduced-motion: reduce) { .st-access-chev { transition: none; } }
 .st-detail-v2 .st-community-feedback { margin-top: 40px; padding-top: 0; border-top: 0; }
 .st-detail-v2 .st-community-feedback h3 { font-size: 22px; }
 .st-info { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; margin: 0; padding: 4px 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
@@ -2392,6 +2413,8 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-lnk:hover { text-decoration: underline; }
 .st-info-links { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 14px; }
 .st-detail-v2 .st-technical-details { margin-top: 14px; }
+.st-detail-foot { margin-top: 20px; }
+.st-detail-foot > .st-info-links:first-child { margin-top: 0; }
 
 .st-viewer { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; background: rgba(8,8,8,.92); }
 .st-viewer-image { max-width: min(1100px, 92vw); max-height: 78vh; border-radius: 16px; border: 1px solid rgba(255,255,255,.1); }
@@ -2611,18 +2634,6 @@ button.st-dh-dev:hover { text-decoration: underline; }
 }
 @media (prefers-reduced-motion: reduce) { .st-creator-card-art { transition: none; } }
 
-/* Account entry point; publishing lives in the viewer's profile. */
-.st-profile-bubble { position: relative; display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
-.st-profile-face { position: relative; display: grid; place-items: center; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); font: 600 18px/1 var(--font); }
-.st-profile-face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.st-profile-bubble:hover .st-profile-face, .st-profile-bubble[aria-current="page"] .st-profile-face { border-color: var(--accent); }
-.st-profile-bubble:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.st-my-profile { display: flex; align-items: center; gap: 20px; padding: 22px 0 28px; }
-.st-my-profile > div:last-child { min-width: 0; }
-.st-my-profile h1 { margin: 7px 0 0; font-size: 30px; letter-spacing: -.03em; line-height: 1.15; overflow-wrap: anywhere; }
-.st-my-profile p { margin: 9px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-@media (max-width: 680px) { .st-my-profile { gap: 16px; padding: 18px 0 24px; } .st-my-profile h1 { font-size: 24px; } }
-
 /* Library status card actions and folded update results. */
 .st-update-batch-list { display: flex; flex-direction: column; gap: 8px; }
 .st-update-batch-live { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -2646,7 +2657,7 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-rowshelf { padding-inline: 12px; margin-inline: -12px; scroll-padding-inline: 12px; }
 
 /* ===== Library as tabs =====================================================
-   Title row with Upload your app, an underlined tab strip pinned under the
+   Title row with Publish an app, an underlined tab strip pinned under the
    Store header while the list scrolls, one focused list per tab. */
 .st-pagehead-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
 .st-upload-btn {
@@ -2773,10 +2784,9 @@ button.st-dh-dev:hover { text-decoration: underline; }
   .st-storebar-end { justify-self: end; }
   .st-storebar-brand { display: flex; align-items: center; gap: 8px; font: 700 17px var(--font); letter-spacing: -.01em; }
   .st-storebar-brand img { width: 26px; height: 26px; border-radius: 8px; }
-  .st-storebar .st-profile-face { width: 32px; height: 32px; font-size: 14px; }
 }
 
-/* Phones: a clear Upload your app button at the top of Library. */
+/* Phones: a clear Publish an app button at the top of Library. */
 .st-upload-wide {
   display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 46px; margin: 4px 0 2px;
   border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: 14px;
@@ -2788,4 +2798,75 @@ button.st-dh-dev:hover { text-decoration: underline; }
 
 
 /* New App Store version: a centred alert over the Store, once per visit. */
+
+/* Publish an app picker: one quiet heading, then one card of apps, each with
+   a status dot and a single Store pill — the same shape as Our picks. */
+.st-publish-heading.is-choose { align-items: flex-end; margin: 0 0 20px; padding: 22px 0 0; border-bottom: 0; }
+.st-publish-heading.is-choose h2 { font-size: clamp(28px, 4vw, 34px); line-height: 1.1; letter-spacing: -.035em; }
+.st-publish-heading.is-choose p { margin-top: 2px; }
+.st-publish-list.is-card { column-gap: 40px; padding: 6px 24px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
+.st-publish-list.is-card .st-publish-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; min-height: 0; padding: 14px 0; border-bottom: 0; border-top: 1px solid var(--border); }
+.st-publish-list.is-card .st-publish-row:nth-child(-n+2) { border-top: 0; }
+.st-publish-list.is-card .st-publish-icon { width: 52px; height: 52px; border-radius: 12px; }
+.st-publish-list.is-card .st-publish-row-copy h3 { font-size: 15px; font-weight: 600; }
+.st-publish-status { display: inline-flex; align-items: center; gap: 7px; }
+.st-publish-row-copy .st-publish-status { font-size: 13px; }
+.st-publish-status::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--muted) 70%, transparent); }
+.st-publish-status.is-live::before { background: var(--green); }
+.st-publish-status.is-pending::before { background: var(--st-star); }
+.st-publish-status.is-problem::before { background: var(--danger); }
+.st-publish-pill {
+  min-width: 76px; min-height: 44px; padding: 8px 16px; border: 0; border-radius: 999px;
+  color: var(--st-accent-text); background: var(--surface-2, var(--surface));
+  font: 600 13px/1.3 var(--font); cursor: pointer; white-space: nowrap; touch-action: manipulation;
+  transition: background 0.14s ease, transform 0.1s ease;
+}
+@media (hover: hover) { .st-publish-pill:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 14%, var(--surface-2, var(--surface))); } }
+@media (prefers-reduced-motion: no-preference) { .st-publish-pill:not(:disabled):active { transform: scale(0.97); } }
+.st-publish-pill:disabled { opacity: 0.5; cursor: default; }
+.st-publish-advanced { margin-top: -12px; border: 0; background: transparent; overflow: visible; }
+.st-publish-advanced > summary { display: inline-flex; justify-content: flex-start; gap: 6px; min-height: 44px; padding: 0; color: var(--muted); font-size: 14px; font-weight: 500; cursor: pointer; list-style: none; }
+.st-publish-advanced > summary span { color: var(--st-accent-text); font-size: 14px; font-weight: 600; }
+.st-publish-advanced[open] > summary { border-bottom: 0; }
+.st-publish-advanced .st-publish-review { margin-top: 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+@media (max-width: 760px) {
+  .st-publish-list.is-card { grid-template-columns: 1fr; padding: 2px 16px; border-radius: 18px; }
+  .st-publish-list.is-card .st-publish-row:nth-child(2) { border-top: 1px solid var(--border); }
+}
+@media (max-width: 680px) {
+  .st-publish-heading.is-choose { align-items: stretch; gap: 14px; }
+  .st-publish-heading.is-choose .st-publish-heading-actions { width: 100%; }
+  .st-publish-list.is-card .st-publish-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; }
+  .st-publish-pill { min-width: 64px; padding: 8px 13px; }
+}
+
+/* Desktop rhythm, in line with the other Möbius apps: sections 32px apart,
+   rows a little over a 44px tap target with room around them, and a shorter
+   spotlight than phones. Phones keep their own spacing above. */
+@media (min-width: 681px) {
+  .st-sec { margin-top: 32px; }
+  .st-sh { margin-bottom: 12px; }
+  .st-sh-title { font-size: 20px; }
+  .st-pagehead { padding: 16px 0 12px; }
+  .st-catalog-sections { gap: 24px; }
+  .st-spotlight-slide { min-height: clamp(280px, 26vw, 360px); }
+  .st-panels { margin-top: 32px; gap: 20px; }
+  .st-panel { padding: 18px 20px 6px; }
+  .st-panel-title { margin-bottom: 4px; font-size: 20px; }
+  .st-today { margin-top: 20px; gap: 20px; }
+  .st-card.is-row { grid-template-columns: 56px minmax(0, 1fr) auto; min-height: 76px; padding: 10px 0; column-gap: 16px; }
+  .st-card.is-row .st-icon-wrap { width: 56px; height: 56px; border-radius: 15px; }
+  .st-catrow { min-height: 50px; }
+  .st-lib-panel .st-card.is-list { min-height: 76px; padding: 10px 0; }
+  .st-dh { margin-top: 12px; gap: 24px; }
+  .st-dh .st-hero-icon { width: 120px; height: 120px; border-radius: 26px; }
+  .st-dh-acts { margin-top: 14px; }
+  .st-strip { margin-top: 20px; padding: 12px 0; }
+  .st-shot .st-detail-gallery-image { height: 300px; }
+  .st-detail-v2 .st-community-feedback { margin-top: 32px; }
+  .st-info-row { padding: 11px 0; }
+  .st-info-links { margin-top: 12px; }
+  .st-access .st-permission-row { padding: 12px 0; }
+  .st-scroll.is-detail { padding-bottom: 40px; }
+}
 `

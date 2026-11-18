@@ -170,10 +170,12 @@ async function mountStore(account) {
   }
 }
 
-// Publishing opens from the profile button beside search.
+// Publishing lives in Library's Your apps tab.
 async function openPublish(account) {
   const view = await mountStore(account)
-  await act(async () => view.doc.querySelector('.st-profile-bubble').click())
+  await act(async () => view.doc.querySelector('#st-tab-library').click())
+  await until(() => view.doc.querySelector('#st-libtab-yours'), 'the Your apps tab')
+  await act(async () => view.doc.querySelector('#st-libtab-yours').click())
   return view
 }
 
@@ -198,8 +200,8 @@ test('publishing sends a signed-out owner to Settings › Accounts › Möbius',
       { message: { type: 'moebius:open-settings', section: 'mobius-account' }, origin: 'https://store.test' },
       { message: { type: 'moebius:open-settings', section: 'mobius-account' }, origin: 'https://store.test' },
     ])
-    assert.equal(view.doc.querySelector('.st-profile-bubble').getAttribute('aria-current'), 'page',
-      'the Store stays on Publish instead of opening another listing')
+    assert.equal(view.doc.querySelector('#st-libtab-yours').getAttribute('aria-selected'), 'true',
+      'the Store stays on Your apps instead of opening another listing')
   } finally {
     await view.close()
   }

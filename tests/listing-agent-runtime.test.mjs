@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import React, { act } from 'react'
+import { inLibrary } from './publish-step-host.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-listing-agent')
@@ -84,7 +85,7 @@ test('one agent works the listing: rows lock, its parts fill the form, the owner
       })
     }
     try {
-      await act(async () => root.render(React.createElement(PublisherTab, {
+      await act(async () => root.render(React.createElement(inLibrary(PublisherTab), {
         installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
         onRefreshPublicationStates() {},
         onListingAgent: async (...args) => { requests.push(args); status = { id: 'c1', running: true }; return { chatId: 'c1' } },
@@ -93,7 +94,7 @@ test('one agent works the listing: rows lock, its parts fill the form, the owner
         onPreviewLocal: async () => { previewReads += 1; return preview },
       })))
       await click('Publish an app')
-      await click('Prepare listing')
+      await click('Publish')
       assert.equal(buttons('Ask an agent').length, 2, 'the license is the owner’s choice, never an agent’s')
 
       await click('Ask an agent')
@@ -189,7 +190,7 @@ test('publish consent names one revision: an agent’s new revision asks for it 
       assert.ok(element)
       await act(async () => element.click())
     }
-    await act(async () => root.render(React.createElement(PublisherTab, {
+    await act(async () => root.render(React.createElement(inLibrary(PublisherTab), {
       installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
       onRefreshPublicationStates() {},
       onListingAgent: async () => { status = { id: 'c1', running: true }; return { chatId: 'c1' } },
@@ -198,7 +199,7 @@ test('publish consent names one revision: an agent’s new revision asks for it 
       onPublishLocal: async (...args) => { published.push(args); return false },
     })))
     await click(button('Publish an app'))
-    await click(button('Prepare listing'))
+    await click(button('Publish'))
     await click(button('Revise with an agent'))
     assert.ok(button('Agent working… View'), 'the agent works on the listing')
 

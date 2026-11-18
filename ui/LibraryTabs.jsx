@@ -1,6 +1,7 @@
-// Library is four tabs under the page title: what needs you, everything
-// installed, waiting updates and saved apps. The strip is an underlined tab
-// row that stays pinned under the Store header while the list scrolls.
+// Library is five tabs under the page title: what needs you, everything
+// installed, waiting updates, saved apps and the apps you publish. The strip
+// is an underlined tab row that stays pinned under the Store header while the
+// list scrolls.
 
 export const LIBRARY_TABS = [
   // Only tabs that ask for action show how many things are waiting.
@@ -8,6 +9,8 @@ export const LIBRARY_TABS = [
   { id: 'installed', label: 'Installed' },
   { id: 'update', label: 'Updates', counted: true },
   { id: 'saved', label: 'Saved' },
+  // Publishing lives here: your published apps, and Publish an app.
+  { id: 'yours', label: 'Your apps' },
 ]
 const TAB_IDS = new Set(LIBRARY_TABS.map((tab) => tab.id))
 

@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import React, { act } from 'react'
+import { inLibrary } from './publish-step-host.mjs'
 import { createRoot } from 'react-dom/client'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -36,7 +37,7 @@ test('unfinished listing opens the full existing editor with its AI-help actions
     await act(async () => button.click())
   }
   try {
-    await act(async () => root.render(React.createElement(PublisherTab, {
+    await act(async () => root.render(React.createElement(inLibrary(PublisherTab), {
       installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
       onRefreshPublicationStates() {}, onListingAgent: async (...args) => aiRequests.push(args),
       onPreviewLocal: async () => ({ ready: false, accepted_commit: 'a'.repeat(40),
@@ -44,7 +45,7 @@ test('unfinished listing opens the full existing editor with its AI-help actions
         checklist: [{ id: 'description', label: 'Description', done: false, message: 'Add a description' }] }),
     })))
     await click('Publish an app')
-    await click('Prepare listing')
+    await click('Publish')
     assert.ok(dom.window.document.querySelector('.st-listing-editor'))
     assert.equal(dom.window.document.querySelector('.st-edit-field > input').value, 'Keep this draft')
     assert.ok(dom.window.document.querySelector('.st-listing-editor textarea'))
@@ -90,7 +91,7 @@ test('the release names the platform’s license and a refused license change sh
     await act(async () => button.click())
   }
   try {
-    await act(async () => root.render(React.createElement(PublisherTab, {
+    await act(async () => root.render(React.createElement(inLibrary(PublisherTab), {
       installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
       onRefreshPublicationStates() {},
       onPreviewLocal: async () => ({ ready: true, accepted_commit: 'a'.repeat(40), name: 'Pocket List',
@@ -104,7 +105,7 @@ test('the release names the platform’s license and a refused license change sh
       },
     })))
     await click('Publish an app')
-    await click('Prepare listing')
+    await click('Publish')
     assert.equal(doc.querySelector('.st-publish-license strong').textContent, 'Mozilla Public License 2.0')
     await click('Change')
     await act(async () => doc.querySelector('.st-edit-license input[value="MIT"]').click())

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, ChevronLeft, ChevronRight, User } from '@openai/apps-sdk-ui/components/Icon'
+import { ArrowUpRight, ChevronLeft, ChevronRight } from '@openai/apps-sdk-ui/components/Icon'
 import { catalogCategory, catalogKind, creatorStorefront, storeCategory } from '../domain.js'
 import { appPrimaryAction, progressStageFor } from './CatalogCard.jsx'
 import { ProgressFill } from './ProgressFill.jsx'
@@ -212,28 +212,3 @@ export function CreatorStorefront({ name, items, appId, token, onPick, onBack, h
   )
 }
 
-
-export function StoreProfileButton({ profile, token, onOpen, selected }) {
-  return (
-    <button type="button" className="st-profile-bubble" onClick={onOpen} aria-label="Your profile & publishing"
-      aria-current={selected ? 'page' : undefined} title="Your profile & publishing">
-      {/* The face can shrink on phones while the button keeps a 44px tap area. */}
-      <span className="st-profile-face">
-        {profile.initial ? <span aria-hidden="true">{profile.initial}</span> : <User width={22} height={22} aria-hidden="true" />}
-        <CreatorPicture url={profile.picture} token={token} name={profile.name} />
-      </span>
-    </button>
-  )
-}
-
-export function StoreProfileHeader({ profile, token }) {
-  return (
-    <header className="st-my-profile" aria-labelledby="st-my-profile-title">
-      <div className="st-creator-avatar">
-        {profile.initial ? <span aria-hidden="true">{profile.initial}</span> : <User width={32} height={32} aria-hidden="true" />}
-        <CreatorPicture url={profile.picture} token={token} name={profile.name} />
-      </div>
-      <div><span className="st-creator-kicker">Your profile</span><h1 id="st-my-profile-title">{profile.name}</h1><p>Publish apps and manage what you've shared.</p></div>
-    </header>
-  )
-}

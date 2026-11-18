@@ -3,10 +3,19 @@ import {
 } from './constants.js'
 import { MANIFEST_SNAPSHOTS } from './manifest-snapshots.js'
 
+// `app:<id>` names a listing: a bundled slug (`app:voice`) or a community
+// listing (`app:community:app_<hex>`). Shared Store links carry this intent.
 export function catalogItemIdFromIntent(intent) {
   if (typeof intent !== 'string') return null
-  const match = /^app:([a-z0-9][a-z0-9-]*)$/i.exec(intent.trim())
+  const match = /^app:((?:community:)?[a-z0-9][a-z0-9_-]*)$/i.exec(intent.trim())
   return match ? match[1].toLowerCase() : null
+}
+
+// The link that opens this listing's Store page on a Möbius instance.
+export function storeListingLink(item, origin) {
+  const id = item?.id
+  if (typeof id !== 'string' || catalogItemIdFromIntent(`app:${id}`) !== id.toLowerCase()) return ''
+  return `${origin}/shell/?app=store&intent=${encodeURIComponent(`app:${id}`)}`
 }
 
 export function catalogItemIdFromMessage(event, expectedOrigin, expectedSource) {
@@ -1785,22 +1794,6 @@ export function creatorPictureUrl(publisher) {
     return host === 'mobius.you' || host === 'www.mobius.you' || host.endsWith('.googleusercontent.com')
       ? url.href : ''
   } catch { return '' }
-}
-
-// The current viewer comes from the existing publication/GitHub identity
-// reads. Never infer a linked Möbius photo from a matching username alone.
-export function storeViewerProfile(items, handle = '', github = null) {
-  const login = github?.connected ? String(github.login || '').trim() : ''
-  const mobiusHandle = String(handle || '').trim()
-  const own = (items || []).filter(item =>
-    (mobiusHandle && item.publisher?.handle === mobiusHandle)
-    || (login && String(item.publisher?.login || '').toLowerCase() === login.toLowerCase()))
-  return {
-    name: mobiusHandle || login || 'Your profile',
-    initial: Array.from(mobiusHandle || login)[0]?.toUpperCase() || '',
-    handle: mobiusHandle,
-    picture: own.map(item => creatorPictureUrl(item.publisher)).find(Boolean) || '',
-  }
 }
 
 export function creatorStorefront(items, name) {

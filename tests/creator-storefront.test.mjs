@@ -138,16 +138,3 @@ test('creator pictures fall back on failed reads and discard late images for a p
   }
 })
 
-test('the profile bubble uses the signed-in viewer, never another creator or an unlinked photo', async () => {
-  const { storeViewerProfile } = await import('../domain.js')
-  const picture = 'https://www.mobius.you/avatars/owner.webp'
-  const own = item('mine', 'apps', 'owner-github')
-  own.publisher.handle = 'owner-handle'; own.publisher.avatar_url = picture
-  const other = item('theirs', 'apps', 'other'); other.publisher.handle = 'other'; other.publisher.avatar_url = 'https://www.mobius.you/avatars/other.webp'
-  assert.deepEqual(storeViewerProfile([own, other], 'owner-handle', {connected:true,login:'owner-github'}), {
-    name:'owner-handle',initial:'O',handle:'owner-handle',picture,
-  })
-  assert.equal(storeViewerProfile([other], '', {connected:true,login:'owner-github'}).picture, '')
-  assert.equal(storeViewerProfile([own], '', {connected:false,login:'owner-github'}).name, 'Your profile')
-  assert.equal(storeViewerProfile([own], '', {connected:false,login:'owner-github'}).picture, '')
-})

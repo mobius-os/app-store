@@ -451,8 +451,9 @@ test('owner tab selection cancels a destination waiting for the registry', async
     await act(async () => registry.resolve(json({ schema: 1, apps: [] })))
     await until(() => nav.reports.length > 0)
     assert.equal(selectedTab(view.dom), 'st-tab-library')
-    assert.ok(view.dom.window.document.querySelector('#st-my-profile-title'), 'your profile is showing')
-    assert.equal(nav.reports.at(-1).tab, 'publish')
+    assert.match(view.dom.window.document.querySelector('.st-publish-heading')?.textContent || '', /Publish an app/)
+    assert.equal(nav.reports.at(-1).tab, 'library')
+    assert.equal(nav.reports.at(-1).category, 'yours')
     assert.deepEqual(nav.opened, ['app-store-publish'], 'only publishing\'s own Back step opens; the stale detail never does')
   } finally { await view.close() }
 })
@@ -900,7 +901,7 @@ test('a creator portfolio keeps its Games filter across app details and host Bac
   } finally { await view.close() }
 })
 
-test('the header profile bubble opens your profile, where Publish starts without submitting anything', async () => {
+test('Library › Your apps is where Publish starts, without submitting anything', async () => {
   const nav = fakeNav(undefined)
   let publicWrites = 0
   const view = await mountStore(nav, (path, options) => {
@@ -912,22 +913,37 @@ test('the header profile bubble opens your profile, where Publish starts without
   })
   try {
     const doc = view.dom.window.document
-    await until(() => doc.querySelector('.st-profile-bubble')?.textContent === 'O', 'viewer initial')
     assert.equal(doc.querySelector('.st-publish-btn'), null, 'no header plus or Publish shortcut')
-    await act(async () => doc.querySelector('.st-profile-bubble').click())
-    assert.equal(doc.querySelector('#st-my-profile-title')?.textContent, 'owner-handle')
+    assert.equal(doc.querySelector('.st-profile-bubble'), null, 'no profile button in the header')
+    await act(async () => doc.querySelector('#st-tab-library').click())
+    await act(async () => doc.querySelector('#st-libtab-yours').click())
+    assert.equal(selectedTab(view.dom), 'st-tab-library', 'Your apps lives in Library')
+    assert.equal(doc.querySelector('#st-libtab-yours')?.getAttribute('aria-selected'), 'true')
+    assert.equal(doc.querySelector('.st-my-profile'), null, 'there is no separate profile page')
+    assert.equal(nav.reports.at(-1).category, 'yours')
     const publish = [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === 'Publish an app')
-    assert.ok(publish, 'publishing is reachable from your profile')
+    assert.ok(publish, 'publishing is reachable from Your apps')
     await act(async () => publish.click())
     assert.match(doc.querySelector('.st-publish-heading')?.textContent || '', /Publish an app/)
-    await act(async () => [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === 'Your apps').click())
-    assert.ok([...doc.querySelectorAll('button')].some(b => b.textContent.trim() === 'Publish an app'), 'back returns to profile home')
-    assert.equal(doc.querySelector('.st-publish-back'), null, 'no in-page back button; Back is the host gesture')
-    const profileEntry = nav.entries.find(entry => entry.label === 'app-store-publish')
-    await act(async () => profileEntry.callbacks.onBack())
-    assert.equal(doc.querySelector('#st-my-profile-title'), null, 'Back leaves your profile')
-    assert.equal(selectedTab(view.dom), 'st-tab-browse', 'Back returns to where the profile was opened')
-    assert.equal(publicWrites, 0, 'opening profile or publishing picker is not public-action approval')
+    await act(async () => [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === 'Your apps' && b.closest('.st-publish-heading')).click())
+    assert.ok([...doc.querySelectorAll('button')].some(b => b.textContent.trim() === 'Publish an app'), 'back returns to Your apps')
+    await act(async () => publish.isConnected ? publish.click() : [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === 'Publish an app').click())
+    const publishEntry = nav.entries.filter(entry => entry.label === 'app-store-publish').at(-1)
+    await act(async () => publishEntry.callbacks.onBack())
+    assert.doesNotMatch(doc.querySelector('.st-publish-heading')?.textContent || '', /Choose an app/, 'Back returns to Your apps')
+    assert.equal(doc.querySelector('#st-libtab-yours')?.getAttribute('aria-selected'), 'true', 'Back stays in Library')
+    assert.equal(publicWrites, 0, 'opening Your apps or the publishing picker is not public-action approval')
+  } finally { await view.close() }
+})
+
+test('a saved Publish place from before reopens as Library › Your apps', async () => {
+  const nav = fakeNav({ tab: 'publish', category: 'all', query: '', collection: null, detail: null })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.reports.length > 0)
+    assert.equal(selectedTab(view.dom), 'st-tab-library')
+    assert.equal(nav.reports.at(-1).tab, 'library')
+    assert.equal(nav.reports.at(-1).category, 'yours')
   } finally { await view.close() }
 })
 

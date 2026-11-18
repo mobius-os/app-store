@@ -40,9 +40,9 @@ test('Discover, Apps, Games and Library form one keyboard-navigable tab set', ()
   }
   assert.match(app, /id=\{`st-tab-\$\{id\}`\}/)
   assert.match(app, /aria-selected=\{selected\}/)
-  // Publish lives inside Library and keeps Library selected.
-  assert.match(app, /id === 'library' && tab === 'publish'/)
-  assert.match(app, /className="st-upload-btn" onClick=\{openPublish\}/)
+  // Publishing is Library's Your apps tab, so there is no separate page.
+  assert.doesNotMatch(app, /tab === 'publish'/)
+  assert.match(app, /className="st-upload-btn" onClick=\{\(\) => openYourApps\('choose'\)\}/)
   assert.match(app, /role="tabpanel"/)
   // Wider screens label the panel by its header tab; phones (no header tabs)
   // name it directly, and the bottom bar adds Search.
@@ -117,13 +117,11 @@ test('catalog cards use one labelled icon action without repeating routine lifec
 })
 
 test('Browse keeps update controls in Library instead of spending discovery space', () => {
-  // The full Update all control sits above the Library Updates tab; the only
-  // other one is the small pill beside the Library tab in the header (the
-  // owner's chosen "version 2"), never inside Discover's content.
+  // Update all lives only above the Library Updates tab: not in the header and
+  // never inside Discover's content. The Library tab's count says updates wait.
   assert.equal(app.match(/<UpdateAllButton /g)?.length, 1)
   assert.match(app, /libraryTab === 'update' && updateAllCount > 0 \? \(\s*<div className="st-libbar">/)
-  assert.match(app, /className="st-tab-updateall"/)
-  // The pill is a sibling of the tab list, not a tab inside it.
+  assert.doesNotMatch(app, /st-tab-updateall/)
   assert.match(app, /<div className="st-tablist" role="tablist" aria-label="Store sections"/)
 })
 

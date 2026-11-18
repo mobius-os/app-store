@@ -53,7 +53,6 @@ import {
   libraryCollections,
   catalogCategory,
   catalogPublisher,
-  storeViewerProfile,
   withAssignedCategories,
   mergeCommunityCatalog,
   mergeOfficialCommunityFeedback,
@@ -74,6 +73,7 @@ import {
   needsLiveManifestFirst,
   showsSnapshotManifest,
   sortCatalogForDisplay,
+  storeListingLink,
   updateCandidateUrlsByInstalledId,
 } from './domain.js'
 import {
@@ -126,7 +126,6 @@ import {
   SYSTEM_SETUP_READY_KEY,
 } from './api.js'
 import { CatalogList } from './ui/CatalogList.jsx'
-import { StoreProfileButton, StoreProfileHeader } from './ui/StoreSections.jsx'
 import { CatalogCard } from './ui/CatalogCard.jsx'
 import { ResolveAllButton, UpdateAllButton } from './ui/LibraryActions.jsx'
 import { LibraryTabs, libraryTabFor } from './ui/LibraryTabs.jsx'
@@ -424,8 +423,9 @@ export default function App({ appId, token }) {
     return typeof nav?.setLocation === 'function' ? restoredStoreLocation(nav.location) : null
   })
   const [tab, setTab] = useState(savedLocation?.tab || 'browse')
-  // Discover, Apps and Games share one community window; Library and Publish
-  // never need it.
+  // Which publishing step Library's Your apps tab shows: home, choose or app.
+  const [publishView, setPublishView] = useState('home')
+  // Discover, Apps and Games share one community window; Library never needs it.
   const discoveryTab = DISCOVERY_TABS.has(tab)
   const [query, setQuery] = useState(savedLocation?.query || '')
   const [activeCollection, setActiveCollection] = useState(null)
@@ -435,12 +435,11 @@ export default function App({ appId, token }) {
   // app is still there; closing and reopening Back steps at once is unreliable.
   const overlaysRef = useRef([])        // [{ kind, handle, show, restore }]
   const [overlay, setOverlay] = useState(null)   // top layer, for its Back label
-  // A category page and the publish page opened from a tab are Back steps too.
+  // A category page, and a publishing step past Library's Your apps, are
+  // Back steps too.
   const categoryNavRef = useRef(null)
   const publishNavRef = useRef(null)
-  const publishFromRef = useRef(null)
   const leaveCategoryRef = useRef(null)
-  const leavePublishRef = useRef(null)
   const closeLayersRef = useRef(null)
   const closeTopLayerRef = useRef(null)
   const shelfScrollRef = useRef({})
@@ -619,13 +618,15 @@ export default function App({ appId, token }) {
   // A tab press always lands on that tab's own page, like a phone's tab bar:
   // pressing the current tab again leaves a category or collection open in it.
   const selectTab = useCallback((next) => {
-    if (next !== 'library' && next !== 'publish') setCategory('all')
+    if (next !== 'library') setCategory('all')
     closeLayersRef.current?.()
     collectionNavRef.current?.close()
     collectionNavRef.current = null
     categoryNavRef.current?.close()
     categoryNavRef.current = null
-    if (next !== 'publish') { publishNavRef.current?.close(); publishNavRef.current = null }
+    publishNavRef.current?.close()
+    publishNavRef.current = null
+    setPublishView('home')
     setActiveCollection(null)
     setShelfCategories((current) => (current[next] && current[next] !== 'all' ? { ...current, [next]: 'all' } : current))
     savedGridScrollRef.current = 0
@@ -1061,7 +1062,7 @@ export default function App({ appId, token }) {
 
   // Contribute owns connection setup. Refresh the inherited status when the
   // owner comes back from it; App Store never starts a second OAuth flow.
-  useOwnerReturn(tab === 'publish' && !githubIdentity?.connected, refreshGithubIdentity)
+  useOwnerReturn(tab === 'library' && category === 'yours' && !githubIdentity?.connected, refreshGithubIdentity)
 
   // Settings › Accounts › Möbius owns sign-in and the handle; the handle
   // arrives with the publications viewer, so a re-read takes both.
@@ -1241,7 +1242,7 @@ export default function App({ appId, token }) {
   const detailFeedback = communityFeedbackOf(detail)
   const reviewGateId = detailFeedback?.id
     && reviewAccountAction(detailFeedback.review_eligibility, mobiusAccount) ? detailFeedback.id : ''
-  const mobiusAccountPending = tab === 'publish' && !(mobiusAccount === 'signed_in' && publisherHandle)
+  const mobiusAccountPending = tab === 'library' && category === 'yours' && !(mobiusAccount === 'signed_in' && publisherHandle)
   useOwnerReturn(mobiusAccountPending || !!reviewGateId, () => Promise.allSettled([
     refreshMobiusAccount(),
     reviewGateId && refreshReviewEligibility(reviewGateId),
@@ -2656,7 +2657,9 @@ export default function App({ appId, token }) {
           }
         }
         if (signal.aborted) return
-        if (!destination.restored && resolution.toast) setToast(resolution.toast)
+        // A community listing found by lookup was never actually unavailable.
+        const found = lookup && item?.manifest
+        if (!destination.restored && resolution.toast && !found) setToast(resolution.toast)
         if (!destination.restored && resolution.action !== 'unavailable') {
           selectTab('browse')
           setCategory('all')
@@ -2675,8 +2678,6 @@ export default function App({ appId, token }) {
   }, [intentDestination, destinationResolution, loadingCatalog, catalogHydrated,
     installedLoadError, catalogLoadError, otherInstalledCatalogSources, token,
     closeDetail, closeCollection, selectTab, openCollection, openDetail])
-
-  const viewerProfile = storeViewerProfile(displayCatalog, publisherHandle, githubIdentity)
 
   // Detail view replaces the main layout when set.
   const topCategories = (() => {
@@ -2717,30 +2718,30 @@ export default function App({ appId, token }) {
     setQuery('')
     showCategory(kind, id)
   }
-  // Publishing (Upload your app, the profile circle) is a Back step that
-  // returns to the exact tab, and Library sub-tab, it was opened from.
-  const openPublish = () => {
-    if (tab === 'publish') return
-    publishFromRef.current = { tab, category }
-    selectTab('publish')
-    publishNavRef.current?.close()
+  // Publishing lives in Library's Your apps tab. Its steps past that list
+  // (choosing an app, one published app, a listing review) share one Back
+  // step that returns to Your apps.
+  const showPublishStep = (next) => {
+    setPublishView(next)
+    if (next === 'home') { publishNavRef.current?.close(); publishNavRef.current = null; return }
+    if (publishNavRef.current) return
     const handle = window.mobius.nav.open('app-store-publish', {
-      onBack: () => { publishNavRef.current = null; leavePublishRef.current?.(true) },
-      onForward: () => { publishNavRef.current = handle; setTab('publish') },
+      onBack: () => { publishNavRef.current = null; setPublishView('home') },
+      onForward: () => { publishNavRef.current = handle; setTab('library'); setCategory('yours'); setPublishView(next) },
     })
     publishNavRef.current = handle
     handle.outcome.then(({ status }) => {
       if (status !== 'owned' && publishNavRef.current === handle) publishNavRef.current = null
     })
   }
-  const leavePublish = (entryClosed = false) => {
-    if (!entryClosed) { publishNavRef.current?.close(); publishNavRef.current = null }
-    const from = publishFromRef.current || { tab: 'library', category: 'all' }
-    publishFromRef.current = null
-    selectTab(from.tab)
-    if (from.tab === 'library') setCategory(from.category)
+  // Publish an app opens Your apps from any Library tab.
+  const openYourApps = (step = 'home') => {
+    if (tab !== 'library') selectTab('library')
+    setQuery('')
+    setCategory('yours')
+    if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+    showPublishStep(step)
   }
-  leavePublishRef.current = leavePublish
   // Related apps for an app page: more by its developer, then others in its
   // category from other developers.
   const relatedFor = (item) => {
@@ -2792,12 +2793,24 @@ export default function App({ appId, token }) {
   }
   const shareApp = async (item) => {
     const name = item.manifest?.name || item.name
-    const url = item.community?.repository_url || item.manifest?.homepage || ''
-    try {
-      if (navigator.share) { await navigator.share({ title: name, text: `${name} on the Möbius App Store`, url: url || undefined }); return }
-      await navigator.clipboard.writeText(url || name)
-      setToast({ kind: 'success', message: url ? 'Link copied' : 'Name copied' })
-    } catch { /* the owner closed the share sheet */ }
+    // The app's Store page on this Möbius, not its source repository.
+    const url = storeListingLink(item, window.location.origin)
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: name, text: `${name} on the Möbius App Store`, url: url || undefined })
+        return
+      } catch (error) {
+        // Closing the share sheet is a choice, not a failure. Anything else
+        // (no sheet on this device, or the frame was refused) falls back to copying.
+        if (error?.name === 'AbortError') return
+      }
+    }
+    // The app frame is sandboxed: copy through the runtime's clipboard broker,
+    // which can hand the write to the shell when the frame itself is denied.
+    const copied = await window.mobius?.clipboard?.writeText(url || name)
+    setToast(copied
+      ? { kind: 'success', message: url ? 'Link copied' : 'Name copied' }
+      : { kind: 'error', message: "Couldn't share or copy this app's link." })
   }
 
   if (detail) {
@@ -2956,9 +2969,7 @@ export default function App({ appId, token }) {
   // A category page in Apps or Games has its own heading and Back link, so
   // the tab's big title gives way to it.
   const inCategory = (tab === 'apps' || tab === 'games') && (shelfCategories[tab] || 'all') !== 'all'
-  const pageTools = (
-    <StoreProfileButton profile={viewerProfile} token={token} selected={tab === 'publish'} onOpen={openPublish} />
-  )
+  const yourAppsOpen = tab === 'library' && libraryTab === 'yours'
 
   return (
     <div className="st-root" {...ownerInteraction}>
@@ -2981,9 +2992,7 @@ export default function App({ appId, token }) {
               <img src={`/api/apps/${appId}/icon?size=64`} alt="" width={26} height={26} />
               <span>App Store</span>
             </div>
-            <div className="st-storebar-end">
-              <StoreProfileButton profile={viewerProfile} token={token} selected={tab === 'publish'} onOpen={openPublish} />
-            </div>
+            <div className="st-storebar-end" />
           </div>
         </div>
       ) : null}
@@ -3009,7 +3018,7 @@ export default function App({ appId, token }) {
           <div className="st-tablist" role="tablist" aria-label="Store sections"
                onKeyDown={onTabsKeyDown}>
             {STORE_TABS.map(({ id, label }) => {
-              const selected = tab === id || (id === 'library' && tab === 'publish')
+              const selected = tab === id
               return (
                 <button role="tab" id={`st-tab-${id}`} key={id}
                         aria-selected={selected}
@@ -3030,18 +3039,9 @@ export default function App({ appId, token }) {
               )
             })}
           </div>
-            {/* Waiting updates, the App Store's own included, are one tap away
-                right beside Library. */}
-            {updateAllCount > 0 ? (
-              <button type="button" className="st-tab-updateall"
-                disabled={busy || resolvingAll || !!checkingUpdateItemId || !!installedLoadError || !!updateTransaction}
-                aria-label={`Update all ${updateAllCount} ${updateAllCount === 1 ? 'app' : 'apps'}`}
-                onClick={handleUpdateAll}>Update all</button>
-            ) : null}
           </div>
           <div className="st-header-tools">
             {searchBox}
-            {pageTools}
           </div>
         </div>
       </div>}
@@ -3061,8 +3061,9 @@ export default function App({ appId, token }) {
             ) : inCategory ? null : tab === 'library' ? (
               <div className="st-pagehead-row">
                 <h1 className="st-pagehead-title">Library</h1>
-                <button type="button" className="st-upload-btn" onClick={openPublish}>
-                  <Plus width={18} height={18} aria-hidden="true" /> Upload your app
+                {/* One Publish an app for every Library tab, Your apps included. */}
+                <button type="button" className="st-upload-btn" onClick={() => openYourApps('choose')}>
+                  <Plus width={18} height={18} aria-hidden="true" /> Publish an app
                 </button>
               </div>
             ) : (
@@ -3076,15 +3077,19 @@ export default function App({ appId, token }) {
         ) : null}
         {/* Phones: publishing in plain sight, at the top of Library. */}
         {phone && tab === 'library' && !query.trim() ? (
-          <button type="button" className="st-upload-wide" onClick={openPublish}>
-            <Plus width={18} height={18} aria-hidden="true" /> Upload your app
+          <button type="button" className="st-upload-wide" onClick={() => openYourApps('choose')}>
+            <Plus width={18} height={18} aria-hidden="true" /> Publish an app
           </button>
         ) : null}
         {tab === 'library' && !query.trim() ? (
           <LibraryTabs active={libraryTab} counts={libraryCounts}
-            onChange={(next) => { setCategory(next); if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0 }} />
+            onChange={(next) => {
+              setCategory(next)
+              showPublishStep('home')
+              if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+            }} />
         ) : null}
-        {(discoveryTab || tab === 'library') && !(tab === 'search' && !query.trim()) && (
+        {(discoveryTab || (tab === 'library' && !yourAppsOpen)) && !(tab === 'search' && !query.trim()) && (
           <>
             {loadingCatalog
               ? <CatalogSkeleton layout={tab === 'library' ? 'list' : 'discover'} count={tab === 'library' ? 8 : 6} />
@@ -3233,9 +3238,10 @@ export default function App({ appId, token }) {
                 </>}
           </>
         )}
-        {tab === 'publish' ? <StoreProfileHeader profile={viewerProfile} token={token} /> : null}
-        {tab === 'publish' && (
+        {yourAppsOpen && (
           <PublisherTab
+            view={publishView}
+            onViewChange={showPublishStep}
             installed={installed}
             identity={communityIdentity}
             identityError={communityIdentityError}
@@ -3284,7 +3290,7 @@ export default function App({ appId, token }) {
 
       <nav className="st-bottombar" aria-label="Store sections">
         {PHONE_TABS.map(({ id, label }) => {
-          const selected = tab === id || (id === 'library' && tab === 'publish')
+          const selected = tab === id
           const TabIcon = TAB_ICONS[id]
           return (
             <button key={id} type="button" className={`st-bottombar-tab${selected ? ' is-active' : ''}`}
