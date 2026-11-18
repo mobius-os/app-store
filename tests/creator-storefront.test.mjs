@@ -138,3 +138,37 @@ test('creator pictures fall back on failed reads and discard late images for a p
   }
 })
 
+
+test('category and collection pages offer the community listings beyond the loaded window', async () => {
+  const { catalog: { CatalogList } } = await modules()
+  const dom = new JSDOM('<div id="root"></div>')
+  const keys = ['window', 'document', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(k => [k, globalThis[k]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true })
+  const root = createRoot(dom.window.document.getElementById('root'))
+  let loads = 0
+  const list = [item('tool'), item('sketch')]
+  const render = (props) => act(async () => root.render(React.createElement(CatalogList, {
+    items: list, allItems: list, token: 'test', hasMore: true, onLoadMore: () => { loads++ }, ...props,
+  })))
+  const loadMore = () => [...dom.window.document.querySelectorAll('button')]
+    .find(button => button.textContent === 'Load more community apps')
+  try {
+    await render({ view: 'apps', shelfCategory: 'create' })
+    assert.ok(loadMore(), 'a category page reached from the Apps tab')
+    await act(async () => loadMore().click())
+    assert.equal(loads, 1)
+
+    await render({ view: 'discover', activeCollection: 'create' })
+    assert.ok(loadMore(), 'a category opened from Discover')
+    assert.match(dom.window.document.querySelector('.st-pagehead-sub').textContent, /2 apps loaded/)
+
+    await render({ view: 'discover', activeCollection: 'arrivals' })
+    assert.ok(loadMore(), 'an editorial collection')
+
+    await render({ view: 'apps', shelfCategory: 'create', hasMore: false })
+    assert.equal(loadMore(), undefined, 'nothing more to load')
+  } finally {
+    await act(async () => root.unmount()); Object.assign(globalThis, old); dom.window.close()
+  }
+})

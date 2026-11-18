@@ -57,7 +57,8 @@ const gatedListing = {
   manifest: { id: 'shared-notes', name: 'Shared Notes', version: '1.0.0', description: 'Notes to share.' },
 }
 
-// Mounts the whole Store. `account` is the Möbius account (and GitHub
+// Mounts the whole Store (inside StrictMode with `account.strict`, and with
+// `account.storage` as the app's own storage). `account` is the Möbius account (and GitHub
 // connection, installed apps and the listing's review state) the platform
 // reports right now; a test may change it between reads. Each response is what
 // the platform said when the request arrived, even if the test holds it open
@@ -82,7 +83,7 @@ async function mountStore(account) {
     setLocation() {},
     open: () => ({ outcome: Promise.resolve({ status: 'owned' }), close() {} }),
   }
-  dom.window.mobius = { signal() {}, nav }
+  dom.window.mobius = { signal() {}, nav, ...(account.storage ? { storage: account.storage } : {}) }
   dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   dom.window.HTMLElement.prototype.scrollIntoView = () => {}
   Object.assign(globalThis, {
@@ -139,7 +140,8 @@ async function mountStore(account) {
   })
   const root = createRoot(dom.window.document.getElementById('root'))
   const { default: App } = await appModule()
-  await act(async () => root.render(React.createElement(App, { appId: 999, token: 'tok' })))
+  const app = React.createElement(App, { appId: 999, token: 'tok' })
+  await act(async () => root.render(account.strict ? React.createElement(React.StrictMode, null, app) : app))
   const doc = dom.window.document
   const setVisibility = async (state) => {
     visibility = state
@@ -386,6 +388,26 @@ test('signed-in Your apps keeps account-return state without displaying the remo
     await view.returnToStore()
     await view.focusWindow()
     assert.equal(view.reads.length, settled, 'a signed-in account with a handle needs no repeated identity reads')
+  } finally {
+    await view.close()
+  }
+})
+
+test('saving an app for later writes storage and shows its toast once, even when React replays the update', async () => {
+  const sets = []
+  const storage = { get: async () => [], set: async (key, value) => { sets.push([key, value]) } }
+  const view = await mountStore({ linked: true, handle: 'example', strict: true, storage })
+  try {
+    await openSharedListing(view)
+    await until(() => view.doc.querySelector('[aria-label="Save for later"]'), 'the Save for later button')
+    await act(async () => view.doc.querySelector('[aria-label="Save for later"]').click())
+    assert.deepEqual(sets, [['saved.json', ['community:shared-notes']]])
+    assert.equal(view.doc.querySelector('.st-toast-msg')?.textContent, 'Saved for later · find it in Library')
+
+    await act(async () => view.doc.querySelector('[aria-label="Remove from saved"]').click())
+    assert.deepEqual(sets.at(-1), ['saved.json', []])
+    assert.equal(sets.length, 2)
+    assert.equal(view.doc.querySelector('.st-toast-msg')?.textContent, 'Removed from Saved')
   } finally {
     await view.close()
   }

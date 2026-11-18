@@ -2341,6 +2341,15 @@ test('discovery shelves rank only real ratings and releases', async () => {
   assert.deepEqual(sortCategoryApps(items, 'updated').map(item => item.id), ['updated', 'loved', 'once', 'liked'])
 })
 
+test('a category page ranks rated apps by the same vote-weighted score as Highest rated', async () => {
+  const { highestRated, sortCategoryApps } = await bundle()
+  const app = (id, rating_count, rating_average) => ({ id, manifest: { name: id }, community: { rating_count, rating_average } })
+  // One five-star vote is weaker evidence than twenty votes averaging 4.6.
+  const items = [app('one-vote', 1, 5), app('many-votes', 20, 4.6)]
+  assert.deepEqual(highestRated(items).map(item => item.id), ['many-votes', 'one-vote'])
+  assert.deepEqual(sortCategoryApps(items, 'top').map(item => item.id), ['many-votes', 'one-vote'])
+})
+
 test('sortCatalogForDisplay promotes system apps without scrambling groups', async () => {
   const { collectCategories, sortCatalogForDisplay } = await bundle()
   const items = [

@@ -253,7 +253,8 @@ const STORE_TABS = [
 // Phones search from their own tab, like the iPhone App Store; wider screens
 // keep the search field in the header.
 const PHONE_TABS = [...STORE_TABS, { id: 'search', label: 'Search' }]
-// Enough community listings for complete categories without unbounded paging.
+// The first window of community listings behind Discover, categories and the
+// ranked shelves; their pages offer Load more for the rest.
 const COMMUNITY_BROWSE_WINDOW = 96
 // How many apps each registry ranking returns for its shelf.
 const RANKED_SHELF_SIZE = 50
@@ -521,14 +522,15 @@ export default function App({ appId, token }) {
     store.get('saved.json').then((value) => { if (live && Array.isArray(value)) setSavedIds(value) }).catch(() => {})
     return () => { live = false }
   }, [])
+  // Storage and the toast stay outside the state updater, which React may run
+  // twice.
   const toggleSaved = useCallback((item) => {
-    setSavedIds((current) => {
-      const next = current.includes(item.id) ? current.filter((id) => id !== item.id) : [item.id, ...current]
-      window.mobius?.storage?.set?.('saved.json', next)?.catch?.(() => {})
-      setToast({ kind: 'success', message: current.includes(item.id) ? 'Removed from Saved' : 'Saved for later · find it in Library' })
-      return next
-    })
-  }, [])
+    const saved = savedIds.includes(item.id)
+    const next = saved ? savedIds.filter((id) => id !== item.id) : [item.id, ...savedIds]
+    setSavedIds(next)
+    window.mobius?.storage?.set?.('saved.json', next)?.catch?.(() => {})
+    setToast({ kind: 'success', message: saved ? 'Removed from Saved' : 'Saved for later · find it in Library' })
+  }, [savedIds])
   // iOS Safari applies :active press styles only once a touch listener exists.
   useEffect(() => {
     const noop = () => {}
@@ -947,7 +949,7 @@ export default function App({ appId, token }) {
     try {
       // Refresh the loaded window atomically: do not discard pages the owner
       // already loaded, or replace them with a partial failed refresh.
-      // Category pages and shelves need every listing, so an unsearched
+      // Category pages and shelves group whatever is loaded, so an unsearched
       // window starts wide; a search stays one page.
       const firstWindow = query.trim() ? limit : COMMUNITY_BROWSE_WINDOW
       const target = background ? Math.max(firstWindow, communityOffset) : firstWindow

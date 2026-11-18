@@ -332,9 +332,10 @@ export function CatalogList({
     return { id, title: 'Apps', items: [] }
   }
 
+  // The Store reads community listings a window at a time, so a collection or
+  // category page offers the rest instead of stopping at the loaded window.
   if (activeCollection) {
     const selected = collectionFor(activeCollection)
-    const pageable = activeCollection === 'uncategorized'
     return (
       <div className="st-collection-view">
         <button type="button" className="st-backlink" onClick={onCloseCollection}>
@@ -343,10 +344,10 @@ export function CatalogList({
         <div className="st-pagehead">
           {selected.kicker ? <small className="st-pagehead-eyebrow">{selected.kicker}</small> : null}
           <h1 className="st-pagehead-title">{selected.title}</h1>
-          <p className="st-pagehead-sub">{selected.items.length} apps{hasMore && pageable ? ' loaded' : ''}</p>
+          <p className="st-pagehead-sub">{selected.items.length} apps{hasMore ? ' loaded' : ''}</p>
         </div>
         {selected.items.length ? grid3(selected.items) : <p className="st-empty-text">No apps match in this collection.</p>}
-        {pageable ? loadMore : null}
+        {loadMore}
       </div>
     )
   }
@@ -430,6 +431,7 @@ export function CatalogList({
         </div>
         <CategorySort value={categorySort} onChange={onCategorySort} />
         {categoryItems.length ? grid3(categoryItems) : <p className="st-empty-text">No {kindLabel} in this category yet.</p>}
+        {loadMore}
       </div>
     )
   }

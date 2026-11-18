@@ -1242,80 +1242,41 @@ export async function fetchUninstalledApps(token) {
   return Array.isArray(rows) ? rows : []
 }
 
-// The change list behind an app's own update, read from its public GitHub
-// repository through the proxy: every non-merge commit between the installed
-// revision and the candidate commit, newest first, plus the candidate's date.
-// Anything that cannot be read (a non-GitHub source, rate limits, offline)
-// resolves to null; the update itself never depends on it.
-export async function fetchReleaseNotes({ manifestUrl, fromCommit, toCommit, token }) {
-  const repo = githubRepoOf(manifestUrl)
-  if (!repo || !toCommit) return null
-  const headers = { Authorization: `Bearer ${token}` }
-  try {
-    if (fromCommit && fromCommit !== toCommit) {
-      const res = await fetch(proxyUrl(`https://api.github.com/repos/${repo}/compare/${fromCommit}...${toCommit}`), { headers })
-      if (!res.ok) return null
-      const body = await res.json()
-      const commits = Array.isArray(body?.commits) ? body.commits : []
-      const notes = commits
-        .filter(c => !(Array.isArray(c?.parents) && c.parents.length > 1))
-        .map(c => String(c?.commit?.message || '').split('\n')[0].trim())
-        .filter(Boolean)
-        .reverse()
-      const last = commits[commits.length - 1]
-      return { notes, releasedAt: last?.commit?.committer?.date || last?.commit?.author?.date || '' }
-    }
-    const res = await fetch(proxyUrl(`https://api.github.com/repos/${repo}/commits/${toCommit}`), { headers })
-    if (!res.ok) return null
-    const body = await res.json()
-    return { notes: [], releasedAt: body?.commit?.committer?.date || body?.commit?.author?.date || '' }
-  } catch {
-    return null
+// What changed in an app, read from its public GitHub repository through the
+// proxy. The proxy adds no GitHub credentials, so every read spends the
+// server's shared anonymous allowance: each answer is kept for the session
+// (a failed read is not, so it can be tried again), and anything unreadable (a
+// non-GitHub source, rate limits, offline) resolves to null. Nothing that
+// installs or updates an app depends on these reads.
+const githubReads = new Map()
+function readGithubOnce(key, read) {
+  if (!githubReads.has(key)) {
+    githubReads.set(key, read().catch(() => null).then((result) => {
+      if (!result) githubReads.delete(key)
+      return result
+    }))
   }
+  return githubReads.get(key)
 }
 
-// The changes behind an app's listed version, read from its public GitHub
-// repository through the proxy: commit subjects, newest first, either since
-// `sinceCommit` (the installed revision) or the latest few up to the listed
-// ref. Merges and Möbius's own bookkeeping commits are left out. Anything that
-// cannot be read (a non-GitHub source, rate limits, offline) resolves to null,
-// and each answer is kept for the session so reopening a page reads nothing.
+async function readGithubJson(url, token) {
+  const res = await fetch(proxyUrl(url), { headers: { Authorization: `Bearer ${token}` } })
+  return res.ok ? res.json() : null
+}
+
+function commitDate(commit) {
+  return commit?.commit?.committer?.date || commit?.commit?.author?.date || ''
+}
+
+// A run of GitHub commits (newest first) as the changes people care about:
+// merges and Möbius's own bookkeeping commits are left out, and each subject
+// reads as a plain sentence.
 const CHANGE_BOOKKEEPING = /^(apply app source|install\b|initialize app repo|merge (pull request|branch|remote))/i
-const recentChangesCache = new Map()
-export function fetchRecentChanges({ manifestUrl, sinceCommit = null, token, limit = 5 }) {
-  const key = `${manifestUrl}|${sinceCommit || ''}|${limit}`
-  if (!recentChangesCache.has(key)) {
-    const read = readRecentChanges({ manifestUrl, sinceCommit, token, limit })
-      .then((result) => { if (!result) recentChangesCache.delete(key); return result })
-    recentChangesCache.set(key, read)
-  }
-  return recentChangesCache.get(key)
-}
-
-async function readRecentChanges({ manifestUrl, sinceCommit, token, limit }) {
-  const at = githubRefOf(manifestUrl)
-  if (!at) return null
-  const url = sinceCommit
-    ? `https://api.github.com/repos/${at.repo}/compare/${encodeURIComponent(sinceCommit)}...${encodeURIComponent(at.ref)}`
-    : `https://api.github.com/repos/${at.repo}/commits?sha=${encodeURIComponent(at.ref)}&per_page=30`
-  try {
-    const res = await fetch(proxyUrl(url), { headers: { Authorization: `Bearer ${token}` } })
-    if (!res.ok) return null
-    const body = await res.json()
-    const commits = sinceCommit
-      ? (Array.isArray(body?.commits) ? [...body.commits].reverse() : [])
-      : (Array.isArray(body) ? body : [])
-    const items = commits
-      .filter((c) => !(Array.isArray(c?.parents) && c.parents.length > 1))
-      .map((c) => ({
-        text: readableChange(String(c?.commit?.message || '').split('\n')[0]),
-        date: c?.commit?.committer?.date || c?.commit?.author?.date || '',
-      }))
-      .filter((c) => c.text && !CHANGE_BOOKKEEPING.test(c.text))
-    return { items: items.slice(0, limit), more: items.length > limit, historyUrl: `https://github.com/${at.repo}/commits/${at.ref}` }
-  } catch {
-    return null
-  }
+export function commitChanges(commits) {
+  return (Array.isArray(commits) ? commits : [])
+    .filter((c) => !(Array.isArray(c?.parents) && c.parents.length > 1))
+    .map((c) => ({ text: readableChange(String(c?.commit?.message || '').split('\n')[0]), date: commitDate(c) }))
+    .filter((c) => c.text && !CHANGE_BOOKKEEPING.test(c.text))
 }
 
 // A commit subject as a plain sentence: no "fix(scope):" prefix and no
@@ -1327,6 +1288,47 @@ function readableChange(subject) {
   return text ? text[0].toUpperCase() + text.slice(1) : ''
 }
 
+function compareUrl(repo, from, to) {
+  return `https://api.github.com/repos/${repo}/compare/${encodeURIComponent(from)}...${encodeURIComponent(to)}`
+}
+
+// The change list behind an app's own update: the changes between the
+// installed revision and the candidate commit, newest first, plus the
+// candidate's date.
+export function fetchReleaseNotes({ manifestUrl, fromCommit, toCommit, token }) {
+  const repo = githubRefOf(manifestUrl)?.repo
+  if (!repo || !toCommit) return Promise.resolve(null)
+  return readGithubOnce(`notes|${repo}|${fromCommit || ''}|${toCommit}`, async () => {
+    if (fromCommit && fromCommit !== toCommit) {
+      const body = await readGithubJson(compareUrl(repo, fromCommit, toCommit), token)
+      if (!body) return null
+      const commits = Array.isArray(body.commits) ? body.commits : []
+      return { notes: commitChanges([...commits].reverse()).map((c) => c.text), releasedAt: commitDate(commits[commits.length - 1]) }
+    }
+    const body = await readGithubJson(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(toCommit)}`, token)
+    return body ? { notes: [], releasedAt: commitDate(body) } : null
+  })
+}
+
+// The changes behind an app's listed version, newest first: either since
+// `sinceCommit` (the installed revision) or the latest few up to the listed
+// ref.
+export function fetchRecentChanges({ manifestUrl, sinceCommit = null, token, limit = 5 }) {
+  const at = githubRefOf(manifestUrl)
+  if (!at) return Promise.resolve(null)
+  return readGithubOnce(`recent|${at.repo}|${at.ref}|${sinceCommit || ''}|${limit}`, async () => {
+    const body = await readGithubJson(sinceCommit
+      ? compareUrl(at.repo, sinceCommit, at.ref)
+      : `https://api.github.com/repos/${at.repo}/commits?sha=${encodeURIComponent(at.ref)}&per_page=30`, token)
+    if (!body) return null
+    const commits = sinceCommit
+      ? (Array.isArray(body.commits) ? [...body.commits].reverse() : [])
+      : (Array.isArray(body) ? body : [])
+    const items = commitChanges(commits)
+    return { items: items.slice(0, limit), more: items.length > limit, historyUrl: `https://github.com/${at.repo}/commits/${at.ref}` }
+  })
+}
+
 // { repo: "owner/repo", ref } for a manifest served from raw.githubusercontent.com.
 export function githubRefOf(manifestUrl) {
   try {
@@ -1334,18 +1336,6 @@ export function githubRefOf(manifestUrl) {
     if (url.hostname !== 'raw.githubusercontent.com') return null
     const [owner, repo, ref] = url.pathname.split('/').filter(Boolean)
     return owner && repo && ref ? { repo: `${owner}/${repo}`, ref } : null
-  } catch {
-    return null
-  }
-}
-
-// "owner/repo" for a manifest served from raw.githubusercontent.com; null otherwise.
-export function githubRepoOf(manifestUrl) {
-  try {
-    const url = new URL(manifestUrl)
-    if (url.hostname !== 'raw.githubusercontent.com') return null
-    const [owner, repo] = url.pathname.split('/').filter(Boolean)
-    return owner && repo ? `${owner}/${repo}` : null
   } catch {
     return null
   }

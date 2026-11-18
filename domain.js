@@ -1019,8 +1019,9 @@ export function installsLabel(item) {
   return count >= 1000 ? `${count / 1000}K+ installs` : `${count}+ installs`
 }
 
-// One category page's order. "top" ranks rated apps first, then official
-// apps, then the most recent release; nothing is invented for unrated apps.
+// One category page's order. "top" ranks rated apps first, by the same
+// vote-weighted score as Highest rated, then official apps, then the most
+// recent release; nothing is invented for unrated apps.
 export function sortCategoryApps(items, sort = 'top') {
   const feedback = (item) => feedbackOf(item) || {}
   const time = (value) => Date.parse(value || '') || 0
@@ -1035,7 +1036,7 @@ export function sortCategoryApps(items, sort = 'top') {
     const rated = Number((fb.rating_count || 0) > 0) - Number((fa.rating_count || 0) > 0)
     if (rated) return rated
     if ((fa.rating_count || 0) > 0) {
-      const byRating = (fb.rating_average - fa.rating_average) || (fb.rating_count - fa.rating_count)
+      const byRating = (ratingScore(b) - ratingScore(a)) || (fb.rating_count - fa.rating_count)
       if (byRating) return byRating
     }
     const official = Number(!b.community) - Number(!a.community)
