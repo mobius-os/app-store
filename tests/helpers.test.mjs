@@ -705,6 +705,10 @@ test('catalog app intents preserve origin checks and resolve one safe action', a
   assert.equal(catalogItemIdFromIntent('  app:NEWS  '), 'news')
   assert.equal(catalogItemIdFromIntent('app:community:app_49ad11'), 'community:app_49ad11')
   assert.equal(catalogItemIdFromIntent('app:other:app_1'), null)
+  const { storeListingLink } = await import('../domain.js')
+  assert.equal(storeListingLink({ id: 'community:app_49ad11' }, 'https://me.test', 7),
+    'https://me.test/shell/?app=7&intent=app%3Acommunity%3Aapp_49ad11', 'the Store is named by its id, not a slug')
+  assert.equal(storeListingLink({ id: 'bad id' }, 'https://me.test', 7), '')
   assert.equal(catalogItemIdFromIntent('setup'), null)
   assert.equal(catalogItemIdFromIntent('app:../voice'), null)
   assert.equal(catalogItemIdFromIntent(null), null)

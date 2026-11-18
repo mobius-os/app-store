@@ -11,11 +11,12 @@ export function catalogItemIdFromIntent(intent) {
   return match ? match[1].toLowerCase() : null
 }
 
-// The link that opens this listing's Store page on a Möbius instance.
-export function storeListingLink(item, origin) {
+// The link that opens this listing's Store page on a Möbius instance. The
+// Store is named by its app id: its slug is not always "store".
+export function storeListingLink(item, origin, storeAppId) {
   const id = item?.id
-  if (typeof id !== 'string' || catalogItemIdFromIntent(`app:${id}`) !== id.toLowerCase()) return ''
-  return `${origin}/shell/?app=store&intent=${encodeURIComponent(`app:${id}`)}`
+  if (!storeAppId || typeof id !== 'string' || catalogItemIdFromIntent(`app:${id}`) !== id.toLowerCase()) return ''
+  return `${origin}/shell/?app=${encodeURIComponent(storeAppId)}&intent=${encodeURIComponent(`app:${id}`)}`
 }
 
 export function catalogItemIdFromMessage(event, expectedOrigin, expectedSource) {

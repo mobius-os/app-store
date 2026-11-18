@@ -2794,7 +2794,7 @@ export default function App({ appId, token }) {
   const shareApp = async (item) => {
     const name = item.manifest?.name || item.name
     // The app's Store page on this Möbius, not its source repository.
-    const url = storeListingLink(item, window.location.origin)
+    const url = storeListingLink(item, window.location.origin, appId)
     if (typeof navigator.share === 'function') {
       try {
         await navigator.share({ title: name, text: `${name} on the Möbius App Store`, url: url || undefined })
