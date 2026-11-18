@@ -90,7 +90,7 @@ export function CatalogList({
   lifecycleById = new Map(),
   layout = 'grid',
   savedItems = [],
-  savedCount = 0,
+  savedStatus = 'ready',
   updateStages = {},
   searchQuery = '',
   allItems = [],
@@ -212,9 +212,11 @@ export function CatalogList({
       needs: ['Nothing needs you', 'Apps that need setup or a decision about an update show up here.'],
       update: ['Everything is up to date', 'New versions of your apps show up here.'],
       // Saved community apps appear once their listings have loaded.
-      saved: savedCount > 0
+      saved: savedStatus === 'loading'
         ? ['Finding your saved apps', 'They show here as soon as the Store’s listings load.']
-        : ['Nothing saved yet', 'Use the bookmark on any app page to keep it here for later.'],
+        : savedStatus === 'failed'
+          ? ['Saved apps could not load', 'Check your connection, then open Saved again.']
+          : ['Nothing saved yet', 'Use the bookmark on any app page to keep it here for later.'],
       installed: [emptyTitle, emptyText],
     }
     if (tab === 'saved' && savedItems.length) {

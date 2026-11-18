@@ -18,14 +18,12 @@ and registers any cron schedule as one transaction.
 
 ## Reviewed updates run on the server
 
-**Update** and **Update all** check each candidate (read-only). When every
-candidate keeps the same access, the Store sends it straight away, like other
-app stores; the card shows progress and Library keeps **View update progress**.
-An update that widens or cannot prove its access, a failed check, a conflict,
-or a Möbius without server batches opens the review dialog instead, and
-nothing is applied until the owner confirms there. Either way the Store sends
-one exact set of app ids, Git commits, source digests
-and access digests to the platform's update-batch owner
+**Update** and **Update all** check each candidate (read-only) and show what
+changed in the review dialog, even when every candidate keeps the same access.
+Nothing is applied until the owner confirms there. The Store's own update
+opens its update sheet the same way, after the other apps when it is part
+of **Update all**. Confirming sends one exact set of app ids, Git commits,
+source digests and access digests to the platform's update-batch owner
 (`POST /api/apps/update-batches`, Möbius with mobius-os/mobius#1843). The
 dialog follows per-app progress over the batch's event stream; closing it or
 the Store never cancels the work, and Library shows **View update progress**

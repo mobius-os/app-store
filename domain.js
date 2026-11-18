@@ -1833,6 +1833,30 @@ export function libraryCollections(items, lifecycleById) {
   return buckets.filter(group => group.items.length)
 }
 
+// Library › Saved shows, and counts, only the saved apps whose listings
+// resolve: from the catalog (with the loaded community window) or, for a
+// community app outside that window, from its by-id read in `lookups` (an
+// item, 'gone' or 'failed'). `toRead` lists the community ids still to read.
+// A listing that is gone is neither shown nor counted, but its id stays
+// saved, so a failed read never loses it.
+export function resolveSavedApps(savedIds, catalog, lookups = {}, { catalogHydrated = true } = {}) {
+  const byId = new Map(catalog.map(item => [item.id, item]))
+  const items = []
+  const toRead = []
+  let waiting = false
+  let failed = false
+  for (const id of savedIds) {
+    const listed = byId.get(id)
+    const item = listed || lookups[id]
+    if (item?.manifest) items.push(item)
+    else if (listed) continue
+    else if (id.startsWith('community:') && !lookups[id]) toRead.push(id)
+    else if (!id.startsWith('community:') && !catalogHydrated) waiting = true
+    else if (lookups[id] === 'failed') failed = true
+  }
+  return { items, toRead, status: toRead.length || waiting ? 'loading' : failed ? 'failed' : 'ready' }
+}
+
 // The bundled edition is used only when no hosted Spotlight entries resolve.
 export function bundledSpotlights(items) {
   return ['voice', 'maps', 'beat-machine', 'connect'].flatMap(id => {

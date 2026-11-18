@@ -32,7 +32,6 @@ import {
   busyLabelForAction,
   storeDestinationFromMessage,
   capabilityDiffNeedsReview,
-  updateBatchDisposition,
   hasAccessRows,
   catalogUpdateItemForInstalled,
   collectCategories,
@@ -51,6 +50,7 @@ import {
   mergeCatalogEntries,
   storeCategory,
   libraryCollections,
+  resolveSavedApps,
   catalogCategory,
   catalogPublisher,
   withAssignedCategories,
@@ -1887,17 +1887,6 @@ export default function App({ appId, token }) {
     return batchSupportRef.current === 'missing'
   }
 
-  // Store-standard updates: Update applies at once
-  // when every candidate keeps the same access. The server still verifies each
-  // exact source and access digest. The review dialog appears only when access
-  // widens or is unknown, a check fails, a conflict needs resolving, or this
-  // Möbius lacks server batches.
-  const quickUpdateRef = useRef(false)
-  const autoApplyRef = useRef(false)
-  const [quickUpdate, setQuickUpdate] = useState(false)
-  const startQuickUpdate = () => { quickUpdateRef.current = true; autoApplyRef.current = false; setQuickUpdate(true) }
-  const showReviewDialog = () => { quickUpdateRef.current = false; autoApplyRef.current = false; setQuickUpdate(false) }
-
   const createBatchController = (entries = []) => {
     const batch = createUpdateBatch({
       prepare: (item, options) => prepareCatalogUpdateRef.current(item, options),
@@ -1936,19 +1925,6 @@ export default function App({ appId, token }) {
           }
         }
         if (updateBatchRef.current === batch) showTransaction(review)
-        if (updateBatchRef.current !== batch) return
-        if (quickUpdateRef.current && review.phase === 'review') {
-          quickUpdateRef.current = false
-          const plain = review.entries.length > 0 && review.entries.every(entry =>
-            entry.status === 'ready' && updateBatchDisposition(entry.prepared).kind === 'ready')
-          if (plain && !batchesMissing()) { autoApplyRef.current = true; Promise.resolve().then(() => batch.confirm()) }
-          else showReviewDialog()
-        } else if (autoApplyRef.current) {
-          if (review.phase === 'applying' && !review.local) {
-            autoApplyRef.current = false
-            Promise.resolve().then(() => { if (updateBatchRef.current === batch) closeUpdateTransaction() })
-          } else if (review.phase === 'review' || review.local || review.error) showReviewDialog()
-        }
       },
     }, entries)
     return batch
@@ -1966,9 +1942,6 @@ export default function App({ appId, token }) {
   // may have) accepted keeps its controller, so Library can show its progress.
   const closeUpdateTransaction = () => {
     const batch = updateBatchRef.current
-    quickUpdateRef.current = false
-    autoApplyRef.current = false
-    setQuickUpdate(false)
     if (!batch) return
     updateBatchRef.current = null
     const { batchId, phase, entries } = batch.state
@@ -2132,7 +2105,6 @@ export default function App({ appId, token }) {
     if (busy || updateBatchRef.current) return
     setCardErrors(prev => withoutKey(prev, item.id))
     setCardErrorRetries(prev => withoutKey(prev, item.id))
-    startQuickUpdate()
     await openUpdateBatch()?.check([item])
   }
 
@@ -2545,28 +2517,23 @@ export default function App({ appId, token }) {
     })
   }
 
-  // Update all covers the App Store too, like any other app. It goes last:
-  // installing it reloads the Store, so the other apps' updates start first
-  // (they finish on the server either way).
+  // Update all covers the App Store too, like any other app, and reviews it
+  // in its own sheet. It goes last: installing it reloads the Store, so the
+  // other apps' updates start first (they finish on the server either way).
   const selfInUpdateAll = selfUpdate.kind === 'update' && selfUpdate.phase === 'idle'
   const updateAllCount = updateItems.length + (selfInUpdateAll ? 1 : 0)
   const selfAfterBatchRef = useRef(false)
-  const runSelfUpdate = () => {
-    selfUpdate.openPanel()
-    if (!selfUpdate.needsAccessReview && !selfUpdate.accessRowsMissing) selfUpdate.update()
-  }
   const handleUpdateAll = async () => {
     if (!updateAllCount || busy || updateBatchRef.current || installedLoadError) return
     if (tab !== 'library' || libraryTab !== 'update') { closeDetail(); selectTab('library'); setCategory('update') }
-    if (!updateItems.length) { runSelfUpdate(); return }
+    if (!updateItems.length) { selfUpdate.openPanel(); return }
     selfAfterBatchRef.current = selfInUpdateAll
-    startQuickUpdate()
     await openUpdateBatch()?.check(updateItems)
   }
   useEffect(() => {
     if (!selfAfterBatchRef.current || updateTransaction || runningBatches.length || checkingAllUpdates) return
     selfAfterBatchRef.current = false
-    if (selfUpdate.kind === 'update') runSelfUpdate()
+    if (selfUpdate.kind === 'update') selfUpdate.openPanel()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateTransaction, runningBatches.length, checkingAllUpdates])
 
@@ -2587,11 +2554,42 @@ export default function App({ appId, token }) {
     [libraryCatalog, lifecycleById],
   )
   const groupCount = (id) => libraryGroups.find((group) => group.id === id)?.items.length || 0
+
+  // Saved community apps outside the loaded window are read by id, once the
+  // window that may already hold them has settled. A failed read is tried
+  // again the next time Saved opens.
+  const [savedLookups, setSavedLookups] = useState({})
+  const savedReadsRef = useRef(new Set())
+  const savedApps = useMemo(
+    () => resolveSavedApps(savedIds, displayCatalog, savedLookups, { catalogHydrated }),
+    [savedIds, displayCatalog, savedLookups, catalogHydrated],
+  )
+  useEffect(() => {
+    if (!savedOpen) return
+    setSavedLookups((current) => Object.values(current).includes('failed')
+      ? Object.fromEntries(Object.entries(current).filter(([, value]) => value !== 'failed'))
+      : current)
+  }, [savedOpen])
+  useEffect(() => {
+    if (!savedOpen || communityLoading) return
+    for (const id of savedApps.toRead) {
+      if (savedReadsRef.current.has(id)) continue
+      savedReadsRef.current.add(id)
+      loadCommunityApp(token, id.slice('community:'.length))
+        .then((row) => communityCatalogItems([row]).find((item) => item.id === id) || 'gone',
+          (error) => error?.status === 404 ? 'gone' : 'failed')
+        .then((result) => {
+          savedReadsRef.current.delete(id)
+          setSavedLookups((current) => ({ ...current, [id]: result }))
+        })
+    }
+  }, [savedOpen, communityLoading, savedApps.toRead, token])
+
   const libraryCounts = {
     needs: groupCount('attention') + (selfUpdate.kind === 'conflict' && selfUpdate.pending ? 1 : 0),
     update: groupCount('updates') + (selfUpdate.kind === 'update' && selfUpdate.pending ? 1 : 0),
     installed: libraryCatalog.length,
-    saved: savedIds.length,
+    saved: savedApps.items.length,
   }
   const libraryTab = query.trim() ? 'installed' : libraryTabFor(category, libraryCounts)
 
@@ -2881,7 +2879,7 @@ export default function App({ appId, token }) {
             onCancel={() => !busy && setPendingUninstall(null)}
           />
         )}
-        {updateTransaction && !quickUpdate && (
+        {updateTransaction && (
           <UpdateReviewModal
             review={updateTransaction}
             agentReviewing={agentReviewingUpdate}
@@ -3116,7 +3114,7 @@ export default function App({ appId, token }) {
                   ) : null}
                   {tab === 'library' && libraryTab === 'update' && updateAllCount > 0 ? (
                     <div className="st-libbar">
-                      <p>Updates keep the access each app already has; any change to what an app can do still asks you first.</p>
+                      <p>Each update shows what changes before it installs, including any change to what an app can do.</p>
                       <UpdateAllButton count={updateAllCount}
                         state={checkingAllUpdates ? 'checking' : (transactionProgress || backgroundProgress) ? 'updating' : 'idle'}
                         progress={transactionProgress
@@ -3232,10 +3230,8 @@ export default function App({ appId, token }) {
                     creatorFilter={creatorFilter}
                     onCreatorFilter={(name, value) => setCreatorFilter({ name, value })}
                     updateStages={updateStages}
-                    savedItems={tab === 'library' && !query.trim()
-                      ? savedIds.map((id) => displayCatalog.find((item) => item.id === id)).filter((item) => item?.manifest)
-                      : []}
-                    savedCount={tab === 'library' && !query.trim() ? savedIds.length : 0}
+                    savedItems={tab === 'library' && !query.trim() ? savedApps.items : []}
+                    savedStatus={savedApps.status}
                   />
                 </>}
           </>
@@ -3320,7 +3316,7 @@ export default function App({ appId, token }) {
           onCancel={() => !busy && setPendingUninstall(null)}
         />
       )}
-      {updateTransaction && !quickUpdate && (
+      {updateTransaction && (
         <UpdateReviewModal
           review={updateTransaction}
           agentReviewing={agentReviewingUpdate}

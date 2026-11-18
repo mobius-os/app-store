@@ -655,11 +655,17 @@ export const CSS = `
   font-size: 12px; line-height: 1.4; overflow-wrap: anywhere;
 }
 .st-card-state-row:has(.st-card-state-detail) { flex-wrap: wrap; row-gap: 2px; }
+.st-card-state-row:has(.st-card-agent) { flex-wrap: wrap; row-gap: 4px; }
 .st-card-source-update {
   display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
   border-radius: 999px; color: var(--text); background: var(--accent-dim);
   font-size: 12px; font-weight: 700; letter-spacing: .01em; white-space: nowrap;
+}
+.st-card-agent {
+  display: inline-flex; align-items: center; min-height: 20px; padding: 0 8px;
+  border-radius: 999px; color: var(--st-accent-text); background: var(--accent-dim, color-mix(in srgb, var(--accent) 15%, transparent));
+  font-size: 11px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
 }
 .st-card-desc {
   font-size: 12px; color: var(--muted); line-height: 1.35;

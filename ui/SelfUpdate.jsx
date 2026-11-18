@@ -16,8 +16,9 @@ import { ProgressFill } from './ProgressFill.jsx'
 //
 // It shows as an ordinary row in Library (Updates, or Needs you for a
 // conflict) and counts toward Update all. Nothing shows while the Store is
-// current or the check fails. The row installs directly; its What's new opens
-// the update sheet with the release details (version, date, changes, access).
+// current or the check fails. The row's Update and its What's new open the
+// update sheet with the release details (version, date, changes, access); the
+// sheet's Update installs.
 export function useSelfUpdate({ appId, token }) {
   const [review, setReview] = useState(null)
   const [showReview, setShowReview] = useState(false)
@@ -111,12 +112,15 @@ export function useSelfUpdate({ appId, token }) {
     }
   }
 
-  // An access change is reviewed in the panel first, wherever Update was
-  // pressed; the second press installs the reviewed contract.
+  // The sheet shows the access contract whenever it needs reviewing, so
+  // opening it counts as the review.
+  const openPanel = () => { setPanelOpen(true); if (needsAccessReview) setShowReview(true) }
+
+  // Every update is reviewed in the sheet first, wherever Update was pressed;
+  // the press inside the sheet installs the reviewed contract.
   const update = async () => {
-    if (needsAccessReview && !showReview) {
-      setShowReview(true)
-      setPanelOpen(true)
+    if (!panelOpen || (needsAccessReview && !showReview)) {
+      openPanel()
       return
     }
     setPhase('updating'); setMsg('')
@@ -160,10 +164,7 @@ export function useSelfUpdate({ appId, token }) {
     previousAccessUnrecorded: accessDiff?.unknown_previous === true,
     // Counted with the other Library updates while it still needs a tap.
     pending: kind === 'update' || kind === 'conflict',
-    notes, panelOpen, setPanelOpen, update, resolve, choosingAgent, setChoosingAgent, token,
-    // The sheet shows the access contract whenever it needs reviewing, so
-    // opening it counts as the review and the next Update press installs.
-    openPanel: () => { setPanelOpen(true); if (needsAccessReview) setShowReview(true) },
+    notes, panelOpen, setPanelOpen, openPanel, update, resolve, choosingAgent, setChoosingAgent, token,
   }
 }
 
@@ -316,7 +317,7 @@ function SelfUpdateSheetBody({ self, appId, close }) {
               </>
             ) : (
               <>
-                <div className="st-selfupd-access"><Check width={18} height={18} aria-hidden="true" /> Same as now — installs right away</div>
+                <div className="st-selfupd-access"><Check width={18} height={18} aria-hidden="true" /> Same as now</div>
                 {accessRows.length ? (
                   <div className="st-selfupd-chips">{accessRows.map(row => <span key={row.id || row.title}>{row.title}</span>)}</div>
                 ) : null}

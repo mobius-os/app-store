@@ -216,7 +216,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       >
         {m.name}
       </button>
-      {(showLifecycleStatus || lifecycle.setupNeedsAttention || item.community?.repository_update) && (
+      {(showLifecycleStatus || lifecycle.setupNeedsAttention || m.embeds_agent || item.community?.repository_update) && (
       <div className="st-card-state-row">
         {showLifecycleStatus ? (
           <div className={`st-card-state-line is-${lifecycle.key}`}>
@@ -227,6 +227,9 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
           <div className="st-card-state-detail">{lifecycle.statusDetail}</div>
         ) : null}
         {lifecycle.setupNeedsAttention ? <span className="st-card-state-line">Setup needed</span> : null}
+        {m.embeds_agent ? (
+          <span className="st-card-agent" role="img" aria-label="Includes an agent" title="This app includes an in-app agent">Agent</span>
+        ) : null}
         {item.community?.repository_update ? (
           <span className="st-card-source-update" title="The repository changed. Its next release has not been admitted yet.">
             Source changed

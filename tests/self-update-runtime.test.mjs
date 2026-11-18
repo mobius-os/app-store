@@ -71,8 +71,9 @@ async function mount(fetchImpl, props = {}, { mobius } = {}) {
   await act(async () => root.render(React.createElement(Harness)))
   return {
     dom,
-    async click(label) {
-      const button = [...dom.window.document.querySelectorAll('button')]
+    // `within` narrows the search, e.g. to the sheet's own Update button.
+    async click(label, within = 'body') {
+      const button = [...dom.window.document.querySelectorAll(`${within} button`)]
         .find(node => node.textContent === label || node.getAttribute('aria-label') === label)
       assert.ok(button, `button ${label} is visible`)
       await act(async () => button.click())
@@ -141,6 +142,7 @@ test('a new self-update conflict switches from Update to the agent, not Retry', 
   })
   try {
     await view.click('Update App Store')
+    await view.click('Update App Store', '.st-selfupd-sheet')
     assert.match(view.dom.window.document.body.textContent, /Fix with agent/)
     assert.doesNotMatch(view.dom.window.document.body.textContent, /Retry/)
     assert.equal(installs, 1)
@@ -310,7 +312,7 @@ test('a Store update is a Library row with a sheet, never a banner', async () =>
     assert.equal(installs, 0)
     await view.click('More for App Store'); await view.click("What's new in the App Store update")
     assert.ok(doc.querySelector('.st-selfupd-sheet'))
-    await view.click('Update App Store')
+    await view.click('Update App Store', '.st-selfupd-sheet')
     assert.equal(installs, 1)
     assert.match(doc.querySelector('.st-selfupd-sheet').textContent, /You're on version 1\.22\.0/)
     assert.equal(doc.querySelector('.st-selfupd-row'), null, 'the Library row leaves once it is done')
@@ -338,6 +340,30 @@ test('a new App Store version waits in Library: no popup opens by itself', async
   }
 })
 
+test('an App Store update that keeps the same access opens its sheet before installing', async () => {
+  let installs = 0
+  const view = await mount(async (url) => {
+    const path = String(url)
+    if (path.includes('/update-check')) return json({ update_available: true, pending_update_state: 'none' })
+    if (path.includes('/update-candidate-preview')) return json(preview())
+    if (path === '/api/apps/install') { installs++; return json({ id: 1, mode: 'updated' }) }
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  const doc = view.dom.window.document
+  try {
+    await view.click('Update App Store', '.st-selfupd-row')
+    assert.equal(installs, 0, 'the Library row never installs by itself')
+    const sheet = doc.querySelector('.st-selfupd-sheet')
+    assert.ok(sheet, 'Update opens the review sheet')
+    assert.match(sheet.textContent, /Version 1\.22\.0/)
+    assert.match(sheet.textContent, /Same as now/)
+    await view.click('Update App Store', '.st-selfupd-sheet')
+    assert.equal(installs, 1, "the sheet's Update installs")
+  } finally {
+    await view.close()
+  }
+})
+
 test('a failed Store update opens the panel with the reason and keeps Update available', async () => {
   let installs = 0
   const view = await mount(async (url) => {
@@ -350,6 +376,7 @@ test('a failed Store update opens the panel with the reason and keeps Update ava
   const doc = view.dom.window.document
   try {
     await view.click('Update App Store')
+    await view.click('Update App Store', '.st-selfupd-sheet')
     assert.equal(installs, 1)
     const panel = doc.querySelector('.st-selfupd-sheet')
     assert.ok(panel, 'the sheet explains the failure')
@@ -374,7 +401,7 @@ test('an access change is reviewed in the panel before the Library row can insta
     await view.click('Review App Store access')
     assert.equal(installs, 0)
     assert.match(doc.querySelector('.st-selfupd-sheet').textContent, /changes what the App Store can access/)
-    await view.click('Update App Store')
+    await view.click('Update App Store', '.st-selfupd-sheet')
     assert.equal(installs, 1)
     assert.match(doc.querySelector('.st-selfupd-sheet')?.textContent || '', /You're on version/)
     assert.equal(doc.querySelector('.st-selfupd-row'), null, 'the Library row leaves once it is done')

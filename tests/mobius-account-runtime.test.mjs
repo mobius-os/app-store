@@ -64,7 +64,8 @@ const gatedListing = {
 // the platform said when the request arrived, even if the test holds it open
 // with `account.hold` (identity), `account.holdListing` (the next listing read)
 // or `account.holdSpotlight`. `account.identityFailures` fails that many
-// identity reads.
+// identity reads. `account.listings` answers other listings read by id: a row,
+// or `{ status, detail }` for a refusal.
 async function mountStore(account) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://store.test/' })
   const keys = ['window', 'document', 'HTMLElement', 'ResizeObserver', 'fetch', 'IS_REACT_ACT_ENVIRONMENT']
@@ -135,6 +136,12 @@ async function mountStore(account) {
         return json(row)
       }
       if (path === `/api/community/apps/${gatedListing.id}/reviews`) return json({ items: [] })
+      const listingId = path.match(/^\/api\/community\/apps\/([^/?]+)$/)?.[1]
+      const listing = account.listings?.[listingId]
+      if (listing) {
+        reads.push(path)
+        return listing.status ? json({ detail: listing.detail }, listing.status) : json(listing)
+      }
       return json({}, 404)
     },
   })
@@ -410,5 +417,65 @@ test('saving an app for later writes storage and shows its toast once, even when
     assert.equal(view.doc.querySelector('.st-toast-msg')?.textContent, 'Removed from Saved')
   } finally {
     await view.close()
+  }
+})
+
+// Library › Saved with these saved ids; the community window lists only
+// Shared Notes, so every other saved listing is read by id.
+async function openSaved(savedIds, listings) {
+  const sets = []
+  const storage = { get: async () => savedIds, set: async (key, value) => { sets.push([key, value]) } }
+  const view = await mountStore({ linked: true, handle: 'example', storage, listings })
+  await act(async () => view.doc.querySelector('#st-tab-library').click())
+  await until(() => view.doc.querySelector('#st-libtab-saved'), 'the Saved tab')
+  await act(async () => view.doc.querySelector('#st-libtab-saved').click())
+  const pane = () => view.doc.querySelector('.st-libpane.is-saved')
+  return {
+    view, sets, pane,
+    names: () => [...(pane()?.querySelectorAll('[aria-label$=" — open details"]') || [])]
+      .map(node => node.getAttribute('aria-label').replace(' — open details', '')),
+  }
+}
+
+const olderTool = {
+  ...gatedListing, id: 'older-tool', name: 'Older Tool',
+  latest_revision: { id: 'rev-2', manifest_url: 'https://example.test/older/mobius.json', raw_base: 'https://example.test/older/' },
+  manifest: { id: 'older-tool', name: 'Older Tool', version: '1.0.0', description: 'An older tool.' },
+}
+
+test('Saved shows and counts every saved app whose listing resolves, reading ones outside the loaded window', async () => {
+  const saved = await openSaved(
+    ['community:shared-notes', 'community:older-tool', 'community:withdrawn', 'community:flaky'],
+    { 'older-tool': olderTool, withdrawn: { status: 404, detail: 'App not found.' }, flaky: { status: 503, detail: 'Unavailable.' } },
+  )
+  try {
+    await until(() => saved.names().length === 2, 'both resolvable saved apps')
+    await saved.view.settle()
+    assert.deepEqual(saved.names(), ['Shared Notes', 'Older Tool'])
+    assert.doesNotMatch(saved.pane().textContent, /Finding your saved apps/)
+    assert.deepEqual(saved.sets, [], 'unlisted and unreadable saved ids stay saved')
+  } finally {
+    await saved.view.close()
+  }
+})
+
+test('a saved listing that is gone is not counted, so Saved does not wait for it forever', async () => {
+  const saved = await openSaved(['community:withdrawn'], { withdrawn: { status: 404, detail: 'App not found.' } })
+  try {
+    await until(() => /Nothing saved yet/.test(saved.pane()?.textContent || ''), 'the empty Saved list')
+    assert.deepEqual(saved.names(), [])
+    assert.deepEqual(saved.sets, [])
+  } finally {
+    await saved.view.close()
+  }
+})
+
+test('a saved listing that cannot be read right now says so instead of claiming nothing is saved', async () => {
+  const saved = await openSaved(['community:flaky'], { flaky: { status: 503, detail: 'Unavailable.' } })
+  try {
+    await until(() => /Saved apps could not load/.test(saved.pane()?.textContent || ''), 'the could-not-load note')
+    assert.deepEqual(saved.sets, [], 'a failed read never drops the saved id')
+  } finally {
+    await saved.view.close()
   }
 })

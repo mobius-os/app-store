@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { mkdir, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -11,17 +12,26 @@ import { createRoot } from 'react-dom/client'
 const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-library-row')
 
+let cardModule
+function catalogCard() {
+  cardModule ||= (async () => {
+    const require = createRequire(join(process.env.MOBIUS_FRONTEND_NODE_MODULES, 'package.json'))
+    const { rolldown } = await import(pathToFileURL(require.resolve('rolldown')).href)
+    await mkdir(buildDir, { recursive: true })
+    const build = await rolldown({ input: join(here, '..', 'ui', 'CatalogCard.jsx'), platform: 'node', tsconfig: false,
+      external: ['react', 'react/jsx-runtime'],
+      resolve: { alias: { '@openai/apps-sdk-ui/components/Icon': join(here, 'runtime-icon-stub.mjs') } },
+      transform: { jsx: 'react-jsx' } })
+    const output = join(buildDir, 'card.mjs')
+    await build.write({ file: output, format: 'es' }); await build.close()
+    return (await import(pathToFileURL(output).href)).CatalogCard
+  })()
+  return cardModule
+}
+test.after(() => rm(buildDir, { recursive: true, force: true }))
+
 test('every Library row keeps Details in its More menu, and only a ready app launches on tap', async () => {
-  const require = createRequire(join(process.env.MOBIUS_FRONTEND_NODE_MODULES, 'package.json'))
-  const { rolldown } = await import(pathToFileURL(require.resolve('rolldown')).href)
-  await mkdir(buildDir, { recursive: true })
-  const build = await rolldown({ input: join(here, '..', 'ui', 'CatalogCard.jsx'), platform: 'node', tsconfig: false,
-    external: ['react', 'react/jsx-runtime'],
-    resolve: { alias: { '@openai/apps-sdk-ui/components/Icon': join(here, 'runtime-icon-stub.mjs') } },
-    transform: { jsx: 'react-jsx' } })
-  const output = join(buildDir, 'card.mjs')
-  await build.write({ file: output, format: 'es' }); await build.close()
-  const { CatalogCard } = await import(pathToFileURL(output).href)
+  const CatalogCard = await catalogCard()
   const dom = new JSDOM('<div id="root"></div>')
   const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
   const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
@@ -84,6 +94,37 @@ test('every Library row keeps Details in its More menu, and only a ready app lau
     assert.equal(named('Details'), undefined)
   } finally {
     await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
-    await rm(buildDir, { recursive: true, force: true })
   }
+})
+
+test('a card for an app with a built-in agent shows a labelled Agent badge in every card layout', async () => {
+  const CatalogCard = await catalogCard()
+  const dom = new JSDOM('<div id="root"></div>')
+  const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const doc = dom.window.document
+  const app = embedsAgent => ({ id: 'brief', manifest: { id: 'brief', name: 'Brief', embeds_agent: embedsAgent } })
+  try {
+    for (const layout of ['row', 'list']) {
+      await act(async () => root.render(React.createElement(CatalogCard, { item: app(true), installed: [], layout, onPick() {} })))
+      const badge = doc.querySelector('.st-card-agent')
+      assert.ok(badge, `a ${layout} card shows the Agent badge`)
+      assert.equal(badge.textContent, 'Agent')
+      assert.equal(badge.getAttribute('role'), 'img')
+      assert.equal(badge.getAttribute('aria-label'), 'Includes an agent')
+      await act(async () => root.render(React.createElement(CatalogCard, { item: app(false), installed: [], layout, onPick() {} })))
+      assert.equal(doc.querySelector('.st-card-agent'), null, `a ${layout} card without an agent has no badge`)
+    }
+  } finally {
+    await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
+  }
+  // No layout or screen width hides the badge or the line that carries it.
+  const css = readFileSync(join(here, '..', 'theme.js'), 'utf8')
+  const hiding = [...css.matchAll(/([^{}]*)\{[^{}]*display:\s*none[^{}]*\}/g)]
+    .map(match => match[1].trim())
+    .filter(selector => /st-card-agent|st-card-state-row(?!:empty)\b/.test(selector))
+  assert.deepEqual(hiding, [])
 })
