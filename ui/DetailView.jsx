@@ -10,6 +10,7 @@ import { SectionHead } from './StoreSections.jsx'
 import { progressStageFor } from './CatalogCard.jsx'
 import { ProgressFill } from './ProgressFill.jsx'
 import { fetchRecentChanges } from '../api.js'
+import { useSheetFocus } from './sheetFocus.js'
 
 function setupMetaText(setup, storeInstalled) {
   if (setup.scope === 'system') {
@@ -204,6 +205,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   }
   const developer = catalogPublisher(item)
   const releasedAt = detailFeedback?.released_at || detailFeedback?.published_at || item.published_at || ''
+  const showCategoryInHeader = !!detailCategory && !detailFeedback?.rating_count && !releasedAt
   const publishedAt = detailFeedback?.published_at || item.published_at || ''
   const sourceUrl = item.community?.repository_url || m.homepage || ''
   const [viewer, setViewer] = useState(-1)
@@ -228,9 +230,20 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           <IconBox item={heroItemWithIcon} size="hero" token={token} />
           <div className="st-dh-text">
             <h1 id="st-detail-name" className="st-dh-name">{m.name}</h1>
-            {onOpenDeveloper ? (
-              <button type="button" className="st-dh-dev" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
-            ) : <span className="st-dh-dev">{developer}</span>}
+            <div className="st-dh-meta">
+              {onOpenDeveloper ? (
+                <button type="button" className="st-dh-dev" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
+              ) : <span className="st-dh-dev">{developer}</span>}
+              {showCategoryInHeader ? (
+                <>
+                  <span className="st-dh-separator" aria-hidden="true">·</span>
+                  <button type="button" className="st-dh-category"
+                    aria-label={`Category: ${detailCategory.title}`} onClick={() => onOpenCategory?.(detailCategory.id)}>
+                    <CategoryIcon category={detailCategory} size="sm" />{detailCategory.title}
+                  </button>
+                </>
+              ) : null}
+            </div>
             <p className="st-dh-sub">{listingTagline}</p>
             {!storeInstalled && recovery && (
               <div className="st-detail-note" role="status">
@@ -263,7 +276,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           </div>
         </header>
 
-        {detailFeedback?.rating_count || detailCategory || releasedAt ? (
+        {detailFeedback?.rating_count || releasedAt ? (
         <div className="st-strip">
           {/* Facts only when they say something: no "—" placeholders, and the
               developer is already named under the title. */}
@@ -274,7 +287,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
               <span>{'★'.repeat(Math.round(detailFeedback.rating_average))}</span>
             </div>
           ) : null}
-          {detailCategory ? (
+          {detailCategory && !showCategoryInHeader ? (
             <button type="button" className="st-strip-cell" onClick={() => onOpenCategory?.(detailCategory.id)}>
               <small>Category</small><b><CategoryIcon category={detailCategory} size="sm" /></b><span>{detailCategory.title}</span>
             </button>
@@ -375,10 +388,15 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
         </section>
 
         {changes || item.community?.repository_update ? (
-        <section className="st-sec" aria-labelledby="st-detail-new">
-          <SectionHead id="st-detail-new" title="What's new" />
+        <details key={item.id} className="st-sec st-whats-new" aria-labelledby="st-detail-new">
+          <summary className="st-access-summary">
+            <h2 id="st-detail-new" className="st-access-head st-access-summary-text">
+              <span className="st-sh-title">What's new</span>
+              <span className="st-sh-sub">Version {catalogVersion}{shortDate(releasedAt) ? <> · {shortDate(releasedAt)}</> : null}</span>
+            </h2>
+            <ChevronDown className="st-access-chev" width={20} height={20} aria-hidden="true" />
+          </summary>
           <div className="st-wn">
-            <div className="st-wn-top"><b>Version {catalogVersion}</b>{shortDate(releasedAt) ? <span>· {shortDate(releasedAt)}</span> : null}</div>
             {changes ? (
               <>
                 <p className="st-wn-lead">{changes.mode === 'since'
@@ -401,7 +419,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
               <p className="st-wn-note">A newer repository change ({item.community.repository_update.commit_sha.slice(0, 7)}) is waiting; this release stays until its owner lists it.</p>
             ) : null}
           </div>
-        </section>
+        </details>
         ) : null}
 
         {canCommunityWithdraw && (
@@ -501,19 +519,19 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
 
 // Full-screen screenshots: arrows, arrow keys, Escape, and a clear close.
 function ScreenshotViewer({ shots, index, onIndex, onClose, render }) {
+  const sheetRef = useRef(null)
   const closeRef = useRef(null)
+  useSheetFocus({ sheetRef, initialRef: closeRef, onClose })
   useEffect(() => {
-    closeRef.current?.focus()
     const key = (event) => {
-      if (event.key === 'Escape') onClose()
       if (event.key === 'ArrowRight') onIndex((index + 1) % shots.length)
       if (event.key === 'ArrowLeft') onIndex((index - 1 + shots.length) % shots.length)
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [index, shots.length, onClose, onIndex])
+  }, [index, shots.length, onIndex])
   return (
-    <div className="st-viewer" role="dialog" aria-modal="true" aria-label="Screenshots" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div ref={sheetRef} className="st-viewer" role="dialog" aria-modal="true" aria-label="Screenshots" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <button ref={closeRef} type="button" className="st-viewer-close" onClick={onClose} aria-label="Close"><X width={18} height={18} /></button>
       {render(shots[index])}
       {shots.length > 1 ? (

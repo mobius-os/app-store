@@ -359,7 +359,7 @@ test('publishers are credited by their Möbius handle when the registry has one'
   assert.equal(catalogPublisher({ publisher: { login: 'ExampleCreator', handle: '' }, repository: 'ExampleCreator/app' }), 'examplecreator')
   assert.equal(publicationViewerHandle({ items: [], viewer: { handle: 'example-creator' } }), 'example-creator')
   assert.equal(publicationViewerHandle({ items: [] }), '')
-  assert.match(publisher, /Publishing as \{publisherHandle \|\| githubLogin\}/)
+  assert.doesNotMatch(publisher, /Publishing as/)
 })
 
 test('recorded install totals survive a rating refresh and unknown totals stay unknown', () => {

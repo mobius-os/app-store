@@ -142,7 +142,6 @@ export function PublisherTab({
   onOpenContributions,
   publicationStates = {},
   publicationListings = {},
-  publisherHandle = '',
   publicationStatesError,
   onRefreshPublicationStates,
   onOpenMobiusAccount,
@@ -608,24 +607,17 @@ export function PublisherTab({
 
   return (
     <div className={`st-publisher${candidate ? ' is-reviewing' : ''}`}>
-      {!candidate && view !== 'app' ? (
-        <section className={`st-publish-heading${view === 'choose' ? ' is-choose' : ' is-home'}`}>
+      {!candidate && view === 'choose' ? (
+        <section className="st-publish-heading is-choose">
           <div>
-            {view === 'choose' ? (
-              <button type="button" className="st-back-btn" onClick={() => setView('home')}>
-                <ChevronLeft width="16" height="16" aria-hidden="true" />Your apps
-              </button>
-            ) : null}
-            {/* Library's Your apps tab already names the home view. */}
-            <h2 className={view === 'choose' ? undefined : 'st-sr-only'}>{view === 'choose' ? 'Publish an app' : 'Your apps'}</h2>
-            {view === 'choose' ? <p>Choose an app. You’ll check its listing before it goes live.</p> : null}
-            {/* Like the other Library tabs: one quiet line, then its action. */}
-            {view === 'home' && signedIn && githubReady ? (
-              <p className="st-yours-line">Publishing as {publisherHandle || githubLogin}</p>
-            ) : null}
+            <button type="button" className="st-back-btn" onClick={() => setView('home')}>
+              <ChevronLeft width="16" height="16" aria-hidden="true" />Your apps
+            </button>
+            <h2>Publish an app</h2>
+            <p>Choose an app. You’ll check its listing before it goes live.</p>
           </div>
           <div className="st-publish-heading-actions">
-            {view === 'choose' && apps.length ? (
+            {apps.length ? (
               <label className="st-publish-search">
                 <span className="st-sr-only">Search your apps</span>
                 <Search width="17" height="17" aria-hidden="true" />
@@ -636,12 +628,6 @@ export function PublisherTab({
               <button type="button" className="st-publish-connection st-publish-connection-action"
                       onClick={() => onOpenMobiusAccount?.()}>
                 Sign in to Möbius
-              </button>
-            ) : null}
-            {/* Library's heading already offers Publish an app. */}
-            {view === 'home' && contributeAvailable ? (
-              <button type="button" className="st-update-all-trigger st-resolve-all-trigger" onClick={() => onOpenContributions?.()}>
-                Open contributions
               </button>
             ) : null}
           </div>

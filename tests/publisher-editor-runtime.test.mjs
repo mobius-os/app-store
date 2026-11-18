@@ -39,11 +39,14 @@ test('unfinished listing opens the full existing editor with its AI-help actions
   try {
     await act(async () => root.render(React.createElement(inLibrary(PublisherTab), {
       installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
+      contributeAvailable: true, onOpenContributions() {},
       onRefreshPublicationStates() {}, onListingAgent: async (...args) => aiRequests.push(args),
       onPreviewLocal: async () => ({ ready: false, accepted_commit: 'a'.repeat(40),
         draft: { tagline: 'Keep this draft', description: '', screenshots: [] },
         checklist: [{ id: 'description', label: 'Description', done: false, message: 'Add a description' }] }),
     })))
+    assert.equal(dom.window.document.querySelector('.st-publish-heading.is-home'), null)
+    assert.doesNotMatch(dom.window.document.body.textContent, /Publishing as|Open contributions/)
     await click('Publish an app')
     await click('Publish')
     assert.ok(dom.window.document.querySelector('.st-listing-editor'))

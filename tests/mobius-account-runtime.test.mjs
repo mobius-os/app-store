@@ -194,10 +194,9 @@ test('publishing sends a signed-out owner to Settings › Accounts › Möbius',
     assert.doesNotMatch(view.doc.body.textContent, /Möbius · You/)
 
     const signIn = view.signInButtons()
-    assert.equal(signIn.length, 2, 'the heading and the notice each offer sign-in')
+    assert.equal(signIn.length, 1, 'the remaining account notice offers sign-in')
     for (const button of signIn) await act(async () => button.click())
     assert.deepEqual(view.posted, [
-      { message: { type: 'moebius:open-settings', section: 'mobius-account' }, origin: 'https://store.test' },
       { message: { type: 'moebius:open-settings', section: 'mobius-account' }, origin: 'https://store.test' },
     ])
     assert.equal(view.doc.querySelector('#st-libtab-yours').getAttribute('aria-selected'), 'true',
@@ -211,14 +210,14 @@ test('coming back from Settings after signing in to Möbius clears the Publish p
   const account = { linked: false, handle: '' }
   const view = await openPublish(account)
   try {
-    assert.equal(view.signInButtons().length, 2)
+    assert.equal(view.signInButtons().length, 1)
     await view.leaveForSettings()
     account.linked = true
     account.handle = 'example'
     await view.returnToStore()
     assert.equal(view.signInButtons().length, 0, 'the sign-in prompt is gone')
     assert.doesNotMatch(view.doc.body.textContent, /Sign in to your Möbius account/)
-    assert.match(view.doc.body.textContent, /Publishing as example/)
+    assert.doesNotMatch(view.doc.body.textContent, /Publishing as/)
 
     // Signed in with a handle: returning again reads nothing more.
     const settled = view.reads.length
@@ -261,7 +260,7 @@ test('coming back from connecting GitHub re-reads the connection on Publish', as
     await view.leaveForSettings()
     await view.returnToStore()
     assert.equal(githubReads(), before + 1)
-    await until(() => /Publishing as example/.test(view.doc.body.textContent), 'GitHub to read as connected')
+    await until(() => !view.doc.querySelector('.st-publish-setup'), 'GitHub to read as connected')
   } finally {
     await view.close()
   }
@@ -358,7 +357,7 @@ test('a slow startup read cannot restore the signed-out account after a sign-in 
   const account = { linked: false, handle: '', holdSpotlight: deferred() }
   const view = await openPublish(account)
   try {
-    await until(() => view.signInButtons().length === 2, 'the signed-out Publish prompt')
+    await until(() => view.signInButtons().length === 1, 'the signed-out Publish prompt')
     await view.leaveForSettings()
     account.linked = true
     account.handle = 'example'
@@ -367,7 +366,26 @@ test('a slow startup read cannot restore the signed-out account after a sign-in 
     await act(async () => account.holdSpotlight.resolve())
     await view.settle()
     assert.equal(view.signInButtons().length, 0, 'the startup snapshot does not sign the owner out again')
-    assert.match(view.doc.body.textContent, /Publishing as example/)
+    assert.doesNotMatch(view.doc.body.textContent, /Publishing as/)
+  } finally {
+    await view.close()
+  }
+})
+
+
+test('signed-in Your apps keeps account-return state without displaying the removed header', async () => {
+  const view = await openPublish({ linked: true, handle: 'example' })
+  try {
+    await view.settle()
+    assert.equal(view.doc.querySelector('#st-libtab-yours').getAttribute('aria-selected'), 'true')
+    assert.equal(view.doc.querySelector('.st-publish-heading.is-home'), null)
+    assert.doesNotMatch(view.doc.body.textContent, /Publishing as|Open contributions/)
+    assert.equal(view.signInButtons().length, 0)
+    const settled = view.reads.length
+    await view.leaveForSettings()
+    await view.returnToStore()
+    await view.focusWindow()
+    assert.equal(view.reads.length, settled, 'a signed-in account with a handle needs no repeated identity reads')
   } finally {
     await view.close()
   }

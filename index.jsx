@@ -3267,7 +3267,6 @@ export default function App({ appId, token }) {
             publicationError={publicationError}
             publicationStates={publicationStates}
             publicationListings={publicationListings}
-            publisherHandle={publisherHandle}
             publicationStatesError={publicationStatesError}
             onRefreshPublicationStates={refreshPublicationStates}
             onNavigate={() => {

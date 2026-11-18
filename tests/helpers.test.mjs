@@ -578,9 +578,10 @@ test('local publishing is one reviewed action through the inherited GitHub accou
   assert.doesNotMatch(publisherSource, /Return here with the repository and exact commit/)
   assert.equal(
     publisherSource.match(/onClick=\{\(\) => onOpenContributions\?\.\(\)\}/g)?.length,
-    2,
-    'Contribute buttons must not forward click events as local app ids',
+    1,
+    'the remaining Contribute setup button must not forward its click event as a local app id',
   )
+  assert.doesNotMatch(publisherSource, /onClick=\{onOpenContributions\}/)
 })
 
 test('publish sign-in prompt is a working action, not a dead label', async () => {
