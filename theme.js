@@ -2256,6 +2256,21 @@ export const CSS = `
 .st-rowshelf::-webkit-scrollbar { display: none; }
 .st-rowshelf > * { scroll-snap-align: start; }
 .st-rowshelf > :not(:nth-child(3n+1)) { border-top: 1px solid var(--border); }
+/* A short shelf (six apps or fewer) would fill only one or two of its three
+   columns, leaving the rest of the width empty. Lay it out left to right
+   across the full width instead; phones keep the swipeable shelf. */
+@media (min-width: 681px) {
+  .st-rowshelf.is-fit {
+    grid-auto-flow: row; grid-template-rows: none; grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow-x: visible; scroll-snap-type: none;
+  }
+  .st-rowshelf.is-fit > * { border-top: 0; }
+  .st-rowshelf.is-fit > :nth-child(n+4) { border-top: 1px solid var(--border); }
+}
+@media (min-width: 681px) and (max-width: 1100px) {
+  .st-rowshelf.is-fit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .st-rowshelf.is-fit > :nth-child(3) { border-top: 1px solid var(--border); }
+}
 
 /* Panels: Highest rated, Our picks. */
 .st-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 20px; margin-top: 40px; }
