@@ -2,7 +2,7 @@
   "id": "store",
   "package_id": "urn:uuid:cbcc33c4-6ff4-4bab-abe7-b9d9363ab72b",
   "name": "App Store",
-  "version": "1.27.0",
+  "version": "1.28.0",
   "description": "Discover, install, and update Möbius apps.",
   "author": "mobius-os",
   "license": "MIT",
@@ -10,6 +10,11 @@
   "icon": "icon.png",
   "entry": "index.jsx",
   "offline_capable": true,
+  "embeds_agent": true,
+  "agent": {
+    "scope": "admin",
+    "reason": "Reviews updates and prepares, checks and fixes the apps you publish"
+  },
   "offline": {
     "reads": true,
     "writes": "none",
