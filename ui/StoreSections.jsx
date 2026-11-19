@@ -60,7 +60,7 @@ export function RowShelf({ id, title, sub, items, renderRow, onSeeAll }) {
   return (
     <section className="st-sec" aria-labelledby={`st-sh-${id}`}>
       <SectionHead id={`st-sh-${id}`} title={title} sub={sub} onSeeAll={onSeeAll} arrows={arrows} />
-      <div className="st-rowshelf" ref={rowRef}>{items.map(renderRow)}</div>
+      <div className={`st-rowshelf${items.length <= 6 ? ' is-fit' : ''}`} ref={rowRef}>{items.map(renderRow)}</div>
     </section>
   )
 }
