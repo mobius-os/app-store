@@ -49,7 +49,6 @@
     "manifest-snapshots.js",
     "ui/IconBox.jsx",
     "ui/StoreImage.jsx",
-    "ui/PermissionRow.jsx",
     "ui/CapabilityContract.jsx",
     "ui/UninstallConfirmModal.jsx",
     "ui/CatalogCard.jsx",
