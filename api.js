@@ -1,4 +1,4 @@
-import { LISTING_LIMITS } from './constants.js'
+import { LISTING_LIMITS, STORE_CATEGORY_IDS } from './constants.js'
 import { sleep } from './sleep.js'
 import { publicationListingFacts, textWithinByteLimit, validateManifestUrl } from './domain.js'
 
@@ -60,8 +60,9 @@ export async function loadLocalGithubIdentity(token) {
   }
 }
 
-export async function loadCommunityApps(token, { query = '', limit = 50, offset = 0, signal } = {}) {
+export async function loadCommunityApps(token, { query = '', limit = 50, offset = 0, sort = '', signal } = {}) {
   const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset) })
+  if (sort) params.set('sort', sort)
   const response = await fetch(`/api/community/apps?${params}`, {
     signal,
     headers: communityHeaders(token),
@@ -567,8 +568,11 @@ export function visibleUpdateAgentChoices(choices) {
 // (so it clears the connect-src 'self' rule). The proxy streams the raw
 // upstream body back with the upstream status + content-type, so callers
 // treat the response exactly like a direct fetch.
-export function proxyUrl(extUrl) {
-  return `/api/proxy?url=${encodeURIComponent(extUrl)}`
+// `width` asks the proxy for an image no wider than that many pixels; a
+// Möbius without image downscaling ignores it and returns the original.
+export function proxyUrl(extUrl, { width } = {}) {
+  const sized = Number.isInteger(width) && width > 0 ? `&w=${width}` : ''
+  return `/api/proxy?url=${encodeURIComponent(extUrl)}${sized}`
 }
 
 function retryableFetchStatus(status) {
@@ -687,7 +691,8 @@ export async function fetchManifest(url, token, opts = {}) {
 // callers derive a shelf from categories when it is absent.
 // Release manifests never belong in the live registry. The caller merges these
 // discovery fields over the checked-in CATALOG, preserving its generated
-// snapshot for known apps and fetching only genuinely new entries.
+// snapshot for known apps and fetching only genuinely new entries. Resolves to
+// `{ apps, communityCategories }`.
 export async function fetchCatalog(url, token, opts = {}) {
   const retries = opts.retries ?? 2
   const delayMs = opts.retryDelayMs ?? 350
@@ -805,6 +810,7 @@ export async function fetchCatalog(url, token, opts = {}) {
     const collection = [
       'productivity', 'everyday', 'create', 'explore', 'play', 'developer',
     ].includes(e.collection) ? e.collection : null
+    const category = STORE_CATEGORY_IDS.includes(e.category) ? e.category : null
     // The catalog summary plays the listing tagline's role, so it shares its bound.
     const summary = textWithinByteLimit(e.summary, LISTING_LIMITS.taglineBytes)
     const preview = typeof e.preview === 'string' && /^[a-z0-9][a-z0-9._-]*\.png$/i.test(e.preview)
@@ -823,13 +829,26 @@ export async function fetchCatalog(url, token, opts = {}) {
       raw_base: e.raw_base,
       ...(audience ? { audience } : {}),
       ...(collection ? { collection } : {}),
+      ...(category ? { category } : {}),
       categories: cleanList(e.categories),
       keywords: cleanList(e.keywords),
       capabilities: cleanList(e.capabilities),
       setup: normalizeSetup(e.setup),
     })
   }
-  return entries
+  // Store-assigned categories for community listings, keyed by lowercase
+  // GitHub owner/repo. Unknown repositories or categories are dropped.
+  const communityCategories = {}
+  const assigned = body.community_categories
+  if (assigned && typeof assigned === 'object' && !Array.isArray(assigned)) {
+    for (const [repo, value] of Object.entries(assigned)) {
+      const key = repo.trim().toLowerCase()
+      if (/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(key) && STORE_CATEGORY_IDS.includes(value)) {
+        communityCategories[key] = value
+      }
+    }
+  }
+  return { apps: entries, communityCategories }
 }
 
 function installRequestBody({
@@ -1221,4 +1240,103 @@ export async function fetchUninstalledApps(token) {
   if (!res.ok) return []
   const rows = await res.json()
   return Array.isArray(rows) ? rows : []
+}
+
+// What changed in an app, read from its public GitHub repository through the
+// proxy. The proxy adds no GitHub credentials, so every read spends the
+// server's shared anonymous allowance: each answer is kept for the session
+// (a failed read is not, so it can be tried again), and anything unreadable (a
+// non-GitHub source, rate limits, offline) resolves to null. Nothing that
+// installs or updates an app depends on these reads.
+const githubReads = new Map()
+function readGithubOnce(key, read) {
+  if (!githubReads.has(key)) {
+    githubReads.set(key, read().catch(() => null).then((result) => {
+      if (!result) githubReads.delete(key)
+      return result
+    }))
+  }
+  return githubReads.get(key)
+}
+
+async function readGithubJson(url, token) {
+  const res = await fetch(proxyUrl(url), { headers: { Authorization: `Bearer ${token}` } })
+  return res.ok ? res.json() : null
+}
+
+function commitDate(commit) {
+  return commit?.commit?.committer?.date || commit?.commit?.author?.date || ''
+}
+
+// A run of GitHub commits (newest first) as the changes people care about:
+// merges and Möbius's own bookkeeping commits are left out, and each subject
+// reads as a plain sentence.
+const CHANGE_BOOKKEEPING = /^(apply app source|install\b|initialize app repo|merge (pull request|branch|remote))/i
+export function commitChanges(commits) {
+  return (Array.isArray(commits) ? commits : [])
+    .filter((c) => !(Array.isArray(c?.parents) && c.parents.length > 1))
+    .map((c) => ({ text: readableChange(String(c?.commit?.message || '').split('\n')[0]), date: commitDate(c) }))
+    .filter((c) => c.text && !CHANGE_BOOKKEEPING.test(c.text))
+}
+
+// A commit subject as a plain sentence: no "fix(scope):" prefix and no
+// trailing pull request number.
+function readableChange(subject) {
+  const text = subject.trim()
+    .replace(/\s*\(#\d+\)$/, '')
+    .replace(/^[a-z]+(\([^)]*\))?!?:\s*/i, '')
+  return text ? text[0].toUpperCase() + text.slice(1) : ''
+}
+
+function compareUrl(repo, from, to) {
+  return `https://api.github.com/repos/${repo}/compare/${encodeURIComponent(from)}...${encodeURIComponent(to)}`
+}
+
+// The change list behind an app's own update: the changes between the
+// installed revision and the candidate commit, newest first, plus the
+// candidate's date.
+export function fetchReleaseNotes({ manifestUrl, fromCommit, toCommit, token }) {
+  const repo = githubRefOf(manifestUrl)?.repo
+  if (!repo || !toCommit) return Promise.resolve(null)
+  return readGithubOnce(`notes|${repo}|${fromCommit || ''}|${toCommit}`, async () => {
+    if (fromCommit && fromCommit !== toCommit) {
+      const body = await readGithubJson(compareUrl(repo, fromCommit, toCommit), token)
+      if (!body) return null
+      const commits = Array.isArray(body.commits) ? body.commits : []
+      return { notes: commitChanges([...commits].reverse()).map((c) => c.text), releasedAt: commitDate(commits[commits.length - 1]) }
+    }
+    const body = await readGithubJson(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(toCommit)}`, token)
+    return body ? { notes: [], releasedAt: commitDate(body) } : null
+  })
+}
+
+// The changes behind an app's listed version, newest first: either since
+// `sinceCommit` (the installed revision) or the latest few up to the listed
+// ref.
+export function fetchRecentChanges({ manifestUrl, sinceCommit = null, token, limit = 5 }) {
+  const at = githubRefOf(manifestUrl)
+  if (!at) return Promise.resolve(null)
+  return readGithubOnce(`recent|${at.repo}|${at.ref}|${sinceCommit || ''}|${limit}`, async () => {
+    const body = await readGithubJson(sinceCommit
+      ? compareUrl(at.repo, sinceCommit, at.ref)
+      : `https://api.github.com/repos/${at.repo}/commits?sha=${encodeURIComponent(at.ref)}&per_page=30`, token)
+    if (!body) return null
+    const commits = sinceCommit
+      ? (Array.isArray(body.commits) ? [...body.commits].reverse() : [])
+      : (Array.isArray(body) ? body : [])
+    const items = commitChanges(commits)
+    return { items: items.slice(0, limit), more: items.length > limit, historyUrl: `https://github.com/${at.repo}/commits/${at.ref}` }
+  })
+}
+
+// { repo: "owner/repo", ref } for a manifest served from raw.githubusercontent.com.
+export function githubRefOf(manifestUrl) {
+  try {
+    const url = new URL(manifestUrl)
+    if (url.hostname !== 'raw.githubusercontent.com') return null
+    const [owner, repo, ref] = url.pathname.split('/').filter(Boolean)
+    return owner && repo && ref ? { repo: `${owner}/${repo}`, ref } : null
+  } catch {
+    return null
+  }
 }

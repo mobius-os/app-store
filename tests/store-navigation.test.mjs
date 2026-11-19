@@ -57,3 +57,26 @@ test('Back then Forward restores a detail opened at its reviews',async()=>{
   h.back();h.forward()
   assert.deepEqual(shown,[['rated','reviews'],[null,''],['rated','reviews']])
 })
+test('an app opened from an app page is its own level: Back returns to the first app', async () => {
+  const { backDetailEntry } = await import('../store-navigation.js')
+  const h = harness(), first = app('first'), second = app('second')
+  const one = openDetailEntry(h.current, first, h.context); h.own(); await one
+  const two = openDetailEntry(h.current, second, { ...h.context, push: true }); h.own(); await two
+  assert.equal(h.shown, second); assert.equal(h.opens, 2)
+  assert.equal(h.current.current.prev.item, first)
+  backDetailEntry(h.current, h.context.show)
+  assert.equal(h.shown, first, 'on-screen Back goes one level')
+  assert.equal(h.current.current.item, first)
+  closeDetailEntry(h.current, h.context.show)
+  assert.equal(h.shown, null); assert.equal(h.current.current, null)
+})
+test('a page between two apps is redrawn when Back leaves the second app', async () => {
+  const { backDetailEntry } = await import('../store-navigation.js')
+  const h = harness(); let category = 0
+  const one = openDetailEntry(h.current, app('first'), h.context); h.own(); await one
+  const two = openDetailEntry(h.current, app('second'), { ...h.context, push: true, below: () => { category++ } }); h.own(); await two
+  backDetailEntry(h.current, h.context.show)
+  assert.equal(h.shown, null, 'the first app stays beneath, hidden')
+  assert.equal(category, 1, 'the category page between them is shown again')
+  assert.equal(h.current.current.item.id, 'first')
+})

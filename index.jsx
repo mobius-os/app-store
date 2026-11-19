@@ -1,5 +1,5 @@
 import { mapWithConcurrency, createUpdateBatch, updateBatchBusy, newestBatchSnapshot, normalizeBatchSnapshot, batchProgress as batchProgressOf } from './update-batch.js'
-import { openDetailEntry, closeDetailEntry } from './store-navigation.js'
+import { openDetailEntry, closeDetailEntry, backDetailEntry } from './store-navigation.js'
 import { restoredStoreLocation, storeLocation } from './store-location.js'
 import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
 // App Store — thin app shell. The module tree is declared in mobius.json's
@@ -16,7 +16,7 @@ import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.
 // Only App lives here: it owns top-level catalog/install/navigation state and
 // mounts marketplace browsing, publishing, app details, update review, and toast.
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
-import { CATALOG, CATALOG_URL } from './constants.js'
+import { CATALOG, CATALOG_URL, COMMUNITY_CATEGORIES } from './constants.js'
 import { CSS } from './theme.js'
 import {
   buildUpdateFailureMessage,
@@ -37,6 +37,8 @@ import {
   collectCategories,
   sourceAvailabilityStatus,
   communityCatalogPage,
+  communityRanking,
+  COMMUNITY_RANKINGS,
   communityCatalogItems,
   communityPublicationStatus,
   communityPublicationsByLocalApp,
@@ -46,6 +48,12 @@ import {
   findInstalled,
   isSystemCatalogItem,
   mergeCatalogEntries,
+  storeCategory,
+  libraryCollections,
+  resolveSavedApps,
+  catalogCategory,
+  catalogPublisher,
+  withAssignedCategories,
   mergeCommunityCatalog,
   mergeOfficialCommunityFeedback,
   otherInstalledCatalogItems,
@@ -65,6 +73,7 @@ import {
   needsLiveManifestFirst,
   showsSnapshotManifest,
   sortCatalogForDisplay,
+  storeListingLink,
   updateCandidateUrlsByInstalledId,
 } from './domain.js'
 import {
@@ -117,21 +126,25 @@ import {
   SYSTEM_SETUP_READY_KEY,
 } from './api.js'
 import { CatalogList } from './ui/CatalogList.jsx'
-import { CatalogFilters } from './ui/CatalogFilters.jsx'
+import { CatalogCard } from './ui/CatalogCard.jsx'
+import { ResolveAllButton, UpdateAllButton } from './ui/LibraryActions.jsx'
+import { LibraryTabs, libraryTabFor } from './ui/LibraryTabs.jsx'
 import { CatalogSkeleton } from './ui/CatalogSkeleton.jsx'
 import { DetailView } from './ui/DetailView.jsx'
-import { LibraryHealth } from './ui/LibraryHealth.jsx'
 import { PublisherTab } from './ui/PublisherTab.jsx'
-import { SelfUpdateBanner } from './ui/SelfUpdateBanner.jsx'
+import { SelfUpdateSheet, useSelfUpdate } from './ui/SelfUpdate.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 import { UpdateReviewModal, UpdateAgentChooser } from './ui/UpdateReviewModal.jsx'
-import { Search, X } from '@openai/apps-sdk-ui/components/Icon'
+import { useMobiusBars, usePhoneLayout } from './ui/phoneChrome.js'
+import { ChevronLeft, Compass, Grid, Plus, Search, Stack, X } from '@openai/apps-sdk-ui/components/Icon'
+import { CategoryIcon, Gamepad } from './ui/CategoryBrowse.jsx'
 
 export {
   appLifecycleFor,
   buildListingAgentMessage,
   listingDraftFromPreview,
   listingPayload,
+  savedListingSurvived,
   utf8Length,
   busyLabelForAction,
   catalogItemIdFromIntent,
@@ -145,7 +158,18 @@ export {
   CARD_DESCRIPTION_LIMIT,
   catalogAudience,
   catalogCardDescription,
-  catalogCollection,
+  catalogCategory,
+  catalogKind,
+  installsLabel,
+  rankedApps,
+  recentlyUpdatedApps,
+  recentUpdates,
+  newArrivals,
+  highestRated,
+  sortCategoryApps,
+  topRatedApps,
+  communityRanking,
+  withAssignedCategories,
   collectCategories,
   sourceAvailabilityStatus,
   communityCatalogPage,
@@ -216,6 +240,24 @@ export { createPublicationPreviewGate } from './ui/PublisherTab.jsx'
 // left first paint needlessly slow. 6 keeps concurrency modest against the raw
 // CDN while roughly halving the hydrate wall time.
 const MANIFEST_FETCH_CONCURRENCY = 6
+const DISCOVERY_TABS = new Set(['browse', 'apps', 'games', 'search'])
+// Bottom-bar icons for phones; the same sections as the header tabs. The SDK
+// has no controller glyph, so Games reuses the Store's own Gamepad.
+const TAB_ICONS = { browse: Compass, apps: Grid, games: Gamepad, library: Stack, search: Search }
+const STORE_TABS = [
+  { id: 'browse', label: 'Discover' },
+  { id: 'apps', label: 'Apps' },
+  { id: 'games', label: 'Games' },
+  { id: 'library', label: 'Library' },
+]
+// Phones search from their own tab, like the iPhone App Store; wider screens
+// keep the search field in the header.
+const PHONE_TABS = [...STORE_TABS, { id: 'search', label: 'Search' }]
+// The first window of community listings behind Discover, categories and the
+// ranked shelves; their pages offer Load more for the rest.
+const COMMUNITY_BROWSE_WINDOW = 96
+// How many apps each registry ranking returns for its shelf.
+const RANKED_SHELF_SIZE = 50
 
 function Toast({ toast, onDismiss }) {
   if (!toast) return null
@@ -382,16 +424,41 @@ export default function App({ appId, token }) {
     return typeof nav?.setLocation === 'function' ? restoredStoreLocation(nav.location) : null
   })
   const [tab, setTab] = useState(savedLocation?.tab || 'browse')
+  // Which publishing step Library's Your apps tab shows: home, choose or app.
+  const [publishView, setPublishView] = useState('home')
+  // Discover, Apps and Games share one community window; Library never needs it.
+  const discoveryTab = DISCOVERY_TABS.has(tab)
   const [query, setQuery] = useState(savedLocation?.query || '')
   const [activeCollection, setActiveCollection] = useState(null)
   const collectionNavRef = useRef(null)
+  // A category or creator page opened from an app page is a layer above it.
+  // The app's own Back step stays in place, so Back peels the layer off and the
+  // app is still there; closing and reopening Back steps at once is unreliable.
+  const overlaysRef = useRef([])        // [{ kind, handle, show, restore }]
+  const [overlay, setOverlay] = useState(null)   // top layer, for its Back label
+  // A category page, and a publishing step past Library's Your apps, are
+  // Back steps too.
+  const categoryNavRef = useRef(null)
+  const publishNavRef = useRef(null)
+  const leaveCategoryRef = useRef(null)
+  const closeLayersRef = useRef(null)
+  const closeTopLayerRef = useRef(null)
   const shelfScrollRef = useRef({})
   const homeScrollRef = useRef(0)
-  const [category, setCategory] = useState(savedLocation?.category || 'all')
+  const [category, setCategory] = useState(savedLocation?.tab === 'library' ? savedLocation.category : 'all')
+  // The selected category in the Apps and Games tabs; each tab keeps its own.
+  const [shelfCategories, setShelfCategories] = useState(() => ({
+    apps: savedLocation?.tab === 'apps' ? savedLocation.category : 'all',
+    games: savedLocation?.tab === 'games' ? savedLocation.category : 'all',
+  }))
+  const [categorySort, setCategorySort] = useState('top')
+  const [creatorFilter, setCreatorFilter] = useState({ name: '', value: 'all' })
+  const [communityCategories, setCommunityCategories] = useState(COMMUNITY_CATEGORIES)
   const [catalog, setCatalog] = useState(() =>
     CATALOG.map(c => ({ ...c, manifest: c.manifest || null, error: null }))
   )
   const [communityCatalog, setCommunityCatalog] = useState([])
+  const [communityRankings, setCommunityRankings] = useState({})
   const communityCatalogRef = useRef(communityCatalog)
   useEffect(() => { communityCatalogRef.current = communityCatalog }, [communityCatalog])
   const [communityError, setCommunityError] = useState('')
@@ -446,7 +513,64 @@ export default function App({ appId, token }) {
   // A section the open detail should scroll to ('reviews'), owned by the
   // navigation entry that requested it; see openDetailEntry.
   const [detailFocus, setDetailFocus] = useState('')
+  // Apps the owner saved for later, kept in this app's own storage.
+  const [savedIds, setSavedIds] = useState([])
+  useEffect(() => {
+    const store = window.mobius?.storage
+    if (!store?.get) return undefined
+    let live = true
+    store.get('saved.json').then((value) => { if (live && Array.isArray(value)) setSavedIds(value) }).catch(() => {})
+    return () => { live = false }
+  }, [])
+  // Storage and the toast stay outside the state updater, which React may run
+  // twice.
+  const toggleSaved = useCallback((item) => {
+    const saved = savedIds.includes(item.id)
+    const next = saved ? savedIds.filter((id) => id !== item.id) : [item.id, ...savedIds]
+    setSavedIds(next)
+    window.mobius?.storage?.set?.('saved.json', next)?.catch?.(() => {})
+    setToast({ kind: 'success', message: saved ? 'Removed from Saved' : 'Saved for later · find it in Library' })
+  }, [savedIds])
+  // iOS Safari applies :active press styles only once a touch listener exists.
+  useEffect(() => {
+    const noop = () => {}
+    document.addEventListener('touchstart', noop, { passive: true })
+    return () => document.removeEventListener('touchstart', noop)
+  }, [])
+  // Search suggestions: recent searches (kept in app storage) and top categories.
+  const [searchFocused, setSearchFocused] = useState(false)
+  const phone = usePhoneLayout()
+  const { barsHidden, showMobius } = useMobiusBars(phone)
+  // Search is a phone-only tab; a screen that grows past phone width lands on
+  // Discover with the header search field.
+  useEffect(() => { if (!phone && tab === 'search') setTab('browse') }, [phone, tab])
+  const [recentSearches, setRecentSearches] = useState([])
+  useEffect(() => {
+    let live = true
+    window.mobius?.storage?.get?.('recent-searches.json')
+      ?.then((value) => { if (live && Array.isArray(value)) setRecentSearches(value.slice(0, 5)) })?.catch?.(() => {})
+    return () => { live = false }
+  }, [])
+  const rememberSearch = useCallback((value) => {
+    const text = String(value || '').trim()
+    if (text.length < 2) return
+    setRecentSearches((current) => {
+      const next = [text, ...current.filter((entry) => entry !== text)].slice(0, 5)
+      window.mobius?.storage?.set?.('recent-searches.json', next)?.catch?.(() => {})
+      return next
+    })
+  }, [])
+  const forgetSearch = useCallback((value) => {
+    setRecentSearches((current) => {
+      const next = value === null ? [] : current.filter((entry) => entry !== value)
+      window.mobius?.storage?.set?.('recent-searches.json', next)?.catch?.(() => {})
+      return next
+    })
+  }, [])
+  // Coming back from an app page slides the store back in.
+  const [returning, setReturning] = useState(false)
   const showDetail = useCallback((item, focus = '') => {
+    if (!item) setReturning(true)
     setDetail(item)
     setDetailFocus(item ? focus : '')
   }, [])
@@ -472,17 +596,45 @@ export default function App({ appId, token }) {
   // back — the grid unmounts while a detail shows, so it would otherwise
   // re-mount scrolled to the top.
   const gridScrollRef = useRef(null)
+  // Phones: the Store bar slides away while you scroll down and comes back on
+  // any scroll up, like Google Play; the App Store update line stays in view.
+  const [barTucked, setBarTucked] = useState(false)
+  useEffect(() => {
+    setBarTucked(false)
+    const el = gridScrollRef.current
+    if (!phone || !el) return undefined
+    let anchor = el.scrollTop
+    let tucked = false
+    const onScroll = () => {
+      const y = el.scrollTop
+      if (y < 24) { tucked = false; anchor = y }
+      else if (!tucked && y > anchor + 12) { tucked = true; anchor = y }
+      else if (tucked && y < anchor - 12) { tucked = false; anchor = y }
+      else if ((tucked && y > anchor) || (!tucked && y < anchor)) anchor = y
+      setBarTucked(tucked)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [phone, tab, detail])
   const savedGridScrollRef = useRef(0)
+  // A tab press always lands on that tab's own page, like a phone's tab bar:
+  // pressing the current tab again leaves a category or collection open in it.
   const selectTab = useCallback((next) => {
-    if (next === 'browse') setCategory('all')
-    if (next === tab) return
+    if (next !== 'library') setCategory('all')
+    closeLayersRef.current?.()
     collectionNavRef.current?.close()
     collectionNavRef.current = null
+    categoryNavRef.current?.close()
+    categoryNavRef.current = null
+    publishNavRef.current?.close()
+    publishNavRef.current = null
+    setPublishView('home')
     setActiveCollection(null)
+    setShelfCategories((current) => (current[next] && current[next] !== 'all' ? { ...current, [next]: 'all' } : current))
     savedGridScrollRef.current = 0
     if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
     setTab(next)
-  }, [tab])
+  }, [])
   const [pendingUninstall, setPendingUninstall] = useState(null)
   // pendingUninstall: the installed app row from /api/apps/.
   // Browser modal dialogs are silently no-op'd inside the AppCanvas
@@ -519,8 +671,6 @@ export default function App({ appId, token }) {
   // A card error the same action may get past offers "Try again" (keyed by
   // item id) instead of "Ask agent".
   const [cardErrorRetries, setCardErrorRetries] = useState({})
-  const [searchOpen, setSearchOpen] = useState(false)
-  const searchVisible = searchOpen || !!query
   // Covers every control, including assistive clicks, before it can reuse a
   // restore-owned Back entry. Programmatic restoration dispatches no DOM events.
   const ownerInteraction = {
@@ -691,7 +841,10 @@ export default function App({ appId, token }) {
         const remote = await remoteCatalogPromise
         if (cancelled) return
         setCatalogLoadError(remote === null)
-        const entries = mergeCatalogEntries(CATALOG, remote)
+        if (remote?.communityCategories) {
+          setCommunityCategories({ ...COMMUNITY_CATEGORIES, ...remote.communityCategories })
+        }
+        const entries = mergeCatalogEntries(CATALOG, remote?.apps)
         // A baked manifest gives every discovery card a fast first paint, but
         // it must not freeze a listing at the last Store release. Installed
         // apps refresh here, before the startup source check; every other
@@ -796,12 +949,26 @@ export default function App({ appId, token }) {
     try {
       // Refresh the loaded window atomically: do not discard pages the owner
       // already loaded, or replace them with a partial failed refresh.
-      const target = background ? Math.max(limit, communityOffset) : limit
+      // Category pages and shelves group whatever is loaded, so an unsearched
+      // window starts wide; a search stays one page.
+      const firstWindow = query.trim() ? limit : COMMUNITY_BROWSE_WINDOW
+      const target = background ? Math.max(firstWindow, communityOffset) : firstWindow
+      // The shelves' rankings refresh with the browse window. A failed
+      // ranking keeps the last one rather than hiding its shelf.
+      const rankingsRequest = append || query.trim() ? null : Promise.all(
+        COMMUNITY_RANKINGS.map((sort) => loadCommunityApps(token, {
+          sort, limit: RANKED_SHELF_SIZE, signal: controller.signal,
+        }).then((payload) => [sort, communityRanking(payload, sort)], () => null)),
+      )
       const page = await loadCommunityWindow(
         params => loadCommunityApps(token, { ...params, query: query.trim(), signal: controller.signal }),
         { offset, limit, target: append ? offset + limit : target },
       )
+      const rankings = rankingsRequest ? (await rankingsRequest).filter(Boolean) : []
       if (communityRequestRef.current !== requestId) return
+      if (rankings.length) {
+        setCommunityRankings((current) => ({ ...current, ...Object.fromEntries(rankings) }))
+      }
       setCommunityCatalog((current) => append
         ? mergeCommunityCatalog(current, page.items)
         : page.items)
@@ -856,8 +1023,10 @@ export default function App({ appId, token }) {
     }
   }, [token, newestRead])
 
+  // Library › Saved also needs the community listings its saved apps come from.
+  const savedOpen = tab === 'library' && category === 'saved' && savedIds.length > 0
   useEffect(() => {
-    if (tab !== 'browse') return undefined
+    if (!DISCOVERY_TABS.has(tab) && !savedOpen) return undefined
     const timer = window.setTimeout(() => {
       setCommunityOffset(0)
       refreshCommunity({ append: false })
@@ -868,21 +1037,17 @@ export default function App({ appId, token }) {
       communityRequestRef.current += 1
       communityBusyRef.current = false
     }
-  // Pagination state changes after a page arrives; only query/tab changes or
-  // an explicit Load more action should issue another request.
+  // Pagination state changes after a page arrives; only query changes, entering
+  // discovery, or an explicit Load more action should issue another request.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, token, query])
-
-  useEffect(() => {
-    if (searchOpen) searchInputRef.current?.focus()
-  }, [searchOpen])
+  }, [discoveryTab, savedOpen, token, query])
 
   const refreshCommunityRef = useRef(refreshCommunity)
   useLayoutEffect(() => { refreshCommunityRef.current = refreshCommunity }, [refreshCommunity])
   useEffect(() => {
-    if (tab !== 'browse') return undefined
+    if (!DISCOVERY_TABS.has(tab)) return undefined
     return watchCatalogFreshness(() => refreshCommunityRef.current({ background: true }))
-  }, [tab])
+  }, [discoveryTab])
 
 
   const refreshGithubIdentity = useCallback(async () => {
@@ -899,7 +1064,7 @@ export default function App({ appId, token }) {
 
   // Contribute owns connection setup. Refresh the inherited status when the
   // owner comes back from it; App Store never starts a second OAuth flow.
-  useOwnerReturn(tab === 'publish' && !githubIdentity?.connected, refreshGithubIdentity)
+  useOwnerReturn(tab === 'library' && category === 'yours' && !githubIdentity?.connected, refreshGithubIdentity)
 
   // Settings › Accounts › Möbius owns sign-in and the handle; the handle
   // arrives with the publications viewer, so a re-read takes both.
@@ -1079,7 +1244,7 @@ export default function App({ appId, token }) {
   const detailFeedback = communityFeedbackOf(detail)
   const reviewGateId = detailFeedback?.id
     && reviewAccountAction(detailFeedback.review_eligibility, mobiusAccount) ? detailFeedback.id : ''
-  const mobiusAccountPending = tab === 'publish' && !(mobiusAccount === 'signed_in' && publisherHandle)
+  const mobiusAccountPending = tab === 'library' && category === 'yours' && !(mobiusAccount === 'signed_in' && publisherHandle)
   useOwnerReturn(mobiusAccountPending || !!reviewGateId, () => Promise.allSettled([
     refreshMobiusAccount(),
     reviewGateId && refreshReviewEligibility(reviewGateId),
@@ -1535,11 +1700,13 @@ export default function App({ appId, token }) {
 
   // Each nested level owns one reversible host entry. No iframe history or
   // timeout fallback: an unowned view would strand the device's Back gesture.
-  const openDetail = useCallback((item, signal, { focus = '' } = {}) => openDetailEntry(navDetailRef, item, {
+  const openDetail = useCallback((item, signal, { focus = '', push = false, below = null } = {}) => openDetailEntry(navDetailRef, item, {
     nav: window.mobius.nav,
     show: showDetail,
     signal,
     focus,
+    push,
+    below,
     cancelPendingDestination,
     prepare: target => {
       reviewCapabilities(target)
@@ -1549,6 +1716,7 @@ export default function App({ appId, token }) {
 
   const openCollection = useCallback(async (id, signal) => {
     if (collectionNavRef.current) return
+    const fromTab = DISCOVERY_TABS.has(tab) ? tab : 'browse'
     homeScrollRef.current = gridScrollRef.current?.scrollTop || 0
     const leave = () => {
       cancelPendingDestination()
@@ -1560,7 +1728,7 @@ export default function App({ appId, token }) {
     handle = window.mobius.nav.open('app-store-collection', {
       onBack: leave,
       onForward: () => {
-        setTab('browse')
+        setTab(fromTab)
         cancelPendingDestination()
         setCategory('all')
         collectionNavRef.current = handle
@@ -1580,9 +1748,10 @@ export default function App({ appId, token }) {
     if (status !== 'owned') { collectionNavRef.current = null; return }
     savedGridScrollRef.current = 0
     setActiveCollection(id)
-  }, [cancelPendingDestination])
+  }, [cancelPendingDestination, tab])
 
   const closeCollection = useCallback(() => {
+    if (closeTopLayerRef.current?.('creator')) return
     collectionNavRef.current?.close()
     collectionNavRef.current = null
     savedGridScrollRef.current = homeScrollRef.current
@@ -1776,7 +1945,9 @@ export default function App({ appId, token }) {
     if (!batch) return
     updateBatchRef.current = null
     const { batchId, phase, entries } = batch.state
-    if (!batchId) batch.dispose()
+    // A review closed before anything was sent also drops the Store's own
+    // update that Update all queued behind it.
+    if (!batchId) { batch.dispose(); selfAfterBatchRef.current = false }
     else {
       batchControllersRef.current.set(batchId, batch)
       if (phase === 'submitting' || batch.uncertain) {
@@ -1925,9 +2096,10 @@ export default function App({ appId, token }) {
   }
 
   // Individual and batch updates use the same read-only candidate contract.
-  const handleCatalogUpdate = async (item, opts = {}) => {
+  // A row's Get opens the app page the same way tapping its name does.
+  const handleCatalogUpdate = async (item, opts = {}, openPage = openDetailFromPage) => {
     if (!opts.isUpdate) {
-      openDetail(item)
+      openPage(item)
       return
     }
     if (busy || updateBatchRef.current) return
@@ -2115,6 +2287,53 @@ export default function App({ appId, token }) {
   }, [agentErrorItemId, installed, token])
 
   const closeDetail = useCallback(() => closeDetailEntry(navDetailRef, showDetail), [showDetail])
+  const backDetail = useCallback(() => backDetailEntry(navDetailRef, showDetail), [showDetail])
+
+  // Layers above an app page (see overlaysRef). `show` draws the layer,
+  // `restore` returns to exactly what was beneath it.
+  const openLayer = (kind, show, restore, label) => {
+    const layer = { kind, show, restore, label, handle: null }
+    const enter = () => { showDetail(null); show(); setOverlay({ kind, label }) }
+    layer.handle = window.mobius.nav.open(`app-store-${kind}`, {
+      onBack: () => {
+        overlaysRef.current = overlaysRef.current.filter((entry) => entry !== layer)
+        setOverlay(overlaysRef.current.at(-1) || null)
+        restore()
+      },
+      onForward: () => { overlaysRef.current = [...overlaysRef.current, layer]; enter() },
+    })
+    overlaysRef.current = [...overlaysRef.current, layer]
+    enter()
+    layer.handle.outcome.then(({ status }) => {
+      if (status === 'owned' || !overlaysRef.current.includes(layer)) return
+      overlaysRef.current = overlaysRef.current.filter((entry) => entry !== layer)
+      setOverlay(overlaysRef.current.at(-1) || null)
+    })
+  }
+  // The on-screen Back of a layer page: peel the top layer off.
+  closeTopLayerRef.current = (kind) => {
+    const layer = overlaysRef.current.at(-1)
+    if (!layer || (kind && layer.kind !== kind) || detail) return false
+    overlaysRef.current = overlaysRef.current.slice(0, -1)
+    setOverlay(overlaysRef.current.at(-1) || null)
+    layer.handle.close()
+    layer.restore()
+    return true
+  }
+  // Moving to another tab leaves every layer and the app pages under them.
+  closeLayersRef.current = () => {
+    if (!overlaysRef.current.length) return
+    for (const layer of [...overlaysRef.current].reverse()) layer.handle.close()
+    overlaysRef.current = []
+    setOverlay(null)
+    closeDetailEntry(navDetailRef, showDetail)
+  }
+  // An app opened from a layer page goes above it, and Back returns to it.
+  const openDetailFromPage = (item) => {
+    const layer = !detail ? overlaysRef.current.at(-1) : null
+    return layer ? openDetail(item, undefined, { push: true, below: () => { layer.show(); setOverlay({ kind: layer.kind, label: layer.label }) } })
+      : openDetail(item)
+  }
 
   const handleCommunityWithdraw = useCallback(async () => {
     const community = detail?.community
@@ -2155,7 +2374,7 @@ export default function App({ appId, token }) {
   const onTabsKeyDown = (e) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
     e.preventDefault()
-    const order = ['browse', 'library', 'publish']
+    const order = ['browse', 'apps', 'games', 'library']
     const i = order.indexOf(tab)
     const next = e.key === 'ArrowRight'
       ? order[(i + 1) % order.length]
@@ -2166,11 +2385,11 @@ export default function App({ appId, token }) {
 
   const displayCatalog = useMemo(() => {
     const remainingInstalledIds = new Set(otherInstalledCatalogSources.map((item) => item.id))
-    return sortCatalogForDisplay([
+    return withAssignedCategories(sortCatalogForDisplay([
       ...listedCatalog,
       ...otherInstalledCatalog.filter((item) => remainingInstalledIds.has(item.id)),
-    ])
-  }, [listedCatalog, otherInstalledCatalog, otherInstalledCatalogSources])
+    ]), communityCategories)
+  }, [listedCatalog, otherInstalledCatalog, otherInstalledCatalogSources, communityCategories])
   const detailCommunityFeedback = communityFeedbackOf(detail)
   const detailCommunityFeedbackKey = detailCommunityFeedback
     ? `${detailCommunityFeedback.id}:${detailCommunityFeedback.revision_id}`
@@ -2193,23 +2412,16 @@ export default function App({ appId, token }) {
     return byId
   }, [displayCatalog, installed, updateChecks, installedLoadError, setupCompletions, systemSetupReady])
 
+  // The Store's own update: a Library row, counted in Update all.
+  const selfUpdate = useSelfUpdate({ appId, token })
   const filterCounts = useMemo(() => {
-    let updates = 0
-    let setup = 0
-    let installedCount = 0
+    let updates = selfUpdate.pending ? 1 : 0
     for (const item of displayCatalog) {
       const lifecycle = lifecycleById.get(item.id)
-      if (!lifecycle) continue
-      if (lifecycle.key === 'update' || lifecycle.key === 'conflict') updates += 1
-      if (lifecycle.installedApp) installedCount += 1
-      if (lifecycle.setupNeedsAttention) setup += 1
+      if (lifecycle?.key === 'update' || lifecycle?.key === 'conflict') updates += 1
     }
-    return {
-      update: updates,
-      installed: installedCount,
-      setup,
-    }
-  }, [displayCatalog, lifecycleById])
+    return { update: updates }
+  }, [selfUpdate.pending, displayCatalog, lifecycleById])
 
   // Publishing and reviews need a linked mobius.you account with a handle.
   // Signing in and choosing the handle happen in Settings › Accounts › Möbius.
@@ -2227,6 +2439,27 @@ export default function App({ appId, token }) {
       .map(entry => Number(entry.app_id))))
     return displayCatalog.filter(item => appIds.has(lifecycleById.get(item.id)?.installedApp?.id)).map(item => item.id)
   }, [runningBatches, displayCatalog, lifecycleById])
+  // Per-app stage of a running server batch (queued or applying), for the
+  // in-place progress bars on cards and the app page.
+  const updateStages = useMemo(() => {
+    const byAppId = new Map()
+    for (const batch of runningBatches) for (const entry of batch.entries) {
+      if (entry.status === 'queued' || entry.status === 'applying') byAppId.set(Number(entry.app_id), entry.status)
+    }
+    const stages = {}
+    for (const item of displayCatalog) {
+      const stage = byAppId.get(lifecycleById.get(item.id)?.installedApp?.id)
+      if (stage) stages[item.id] = stage
+    }
+    return stages
+  }, [runningBatches, displayCatalog, lifecycleById])
+  // Updates applying on the server after their dialog closed: real counts.
+  const backgroundProgress = (() => {
+    const entries = runningBatches.flatMap(batch => batch.entries)
+    if (!entries.some(entry => entry.status === 'queued' || entry.status === 'applying')) return null
+    const { finished, total } = batchProgressOf(entries)
+    return total ? { current: finished, total } : null
+  })()
   const transactionProgress = updateBatchBusy(updateTransaction)
     ? batchProgressOf(updateTransaction.entries)
     : null
@@ -2251,7 +2484,7 @@ export default function App({ appId, token }) {
       return
     }
     setResolvingAll(true)
-    setCategory('update')
+    setCategory('needs')
     let started = 0
     let failed = 0
     let firstChatId = null
@@ -2279,55 +2512,98 @@ export default function App({ appId, token }) {
     if (failed) parts.push(`${failed} could not start`)
     setToast({
       kind: failed ? 'error' : 'success',
-      message: `${parts.join('; ') || 'No conflicts to resolve'}.`,
+      message: `${parts.join('; ') || 'Nothing to fix'}.`,
       action: firstChatId ? { label: 'Open agent', onClick: () => openChat(firstChatId) } : null,
     })
   }
 
+  // Update all covers the App Store too, like any other app, and reviews it
+  // in its own sheet. It goes last: installing it reloads the Store, so the
+  // other apps' updates start first (they finish on the server either way).
+  const selfInUpdateAll = selfUpdate.kind === 'update' && selfUpdate.phase === 'idle'
+  const updateAllCount = updateItems.length + (selfInUpdateAll ? 1 : 0)
+  const selfAfterBatchRef = useRef(false)
   const handleUpdateAll = async () => {
-    if (!updateItems.length || busy || updateBatchRef.current || installedLoadError) return
+    if (!updateAllCount || busy || updateBatchRef.current || installedLoadError) return
+    if (tab !== 'library' || libraryTab !== 'update') { closeDetail(); selectTab('library'); setCategory('update') }
+    if (!updateItems.length) { selfUpdate.openPanel(); return }
+    selfAfterBatchRef.current = selfInUpdateAll
     await openUpdateBatch()?.check(updateItems)
   }
+  useEffect(() => {
+    if (!selfAfterBatchRef.current || updateTransaction || runningBatches.length || checkingAllUpdates) return
+    selfAfterBatchRef.current = false
+    if (selfUpdate.kind === 'update') selfUpdate.openPanel()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateTransaction, runningBatches.length, checkingAllUpdates])
 
 
-  const visibleCatalog = useMemo(() => {
-    const specialFilters = new Set(['update', 'setup', 'installed'])
-    const catalogCategory = specialFilters.has(category) ? 'all' : category
-    const matches = filterCatalog(displayCatalog, { query, category: catalogCategory })
-    if (category === 'update') {
-      return matches.filter((item) => {
-        const lifecycle = lifecycleById.get(item.id)
-        return lifecycle?.key === 'update' || lifecycle?.key === 'conflict'
-      })
-    }
-    if (category === 'setup') {
-      return matches.filter((item) => lifecycleById.get(item.id)?.setupNeedsAttention)
-    }
-    if (category === 'installed') {
-      return matches.filter((item) => !!lifecycleById.get(item.id)?.installedApp)
-    }
-    return matches
-  }, [displayCatalog, query, category, lifecycleById])
+  const visibleCatalog = useMemo(
+    () => filterCatalog(displayCatalog, { query }),
+    [displayCatalog, query],
+  )
 
   const libraryCatalog = useMemo(
     () => visibleCatalog.filter((item) => !!lifecycleById.get(item.id)?.installedApp),
     [visibleCatalog, lifecycleById],
   )
-
-  const attentionCount = useMemo(
-    () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'conflict').length,
-    [displayCatalog, lifecycleById],
+  // Library's tabs: what needs a decision, waiting updates, everything
+  // installed and saved apps. The Store's own update counts where it shows.
+  const libraryGroups = useMemo(
+    () => libraryCollections(libraryCatalog, lifecycleById),
+    [libraryCatalog, lifecycleById],
   )
+  const groupCount = (id) => libraryGroups.find((group) => group.id === id)?.items.length || 0
+
+  // Saved community apps outside the loaded window are read by id, once the
+  // window that may already hold them has settled. A failed read is tried
+  // again the next time Saved opens.
+  const [savedLookups, setSavedLookups] = useState({})
+  const savedReadsRef = useRef(new Set())
+  const savedApps = useMemo(
+    () => resolveSavedApps(savedIds, displayCatalog, savedLookups, { catalogHydrated }),
+    [savedIds, displayCatalog, savedLookups, catalogHydrated],
+  )
+  useEffect(() => {
+    if (!savedOpen) return
+    setSavedLookups((current) => Object.values(current).includes('failed')
+      ? Object.fromEntries(Object.entries(current).filter(([, value]) => value !== 'failed'))
+      : current)
+  }, [savedOpen])
+  useEffect(() => {
+    if (!savedOpen || communityLoading) return
+    for (const id of savedApps.toRead) {
+      if (savedReadsRef.current.has(id)) continue
+      savedReadsRef.current.add(id)
+      loadCommunityApp(token, id.slice('community:'.length))
+        .then((row) => communityCatalogItems([row]).find((item) => item.id === id) || 'gone',
+          (error) => error?.status === 404 ? 'gone' : 'failed')
+        .then((result) => {
+          savedReadsRef.current.delete(id)
+          setSavedLookups((current) => ({ ...current, [id]: result }))
+        })
+    }
+  }, [savedOpen, communityLoading, savedApps.toRead, token])
+
+  const libraryCounts = {
+    needs: groupCount('attention') + (selfUpdate.kind === 'conflict' && selfUpdate.pending ? 1 : 0),
+    update: groupCount('updates') + (selfUpdate.kind === 'update' && selfUpdate.pending ? 1 : 0),
+    installed: libraryCatalog.length,
+    saved: savedApps.items.length,
+  }
+  const libraryTab = query.trim() ? 'installed' : libraryTabFor(category, libraryCounts)
 
   useEffect(() => {
     const nav = window.mobius?.nav
     if (!intentDestination && typeof nav?.setLocation === 'function') {
       const location = storeLocation({
-        tab, category, query, activeCollection, detailId: detail?.id,
+        tab,
+        category: tab === 'apps' || tab === 'games' ? shelfCategories[tab] : category,
+        query, activeCollection, detailId: detail?.id,
       })
       if (location) nav.setLocation(location)
     }
-  }, [intentDestination, tab, category, query, activeCollection, detail?.id])
+  }, [intentDestination, tab, category, shelfCategories, query, activeCollection, detail?.id])
 
   const destinationResolution = useMemo(() =>
     resolveCatalogItemIntent(displayCatalog, intentDestination?.itemId, installed),
@@ -2381,7 +2657,9 @@ export default function App({ appId, token }) {
           }
         }
         if (signal.aborted) return
-        if (!destination.restored && resolution.toast) setToast(resolution.toast)
+        // A community listing found by lookup was never actually unavailable.
+        const found = lookup && item?.manifest
+        if (!destination.restored && resolution.toast && !found) setToast(resolution.toast)
         if (!destination.restored && resolution.action !== 'unavailable') {
           selectTab('browse')
           setCategory('all')
@@ -2402,6 +2680,139 @@ export default function App({ appId, token }) {
     closeDetail, closeCollection, selectTab, openCollection, openDetail])
 
   // Detail view replaces the main layout when set.
+  const topCategories = (() => {
+    const counts = new Map()
+    for (const item of displayCatalog) { const id = catalogCategory(item); counts.set(id, (counts.get(id) || 0) + 1) }
+    return [...counts].map(([id, count]) => ({ category: storeCategory(id), count }))
+      .filter((entry) => entry.category).sort((a, b) => b.count - a.count)
+  })()
+  // A category page in Apps or Games is its own Back step.
+  const showCategory = (kind, id) => {
+    if (tab !== kind) selectTab(kind)
+    setShelfCategories((current) => ({ ...current, [kind]: id }))
+    setCategorySort('top')
+    if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+    if (categoryNavRef.current) return
+    const handle = window.mobius.nav.open('app-store-category', {
+      onBack: () => { categoryNavRef.current = null; leaveCategoryRef.current?.(kind, true) },
+      onForward: () => {
+        categoryNavRef.current = handle
+        if (tab !== kind) setTab(kind)
+        setShelfCategories((current) => ({ ...current, [kind]: id }))
+      },
+    })
+    categoryNavRef.current = handle
+    handle.outcome.then(({ status }) => {
+      if (status !== 'owned' && categoryNavRef.current === handle) categoryNavRef.current = null
+    })
+  }
+  const leaveCategory = (kind, entryClosed = false) => {
+    if (!entryClosed && closeTopLayerRef.current?.('category')) return
+    if (!entryClosed) { categoryNavRef.current?.close(); categoryNavRef.current = null }
+    setShelfCategories((current) => ({ ...current, [kind]: 'all' }))
+  }
+  leaveCategoryRef.current = leaveCategory
+  const browseCategory = (id) => {
+    const kind = storeCategory(id)?.kind
+    if (!kind) return
+    setQuery('')
+    showCategory(kind, id)
+  }
+  // Publishing lives in Library's Your apps tab. Its steps past that list
+  // (choosing an app, one published app, a listing review) share one Back
+  // step that returns to Your apps.
+  const showPublishStep = (next) => {
+    setPublishView(next)
+    if (next === 'home') { publishNavRef.current?.close(); publishNavRef.current = null; return }
+    if (publishNavRef.current) return
+    const handle = window.mobius.nav.open('app-store-publish', {
+      onBack: () => { publishNavRef.current = null; setPublishView('home') },
+      onForward: () => { publishNavRef.current = handle; setTab('library'); setCategory('yours'); setPublishView(next) },
+    })
+    publishNavRef.current = handle
+    handle.outcome.then(({ status }) => {
+      if (status !== 'owned' && publishNavRef.current === handle) publishNavRef.current = null
+    })
+  }
+  // Publish an app opens Your apps from any Library tab.
+  const openYourApps = (step = 'home') => {
+    if (tab !== 'library') selectTab('library')
+    setQuery('')
+    setCategory('yours')
+    if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+    showPublishStep(step)
+  }
+  // Related apps for an app page: more by its developer, then others in its
+  // category from other developers.
+  const relatedFor = (item) => {
+    if (!item) return null
+    const developer = catalogPublisher(item)
+    const category = catalogCategory(item)
+    const others = displayCatalog.filter((entry) => entry.id !== item.id && entry.manifest)
+    return {
+      byDeveloper: others.filter((entry) => catalogPublisher(entry) === developer),
+      similar: others.filter((entry) => catalogCategory(entry) === category && catalogPublisher(entry) !== developer),
+    }
+  }
+  const renderDetailRow = (item) => (
+    <CatalogCard key={item.id} item={item} installed={installed} updateChecks={updateChecks}
+      onPick={(next) => { if (next.manifest) openDetail(next, undefined, { push: true }) }}
+      onUpdate={(next, opts) => handleCatalogUpdate(next, opts, page => openDetail(page, undefined, { push: true }))} onOpenInstalled={handleOpenInstalled} onRetryInstalled={handleRetryInstalled}
+      onReviewUpdate={handleReviewUpdate} busy={busyItemId === item.id || updatingItemIds.includes(item.id)}
+      busyActionKind={busyItemId === item.id ? busyActionKind : updatingItemIds.includes(item.id) ? 'update' : null}
+      blocked={busy && busyItemId !== item.id} token={token} installedUnavailable={!!installedLoadError}
+      setupCompletions={setupCompletions} systemSetupReady={systemSetupReady} layout="row" />
+  )
+  // What is beneath a layer opened from the current app page.
+  const pageBeneath = () => ({ tab, collection: activeCollection, level: navDetailRef.current })
+  const restorePage = (under) => {
+    setTab(under.tab)
+    setActiveCollection(under.collection)
+    if (under.level) showDetail(under.level.item, under.level.focus)
+  }
+  const openDeveloper = (name) => {
+    const under = pageBeneath()
+    openLayer('creator', () => {
+      if (!DISCOVERY_TABS.has(under.tab)) setTab('browse')
+      setActiveCollection(`dev:${name}`)
+      if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+    }, () => restorePage(under), under.level?.item?.manifest?.name)
+  }
+  const openCategoryFromApp = (kind, id) => {
+    const under = pageBeneath()
+    openLayer('category', () => {
+      setTab(kind)
+      setActiveCollection(null)
+      setShelfCategories((current) => ({ ...current, [kind]: id }))
+      setCategorySort('top')
+      if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+    }, () => {
+      setShelfCategories((current) => ({ ...current, [kind]: 'all' }))
+      restorePage(under)
+    }, under.level?.item?.manifest?.name)
+  }
+  const shareApp = async (item) => {
+    const name = item.manifest?.name || item.name
+    // The app's Store page on this Möbius, not its source repository.
+    const url = storeListingLink(item, window.location.origin, appId)
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: name, text: `${name} on the Möbius App Store`, url: url || undefined })
+        return
+      } catch (error) {
+        // Closing the share sheet is a choice, not a failure. Anything else
+        // (no sheet on this device, or the frame was refused) falls back to copying.
+        if (error?.name === 'AbortError') return
+      }
+    }
+    // The app frame is sandboxed: copy through the runtime's clipboard broker,
+    // which can hand the write to the shell when the frame itself is denied.
+    const copied = await window.mobius?.clipboard?.writeText(url || name)
+    setToast(copied
+      ? { kind: 'success', message: url ? 'Link copied' : 'Name copied' }
+      : { kind: 'error', message: "Couldn't share or copy this app's link." })
+  }
+
   if (detail) {
     return (
       <div className="st-root" {...ownerInteraction}>
@@ -2414,7 +2825,7 @@ export default function App({ appId, token }) {
           uninstalledApp={findInstalled(uninstalledApps, detail)}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
           installed={installed}
-          onBack={closeDetail}
+          onBack={backDetail}
           onInstall={(item, opts) => opts?.isUpdate
             ? handleCatalogUpdate(item, opts)
             : handleInstall(item)}
@@ -2448,6 +2859,17 @@ export default function App({ appId, token }) {
           installedUnavailable={!!installedLoadError}
           setupCompletions={setupCompletions}
           systemSetupReady={systemSetupReady}
+          related={relatedFor(detail)}
+          renderRow={renderDetailRow}
+          onOpenDeveloper={openDeveloper}
+          onOpenCategory={(id) => {
+            const kind = storeCategory(id)?.kind
+            if (kind) openCategoryFromApp(kind, id)
+          }}
+          saved={savedIds.includes(detail.id)}
+          onToggleSaved={toggleSaved}
+          onShare={shareApp}
+          updateStage={updateStages[detail.id] || null}
         />
         {pendingUninstall && (
           <UninstallConfirmModal
@@ -2477,11 +2899,104 @@ export default function App({ appId, token }) {
     )
   }
 
+  // Recent searches and categories to browse: the header field's dropdown on
+  // wider screens, the Search tab's own page on phones.
+  const searchSuggestions = (categoryCount) => (
+    <>
+                {recentSearches.length ? (
+                  <>
+                    <div className="st-qdrop-head"><b>Recent</b><button type="button" onClick={() => forgetSearch(null)}>Clear</button></div>
+                    {recentSearches.map((entry) => (
+                      <div className="st-qdrop-row" key={entry}>
+                        <button type="button" className="st-qdrop-item" onClick={() => setQuery(entry)}>
+                          <Search width={16} height={16} aria-hidden="true" /><span>{entry}</span>
+                        </button>
+                        <button type="button" className="st-qdrop-x" aria-label={`Remove ${entry}`} onClick={() => forgetSearch(entry)}><X width={12} height={12} /></button>
+                      </div>
+                    ))}
+                  </>
+                ) : null}
+                <div className="st-qdrop-head"><b>Browse</b></div>
+                {topCategories.slice(0, categoryCount).map(({ category, count }) => (
+                  <button key={category.id} type="button" className="st-qdrop-item"
+                    onClick={() => { searchInputRef.current?.blur(); browseCategory(category.id) }}>
+                    <CategoryIcon category={category} size="sm" /><span>{category.title}</span><em>{count}</em>
+                  </button>
+                ))}
+    </>
+  )
+  const searchBox = (
+    <>
+            {/* Focus anywhere in the field or its suggestions keeps them open,
+                so Tab can move from the field into a suggestion. */}
+            <div className="st-searchwrap" onFocus={() => setSearchFocused(true)}
+              onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSearchFocused(false) }}>
+            <label className="st-searchbox" htmlFor="st-catalog-search">
+              <Search width="1em" height="1em" aria-hidden="true" />
+              <span className="st-sr-only">Search apps and games</span>
+              <input
+                ref={searchInputRef}
+                id="st-catalog-search"
+                className="st-search-input"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') rememberSearch(query); if (event.key === 'Escape') event.currentTarget.blur() }}
+                placeholder="Search apps and games"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {query ? (
+                <button type="button" className="st-search-clear" aria-label="Clear search"
+                  onClick={() => { setQuery(''); searchInputRef.current?.focus() }}>
+                  <X width="1em" height="1em" aria-hidden="true" />
+                </button>
+              ) : null}
+            </label>
+            {searchFocused && !query.trim() && !phone ? (
+              <div className="st-qdrop" role="group" aria-label="Search suggestions" onMouseDown={(event) => event.preventDefault()}>
+                {searchSuggestions(5)}
+              </div>
+            ) : null}
+            </div>
+            {searchFocused || query ? (
+              <button type="button" className="st-search-cancel"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => { setQuery(''); searchInputRef.current?.blur(); setSearchFocused(false) }}>Cancel</button>
+            ) : null}
+    </>
+  )
+  // A category page in Apps or Games has its own heading and Back link, so
+  // the tab's big title gives way to it.
+  const inCategory = (tab === 'apps' || tab === 'games') && (shelfCategories[tab] || 'all') !== 'all'
+  const yourAppsOpen = tab === 'library' && libraryTab === 'yours'
+
   return (
     <div className="st-root" {...ownerInteraction}>
       <style>{CSS}</style>
       <h1 className="st-sr-only">App Store</h1>
-      <div className="st-header">
+      {/* Phones: the App Store's own bar, fixed above the page so it stays put
+          while you scroll. The way back to Möbius on the left, the Store's
+          name in the middle, your profile (and publishing) on the right. */}
+      {phone ? (
+        <div className={`st-phonebar${barTucked ? ' is-tucked' : ''}`}>
+          <div className="st-storebar">
+            <div className="st-storebar-start">
+              {barsHidden ? (
+                <button type="button" className="st-mobius-back" onClick={showMobius}>
+                  <ChevronLeft width={22} height={22} aria-hidden="true" /> Möbius
+                </button>
+              ) : null}
+            </div>
+            <div className="st-storebar-brand" aria-hidden="true">
+              <img src={`/api/apps/${appId}/icon?size=64`} alt="" width={26} height={26} />
+              <span>App Store</span>
+            </div>
+            <div className="st-storebar-end" />
+          </div>
+        </div>
+      ) : null}
+      {phone ? null : <div className="st-header">
         <div className="st-title-row">
           <div className="st-store-brand">
             <img
@@ -2499,108 +3014,86 @@ export default function App({ appId, token }) {
             <span className="st-brand-fallback" style={{ display: 'none' }} aria-hidden="true">·</span>
             <span className="st-brand-name">App Store</span>
           </div>
-          <div className="st-seg is-accent st-tabs" role="tablist" aria-label="Browse mode"
+          <div className="st-tabs">
+          <div className="st-tablist" role="tablist" aria-label="Store sections"
                onKeyDown={onTabsKeyDown}>
-            <button role="tab" id="st-tab-browse"
-                    aria-selected={tab === 'browse'}
-                    aria-controls="st-tabpanel"
-                    tabIndex={tab === 'browse' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'browse' ? ' is-active' : ''}`}
-                    onClick={() => selectTab('browse')}>
-              Browse
-            </button>
-            <button role="tab" id="st-tab-library"
-                    aria-selected={tab === 'library'}
-                    aria-controls="st-tabpanel"
-                    tabIndex={tab === 'library' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'library' ? ' is-active' : ''}`}
-                    onClick={() => { selectTab('library'); setCategory('all') }}>
-              Library
-              {filterCounts.update > 0 && (
-                <span
-                  className="st-tab-count"
-                  aria-label={`${filterCounts.update} updates available`}
-                >
-                  {filterCounts.update}
-                </span>
-              )}
-            </button>
-            <button role="tab" id="st-tab-publish"
-                    aria-selected={tab === 'publish'}
-                    aria-controls="st-tabpanel"
-                    tabIndex={tab === 'publish' ? 0 : -1}
-                    className={`st-seg-btn${tab === 'publish' ? ' is-active' : ''}`}
-                    onClick={() => selectTab('publish')}>
-              Publish
-            </button>
+            {STORE_TABS.map(({ id, label }) => {
+              const selected = tab === id
+              return (
+                <button role="tab" id={`st-tab-${id}`} key={id}
+                        aria-selected={selected}
+                        aria-controls="st-tabpanel"
+                        tabIndex={selected ? 0 : -1}
+                        className={`st-tab${selected ? ' is-active' : ''}`}
+                        onClick={() => { selectTab(id); if (id === 'library') setCategory('all') }}>
+                  {label}
+                  {id === 'library' && filterCounts.update > 0 && (
+                    <span
+                      className="st-tab-count"
+                      aria-label={`${filterCounts.update} updates available`}
+                    >
+                      {filterCounts.update}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
-          <div className={`st-header-search${searchVisible ? ' is-open' : ''}`}>
-            <button
-              type="button"
-              className="st-header-search-toggle"
-              aria-label={searchVisible ? 'Close app search' : 'Search apps'}
-              aria-expanded={searchVisible}
-              onClick={() => {
-                if (searchVisible) setQuery('')
-                setSearchOpen(!searchVisible)
-              }}
-            >
-              {searchVisible
-                ? <X width="1em" height="1em" aria-hidden="true" />
-                : <Search width="1em" height="1em" aria-hidden="true" />}
-            </button>
-            {searchVisible ? (
-              <div className="st-header-search-popover">
-                <label className="st-search-label" htmlFor="st-catalog-search">Search apps</label>
-                <Search width="1em" height="1em" aria-hidden="true" />
-                <input
-                  ref={searchInputRef}
-                  id="st-catalog-search"
-                  className="st-search-input"
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search apps"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <span className="st-result-count" aria-live="polite">
-                  {visibleCatalog.length === displayCatalog.length
-                    ? `${displayCatalog.length} apps`
-                    : `${visibleCatalog.length} of ${displayCatalog.length}`}
-                </span>
-              </div>
-            ) : null}
+          </div>
+          <div className="st-header-tools">
+            {searchBox}
           </div>
         </div>
-      </div>
+      </div>}
 
-      <div className={`st-scroll is-${tab}`} ref={gridScrollRef}
+      <div className={`st-scroll is-${tab}${returning ? ' is-returning' : ''}`} ref={gridScrollRef}
+           onAnimationEnd={(event) => { if (event.target === event.currentTarget) setReturning(false) }}
            id="st-tabpanel" role="tabpanel"
-           aria-labelledby={`st-tab-${tab}`}>
-        {(tab === 'browse' || tab === 'library') && (
+           aria-labelledby={phone ? undefined : `st-tab-${tab}`}
+           aria-label={phone ? PHONE_TABS.find((entry) => entry.id === tab)?.label : undefined}>
+        {(((discoveryTab || tab === 'library') && !activeCollection && !query.trim()) || (phone && tab === 'search'))
+          && (!inCategory || phone) ? (
+          <div className="st-pagehead">
+            {phone ? (
+              <>
+                {inCategory ? null : <h1 className="st-sr-only">{PHONE_TABS.find((entry) => entry.id === tab)?.label}</h1>}
+              </>
+            ) : inCategory ? null : tab === 'library' ? (
+              <div className="st-pagehead-row">
+                <h1 className="st-pagehead-title">Library</h1>
+                {/* One Publish an app for every Library tab, Your apps included. */}
+                <button type="button" className="st-upload-btn" onClick={() => openYourApps('choose')}>
+                  <Plus width={18} height={18} aria-hidden="true" /> Publish an app
+                </button>
+              </div>
+            ) : (
+              <h1 className="st-pagehead-title">{STORE_TABS.find((entry) => entry.id === tab)?.label}</h1>
+            )}
+            {phone && tab === 'search' ? <div className="st-phone-search">{searchBox}</div> : null}
+          </div>
+        ) : null}
+        {tab === 'search' && !query.trim() ? (
+          <div className="st-search-landing">{searchSuggestions(8)}</div>
+        ) : null}
+        {/* Phones: publishing in plain sight, at the top of Library. */}
+        {phone && tab === 'library' && !query.trim() ? (
+          <button type="button" className="st-upload-wide" onClick={() => openYourApps('choose')}>
+            <Plus width={18} height={18} aria-hidden="true" /> Publish an app
+          </button>
+        ) : null}
+        {tab === 'library' && !query.trim() ? (
+          <LibraryTabs active={libraryTab} counts={libraryCounts}
+            onChange={(next) => {
+              setCategory(next)
+              showPublishStep('home')
+              if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+            }} />
+        ) : null}
+        {(discoveryTab || (tab === 'library' && !yourAppsOpen)) && !(tab === 'search' && !query.trim()) && (
           <>
-            <SelfUpdateBanner appId={appId} token={token} />
             {loadingCatalog
-              ? <CatalogSkeleton count={CATALOG.length} />
+              ? <CatalogSkeleton layout={tab === 'library' ? 'list' : 'discover'} count={tab === 'library' ? 8 : 6} />
               : <>
-                  <CatalogFilters
-                    category={category}
-                    filterCounts={filterCounts}
-                    onCategoryChange={setCategory}
-                    updateAllCount={updateItems.length}
-                    updateAllState={checkingAllUpdates
-                      ? 'checking'
-                      : transactionProgress ? 'updating' : 'idle'}
-                    updateAllProgress={transactionProgress && { current: transactionProgress.finished, total: transactionProgress.total }}
-                    updateAllDisabled={busy || resolvingAll || !!checkingUpdateItemId || !!installedLoadError || !!updateTransaction}
-                    onUpdateAll={handleUpdateAll}
-                    conflictCount={conflictItems.length}
-                    onResolveAll={() => handleResolveAllConflicts()}
-                    resolveAllDisabled={busy || resolvingAll || checkingAllUpdates || !!installedLoadError}
-                    resolveAllState={resolvingAll ? 'resolving' : 'idle'}
-                    mode={tab}
-                  />
                   {tab === 'library' && batchLoadError ? (
                     <div className="st-notice is-warning st-notice-row" role="alert">
                       <span>Update progress could not be read: {batchLoadError.message} Updates already running continue on the server.</span>
@@ -2609,30 +3102,60 @@ export default function App({ appId, token }) {
                       </button>
                     </div>
                   ) : null}
-                  {tab === 'library' && updateBatches.length > 0 ? (
+                  {tab === 'library' && libraryTab === 'needs' && libraryCounts.needs > 0 ? (
+                    <div className="st-libbar">
+                      <p>{conflictItems.length > 0
+                        ? 'You changed these apps yourself, so updating them takes one extra step. Tap Fix and Möbius keeps your changes.'
+                        : 'These apps need a little setup or a decision before they are ready.'}</p>
+                      <ResolveAllButton count={conflictItems.length} onResolveAll={() => handleResolveAllConflicts()}
+                        disabled={busy || resolvingAll || checkingAllUpdates || !!installedLoadError}
+                        state={resolvingAll ? 'resolving' : 'idle'} />
+                    </div>
+                  ) : null}
+                  {tab === 'library' && libraryTab === 'update' && updateAllCount > 0 ? (
+                    <div className="st-libbar">
+                      <p>Each update shows what changes before it installs, including any change to what an app can do.</p>
+                      <UpdateAllButton count={updateAllCount}
+                        state={checkingAllUpdates ? 'checking' : (transactionProgress || backgroundProgress) ? 'updating' : 'idle'}
+                        progress={transactionProgress
+                          ? { current: transactionProgress.finished, total: transactionProgress.total }
+                          : backgroundProgress}
+                        disabled={busy || resolvingAll || !!checkingUpdateItemId || !!installedLoadError || !!updateTransaction}
+                        onUpdateAll={handleUpdateAll} />
+                    </div>
+                  ) : null}
+                  {tab === 'library' && updateBatches.some(batch => libraryTab === 'update' || batch.phase === 'applying' || batch.phase === 'unknown') ? (
                     <section className="st-update-batch-list" aria-label="Update progress and results">
-                      {updateBatches.map(batch => {
+                      {/* Running or unknown batches stay in view; finished results fold
+                          behind one link, every batch still one click away. */}
+                      {[updateBatches.filter(batch => batch.phase === 'applying' || batch.phase === 'unknown'),
+                        libraryTab === 'update' ? updateBatches.filter(batch => batch.phase !== 'applying' && batch.phase !== 'unknown') : []].map((group, folded) => {
+                        if (!group.length) return null
+                        const buttons = group.map(batch => {
                         const progress = batchProgressOf(batch.entries)
                         const toResolve = batch.entries.filter(entry => entry.status === 'conflict' && !entry.resolver_chat_id).length
                         return (
                           <button key={batch.id} type="button" className="st-update-all-trigger"
                             onClick={() => openStoredUpdateBatch(batch.id)} disabled={!!updateTransaction}>
+                            {batch.phase === 'applying' && progress.total ? (
+                              <span className="st-batch-bar" aria-hidden="true"><i style={{ width: `${Math.max(4, progress.finished / progress.total * 100)}%` }} /></span>
+                            ) : null}
                             {batch.phase === 'unknown' ? 'Check update status'
                               : batch.phase === 'applying' ? `View update progress · ${progress.finished}/${progress.total} finished`
-                                : toResolve ? `Review update results · ${toResolve} to resolve` : 'View update results'}
+                                : toResolve ? `Review update results · ${toResolve} to fix` : 'View update results'}
                           </button>
                         )
+                        })
+                        return folded ? (
+                          <details key="past" className="st-update-batch-past">
+                            <summary className="st-see">Past update results{group.length > 1 ? ` (${group.length})` : ''}</summary>
+                            <div className="st-update-batch-past-list">{buttons}</div>
+                          </details>
+                        ) : <div key="live" className="st-update-batch-live">{buttons}</div>
                       })}
                     </section>
                   ) : null}
-                  {tab === 'library' && (
-                    <LibraryHealth
-                      installedCount={filterCounts.installed}
-                      updateCount={updateItems.length}
-                      attentionCount={attentionCount}
-                      updateChecks={updateChecks}
-                    />
-                  )}
+
                   {installedLoadError && (
                     <div className="st-notice is-warning st-notice-row" role="status">
                       <span>{installedLoadError} Install and update actions are paused until this refreshes.</span>
@@ -2646,19 +3169,22 @@ export default function App({ appId, token }) {
                       </button>
                     </div>
                   )}
-                  {tab === 'browse' && communityError ? (
+                  {discoveryTab && communityError ? (
                     <div className="st-sr-only" role="status">
                       Shared listings are temporarily unavailable. The Store will retry automatically.
                     </div>
                   ) : null}
                   <CatalogList
+                    selfUpdate={tab === 'library' && !query.trim() ? selfUpdate : null}
+                    libraryTab={tab === 'library' ? libraryTab : null}
                     appId={appId}
                     items={tab === 'library' ? libraryCatalog : visibleCatalog}
                     installed={installed}
                     updateChecks={updateChecks}
-                    onPick={item => { if (item.manifest) openDetail(item) }}
+                    onPick={item => { if (!item.manifest) return; if (query.trim()) rememberSearch(query); openDetailFromPage(item) }}
                     pickOpensApp={tab === 'library'}
                     onRateApp={tab === 'library' ? (item => { if (item.manifest) openDetail(item, undefined, { focus: 'reviews' }) }) : undefined}
+                    onUninstall={tab === 'library' ? handleUninstall : undefined}
                     onRetry={retryCatalogItem}
                     onUpdate={handleCatalogUpdate}
                     onOpenInstalled={handleOpenInstalled}
@@ -2679,24 +3205,41 @@ export default function App({ appId, token }) {
                     emptyText={tab === 'library' ? 'Try another search, or browse the Store for something new.' : 'Try a different search or filter.'}
                     setupCompletions={setupCompletions}
                     systemSetupReady={systemSetupReady}
-                    loadingMore={tab === 'browse' && communityLoading && communityOffset > 0}
-                    searchLoading={tab === 'browse' && communityLoading && communityOffset === 0}
-                    hasMore={tab === 'browse' && communityHasMore}
+                    loadingMore={discoveryTab && communityLoading && communityOffset > 0}
+                    searchLoading={discoveryTab && communityLoading && communityOffset === 0}
+                    hasMore={discoveryTab && communityHasMore}
                     onLoadMore={() => refreshCommunity({ append: true })}
-                    editorial={tab === 'browse' && !query && category === 'all'}
+                    view={tab === 'library' ? 'library' : query.trim() ? 'search' : tab === 'browse' ? 'discover' : tab}
+                    shelfCategory={shelfCategories[tab] || 'all'}
+                    communityRankings={communityRankings}
+                    onShelfCategory={(id) => (id === 'all' ? leaveCategory(tab) : showCategory(tab, id))}
+                    categoryBackLabel={overlay?.kind === 'category' ? overlay.label : null}
+                    categorySort={categorySort}
+                    onCategorySort={setCategorySort}
+                    onOpenTab={selectTab}
+                    onBrowseCategory={browseCategory}
                     spotlightFeed={spotlightFeed}
-                    activeCollection={tab === 'browse' ? activeCollection : null}
+                    activeCollection={discoveryTab ? activeCollection : null}
                     onOpenCollection={openCollection}
                     onCloseCollection={closeCollection}
                     shelfScrollRef={shelfScrollRef}
                     lifecycleById={lifecycleById}
                     layout={tab === 'library' ? 'list' : 'grid'}
+                    searchQuery={query}
+                    allItems={displayCatalog}
+                    creatorFilter={creatorFilter}
+                    onCreatorFilter={(name, value) => setCreatorFilter({ name, value })}
+                    updateStages={updateStages}
+                    savedItems={tab === 'library' && !query.trim() ? savedApps.items : []}
+                    savedStatus={savedApps.status}
                   />
                 </>}
           </>
         )}
-        {tab === 'publish' && (
+        {yourAppsOpen && (
           <PublisherTab
+            view={publishView}
+            onViewChange={showPublishStep}
             installed={installed}
             identity={communityIdentity}
             identityError={communityIdentityError}
@@ -2722,7 +3265,6 @@ export default function App({ appId, token }) {
             publicationError={publicationError}
             publicationStates={publicationStates}
             publicationListings={publicationListings}
-            publisherHandle={publisherHandle}
             publicationStatesError={publicationStatesError}
             onRefreshPublicationStates={refreshPublicationStates}
             onNavigate={() => {
@@ -2743,6 +3285,29 @@ export default function App({ appId, token }) {
         )}
       </div>
 
+      <nav className="st-bottombar" aria-label="Store sections">
+        {PHONE_TABS.map(({ id, label }) => {
+          const selected = tab === id
+          const TabIcon = TAB_ICONS[id]
+          return (
+            <button key={id} type="button" className={`st-bottombar-tab${selected ? ' is-active' : ''}`}
+              aria-current={selected ? 'page' : undefined}
+              onClick={() => {
+                // A search belongs to the Search tab; other tabs show their own pages.
+                if (id !== 'search' && query) setQuery('')
+                selectTab(id)
+                if (id === 'library') setCategory('all')
+                if (id === 'search' && !query) requestAnimationFrame(() => searchInputRef.current?.focus())
+              }}>
+              <TabIcon aria-hidden="true" />
+              <span>{label}</span>
+              {id === 'library' && filterCounts.update > 0 ? <span className="st-bottombar-count">{filterCounts.update}</span> : null}
+            </button>
+          )
+        })}
+      </nav>
+
+      <SelfUpdateSheet self={selfUpdate} appId={appId} />
       {pendingUninstall && (
         <UninstallConfirmModal
           app={pendingUninstall}

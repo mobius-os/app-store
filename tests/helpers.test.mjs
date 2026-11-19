@@ -190,7 +190,7 @@ test('catalog listing artwork is bounded and sanitized before it reaches the UI'
     }],
   }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   try {
-    const [item] = await fetchCatalog('https://raw.example/catalog.json', 'owner-token')
+    const { apps: [item] } = await fetchCatalog('https://raw.example/catalog.json', 'owner-token')
     assert.deepEqual(item.listing, {
       screenshots: [{
         src: 'voice-screen.png',
@@ -372,8 +372,10 @@ test('source availability distinguishes the immutable Host cache from a reposito
 test('switching Store journeys resets the shared scroll surface', async () => {
   const source = await readFile(new URL('../index.jsx', import.meta.url), 'utf8')
   assert.match(source, /const selectTab = useCallback\(\(next\) => \{[\s\S]*gridScrollRef\.current\.scrollTop = 0[\s\S]*setTab\(next\)/)
-  assert.match(source, /onClick=\{\(\) => selectTab\('publish'\)\}/)
-  assert.match(source, /onClick=\{\(\) => \{ selectTab\('library'\)/)
+  // Publishing opens Library through selectTab too, so it resets the same surface.
+  assert.match(source, /const openYourApps = [\s\S]*?selectTab\('library'\)[\s\S]*?scrollTop = 0/)
+  assert.match(source, /className="st-upload-btn" onClick=\{\(\) => openYourApps\('choose'\)\}/)
+  assert.match(source, /onClick=\{\(\) => \{ selectTab\(id\)/)
 })
 
 test('the Store uses shared listings rather than a raw link-install tab', async () => {
@@ -576,9 +578,10 @@ test('local publishing is one reviewed action through the inherited GitHub accou
   assert.doesNotMatch(publisherSource, /Return here with the repository and exact commit/)
   assert.equal(
     publisherSource.match(/onClick=\{\(\) => onOpenContributions\?\.\(\)\}/g)?.length,
-    2,
-    'Contribute buttons must not forward click events as local app ids',
+    1,
+    'the remaining Contribute setup button must not forward its click event as a local app id',
   )
+  assert.doesNotMatch(publisherSource, /onClick=\{onOpenContributions\}/)
 })
 
 test('publish sign-in prompt is a working action, not a dead label', async () => {
@@ -658,11 +661,15 @@ test('publisher preview accepts only the latest app after back navigation', asyn
 
 test('the centered Store header preserves the full desktop brand rail', async () => {
   const source = await readFile(join(root, '..', 'theme.js'), 'utf8')
+  // Wide panes: equal brand and search rails around the centered section tabs.
   assert.match(
     source,
-    /grid-template-columns: minmax\(120px, 1fr\) minmax\(320px, 560px\) minmax\(120px, 1fr\)/,
+    /grid-template-columns: minmax\(160px, 1fr\) auto minmax\(160px, 1fr\); grid-template-areas: "brand tabs search"/,
   )
-  assert.match(source, /\.st-header \{ width: min\(100%, 1120px\); margin-inline: auto; \}/)
+  // The header shares the content rail: the rail's content inside 16px gutters.
+  assert.match(source, /--st-rail: 1110px;/)
+  assert.match(source, /\.st-header \{ width: min\(100%, calc\(var\(--st-rail\) \+ 32px\)\); margin-inline: auto; padding-inline: 16px; \}/)
+  assert.match(source, /\.st-scroll\.is-browse > \* \{ max-width: var\(--st-rail\); \}/)
 })
 
 test('agent productivity apps share a dedicated discovery collection', async () => {
@@ -697,6 +704,12 @@ test('catalog app intents preserve origin checks and resolve one safe action', a
 
   assert.equal(catalogItemIdFromIntent('app:voice'), 'voice')
   assert.equal(catalogItemIdFromIntent('  app:NEWS  '), 'news')
+  assert.equal(catalogItemIdFromIntent('app:community:app_49ad11'), 'community:app_49ad11')
+  assert.equal(catalogItemIdFromIntent('app:other:app_1'), null)
+  const { storeListingLink } = await import('../domain.js')
+  assert.equal(storeListingLink({ id: 'community:app_49ad11' }, 'https://me.test', 7),
+    'https://me.test/shell/?app=7&intent=app%3Acommunity%3Aapp_49ad11', 'the Store is named by its id, not a slug')
+  assert.equal(storeListingLink({ id: 'bad id' }, 'https://me.test', 7), '')
   assert.equal(catalogItemIdFromIntent('setup'), null)
   assert.equal(catalogItemIdFromIntent('app:../voice'), null)
   assert.equal(catalogItemIdFromIntent(null), null)
@@ -1459,6 +1472,19 @@ test('an edited listing saves as one whole listing, keeping unchanged images by 
   assert.equal(listingPayload(legacy).icon, undefined)
 })
 
+test('a listing category is sent only to a Möbius that can save it', async () => {
+  const { listingDraftFromPreview, listingPayload, savedListingSurvived } = await bundle()
+  const older = listingDraftFromPreview({ draft: { tagline: 'T', description: 'D', screenshots: [] } }, {})
+  assert.equal(older.category, null)
+  assert.equal('category' in listingPayload(older), false)
+  const current = listingDraftFromPreview({ draft: { tagline: 'T', description: 'D', category: '', screenshots: [] } }, {})
+  assert.equal(current.category, '')
+  const sent = listingPayload({ ...current, category: 'music' })
+  assert.equal(sent.category, 'music')
+  assert.equal(savedListingSurvived(sent, { tagline: 'T', description: 'D', category: 'music', screenshots: [] }), true)
+  assert.equal(savedListingSurvived(sent, { tagline: 'T', description: 'D', category: 'action', screenshots: [] }), false)
+})
+
 test('a license is sent once chosen, and only to a Möbius that requires one', async () => {
   const { listingDraftFromPreview, listingPayload, savedListingSurvived } = await import('../domain.js')
   const older = listingDraftFromPreview({ draft: { tagline: 'T', description: 'D', screenshots: [] } }, {})
@@ -1666,7 +1692,7 @@ test('fetchCatalog retries transient failures and preserves app metadata', async
   }
   try {
     const { fetchCatalog } = await bundle()
-    const entries = await fetchCatalog('https://example.test/catalog.json', 'tok', {
+    const { apps: entries } = await fetchCatalog('https://example.test/catalog.json', 'tok', {
       retries: 1,
       retryDelayMs: 0,
     })
@@ -2212,7 +2238,8 @@ test('catalog cards prefer concise discovery copy and use stable browse collecti
     CARD_DESCRIPTION_LIMIT,
     catalogAudience,
     catalogCardDescription,
-    catalogCollection,
+    catalogCategory,
+    catalogKind,
   } = await bundle()
   const description = catalogCardDescription({
     summary: 'A concise promise for everyday browsing.',
@@ -2231,18 +2258,96 @@ test('catalog cards prefer concise discovery copy and use stable browse collecti
   assert.match(truncated, /…$/)
   assert.equal(catalogAudience({ categories: ['system', 'agents'] }), 'developer')
   assert.equal(catalogAudience({ categories: ['writing'] }), 'general')
-  assert.equal(catalogCollection({ collection: 'play' }), 'play')
-  // A dual-channel app (curated + community) lives in its curated collection;
-  // only community-only apps land in the community section.
-  assert.equal(catalogCollection({ community: { source_url: 'https://example.test/app' }, collection: 'everyday' }), 'everyday')
-  assert.equal(catalogCollection({ community: { source_url: 'https://example.test/app' } }), 'community')
-  assert.equal(catalogCollection({ id: 'skills', collection: 'developer' }), 'productivity')
-  assert.equal(catalogCollection({ id: 'tasks', collection: 'developer' }), 'productivity')
-  assert.equal(catalogCollection({ categories: ['reference'] }), 'explore')
-  assert.equal(catalogCollection({
-    audience: 'general',
-    categories: ['development', 'system'],
-  }), 'developer')
+  // The curated catalog places official apps; a creator's own choice places a
+  // community app, then the Store's assignment, then older free-form hints.
+  assert.equal(catalogCategory({ category: 'music', collection: 'play' }), 'music')
+  assert.equal(catalogCategory({ category: 'not-a-category', collection: 'play' }), 'action')
+  assert.equal(catalogCategory({ community: {}, manifest: { store: { category: 'worlds' } }, assigned_category: 'action' }), 'worlds')
+  assert.equal(catalogCategory({ community: {}, manifest: { store: { category: 'bogus' } }, assigned_category: 'action' }), 'action')
+  assert.equal(catalogCategory({ community: { source_url: 'https://example.test/app' }, categories: ['Community'] }), '')
+  assert.equal(catalogCategory({ id: 'skills', collection: 'developer' }), 'productivity')
+  assert.equal(catalogCategory({ id: 'tasks', collection: 'developer' }), 'productivity')
+  assert.equal(catalogCategory({ categories: ['reference'] }), 'explore')
+  assert.equal(catalogCategory({ audience: 'general', categories: ['development', 'system'] }), 'developer')
+  assert.equal(catalogCategory({ community: {}, categories: ['agents'] }), 'agent')
+  assert.equal(catalogKind({ category: 'puzzle' }), 'games')
+  assert.equal(catalogKind({ categories: ['Community'] }), 'apps')
+})
+
+test('community listings take the catalog assignment for their repository unless already placed', async () => {
+  const { catalogCategory, withAssignedCategories } = await bundle()
+  const listing = (repository, store = {}) => ({
+    id: `community:${repository}`, repository, community: { id: repository }, manifest: { store },
+  })
+  const [assigned, chosen, unknown, curated] = withAssignedCategories([
+    listing('SelverPepic/Stone-Sleeper'),
+    listing('mfehric/blockstrike', { category: 'puzzle' }),
+    listing('someone/new-app'),
+    { id: 'notes', category: 'productivity', repo: 'mobius-os/app-notes' },
+  ], { 'selverpepic/stone-sleeper': 'explore', 'mfehric/blockstrike': 'action', 'mobius-os/app-notes': 'create' })
+  assert.equal(catalogCategory(assigned), 'explore')
+  assert.equal(catalogCategory(chosen), 'puzzle')
+  assert.equal(catalogCategory(unknown), '')
+  assert.equal(catalogCategory(curated), 'productivity')
+})
+
+test('ranked shelves follow the registry order and stay hidden without a real ranking', async () => {
+  const { communityRanking, installsLabel, rankedApps } = await bundle()
+  const app = (id, community) => ({ id, manifest: { name: id }, community: { id: `app_${id}`, ...community } })
+  const items = [
+    app('fresh', { installs_at_least: null }),
+    app('steady', { installs_at_least: 50 }),
+    app('popular', { installs_at_least: 1000 }),
+    app('rising', { installs_at_least: 50 }),
+  ]
+  const ranked = { sort: 'installs', items: [{ id: 'app_popular' }, { id: 'app_rising' }, { id: 'app_gone' }, { id: 'app_steady' }] }
+  const ranking = communityRanking(ranked, 'installs')
+  // The registry's order wins, and a ranked app outside this view is skipped.
+  assert.deepEqual(rankedApps(items, ranking).map(item => item.id), ['popular', 'rising', 'steady'])
+  assert.deepEqual(rankedApps(items.slice(0, 3), ranking), [], 'two ranked apps are not a ranking')
+  // An older registry ignores sort and answers with its newest updates.
+  assert.deepEqual(communityRanking({ items: ranked.items }, 'installs'), [])
+  assert.deepEqual(communityRanking({ ...ranked, sort: 'updated' }, 'installs'), [])
+  assert.deepEqual(rankedApps(items, undefined), [])
+  assert.equal(installsLabel(items[2]), '1K+ installs')
+  assert.equal(installsLabel(items[1]), '50+ installs')
+  assert.equal(installsLabel(items[0]), '')
+  assert.equal(installsLabel({ id: 'official' }), '')
+})
+
+test('a ranked shelf finds an official app by its absorbed community feedback', async () => {
+  const { rankedApps } = await bundle()
+  const official = (id) => ({ id, manifest: { name: id }, community_feedback: { id: `app_${id}` } })
+  const items = [official('notes'), official('memory'), official('pages')]
+  assert.deepEqual(
+    rankedApps(items, ['app_pages', 'app_notes', 'app_memory']).map(item => item.id),
+    ['pages', 'notes', 'memory'],
+  )
+})
+
+test('discovery shelves rank only real ratings and releases', async () => {
+  const { recentlyUpdatedApps, topRatedApps, sortCategoryApps } = await bundle()
+  const app = (id, community) => ({ id, manifest: { name: id }, community })
+  const items = [
+    app('once', { published_at: '2026-10-01T10:00:00Z', released_at: '2026-10-01T10:00:00Z', rating_count: 0, rating_average: 0 }),
+    app('updated', { published_at: '2026-09-01T10:00:00Z', released_at: '2026-10-20T10:00:00Z', rating_count: 1, rating_average: 3 }),
+    app('loved', { published_at: '2026-09-05T10:00:00Z', released_at: '2026-10-10T10:00:00Z', rating_count: 4, rating_average: 5 }),
+    app('liked', { published_at: '2026-09-06T10:00:00Z', released_at: '2026-09-06T10:00:00Z', rating_count: 9, rating_average: 5 }),
+  ]
+  assert.deepEqual(topRatedApps(items).map(item => item.id), ['liked', 'loved', 'updated'])
+  assert.deepEqual(recentlyUpdatedApps(items).map(item => item.id), ['updated', 'loved'])
+  assert.deepEqual(sortCategoryApps(items, 'top').map(item => item.id), ['liked', 'loved', 'updated', 'once'])
+  assert.deepEqual(sortCategoryApps(items, 'new').map(item => item.id), ['once', 'liked', 'loved', 'updated'])
+  assert.deepEqual(sortCategoryApps(items, 'updated').map(item => item.id), ['updated', 'loved', 'once', 'liked'])
+})
+
+test('a category page ranks rated apps by the same vote-weighted score as Highest rated', async () => {
+  const { highestRated, sortCategoryApps } = await bundle()
+  const app = (id, rating_count, rating_average) => ({ id, manifest: { name: id }, community: { rating_count, rating_average } })
+  // One five-star vote is weaker evidence than twenty votes averaging 4.6.
+  const items = [app('one-vote', 1, 5), app('many-votes', 20, 4.6)]
+  assert.deepEqual(highestRated(items).map(item => item.id), ['many-votes', 'one-vote'])
+  assert.deepEqual(sortCategoryApps(items, 'top').map(item => item.id), ['many-votes', 'one-vote'])
 })
 
 test('sortCatalogForDisplay promotes system apps without scrambling groups', async () => {
@@ -2397,7 +2502,7 @@ test('appLifecycleFor chooses one primary action per catalog state', async () =>
     } },
   })
   assert.equal(unresolved.actionKind, 'resolve')
-  assert.equal(unresolved.statusLabel, 'Update blocked')
+  assert.equal(unresolved.statusLabel, 'Waiting for you')
   assert.deepEqual(unresolved.resolutionNotice, {
     kind: 'conflict',
     itemId: 'news',
@@ -2554,25 +2659,34 @@ test('successful updates clear stale git update checks and inline errors', async
   assert.ok(detailSource.includes('!blockedUpdate && hasUpdate'))
 })
 
-test('app details keep stable access information in a bottom disclosure', async () => {
+test('app details end with a folded access section, then source links and update-source facts', async () => {
   const source = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
-  const disclosure = source.indexOf('className={`st-technical-details')
-  const capability = source.indexOf('<CapabilityContract', disclosure)
-  const footer = source.indexOf('className="st-detail-footer"', disclosure)
-  assert.ok(disclosure >= 0)
-  assert.ok(capability > disclosure)
-  assert.ok(footer > capability)
-  assert.match(source, /Privacy, access & technical details/)
+  const similar = source.indexOf('id="st-detail-similar"')
+  const access = source.indexOf('>What it can access</span>')
+  const capability = source.indexOf('<CapabilityContract', access)
+  const links = source.indexOf('className="st-info-links"')
+  const disclosure = source.indexOf('className="st-technical-details"')
+  // Permissions follow the related-app shelves, folded unless access changed;
+  // the source links and the update-source disclosure close the page.
+  assert.ok(similar >= 0)
+  assert.ok(access > similar)
+  assert.ok(capability > access)
+  assert.ok(links > capability)
+  assert.ok(disclosure > links)
+  assert.match(source, /aria-expanded=\{accessOpen\}/)
+  assert.match(source, /hidden=\{!accessOpen\}/)
+  assert.match(source, /setAccessOpen\(accessChanged\)\n  \}, \[item\?\.id, accessChanged\]\)/)
   assert.match(source, /Update source/)
   assert.match(source, /Installed source revision/)
   assert.match(source, /Last verified/)
   assert.doesNotMatch(source, /Access and agent integration/)
-  const selfUpdateSource = await readFile(join(root, '..', 'ui', 'SelfUpdateBanner.jsx'), 'utf8')
+  const selfUpdateSource = await readFile(join(root, '..', 'ui', 'SelfUpdate.jsx'), 'utf8')
   assert.match(selfUpdateSource, /fetchUpdateCheck\(appId, token, STORE_SELF\.manifest_url\)/)
   assert.match(selfUpdateSource, /loadUpdateCandidatePreview\(appId, STORE_SELF\.manifest_url, token\)/)
   assert.match(selfUpdateSource, /reviewed_upstream_commit: review\.candidate\.upstream_commit/)
   assert.doesNotMatch(selfUpdateSource, /semverCmp/)
-  assert.match(selfUpdateSource, /if \(needsAccessReview && !showReview\)/)
+  // Every Store update opens the sheet first; an access change also needs its review.
+  assert.match(selfUpdateSource, /if \(!panelOpen \|\| \(needsAccessReview && !showReview\)\)/)
   assert.match(selfUpdateSource, /'Update App Store'/)
   assert.match(selfUpdateSource, /later updates stop only when access changes/)
 })
@@ -2590,20 +2704,16 @@ test('app details share the browse rail while keeping prose readable', async () 
 
   assert.match(detail, /className="st-scroll is-detail"/)
   assert.match(detail, /className="st-detail-desc-wrap"/)
-  assert.match(theme, /\.st-scroll\.is-detail > \* \{ max-width: 1180px; \}/)
+  assert.match(theme, /\.st-scroll\.is-detail > \* \{ max-width: var\(--st-rail\); \}/)
   assert.match(theme, /\.st-detail-desc \{ max-width: 72ch;/)
-  assert.match(theme, /\.st-detail-footer \{[\s\S]*?max-width: 1180px;/)
 })
 
 test('late detail artwork rules preserve the desktop centering margin', async () => {
   const theme = await readFile(join(root, '..', 'theme.js'), 'utf8')
 
   const galleryRule = theme.match(/\.st-detail-gallery \{([^}]*)\}/)?.[1] || ''
-  const bylineRule = theme.match(/\.st-detail-byline \{([^}]*)\}/)?.[1] || ''
   assert.match(galleryRule, /margin-block:\s*0 22px/)
-  assert.match(bylineRule, /margin-block:\s*-14px 26px/)
   assert.doesNotMatch(galleryRule, /(?:^|;)\s*margin:/)
-  assert.doesNotMatch(bylineRule, /(?:^|;)\s*margin:/)
 })
 
 test('busy labels stay tied to the action that started', async () => {
@@ -2832,9 +2942,9 @@ test('Subagents discovery entry exposes guarded provider delegation', async () =
 })
 
 test('community and curated channels merge to one row with curated placement', async () => {
-  const { mergeOfficialCommunityFeedback, catalogCollection } = await import('../domain.js')
+  const { mergeOfficialCommunityFeedback, catalogCategory } = await import('../domain.js')
   const curated = [{
-    id: 'kanban', collection: 'everyday', manifest: { id: 'kanban' },
+    id: 'kanban', collection: 'everyday', category: 'productivity', manifest: { id: 'kanban' },
     manifest_url: 'https://raw.githubusercontent.com/hamzamerzic/app-kanban/main/mobius.json',
   }]
   const community = [{
@@ -2845,7 +2955,7 @@ test('community and curated channels merge to one row with curated placement', a
   }]
   const merged = mergeOfficialCommunityFeedback(curated, community)
   assert.equal(merged.length, 1)
-  assert.equal(catalogCollection(merged[0]), 'everyday')
+  assert.equal(catalogCategory(merged[0]), 'productivity')
   assert.equal(merged[0].community, undefined) // never becomes a community-install item
   assert.ok(merged[0].community_feedback)
   assert.match(merged[0].manifest_url, /githubusercontent/)
@@ -2861,10 +2971,10 @@ test('community and curated channels merge to one row with curated placement', a
   const withoutCollision = mergeOfficialCommunityFeedback(curated, [collision])
   assert.equal(withoutCollision.length, 1)
   assert.equal(withoutCollision[0].community_feedback, undefined)
-  // A community-only app still lands in the community section.
+  // A community-only app without a category waits under More apps.
   const pure = mergeOfficialCommunityFeedback([], community)
   assert.equal(pure.length, 1)
-  assert.equal(catalogCollection(pure[0]), 'community')
+  assert.equal(catalogCategory(pure[0]), '')
 })
 
 test('installed matching recognizes repo identity and viewer-owned publications', async () => {
@@ -3062,4 +3172,40 @@ test('review prompts that need an account or handle hand off to the Möbius acco
   const detailSource = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   assert.match(appSource, /onOpenMobiusAccount=\{openMobiusAccount\}/)
   assert.match(detailSource, /onOpenMobiusAccount=\{onOpenMobiusAccount\}/)
+})
+
+test('discovery lists keep what is current and top up instead of going empty', async () => {
+  const { newArrivals, recentUpdates, highestRated } = await bundle()
+  const now = Date.parse('2026-10-30T12:00:00Z')
+  const daysAgo = (days) => new Date(now - days * 24 * 3600 * 1000).toISOString()
+  const app = (id, community) => ({ id, manifest: { name: id }, community })
+  const published = (id, days) => app(id, { published_at: daysAgo(days), released_at: daysAgo(days) })
+  // A busy month: only the last 30 days, newest first, never the old ones.
+  const busy = [...Array(8)].map((_, i) => published(`new${i}`, i + 1)).concat(published('old', 63))
+  assert.deepEqual(newArrivals(busy, now).map(item => item.id), ['new0', 'new1', 'new2', 'new3', 'new4', 'new5', 'new6', 'new7'])
+  // A quiet month: nothing recent, so the six newest fill the shelf.
+  const quiet = [...Array(9)].map((_, i) => published(`app${i}`, 40 + i))
+  assert.deepEqual(newArrivals(quiet, now).map(item => item.id), ['app0', 'app1', 'app2', 'app3', 'app4', 'app5'])
+  // At most 24, however busy.
+  assert.equal(newArrivals([...Array(40)].map((_, i) => published(`p${i}`, 1)), now).length, 24)
+  // Updates count only real releases after the first publication.
+  const updated = [app('fresh', { published_at: daysAgo(50), released_at: daysAgo(2) }), published('once', 1)]
+  assert.deepEqual(recentUpdates(updated, now).map(item => item.id), ['fresh'])
+  // Ratings: one 5-star vote does not beat many 4.8s, and 4 stars+ come first.
+  const rated = (id, count, average) => app(id, { rating_count: count, rating_average: average })
+  const ratedApps = [rated('single', 1, 5), rated('crowd', 20, 4.8), rated('meh', 5, 3), rated('good', 6, 4.2), rated('ok', 2, 4)]
+  assert.deepEqual(highestRated(ratedApps).map(item => item.id), ['crowd', 'good', 'single', 'ok'])
+  assert.deepEqual(highestRated([rated('meh', 5, 3), rated('low', 3, 2)]).map(item => item.id), ['meh', 'low'], 'never empty while anything is rated')
+})
+
+
+test('the stylesheet closes every block it opens, so no rule swallows the ones after it', async () => {
+  const { CSS } = await import('../theme.js')
+  let depth = 0
+  for (const ch of CSS.replace(/\/\*[\s\S]*?\*\//g, '')) {
+    if (ch === '{') depth += 1
+    if (ch === '}') depth -= 1
+    assert.ok(depth >= 0, 'a block closes before it opens')
+  }
+  assert.equal(depth, 0)
 })

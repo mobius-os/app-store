@@ -30,7 +30,7 @@ test('creator pages distinguish star ratings from written reviews', () => {
   assert.match(source, /count === 1 \? 'rating' : 'ratings'/)
   assert.equal((source.match(/<RatingCount count=\{stats\?\.rating_count\}/g) || []).length, 1)
   const list = source.slice(source.indexOf('export function YourAppsList'), source.indexOf('export function PublishedAppPage'))
-  assert.match(list, /<small>Average Rating<\/small>/)
+  assert.match(list, /rowFacts\(state\)/)
   assert.doesNotMatch(list, /RatingCount|rating_count/)
   assert.match(source, /<span>written reviews<\/span>/)
   assert.match(source, /Star ratings count toward the average even without a written review\./)
@@ -359,7 +359,7 @@ test('publishers are credited by their Möbius handle when the registry has one'
   assert.equal(catalogPublisher({ publisher: { login: 'ExampleCreator', handle: '' }, repository: 'ExampleCreator/app' }), 'examplecreator')
   assert.equal(publicationViewerHandle({ items: [], viewer: { handle: 'example-creator' } }), 'example-creator')
   assert.equal(publicationViewerHandle({ items: [] }), '')
-  assert.match(publisher, /Publishing as \{publisherHandle \|\| githubLogin\}/)
+  assert.doesNotMatch(publisher, /Publishing as/)
 })
 
 test('recorded install totals survive a rating refresh and unknown totals stay unknown', () => {

@@ -82,6 +82,8 @@ async function mountApp(dom, routes) {
   await act(async () => root.render(React.createElement(App, { appId: 999, token: 'tok' })))
   await act(async () => { await wait(20) })
   await act(async () => dom.window.document.querySelector('#st-tab-library').click())
+  // Update all and update results live in Library's Updates tab.
+  await act(async () => dom.window.document.querySelector('[data-library-tab="update"]')?.click())
   return root
 }
 
@@ -173,8 +175,12 @@ test('Library Resolve all opens agent chooser before starting any resolver', asy
       return null
     })
     const doc = dom.window.document
+    // Fix all lives in Library › Needs you.
+    const libraryTab = [...doc.querySelectorAll('button.st-tab')].find(button => button.textContent.startsWith('Library'))
+    await act(async () => { libraryTab.click(); await wait(5) })
+    await act(async () => { doc.querySelector('[data-library-tab="needs"]').click(); await wait(5) })
     const resolveAll = doc.querySelector('.st-resolve-all-trigger')
-    assert.ok(resolveAll, 'conflict appears in Library filters')
+    assert.ok(resolveAll, 'conflict appears in Library › Needs you')
     await act(async () => { resolveAll.click(); await wait(5) })
     assert.ok(doc.querySelector('.st-agent-choice'), 'the click event must not become the agent choice')
     assert.deepEqual(posts, [], 'no resolver starts before agent confirmation')
@@ -278,7 +284,7 @@ test('update review leads with verified changes and keeps technical details coll
     await render([entry('Local edits', 'conflict')])
     assert.match(dom.window.document.body.textContent, /Local edits need review/)
     assert.match(dom.window.document.body.textContent, /Local changes must be reconciled before updating/)
-    assert.deepEqual([...dom.window.document.querySelectorAll('.st-update-review-section button')].map(b => b.textContent), ['Resolve in chat'], 'a conflict offers only the resolver')
+    assert.deepEqual([...dom.window.document.querySelectorAll('.st-update-review-section button')].map(b => b.textContent), ['Fix in chat'], 'a conflict offers only the resolver')
     assert.equal(dom.window.document.querySelector('button.st-btn-primary'), null)
     await render([entry('Pocket List', 'updated')], { batchId: 'b' })
     assert.match(dom.window.document.body.textContent, /Update results/)
@@ -562,6 +568,8 @@ test('a stale update-check meets a conflict-blocked preview: card and review bot
       return null
     })
     const doc = dom.window.document
+    // Installed lists every app with its live action, so a card can be followed as it changes.
+    await act(async () => doc.querySelector('[data-library-tab="installed"]').click())
     const cardAction = () => doc.querySelector('.st-card-status-row button[aria-label$=" Voice"]')
     assert.equal(cardAction()?.getAttribute('aria-label'), 'Update Voice', 'the stale check offers an update')
     await act(async () => { cardAction().click(); await wait(20) })
@@ -569,10 +577,10 @@ test('a stale update-check meets a conflict-blocked preview: card and review bot
     assert.ok(modal, 'the update review opens')
     assert.match(modal.textContent, /Local edits need review/)
     const modalButtons = [...modal.querySelectorAll('.st-update-review-section button')].map(button => button.textContent)
-    assert.deepEqual(modalButtons, ['Resolve in chat'], 'retrying would only meet the same conflict')
+    assert.deepEqual(modalButtons, ['Fix in chat'], 'retrying would only meet the same conflict')
     assert.doesNotMatch(modal.textContent, /Access changes|Access review/)
     assert.equal(modal.querySelector('.st-update-review-actions button.st-btn-primary'), null, 'nothing can be confirmed')
-    assert.equal(cardAction()?.getAttribute('aria-label'), 'Resolve in chat Voice', 'the card behind the review flips too')
+    assert.equal(cardAction()?.getAttribute('aria-label'), 'Fix Voice', 'the card behind the review flips too')
     await act(async () => { modal.querySelector('.st-update-review-section button').click(); await wait(20) })
     await act(async () => { doc.querySelector('.st-agent-choice-actions button.st-btn-primary').click(); await wait(20) })
     assert.deepEqual(posts, ['/api/apps/conflict-resolver-batch'], 'resolving starts the resolver and installs nothing')
@@ -599,6 +607,8 @@ test('a candidate the platform would not apply says why on the card and in the r
       return null
     })
     const doc = dom.window.document
+    // Installed lists every app with its live action, so a card can be followed as it changes.
+    await act(async () => doc.querySelector('[data-library-tab="installed"]').click())
     const card = name => [...doc.querySelectorAll('.st-card')].find(node => node.querySelector('.st-card-open')?.textContent === name)
     assert.match(card('Voice').textContent, /Repository moved/)
     assert.match(card('Voice').textContent, /another repository/)
@@ -748,6 +758,8 @@ test('a Möbius without server batches still updates through the per-app reviewe
       return null
     })
     const doc = dom.window.document
+    // Installed lists every app with its live action, so a card can be followed as it changes.
+    await act(async () => doc.querySelector('[data-library-tab="installed"]').click())
     assert.equal(doc.querySelector('[role="alert"]'), null, 'a missing batch list is not an error')
     await act(async () => doc.querySelector('button[aria-label="Update Voice"]').click())
     await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
@@ -823,6 +835,77 @@ test('on a Möbius with batches, an app removed after its check is reported, nev
     await act(async () => { doc.querySelector('.st-update-review-actions button.st-btn-primary').click(); await wait(20) })
     assert.equal(installs, 0)
     assert.match(doc.querySelector('.st-update-review').textContent, /App not found\./)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('an update that keeps the same access still opens the review dialog; nothing is sent until confirmed', async () => {
+  const { dom, restore } = useDom()
+  const submitted = []
+  let root
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([voiceRow, memoryRow])
+      if (path === '/api/apps/update-batches' && options.method === 'POST') {
+        const payload = JSON.parse(options.body)
+        submitted.push(payload)
+        return json({ id: payload.id, phase: 'applying', entries: payload.updates.map(update => ({ app_id: update.app_id, name: 'App', status: 'queued', error: '', warnings: [], version: null })) })
+      }
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (/^\/api\/apps\/update-batches\/[^/]+\/events$/.test(path)) return new Response(new ReadableStream({ start() {} }), { headers: { 'content-type': 'text/event-stream' } })
+      if (/^\/api\/apps\/(11|12)\/update-check/.test(path)) return json({ update_available: true, pending_update_state: 'none' })
+      if (/^\/api\/apps\/(11|12)\/update-candidate-preview/.test(path)) return json(candidate(Number(path.match(/apps\/(\d+)/)[1])))
+      if (path === '/api/apps/install') throw new Error('A reviewed update must not be applied by the browser')
+      return null
+    })
+    const doc = dom.window.document
+    const confirm = () => doc.querySelector('.st-update-review-actions button.st-btn-primary')
+    await act(async () => { doc.querySelector('button[aria-label^="Update all"]').click(); await wait(30) })
+    assert.equal(submitted.length, 0, 'Update all sends nothing before the review')
+    assert.ok(doc.querySelector('.st-update-review'), 'Update all opens the review dialog')
+    assert.ok(confirm(), 'the dialog asks for confirmation')
+    await act(async () => doc.querySelector('.st-update-review-actions .st-btn-ghost').click())
+    assert.equal(doc.querySelector('.st-update-review'), null)
+    assert.equal(submitted.length, 0, 'closing the review sends nothing')
+
+    await act(async () => { doc.querySelector('button[aria-label="Update Voice"]').click(); await wait(30) })
+    assert.equal(submitted.length, 0, 'unchanged access is still reviewed before anything is sent')
+    assert.ok(doc.querySelector('.st-update-review'), 'Update opens the review dialog')
+    await act(async () => { confirm().click(); await wait(30) })
+    assert.equal(submitted.length, 1, 'confirming sends the reviewed update')
+    assert.deepEqual(submitted[0].updates.map(update => update.app_id), [11])
+    assert.deepEqual(Object.keys(submitted[0].updates[0]).sort(), ['app_id', 'capability_digest', 'manifest_url', 'source_digest', 'upstream_commit'])
+    assert.equal(submitted[0].updates[0].source_digest, 'a'.repeat(64), 'the exact checked source')
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test("Update all opens the App Store's own update sheet instead of installing it", async () => {
+  const { dom, restore } = useDom()
+  let installs = 0
+  let root
+  try {
+    root = await mountApp(dom, async (path) => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      if (/^\/api\/apps\/999\/update-check/.test(path)) return json({ update_available: true, pending_update_state: 'none' })
+      if (/^\/api\/apps\/999\/update-candidate-preview/.test(path)) return json({ ...candidate(999), capability_preview: { ...capabilityPreview, manifest: { version: '9.9.9' } } })
+      if (/^\/api\/apps\/11\/update-check/.test(path)) return json({ update_available: false, pending_update_state: 'none' })
+      if (path === '/api/apps/install') { installs++; return json({ id: 999, mode: 'updated' }) }
+      return null
+    })
+    const doc = dom.window.document
+    const updateAll = doc.querySelector('button[aria-label="Update all 1 app"]')
+    assert.ok(updateAll, 'the Store update alone counts toward Update all')
+    await act(async () => { updateAll.click(); await wait(30) })
+    assert.equal(installs, 0, 'nothing installs before the sheet is confirmed')
+    assert.match(doc.querySelector('.st-selfupd-sheet')?.textContent || '', /Version 9\.9\.9/, 'the update sheet opens for review')
   } finally {
     if (root) await act(async () => root.unmount())
     restore()

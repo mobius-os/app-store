@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { JSDOM } from 'jsdom'
 import React, { act } from 'react'
+import { inLibrary } from './publish-step-host.mjs'
 import { PUBLISH_CHECK_TIMEOUT_MS } from '../domain.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -63,7 +64,7 @@ async function openReleasePanel({ stored = {}, storage = true, read, props = {} 
     assert.ok(target, `${label} in: ${buttons().map(b => b.textContent.trim()).join(' | ')}`)
     await act(async () => target.click())
   }
-  await act(async () => root.render(React.createElement(PublisherTab, {
+  await act(async () => root.render(React.createElement(inLibrary(PublisherTab), {
     installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
     onRefreshPublicationStates() {},
     onPreviewLocal: async () => readyPreview(),
@@ -72,7 +73,7 @@ async function openReleasePanel({ stored = {}, storage = true, read, props = {} 
     ...props,
   })))
   await click('Publish an app')
-  await click('Prepare listing')
+  await click('Publish')
   await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
   async function consent() {
     await act(async () => doc.querySelector('.st-publish-consent input').click())
@@ -181,7 +182,7 @@ test('reopening an app mid-check keeps waiting instead of flashing an error', as
     assert.match(view.text(), /Your agent is checking the app/)
     await view.click('Back')
     release = true // storage answers slowly after reopening
-    await view.click('Prepare listing')
+    await view.click('Publish')
     await view.settle()
     assert.doesNotMatch(view.text(), /didn’t finish/)
     assert.match(view.text(), /Your agent is checking the app/)

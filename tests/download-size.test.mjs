@@ -20,8 +20,8 @@ test('an unknown download size shows nothing rather than a guess', () => {
   }
 })
 
-test('the listing byline shows the reviewed download size', async () => {
+test('app information shows the reviewed download size', async () => {
   const detail = await readFile(join(root, '..', 'ui', 'DetailView.jsx'), 'utf8')
   assert.match(detail, /formatDownloadSize\(capabilityReview\?\.preview\?\.download_bytes\)/)
-  assert.match(detail, /`\$\{downloadSize\} download`/)
+  assert.match(detail, /infoRow\('Size', downloadSize\)/)
 })

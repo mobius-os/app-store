@@ -109,7 +109,7 @@ function CapabilityRows({ preview }) {
             <div className="st-perm-detail">{item.summary}</div>
           </div>
           {item.tag ? <span className="st-perm-tag">{item.tag}</span> : null}
-          {item.critical ? <span className="st-perm-critical" role="img" aria-label="Critical" title="Critical: can change your Möbius" /> : null}
+          {item.critical ? <span className="st-perm-critical" title="Sensitive: can act for you or change your Möbius">Sensitive</span> : null}
         </div>
       ))}
     </div>

@@ -76,13 +76,17 @@ const UNCHECKED_REASON = {
   unavailable: 'Agent checks aren’t available on this Möbius.',
 }
 
-function publicationLabel(state, hosted) {
-  if (hosted?.has_unpublished_changes) return 'Draft changes'
-  if (!state) return hosted ? 'Hosted' : 'Not listed'
-  if (state.status === 'live') return 'Live'
-  if (state.status === 'rejected' || state.status === 'failed') return 'Needs attention'
-  if (state.status === 'checking') return 'Checking'
-  return 'In review'
+// One row in the Publish an app picker: a plain status, its dot tone, and
+// the single action that row offers. Every action opens the listing review.
+function publicationRow(state, hosted) {
+  const live = state?.status === 'live'
+  if (hosted?.has_unpublished_changes) return { label: 'Draft changes', tone: 'pending', action: live ? 'Update' : 'Publish' }
+  if (!state) return { label: hosted ? 'Hosted' : 'Not in the Store', tone: '', action: 'Publish' }
+  if (live) return { label: 'Live', tone: 'live', action: 'Update' }
+  if (state.status === 'rejected' || state.status === 'failed') return { label: 'Needs attention', tone: 'problem', action: 'Fix' }
+  if (state.status === 'withdrawn') return { label: 'Withdrawn', tone: '', action: 'Publish' }
+  if (state.status === 'checking') return { label: 'Checking', tone: 'pending', action: 'View' }
+  return { label: 'In review', tone: 'pending', action: 'View' }
 }
 
 function assetUrl(preview, path) {
@@ -138,7 +142,6 @@ export function PublisherTab({
   onOpenContributions,
   publicationStates = {},
   publicationListings = {},
-  publisherHandle = '',
   publicationStatesError,
   onRefreshPublicationStates,
   onOpenMobiusAccount,
@@ -152,6 +155,10 @@ export function PublisherTab({
   onViewInStore,
   onRunCheck,
   onFixCheck,
+  // Library owns which step is showing, so its Publish an app button and the
+  // host Back gesture can move between them.
+  view = 'home',
+  onViewChange,
 }) {
   const apps = publishableApps(installed).sort((left, right) => (
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
@@ -183,7 +190,7 @@ export function PublisherTab({
   const [commitSha, setCommitSha] = useState('')
   const [appQuery, setAppQuery] = useState('')
   // home: your published apps · choose: pick an app to publish · app: one published app
-  const [view, setView] = useState('home')
+  const setView = (next) => onViewChange?.(next)
   const [openAppId, setOpenAppId] = useState(null)
   // The stored check result; undefined until storage is read for this app.
   const [checkRaw, setCheckRaw] = useState(undefined)
@@ -228,6 +235,12 @@ export function PublisherTab({
   const checkPassed = checkState === 'ready'
   const publishDisabled = !confirmed || !localRepositoryValid || !!publishingId || !signedIn || !githubReady
   useEffect(() => { setConfirmingAnyway(false) }, [checkState, candidate?.id])
+  // Back to Your apps (the host Back gesture included) also leaves an open
+  // listing review, unless it is mid-publish.
+  useEffect(() => {
+    if (view === 'home' && liveRef.current.candidate) closePreview()
+    if (view === 'home') setOpenAppId(null)
+  }, [view])
   // The confirmation replaces the Publish button: move focus into it, and back
   // to the button whenever it closes (Keep reviewing, or a verdict arriving)
   // while focus was inside it and so fell back to the page.
@@ -569,22 +582,24 @@ export function PublisherTab({
       && licenseRefusal.commit === preview?.accepted_commit ? licenseRefusal.message : '',
   }
   const renderApp = (app) => {
-    const state = publicationStates[app.id]
-    const label = publicationLabel(state, app.hosted_publication)
+    const row = publicationRow(publicationStates[app.id], app.hosted_publication)
     return (
       <article className="st-publish-row" key={app.id}>
         <div className="st-publish-icon" aria-hidden="true">
           <span>{String(app.name || app.slug || '?').trim().slice(0, 1).toUpperCase()}</span>
           {app.icon_url ? (
-            <img src={app.icon_url} alt="" width="48" height="48"
+            <img src={app.icon_url} alt="" width="52" height="52"
                  onError={(event) => { event.currentTarget.hidden = true }} />
           ) : null}
         </div>
-        <div className="st-publish-row-copy"><h3>{app.name}</h3><span>{label}</span></div>
-        <button type="button" className="st-btn st-btn-secondary"
+        <div className="st-publish-row-copy">
+          <h3>{app.name}</h3>
+          <span className={`st-publish-status${row.tone ? ` is-${row.tone}` : ''}`}>{row.label}</span>
+        </div>
+        <button type="button" className="st-publish-pill" aria-label={`${row.action} ${app.name}`}
                 disabled={!!publishingId || !signedIn || !githubReady}
                 onClick={() => prepare(app)}>
-          {state?.status === 'live' ? 'Review update' : 'Prepare listing'}
+          {row.action}
         </button>
       </article>
     )
@@ -592,33 +607,27 @@ export function PublisherTab({
 
   return (
     <div className={`st-publisher${candidate ? ' is-reviewing' : ''}`}>
-      {!candidate && view !== 'app' ? (
-        <section className="st-publish-heading">
+      {!candidate && view === 'choose' ? (
+        <section className="st-publish-heading is-choose">
           <div>
-            {view === 'choose' ? (
-              <button type="button" className="st-back-btn" onClick={() => setView('home')}>
-                <ChevronLeft width="16" height="16" aria-hidden="true" />Your apps
-              </button>
-            ) : null}
-            <h2>{view === 'choose' ? 'Publish an app' : 'Your apps'}</h2>
-            {view === 'choose' ? <p>Pick one of the apps you built on this Möbius.</p> : null}
+            <button type="button" className="st-back-btn" onClick={() => setView('home')}>
+              <ChevronLeft width="16" height="16" aria-hidden="true" />Your apps
+            </button>
+            <h2>Publish an app</h2>
+            <p>Choose an app. You’ll check its listing before it goes live.</p>
           </div>
           <div className="st-publish-heading-actions">
+            {apps.length ? (
+              <label className="st-publish-search">
+                <span className="st-sr-only">Search your apps</span>
+                <Search width="17" height="17" aria-hidden="true" />
+                <input value={appQuery} onChange={(event) => setAppQuery(event.target.value)} placeholder="Search your apps" />
+              </label>
+            ) : null}
             {!signedIn ? (
               <button type="button" className="st-publish-connection st-publish-connection-action"
                       onClick={() => onOpenMobiusAccount?.()}>
                 Sign in to Möbius
-              </button>
-            ) : null}
-            {signedIn && githubReady ? <span className="st-publish-account">Publishing as {publisherHandle || githubLogin}</span> : null}
-            {contributeAvailable ? (
-              <button type="button" className="st-btn st-btn-ghost" onClick={() => onOpenContributions?.()}>
-                Open contributions
-              </button>
-            ) : null}
-            {view === 'home' ? (
-              <button type="button" className="st-btn st-btn-primary" onClick={() => setView('choose')}>
-                Publish an app
               </button>
             ) : null}
           </div>
@@ -860,15 +869,7 @@ export function PublisherTab({
         )
       ) : (
         <>
-          <div className="st-publish-list-head">
-            <div><p>{apps.length} {apps.length === 1 ? 'app' : 'apps'} on this Möbius can be published.</p></div>
-            <label className="st-publish-search">
-              <span className="st-sr-only">Search your apps</span>
-              <Search width="17" height="17" aria-hidden="true" />
-              <input value={appQuery} onChange={(event) => setAppQuery(event.target.value)} placeholder="Search apps" />
-            </label>
-          </div>
-          <div className="st-publish-list" aria-label="Apps ready to publish">
+          <div className={`st-publish-list${visibleApps.length ? ' is-card' : ''}`} aria-label="Apps you can publish">
             {visibleApps.length ? visibleApps.map(renderApp) : apps.length ? (
               <div className="st-empty"><div className="st-empty-title">No matching apps</div><p className="st-empty-text">Try another name.</p></div>
             ) : (
@@ -880,7 +881,7 @@ export function PublisherTab({
 
       {!candidate && view === 'choose' ? (
         <details className="st-publish-advanced">
-          <summary><span>Already on GitHub?</span><small>List one exact commit</small></summary>
+          <summary>Already on GitHub? <span>Publish from a repository</span></summary>
           <section className="st-publish-review" aria-labelledby="st-register-release-title">
             <div><h3 id="st-register-release-title">List a GitHub release</h3><p>Choose a public repository with <code>mobius.json</code> at its root and an exact commit. Möbius adds a proof without moving your main branch.</p></div>
             <div className="st-publish-repository-grid">

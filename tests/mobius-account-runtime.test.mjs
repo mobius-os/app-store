@@ -57,13 +57,15 @@ const gatedListing = {
   manifest: { id: 'shared-notes', name: 'Shared Notes', version: '1.0.0', description: 'Notes to share.' },
 }
 
-// Mounts the whole Store. `account` is the Möbius account (and GitHub
+// Mounts the whole Store (inside StrictMode with `account.strict`, and with
+// `account.storage` as the app's own storage). `account` is the Möbius account (and GitHub
 // connection, installed apps and the listing's review state) the platform
 // reports right now; a test may change it between reads. Each response is what
 // the platform said when the request arrived, even if the test holds it open
 // with `account.hold` (identity), `account.holdListing` (the next listing read)
 // or `account.holdSpotlight`. `account.identityFailures` fails that many
-// identity reads.
+// identity reads. `account.listings` answers other listings read by id: a row,
+// or `{ status, detail }` for a refusal.
 async function mountStore(account) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://store.test/' })
   const keys = ['window', 'document', 'HTMLElement', 'ResizeObserver', 'fetch', 'IS_REACT_ACT_ENVIRONMENT']
@@ -82,7 +84,7 @@ async function mountStore(account) {
     setLocation() {},
     open: () => ({ outcome: Promise.resolve({ status: 'owned' }), close() {} }),
   }
-  dom.window.mobius = { signal() {}, nav }
+  dom.window.mobius = { signal() {}, nav, ...(account.storage ? { storage: account.storage } : {}) }
   dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   dom.window.HTMLElement.prototype.scrollIntoView = () => {}
   Object.assign(globalThis, {
@@ -134,12 +136,19 @@ async function mountStore(account) {
         return json(row)
       }
       if (path === `/api/community/apps/${gatedListing.id}/reviews`) return json({ items: [] })
+      const listingId = path.match(/^\/api\/community\/apps\/([^/?]+)$/)?.[1]
+      const listing = account.listings?.[listingId]
+      if (listing) {
+        reads.push(path)
+        return listing.status ? json({ detail: listing.detail }, listing.status) : json(listing)
+      }
       return json({}, 404)
     },
   })
   const root = createRoot(dom.window.document.getElementById('root'))
   const { default: App } = await appModule()
-  await act(async () => root.render(React.createElement(App, { appId: 999, token: 'tok' })))
+  const app = React.createElement(App, { appId: 999, token: 'tok' })
+  await act(async () => root.render(account.strict ? React.createElement(React.StrictMode, null, app) : app))
   const doc = dom.window.document
   const setVisibility = async (state) => {
     visibility = state
@@ -170,27 +179,37 @@ async function mountStore(account) {
   }
 }
 
+// Publishing lives in Library's Your apps tab.
 async function openPublish(account) {
   const view = await mountStore(account)
-  await act(async () => view.doc.querySelector('#st-tab-publish').click())
+  await act(async () => view.doc.querySelector('#st-tab-library').click())
+  await until(() => view.doc.querySelector('#st-libtab-yours'), 'the Your apps tab')
+  await act(async () => view.doc.querySelector('#st-libtab-yours').click())
   return view
 }
 
-test('the Publish tab sends a signed-out owner to Settings › Accounts › Möbius', async () => {
+// Shared listings show in the Apps tab.
+async function openSharedListing(view) {
+  const tab = [...view.doc.querySelectorAll('button.st-tab')].find(button => button.textContent.startsWith('Apps'))
+  await act(async () => tab.click())
+  await until(() => view.doc.querySelector('[aria-label="Shared Notes — open details"]'), 'the shared listing')
+  await act(async () => view.doc.querySelector('[aria-label="Shared Notes — open details"]').click())
+}
+
+test('publishing sends a signed-out owner to Settings › Accounts › Möbius', async () => {
   const view = await openPublish({ linked: false, handle: '' })
   try {
     assert.match(view.doc.body.textContent, /Sign in to your Möbius account in Settings to publish an app\./)
     assert.doesNotMatch(view.doc.body.textContent, /Möbius · You/)
 
     const signIn = view.signInButtons()
-    assert.equal(signIn.length, 2, 'the heading and the notice each offer sign-in')
+    assert.equal(signIn.length, 1, 'the remaining account notice offers sign-in')
     for (const button of signIn) await act(async () => button.click())
     assert.deepEqual(view.posted, [
       { message: { type: 'moebius:open-settings', section: 'mobius-account' }, origin: 'https://store.test' },
-      { message: { type: 'moebius:open-settings', section: 'mobius-account' }, origin: 'https://store.test' },
     ])
-    assert.equal(view.doc.querySelector('#st-tab-publish').getAttribute('aria-selected'), 'true',
-      'the Store stays on Publish instead of opening another listing')
+    assert.equal(view.doc.querySelector('#st-libtab-yours').getAttribute('aria-selected'), 'true',
+      'the Store stays on Your apps instead of opening another listing')
   } finally {
     await view.close()
   }
@@ -200,14 +219,14 @@ test('coming back from Settings after signing in to Möbius clears the Publish p
   const account = { linked: false, handle: '' }
   const view = await openPublish(account)
   try {
-    assert.equal(view.signInButtons().length, 2)
+    assert.equal(view.signInButtons().length, 1)
     await view.leaveForSettings()
     account.linked = true
     account.handle = 'example'
     await view.returnToStore()
     assert.equal(view.signInButtons().length, 0, 'the sign-in prompt is gone')
     assert.doesNotMatch(view.doc.body.textContent, /Sign in to your Möbius account/)
-    assert.match(view.doc.body.textContent, /Publishing as example/)
+    assert.doesNotMatch(view.doc.body.textContent, /Publishing as/)
 
     // Signed in with a handle: returning again reads nothing more.
     const settled = view.reads.length
@@ -250,7 +269,7 @@ test('coming back from connecting GitHub re-reads the connection on Publish', as
     await view.leaveForSettings()
     await view.returnToStore()
     assert.equal(githubReads(), before + 1)
-    await until(() => /Publishing as example/.test(view.doc.body.textContent), 'GitHub to read as connected')
+    await until(() => !view.doc.querySelector('.st-publish-setup'), 'GitHub to read as connected')
   } finally {
     await view.close()
   }
@@ -260,8 +279,7 @@ test('coming back from Settings re-reads a detail page review gate that asked fo
   const account = { linked: false, handle: '', eligibility: 'account_required' }
   const view = await mountStore(account)
   try {
-    await until(() => view.doc.querySelector('[aria-label="Shared Notes — open details"]'), 'the shared listing')
-    await act(async () => view.doc.querySelector('[aria-label="Shared Notes — open details"]').click())
+    await openSharedListing(view)
     await until(() => view.signInButtons().length === 1, 'the review gate')
     assert.match(view.doc.body.textContent, /Sign in to your Möbius account in Settings to rate or review this app\./)
     await act(async () => view.signInButtons()[0].click())
@@ -281,8 +299,7 @@ test('coming back from Settings re-reads a detail page review gate that asked fo
 })
 
 async function openSharedNotes(view) {
-  await until(() => view.doc.querySelector('[aria-label="Shared Notes — open details"]'), 'the shared listing')
-  await act(async () => view.doc.querySelector('[aria-label="Shared Notes — open details"]').click())
+  await openSharedListing(view)
   await until(() => view.signInButtons().length === 1, 'the review gate')
 }
 
@@ -349,7 +366,7 @@ test('a slow startup read cannot restore the signed-out account after a sign-in 
   const account = { linked: false, handle: '', holdSpotlight: deferred() }
   const view = await openPublish(account)
   try {
-    await until(() => view.signInButtons().length === 2, 'the signed-out Publish prompt')
+    await until(() => view.signInButtons().length === 1, 'the signed-out Publish prompt')
     await view.leaveForSettings()
     account.linked = true
     account.handle = 'example'
@@ -358,8 +375,107 @@ test('a slow startup read cannot restore the signed-out account after a sign-in 
     await act(async () => account.holdSpotlight.resolve())
     await view.settle()
     assert.equal(view.signInButtons().length, 0, 'the startup snapshot does not sign the owner out again')
-    assert.match(view.doc.body.textContent, /Publishing as example/)
+    assert.doesNotMatch(view.doc.body.textContent, /Publishing as/)
   } finally {
     await view.close()
+  }
+})
+
+
+test('signed-in Your apps keeps account-return state without displaying the removed header', async () => {
+  const view = await openPublish({ linked: true, handle: 'example' })
+  try {
+    await view.settle()
+    assert.equal(view.doc.querySelector('#st-libtab-yours').getAttribute('aria-selected'), 'true')
+    assert.equal(view.doc.querySelector('.st-publish-heading.is-home'), null)
+    assert.doesNotMatch(view.doc.body.textContent, /Publishing as|Open contributions/)
+    assert.equal(view.signInButtons().length, 0)
+    const settled = view.reads.length
+    await view.leaveForSettings()
+    await view.returnToStore()
+    await view.focusWindow()
+    assert.equal(view.reads.length, settled, 'a signed-in account with a handle needs no repeated identity reads')
+  } finally {
+    await view.close()
+  }
+})
+
+test('saving an app for later writes storage and shows its toast once, even when React replays the update', async () => {
+  const sets = []
+  const storage = { get: async () => [], set: async (key, value) => { sets.push([key, value]) } }
+  const view = await mountStore({ linked: true, handle: 'example', strict: true, storage })
+  try {
+    await openSharedListing(view)
+    await until(() => view.doc.querySelector('[aria-label="Save for later"]'), 'the Save for later button')
+    await act(async () => view.doc.querySelector('[aria-label="Save for later"]').click())
+    assert.deepEqual(sets, [['saved.json', ['community:shared-notes']]])
+    assert.equal(view.doc.querySelector('.st-toast-msg')?.textContent, 'Saved for later · find it in Library')
+
+    await act(async () => view.doc.querySelector('[aria-label="Remove from saved"]').click())
+    assert.deepEqual(sets.at(-1), ['saved.json', []])
+    assert.equal(sets.length, 2)
+    assert.equal(view.doc.querySelector('.st-toast-msg')?.textContent, 'Removed from Saved')
+  } finally {
+    await view.close()
+  }
+})
+
+// Library › Saved with these saved ids; the community window lists only
+// Shared Notes, so every other saved listing is read by id.
+async function openSaved(savedIds, listings) {
+  const sets = []
+  const storage = { get: async () => savedIds, set: async (key, value) => { sets.push([key, value]) } }
+  const view = await mountStore({ linked: true, handle: 'example', storage, listings })
+  await act(async () => view.doc.querySelector('#st-tab-library').click())
+  await until(() => view.doc.querySelector('#st-libtab-saved'), 'the Saved tab')
+  await act(async () => view.doc.querySelector('#st-libtab-saved').click())
+  const pane = () => view.doc.querySelector('.st-libpane.is-saved')
+  return {
+    view, sets, pane,
+    names: () => [...(pane()?.querySelectorAll('[aria-label$=" — open details"]') || [])]
+      .map(node => node.getAttribute('aria-label').replace(' — open details', '')),
+  }
+}
+
+const olderTool = {
+  ...gatedListing, id: 'older-tool', name: 'Older Tool',
+  latest_revision: { id: 'rev-2', manifest_url: 'https://example.test/older/mobius.json', raw_base: 'https://example.test/older/' },
+  manifest: { id: 'older-tool', name: 'Older Tool', version: '1.0.0', description: 'An older tool.' },
+}
+
+test('Saved shows and counts every saved app whose listing resolves, reading ones outside the loaded window', async () => {
+  const saved = await openSaved(
+    ['community:shared-notes', 'community:older-tool', 'community:withdrawn', 'community:flaky'],
+    { 'older-tool': olderTool, withdrawn: { status: 404, detail: 'App not found.' }, flaky: { status: 503, detail: 'Unavailable.' } },
+  )
+  try {
+    await until(() => saved.names().length === 2, 'both resolvable saved apps')
+    await saved.view.settle()
+    assert.deepEqual(saved.names(), ['Shared Notes', 'Older Tool'])
+    assert.doesNotMatch(saved.pane().textContent, /Finding your saved apps/)
+    assert.deepEqual(saved.sets, [], 'unlisted and unreadable saved ids stay saved')
+  } finally {
+    await saved.view.close()
+  }
+})
+
+test('a saved listing that is gone is not counted, so Saved does not wait for it forever', async () => {
+  const saved = await openSaved(['community:withdrawn'], { withdrawn: { status: 404, detail: 'App not found.' } })
+  try {
+    await until(() => /Nothing saved yet/.test(saved.pane()?.textContent || ''), 'the empty Saved list')
+    assert.deepEqual(saved.names(), [])
+    assert.deepEqual(saved.sets, [])
+  } finally {
+    await saved.view.close()
+  }
+})
+
+test('a saved listing that cannot be read right now says so instead of claiming nothing is saved', async () => {
+  const saved = await openSaved(['community:flaky'], { flaky: { status: 503, detail: 'Unavailable.' } })
+  try {
+    await until(() => /Saved apps could not load/.test(saved.pane()?.textContent || ''), 'the could-not-load note')
+    assert.deepEqual(saved.sets, [], 'a failed read never drops the saved id')
+  } finally {
+    await saved.view.close()
   }
 })

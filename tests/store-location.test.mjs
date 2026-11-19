@@ -14,31 +14,39 @@ const buildDir = join(here, '.build-store-location')
 test('the reported place keeps only bounded navigation fields', () => {
   assert.deepEqual(storeLocation({
     tab: 'browse', category: 'all', query: 'q'.repeat(300),
-    activeCollection: 'play', detailId: 'voice',
-  }), { tab: 'browse', category: 'all', query: 'q'.repeat(200), collection: 'play', detail: 'voice' })
-  assert.equal(storeLocation({ tab: 'library', activeCollection: 'play' }).collection, null)
+    activeCollection: 'picks', detailId: 'voice',
+  }), { tab: 'browse', category: 'all', query: 'q'.repeat(200), collection: 'picks', detail: 'voice' })
+  assert.equal(storeLocation({ tab: 'library', activeCollection: 'picks' }).collection, null)
 })
 
 test('a restored place is validated and anything unknown falls back', () => {
   assert.equal(restoredStoreLocation(null), null)
   assert.equal(restoredStoreLocation({ tab: 'settings' }), null)
   assert.deepEqual(restoredStoreLocation({
-    tab: 'library', category: '<img onerror>', query: 7, collection: 'play', detail: '../x',
+    tab: 'library', category: '<img onerror>', query: 7, collection: 'picks', detail: '../x',
   }), { tab: 'library', category: 'all', query: '', collection: null, detail: null })
   assert.deepEqual(restoredStoreLocation({
-    tab: 'browse', category: 'update', query: 'notes', collection: 'play', detail: 'community:abc-1',
-  }), { tab: 'browse', category: 'all', query: 'notes', collection: 'play', detail: 'community:abc-1' })
+    tab: 'browse', category: 'update', query: 'notes', collection: 'picks', detail: 'community:abc-1',
+  }), { tab: 'browse', category: 'all', query: 'notes', collection: 'picks', detail: 'community:abc-1' })
 })
 
 test('restoration accepts only reachable filters and known collection IDs', () => {
-  for (const category of ['all', 'update', 'setup']) {
+  for (const category of ['all', 'needs', 'installed', 'update', 'saved', 'setup']) {
     assert.equal(restoredStoreLocation({ tab: 'library', category }).category, category)
   }
   for (const category of ['installed', 'personal finance', 'nonexistent']) {
     assert.equal(restoredStoreLocation({ tab: 'browse', category }).category, 'all')
   }
   assert.equal(restoredStoreLocation({ tab: 'browse', collection: 'nonexistent' }).collection, null)
-  for (const collection of ['picks', 'arrivals', 'play', 'other-installed']) {
+  // Retired shelf ids from before categories fall back to the tab's home.
+  for (const collection of ['play', 'community', 'other-installed']) {
+    assert.equal(restoredStoreLocation({ tab: 'browse', collection }).collection, null)
+  }
+  // The Apps and Games tabs remember a known category, nothing else.
+  assert.equal(restoredStoreLocation({ tab: 'games', category: 'music' }).category, 'music')
+  assert.equal(restoredStoreLocation({ tab: 'apps', category: 'update' }).category, 'all')
+  assert.equal(restoredStoreLocation({ tab: 'apps', collection: 'top-rated' }).collection, 'top-rated')
+  for (const collection of ['picks', 'arrivals', 'top-rated', 'updated', 'trending', 'action', 'developer']) {
     assert.equal(restoredStoreLocation({ tab: 'browse', collection }).collection, collection)
   }
 })
@@ -197,7 +205,7 @@ test('without the platform contract the Store starts at Browse as before', async
 })
 
 test('delayed collection ownership precedes detail ownership and Back unwinds both levels', async () => {
-  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' }, { delayed: true })
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'picks', detail: 'voice' }, { delayed: true })
   const view = await mountStore(nav)
   try {
     await until(() => nav.entries.length === 1, 'collection request')
@@ -205,15 +213,15 @@ test('delayed collection ownership precedes detail ownership and Back unwinds bo
     assert.deepEqual(nav.reports, [])
     await act(async () => nav.entries[0].own())
     await until(() => nav.entries.length === 2, 'detail request')
-    assert.equal(view.dom.window.document.querySelector('.st-collection-heading h2')?.textContent, 'Play')
+    assert.equal(view.dom.window.document.querySelector('.st-collection-view .st-pagehead-title')?.textContent, 'Our picks')
     assert.deepEqual(nav.reports, [])
     await act(async () => nav.entries[1].own())
     await until(() => nav.reports.at(-1)?.detail === 'voice', 'full restore')
-    assert.ok(nav.reports.every(place => place.collection === 'play' && place.detail === 'voice'))
+    assert.ok(nav.reports.every(place => place.collection === 'picks' && place.detail === 'voice'))
     await act(async () => nav.entries[1].callbacks.onBack())
     assert.equal(nav.reports.at(-1).detail, null)
-    assert.equal(nav.reports.at(-1).collection, 'play')
-    assert.equal(view.dom.window.document.querySelector('.st-collection-heading h2')?.textContent, 'Play')
+    assert.equal(nav.reports.at(-1).collection, 'picks')
+    assert.equal(view.dom.window.document.querySelector('.st-collection-view .st-pagehead-title')?.textContent, 'Our picks')
     await act(async () => nav.entries[0].callbacks.onBack())
     assert.equal(nav.reports.at(-1).collection, null)
   } finally { await view.close() }
@@ -258,7 +266,7 @@ test('a community detail resolves by identity beyond the first catalog page', as
     await until(() => nav.reports.at(-1)?.detail === 'community:beyond-page-one')
     assert.deepEqual(nav.opened, ['app-store-detail'])
     assert.equal(nav.reports.at(-1).category, 'all')
-    assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Distant app')
+    assert.equal(view.dom.window.document.querySelector('.st-dh-name')?.textContent, 'Distant app')
     assert.ok(nav.reports.every(place => place.detail === 'community:beyond-page-one'))
   } finally { await view.close() }
 })
@@ -291,12 +299,12 @@ test('installed-only detail waits for its manifest hydration', async () => {
     await act(async () => manifest.resolve({ id: 'linked', name: 'Hydrated app', version: '2.0.0' }))
     await until(() => nav.reports.at(-1)?.detail === 'other-installed-34')
     assert.deepEqual(nav.opened, ['app-store-detail'])
-    assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Hydrated app')
+    assert.equal(view.dom.window.document.querySelector('.st-dh-name')?.textContent, 'Hydrated app')
   } finally { await view.close() }
 })
 
 test('a newer intent cancels pending collection ownership and never opens the stale detail', async () => {
-  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' }, { delayed: true })
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'picks', detail: 'voice' }, { delayed: true })
   const view = await mountStore(nav)
   try {
     await until(() => nav.entries.length === 1)
@@ -353,7 +361,7 @@ test('unmount closes pending restored ownership without reporting an incomplete 
   assert.deepEqual(nav.reports, [])
 })
 
-for (const collection of [null, 'play']) {
+for (const collection of [null, 'picks']) {
   test(`refused detail ownership ${collection ? 'leaves the collection visible and finishes' : 'preserves the saved place'}`, async () => {
     const nav = fakeNav({ tab: 'browse', collection, detail: 'voice' }, { delayed: true })
     const view = await mountStore(nav)
@@ -365,7 +373,7 @@ for (const collection of [null, 'play']) {
       }
       await act(async () => nav.entries.at(-1).reject())
       if (!collection) assert.deepEqual(nav.reports, [])
-      else assert.equal(nav.reports.at(-1)?.collection, 'play')
+      else assert.equal(nav.reports.at(-1)?.collection, 'picks')
       await act(async () => view.dom.window.document.querySelector('.st-brand-name')
         .dispatchEvent(new view.dom.window.Event('pointerdown', { bubbles: true })))
       assert.equal(nav.reports.at(-1).collection, collection)
@@ -375,7 +383,7 @@ for (const collection of [null, 'play']) {
 }
 
 test('Updates intent closes an owned detail and collection before showing Library', async () => {
-  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' })
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'picks', detail: 'voice' })
   const view = await mountStore(nav)
   try {
     await until(() => nav.reports.at(-1)?.detail === 'voice')
@@ -439,12 +447,14 @@ test('owner tab selection cancels a destination waiting for the registry', async
   const nav = fakeNav({ tab: 'library', category: 'setup', detail: 'gone' })
   const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
   try {
-    await act(async () => view.dom.window.document.querySelector('#st-tab-publish').click())
+    await act(async () => view.dom.window.document.querySelector('.st-upload-btn').click())
     await act(async () => registry.resolve(json({ schema: 1, apps: [] })))
     await until(() => nav.reports.length > 0)
-    assert.equal(selectedTab(view.dom), 'st-tab-publish')
-    assert.equal(nav.reports.at(-1).tab, 'publish')
-    assert.deepEqual(nav.opened, [])
+    assert.equal(selectedTab(view.dom), 'st-tab-library')
+    assert.match(view.dom.window.document.querySelector('.st-publish-heading')?.textContent || '', /Publish an app/)
+    assert.equal(nav.reports.at(-1).tab, 'library')
+    assert.equal(nav.reports.at(-1).category, 'yours')
+    assert.deepEqual(nav.opened, ['app-store-publish'], 'only publishing\'s own Back step opens; the stale detail never does')
   } finally { await view.close() }
 })
 
@@ -457,13 +467,13 @@ test('opening a card cancels a slow community restore without closing the owner 
   })
   try {
     await until(() => signal)
-    await act(async () => view.dom.window.document.querySelector('[aria-label="Voice — open details"]').click())
+    await act(async () => view.dom.window.document.querySelector('[aria-label="Pages — open details"]').click())
     const ownerEntry = nav.entries.at(-1)
     await act(async () => target.resolve(json(communityRow)))
     await until(() => nav.reports.length > 0)
     assert.equal(signal.aborted, true)
     assert.equal(ownerEntry.closed, false)
-    assert.equal(nav.reports.at(-1).detail, 'voice')
+    assert.equal(nav.reports.at(-1).detail, 'pages')
     assert.deepEqual(nav.opened, ['app-store-detail'])
   } finally { await view.close() }
 })
@@ -481,7 +491,7 @@ for (const restored of [false, true]) {
       await act(async () => apps.resolve(json([{ id: 12, slug: 'voice', source_manifest }])))
       await until(() => nav.reports.at(-1)?.detail === 'voice')
       assert.deepEqual(nav.opened, ['app-store-detail'])
-      assert.equal(view.dom.window.document.querySelector('.st-detail-cta')?.textContent.trim(), 'Open App')
+      assert.equal(view.dom.window.document.querySelector('.st-dh-acts .st-dbtn.is-primary')?.textContent.trim(), 'Open')
     } finally { registry.resolve(json({ schema: 1, apps: [] })); apps.resolve(json([])); await view.close() }
   })
 }
@@ -504,7 +514,7 @@ test('an installed alias restores its current registry representative and report
   })
   try {
     await until(() => nav.reports.length > 0)
-    assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Linked App')
+    assert.equal(view.dom.window.document.querySelector('.st-dh-name')?.textContent, 'Linked App')
     assert.equal(nav.reports.at(-1).detail, 'linked')
     await act(async () => nav.entries[0].callbacks.onBack())
     await view.intent('app:other-installed-34')
@@ -548,7 +558,7 @@ test('owner card selection cancels pending restored ownership before opening its
 })
 
 test('collection Back cancels a pending detail without undoing owned history', async () => {
-  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play', detail: 'voice' }, { delayed: true })
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'picks', detail: 'voice' }, { delayed: true })
   const view = await mountStore(nav)
   try {
     await until(() => nav.entries.length === 1)
@@ -569,7 +579,7 @@ test('a saved Browse query is visible and can be cleared in one click', async ()
   const view = await mountStore(nav)
   try {
     assert.equal(view.dom.window.document.querySelector('#st-catalog-search')?.value, 'voice')
-    await act(async () => view.dom.window.document.querySelector('.st-header-search-toggle').click())
+    await act(async () => view.dom.window.document.querySelector('.st-search-clear').click())
     assert.equal(nav.reports.at(-1).query, '')
   } finally { await view.close() }
 })
@@ -587,12 +597,12 @@ test('Browse never retains a Library-only filter', async () => {
 test('a saved collection opens without waiting for registry or installed data', async () => {
   const registry = deferred()
   const apps = deferred()
-  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'play' })
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'picks' })
   const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise
     : path === '/api/apps/' ? apps.promise : undefined)
   try {
     assert.deepEqual(nav.opened, ['app-store-collection'])
-    assert.equal(nav.reports.at(-1)?.collection, 'play')
+    assert.equal(nav.reports.at(-1)?.collection, 'picks')
   } finally {
     registry.resolve(json({ schema: 1, apps: [] })); apps.resolve(json([]))
     await view.close()
@@ -648,7 +658,7 @@ test('keyboard interaction in the search box cancels a pending restored detail',
   } finally { await view.close() }
 })
 
-test('a Library filter chip cancels a pending restored detail before setting the filter', async () => {
+test('a Library tab cancels a pending restored detail before switching tabs', async () => {
   const lookup = deferred()
   let signal
   const nav = fakeNav({ tab: 'library', category: 'all', detail: 'community:beyond-page-one' })
@@ -657,12 +667,12 @@ test('a Library filter chip cancels a pending restored detail before setting the
   })
   try {
     await until(() => signal)
-    const chip = [...view.dom.window.document.querySelectorAll('.st-chip')].find(node => node.querySelector('span')?.textContent === 'Setup')
-    assert.ok(chip)
-    await act(async () => chip.click())
+    const libraryTab = view.dom.window.document.querySelector('[data-library-tab="needs"]')
+    assert.ok(libraryTab)
+    await act(async () => libraryTab.click())
     assert.equal(signal.aborted, true)
     await act(async () => lookup.resolve(json(communityRow)))
-    assert.equal(nav.reports.at(-1).category, 'setup')
+    assert.equal(nav.reports.at(-1).category, 'needs')
     assert.equal(nav.reports.at(-1).detail, null)
     assert.deepEqual(nav.opened, [])
   } finally { await view.close() }
@@ -687,15 +697,15 @@ test('superseding an intent that reuses an owner detail never closes the owner e
   const nav = fakeNav(undefined, { delayed: true })
   const view = await mountStore(nav, path => path.includes('catalog.json') ? registry.promise : undefined)
   try {
-    await until(() => view.dom.window.document.querySelector('[aria-label="Voice — open details"]'))
-    await act(async () => view.dom.window.document.querySelector('[aria-label="Voice — open details"]').click())
+    await until(() => view.dom.window.document.querySelector('[aria-label="Pages — open details"]'))
+    await act(async () => view.dom.window.document.querySelector('[aria-label="Pages — open details"]').click())
     const ownerEntry = nav.entries[0]
     await view.intent('app:notes')
     assert.equal(nav.entries.length, 1)
     await view.intent('app:gone')
     assert.equal(ownerEntry.closed, false)
     await act(async () => ownerEntry.own())
-    assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Notes')
+    assert.equal(view.dom.window.document.querySelector('.st-dh-name')?.textContent, 'Notes')
     await act(async () => registry.resolve(json({ schema: 1, apps: [] })))
     await until(() => nav.reports.at(-1)?.detail === 'notes')
     assert.equal(ownerEntry.closed, false)
@@ -730,11 +740,12 @@ test('an installed-list failure preserves a saved installed alias until backgrou
   } finally { await view.close() }
 })
 
-for (const collection of [null, 'play']) {
+for (const collection of [null, 'picks']) {
   test(`a failed detail manifest ${collection ? 'leaves the collection visible' : 'preserves the saved place'}`, async () => {
     const manifest = deferred()
     let requested = false
-    const nav = fakeNav({ tab: 'browse', category: 'all', collection, detail: 'network-app' })
+    // An entry with no category waits under More apps in the Apps tab.
+    const nav = fakeNav({ tab: 'apps', category: 'all', collection, detail: 'network-app' })
     const view = await mountStore(nav, path => {
       if (path.includes('catalog.json')) return json({ schema: 1, apps: [{
         id: 'network-app', name: 'Network app', manifest_url: 'https://example.test/network/mobius.json',
@@ -787,14 +798,15 @@ test('a registry failure cannot establish that a saved target is missing', async
 })
 
 test('opening an oversized community detail does not report a replacement bookmark', async () => {
-  const nav = fakeNav(undefined)
+  // A listing without a category is reachable under More apps in the Apps tab.
+  const nav = fakeNav({ tab: 'apps', category: 'all' })
   const view = await mountStore(nav, path => path.startsWith('/api/community/apps?')
     ? json({ items: [{ ...communityRow, id: 'x'.repeat(4096) }] }) : undefined)
   try {
     await until(() => view.dom.window.document.querySelector('[aria-label="Distant app — open details"]'))
     const reportsBefore = nav.reports.length
     await act(async () => view.dom.window.document.querySelector('[aria-label="Distant app — open details"]').click())
-    assert.equal(view.dom.window.document.querySelector('.st-hero-name')?.textContent, 'Distant app')
+    assert.equal(view.dom.window.document.querySelector('.st-dh-name')?.textContent, 'Distant app')
     assert.equal(nav.reports.length, reportsBefore)
   } finally { await view.close() }
 })
@@ -817,7 +829,8 @@ test('detail host Back cancels a waiting app intent', async () => {
 // The bundled snapshot is only a first-paint placeholder for a listing that is
 // not installed: its live manifest replaces it in place, and until then (or
 // when the read fails) the version is labelled as cached.
-const releaseMeta = dom => dom.window.document.querySelector('.st-technical-summary-meta')?.textContent || ''
+const releaseMeta = dom => [...dom.window.document.querySelectorAll('.st-info-row')]
+  .find(row => row.querySelector('dt')?.textContent === 'Version')?.querySelector('dd')?.textContent || ''
 
 test('an uninstalled listing replaces its snapshot with the live manifest in place', async () => {
   const { MANIFEST_SNAPSHOTS } = await import('../manifest-snapshots.js')
@@ -829,11 +842,11 @@ test('an uninstalled listing replaces its snapshot with the live manifest in pla
       : undefined
   ))
   try {
-    await until(() => releaseMeta(view.dom).includes('Version label'), 'Kanban detail')
-    assert.equal(releaseMeta(view.dom), `Version label v${MANIFEST_SNAPSHOTS.kanban.version} (cached)`)
+    await until(() => releaseMeta(view.dom).startsWith('v'), 'Kanban detail')
+    assert.equal(releaseMeta(view.dom), `v${MANIFEST_SNAPSHOTS.kanban.version} (cached)`)
 
     kanban.resolve(json({ ...MANIFEST_SNAPSHOTS.kanban, version: '99.0.0' }))
-    await until(() => releaseMeta(view.dom) === 'Version label v99.0.0', 'live Kanban manifest')
+    await until(() => releaseMeta(view.dom) === 'v99.0.0', 'live Kanban manifest')
     assert.equal(nav.opened.length, 1, 'the open detail page updates without reopening')
   } finally {
     kanban.resolve(json({}, 404))
@@ -851,10 +864,101 @@ test('a listing whose live manifest cannot be read keeps its snapshot labelled a
     return json({}, 404)
   })
   try {
-    await until(() => answered && releaseMeta(view.dom).includes('Version label'), 'Kanban detail')
+    await until(() => answered && releaseMeta(view.dom).startsWith('v'), 'Kanban detail')
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
-    assert.equal(releaseMeta(view.dom), `Version label v${MANIFEST_SNAPSHOTS.kanban.version} (cached)`)
+    assert.equal(releaseMeta(view.dom), `v${MANIFEST_SNAPSHOTS.kanban.version} (cached)`)
   } finally {
     await view.close()
   }
+})
+
+test('a creator portfolio keeps its Games filter across app details and host Back/Forward', async () => {
+  const rows = ['world', 'tool'].map((name, i) => ({
+    ...communityRow, id: `maker-${name}`, repository: `maker/${name}`, repository_url: `https://github.com/maker/${name}`,
+    publisher: { kind: 'github', login: 'maker' },
+    manifest: { id: name, name, version: '1.0.0', store: { category: i ? 'create' : 'worlds', tagline: name } },
+    latest_revision: { ...communityRow.latest_revision,
+      manifest_url: `https://raw.githubusercontent.com/maker/${name}/main/mobius.json`,
+      raw_base: `https://raw.githubusercontent.com/maker/${name}/main/` },
+  }))
+  const nav = fakeNav({ tab: 'browse', category: 'all', collection: 'dev:maker' })
+  const view = await mountStore(nav, path => path.startsWith('/api/community/apps?') ? json({ items: rows }) : undefined)
+  try {
+    const doc = view.dom.window.document
+    await until(() => doc.querySelectorAll('.st-creator-card').length === 2, 'complete creator portfolio')
+    await act(async () => [...doc.querySelectorAll('.st-creator-filters button')].find(b => b.textContent === 'Games').click())
+    assert.equal(doc.querySelectorAll('.st-creator-card').length, 1)
+    await act(async () => doc.querySelector('.st-creator-card').click())
+    await until(() => doc.querySelector('.st-dh-name')?.textContent === 'world')
+    await act(async () => nav.entries.at(-1).callbacks.onBack())
+    assert.equal(doc.querySelectorAll('.st-creator-card').length, 1)
+    assert.equal(doc.querySelector('.st-creator-filters button[aria-pressed="true"]')?.textContent, 'Games')
+    await act(async () => nav.entries[0].callbacks.onBack())
+    assert.equal(doc.querySelector('.st-creator'), null)
+    await act(async () => nav.entries[0].callbacks.onForward())
+    assert.equal(doc.querySelectorAll('.st-creator-card').length, 1)
+    assert.equal(doc.querySelector('.st-creator-filters button[aria-pressed="true"]')?.textContent, 'Games')
+  } finally { await view.close() }
+})
+
+test('Library › Your apps is where Publish starts, without submitting anything', async () => {
+  const nav = fakeNav(undefined)
+  let publicWrites = 0
+  const view = await mountStore(nav, (path, options) => {
+    if (path === '/api/community/github-status') return json({ connected: true, login: 'owner-login' })
+    if (path === '/api/community/identity') return json({ linked: true })
+    if (path.startsWith('/api/community/publications?')) return json({ items: [], viewer: { handle: 'owner-handle' } })
+    if (path.startsWith('/api/community/') && options.method === 'POST') { publicWrites++; return json({}) }
+    return undefined
+  })
+  try {
+    const doc = view.dom.window.document
+    assert.equal(doc.querySelector('.st-publish-btn'), null, 'no header plus or Publish shortcut')
+    assert.equal(doc.querySelector('.st-profile-bubble'), null, 'no profile button in the header')
+    await act(async () => doc.querySelector('#st-tab-library').click())
+    await act(async () => doc.querySelector('#st-libtab-yours').click())
+    assert.equal(selectedTab(view.dom), 'st-tab-library', 'Your apps lives in Library')
+    assert.equal(doc.querySelector('#st-libtab-yours')?.getAttribute('aria-selected'), 'true')
+    assert.equal(doc.querySelector('.st-my-profile'), null, 'there is no separate profile page')
+    assert.equal(nav.reports.at(-1).category, 'yours')
+    const publish = [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === 'Publish an app')
+    assert.ok(publish, 'publishing is reachable from Your apps')
+    await act(async () => publish.click())
+    assert.match(doc.querySelector('.st-publish-heading')?.textContent || '', /Publish an app/)
+    await act(async () => [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === 'Your apps' && b.closest('.st-publish-heading')).click())
+    assert.ok([...doc.querySelectorAll('button')].some(b => b.textContent.trim() === 'Publish an app'), 'back returns to Your apps')
+    await act(async () => publish.isConnected ? publish.click() : [...doc.querySelectorAll('button')].find(b => b.textContent.trim() === 'Publish an app').click())
+    const publishEntry = nav.entries.filter(entry => entry.label === 'app-store-publish').at(-1)
+    await act(async () => publishEntry.callbacks.onBack())
+    assert.doesNotMatch(doc.querySelector('.st-publish-heading')?.textContent || '', /Choose an app/, 'Back returns to Your apps')
+    assert.equal(doc.querySelector('#st-libtab-yours')?.getAttribute('aria-selected'), 'true', 'Back stays in Library')
+    assert.equal(publicWrites, 0, 'opening Your apps or the publishing picker is not public-action approval')
+  } finally { await view.close() }
+})
+
+test('a saved Publish place from before reopens as Library › Your apps', async () => {
+  const nav = fakeNav({ tab: 'publish', category: 'all', query: '', collection: null, detail: null })
+  const view = await mountStore(nav)
+  try {
+    await until(() => nav.reports.length > 0)
+    assert.equal(selectedTab(view.dom), 'st-tab-library')
+    assert.equal(nav.reports.at(-1).tab, 'library')
+    assert.equal(nav.reports.at(-1).category, 'yours')
+  } finally { await view.close() }
+})
+
+test('a category replaces the tab title, and pressing the current tab returns to its page', async () => {
+  const nav = fakeNav({ tab: 'apps', category: 'productivity', query: '', collection: null, detail: null })
+  const view = await mountStore(nav)
+  try {
+    const doc = view.dom.window.document
+    const titles = () => [...doc.querySelectorAll('.st-pagehead-title')].map(h => h.textContent.trim())
+    await until(() => nav.reports.length > 0)
+    assert.equal(nav.reports.at(-1).category, 'productivity')
+    assert.ok(!titles().includes('Apps'), `the category heading replaces the tab title: ${titles()}`)
+    await act(async () => doc.querySelector('#st-tab-apps').click())
+    assert.equal(nav.reports.at(-1).tab, 'apps')
+    assert.equal(nav.reports.at(-1).category, 'all', 'pressing Apps again leaves the category')
+    assert.ok(titles().includes('Apps'), 'back on the Apps page')
+  } finally { await view.close() }
 })

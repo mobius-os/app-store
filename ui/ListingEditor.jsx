@@ -5,7 +5,7 @@ import {
   CheckCircleFilled, Circle, ImageSquare, Plus, Sparkles, Trash,
 } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useEffect, useId, useRef, useState } from 'react'
-import { LISTING_LIMITS } from '../constants.js'
+import { LISTING_LIMITS, STORE_CATEGORIES } from '../constants.js'
 import { licenseName, utf8Length } from '../domain.js'
 
 const {
@@ -188,6 +188,10 @@ export function ListingEditor({
                   onChange={(event) => update({ description: event.target.value })} />
       </label>
 
+      {typeof draft.category === 'string' ? (
+        <CategoryPicker value={draft.category} onChange={(category) => update({ category })} />
+      ) : null}
+
       {typeof draft.license === 'string' ? (
         <LicensePicker value={draft.license} licensing={licensing} onChange={(license) => update({ license })} />
       ) : null}
@@ -317,6 +321,40 @@ function LicensePicker({ value, licensing, onChange }) {
           </button>
         </div>
       ) : !value ? <p className="st-edit-hint is-needed">Pick a license to publish this app.</p> : null}
+    </fieldset>
+  )
+}
+
+// Where the app appears in the Store: first App or Game, then one category.
+function CategoryPicker({ value, onChange }) {
+  const current = STORE_CATEGORIES.find((category) => category.id === value)
+  const [kind, setKind] = useState(current?.kind || 'apps')
+  const shownKind = current?.kind || kind
+  const choices = STORE_CATEGORIES.filter((category) => category.kind === shownKind)
+  return (
+    <fieldset className="st-edit-field st-edit-category">
+      <legend className="st-edit-label">Category</legend>
+      <p className="st-edit-hint">Choose where people find your app in the Store.</p>
+      <div className="st-edit-kind" role="group" aria-label="App or game">
+        {[['apps', 'App'], ['games', 'Game']].map(([id, label]) => (
+          <button key={id} type="button" className={shownKind === id ? 'is-active' : ''} aria-pressed={shownKind === id}
+            onClick={() => { setKind(id); if (current && current.kind !== id) onChange('') }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="st-cat-chips is-wrap" role="radiogroup" aria-label={shownKind === 'games' ? 'Game category' : 'App category'}>
+        {choices.map((category) => (
+          <button key={category.id} type="button" role="radio" aria-checked={value === category.id}
+            className={`st-cat-chip${value === category.id ? ' is-active' : ''}`} style={{ '--cat': category.color }}
+            onClick={() => onChange(value === category.id ? '' : category.id)}>
+            {category.title}
+          </button>
+        ))}
+      </div>
+      <p className="st-edit-hint">{current
+        ? `Shows under ${current.kind === 'games' ? 'Games' : 'Apps'} › ${current.title}.`
+        : 'Without a category, your app waits under More apps.'}</p>
     </fieldset>
   )
 }
