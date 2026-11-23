@@ -1634,5 +1634,40 @@ export const MANIFEST_SNAPSHOTS = {
         }
       ]
     }
+  },
+  "channels": {
+    "id": "channels",
+    "name": "Channels",
+    "version": "0.1.0",
+    "description": "Send Möbius notifications and your agents' posts, like release notes, to Slack, Discord, ntfy or any webhook.",
+    "author": "mobius-os",
+    "license": "MIT",
+    "homepage": "https://github.com/mobius-os/app-channels",
+    "icon": "icon.png",
+    "entry": "index.jsx",
+    "offline_capable": false,
+    "permissions": {
+      "cross_app_access": "none",
+      "share_with_apps": "none",
+      "channels_manage": true
+    },
+    "runtime": {
+      "imports": [
+        "react",
+        "react-dom",
+        "@openai/apps-sdk-ui/components/Icon"
+      ],
+      "esm_deps": []
+    },
+    "skills": [
+      "channels.md"
+    ],
+    "source_files": [
+      "theme.js",
+      "api.js",
+      "services.jsx",
+      "channels.md",
+      "icon.png"
+    ]
   }
 }
