@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-10-27",
+  "updated": "2026-11-23",
   "note": "Sole registry of Mobius App Store membership and discovery copy. The Store bundles this file as its offline floor and fetches the published copy at mount so new entries can appear without a Store release. Version-coupled manifest snapshots belong only in manifest-snapshots.js. `category` (and `community_categories`, keyed by lowercase GitHub owner/repo, for community listings whose creators have not chosen one) place apps in the Apps and Games tabs.",
   "apps": [
     {
@@ -971,6 +971,36 @@
         "hamzamerzic/app-social"
       ],
       "published_at": "2026-09-02T16:57:55+00:00"
+    },
+    {
+      "id": "channels",
+      "name": "Channels",
+      "description": "Send Möbius notifications and your agents' posts, like release notes, to Slack, Discord, ntfy or any webhook.",
+      "repo": "mobius-os/app-channels",
+      "manifest_url": "https://raw.githubusercontent.com/mobius-os/app-channels/main/mobius.json",
+      "raw_base": "https://raw.githubusercontent.com/mobius-os/app-channels/main/",
+      "categories": [
+        "system",
+        "notifications"
+      ],
+      "keywords": [
+        "channels",
+        "slack",
+        "discord",
+        "ntfy",
+        "webhook",
+        "notifications",
+        "release notes"
+      ],
+      "capabilities": [
+        "copy notifications to Slack, Discord, ntfy or a webhook",
+        "let agents post on purpose, like release notes",
+        "see each channel's recent sends and health"
+      ],
+      "audience": "developer",
+      "collection": "developer",
+      "category": "developer",
+      "summary": "Send notifications and posts to Slack and more."
     }
   ],
   "community_categories": {
