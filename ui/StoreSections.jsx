@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, ChevronLeft, ChevronRight } from '@openai/apps-sdk-ui/components/Icon'
 import { catalogCategory, catalogKind, creatorStorefront, storeCategory } from '../domain.js'
-import { InstalledBadge, appPrimaryAction, progressStageFor } from './CatalogCard.jsx'
+import { InstalledSeal, appPrimaryAction, progressStageFor } from './CatalogCard.jsx'
 import { ProgressFill } from './ProgressFill.jsx'
 import { CategoryIcon } from './CategoryBrowse.jsx'
 import { IconBox } from './IconBox.jsx'
@@ -104,7 +104,10 @@ export function FeatureCard({ item, kicker, appId, token, onPick, actionProps })
         aria-label={opensApp ? `${name} — open app` : `${name} — open details`} />
       <div className="st-fcard-copy">
         <div className="st-fcard-who">
-          <span className="st-fcard-tile"><IconBox item={item} token={token} /></span>
+          <span className="st-fcard-tile-slot">
+            <span className="st-fcard-tile"><IconBox item={item} token={token} /></span>
+            {primary.storeInstalled ? <InstalledSeal /> : null}
+          </span>
           <div>
             <div className="st-fcard-kicker">{kicker}</div>
             <h3 className="st-fcard-name">{name}</h3>
@@ -117,7 +120,7 @@ export function FeatureCard({ item, kicker, appId, token, onPick, actionProps })
               aria-label={`${primary.busyLabel || primary.shortLabel} ${name}`}>
               <ProgressFill busy={!!primary.busyLabel} label={progressStageFor(actionProps.busyActionKind, actionProps.updateStage).label}>{primary.shortLabel}</ProgressFill>
             </button>
-          ) : primary.storeInstalled ? <InstalledBadge /> : null}
+          ) : null}
         </div>
       </div>
     </article>

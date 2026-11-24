@@ -154,7 +154,6 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   // Get and Open are the row tap itself, so only real maintenance actions
   // (update, retry, resolve) and in-flight progress keep a button.
   const showAction = !!busy || !['install', 'open'].includes(lifecycle.actionKind)
-  const showInstalledBadge = !showAction && !!storeInstalled
   const cardActionDisabled = primary.disabled
   const actionLabel = busy ? primary.busyLabel
     : layout === 'row' ? primary.shortLabel : primary.reviewLabel
@@ -204,13 +203,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     <div className={`${cardVariantClass(cardVariant)}${layout === 'row' ? ' is-compact is-row' : layout === 'compact' ? ' is-compact' : layout === 'list' ? ' is-list' : layout === 'editorial' ? ' is-editorial-row' : ' is-catalog'}`}>
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
-        {(cardVariant === 'installed' || cardVariant === 'update') && (
-          <div className="st-installed-dot" aria-hidden="true">
-            <div className={`st-installed-dot-inner${cardVariant === 'update' ? ' is-update' : ''}`}>
-              <Check width={10} height={10} aria-hidden="true" />
-            </div>
-          </div>
-        )}
+        {cardVariant === 'installed' || cardVariant === 'update' ? <InstalledSeal update={cardVariant === 'update'} /> : null}
       </div>
       <button
         type="button"
@@ -249,9 +242,8 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       ) : null}
       {/* Discovery rows open the app page, which owns the one Install button,
           like Google Play; Library rows keep their maintenance actions. */}
-      {layout === 'compact' || (!showAction && !showInstalledBadge && !pickOpensApp) ? null : (
+      {layout === 'compact' || (!showAction && !pickOpensApp) ? null : (
       <div className="st-card-status-row">
-        {showInstalledBadge ? <InstalledBadge /> : null}
         {showAction ? <button
           type="button"
           className={cardActionClass}
@@ -308,13 +300,15 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   )
 }
 
-// A quiet, non-interactive marker for apps already on this Möbius. Taps pass
-// through to the row, which opens the app.
-export function InstalledBadge() {
+// The one installed marker: a small check seal on the app icon's corner.
+// Rows carry no label, so it is the same at every width.
+export function InstalledSeal({ update = false }) {
   return (
-    <span className="st-card-badge">
-      <Check width={12} height={12} aria-hidden="true" />Installed
-    </span>
+    <div className="st-installed-dot" aria-hidden="true">
+      <div className={`st-installed-dot-inner${update ? ' is-update' : ''}`}>
+        <Check width={10} height={10} aria-hidden="true" />
+      </div>
+    </div>
   )
 }
 

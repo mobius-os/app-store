@@ -601,22 +601,24 @@ export const CSS = `
   border: 1px solid var(--border);
 }
 .st-icon-letter { font-size: 34px; font-weight: 700; color: var(--text); }
-/* Installed apps wear a small accent check seal on the icon's corner, so
-   every list doubles as an at-a-glance inventory without costing row width.
-   Its ring takes the colour of whatever the icon sits on (--st-seal-ring). */
+/* Installed apps carry one marker: a small flat check seal on the icon's
+   corner, the same in every list and at every width. Its ring takes the
+   colour of whatever the icon sits on (--st-seal-ring). */
 .st-installed-dot {
   position: absolute;
-  right: -5px; bottom: -5px;
-  width: 22px; height: 22px; border-radius: 999px;
+  right: -3px; bottom: -3px;
+  width: 18px; height: 18px; border-radius: 999px;
   background: var(--accent);
   color: var(--accent-fg, #fff);
-  box-shadow: 0 0 0 3px var(--st-seal-ring, var(--bg)), 0 2px 6px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 2px var(--st-seal-ring, var(--bg));
   display: flex; align-items: center; justify-content: center;
   pointer-events: none;
 }
 .st-installed-dot-inner { display: flex; align-items: center; justify-content: center; line-height: 0; }
-.st-installed-dot-inner svg { width: 13px; height: 13px; stroke-width: 2.5; }
-.st-card.is-catalog, .st-panel, .st-fcard-tile { --st-seal-ring: var(--surface); }
+.st-installed-dot-inner svg { width: 11px; height: 11px; stroke-width: 2.5; }
+.st-card.is-catalog, .st-panel { --st-seal-ring: var(--surface); }
+/* Featured cards sit on dark artwork in both themes. */
+.st-fcard-tile-slot { position: relative; flex: none; display: inline-flex; --st-seal-ring: #111; }
 .st-card-name {
   font-size: 14px; font-weight: 600; line-height: 1.25;
   margin-bottom: 4px;
@@ -2903,28 +2905,7 @@ button.st-dh-dev:hover { text-decoration: underline; }
   .st-scroll.is-detail { padding-bottom: 40px; }
 }
 
-/* The Installed chip sits where Get/Open used to be: a soft accent tint that
-   reads as status, never as a button, and lets taps fall through to the row. */
-.st-card-badge {
-  display: inline-flex; align-items: center; gap: 5px; flex: none;
-  height: 28px; padding: 0 11px 0 9px; border-radius: 999px; pointer-events: none;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: color-mix(in srgb, var(--accent) 55%, var(--text));
-  font: 600 12px/1 var(--font); letter-spacing: .01em; white-space: nowrap;
-}
-.st-card-badge svg { width: 13px; height: 13px; flex: none; color: var(--accent); }
-.st-fcard-copy .st-card-badge {
-  height: 32px; padding: 0 13px 0 11px; font-size: 13px; color: #fff;
-  background: rgba(255,255,255,.14); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
-}
-.st-fcard-copy .st-card-badge svg { color: #c4b5fd; }
-/* Every row in the Library's Installed tab is installed; the chip adds nothing there. */
-.st-libpane.is-installed .st-card-badge { display: none; }
-/* Phones: the icon seal says it, so descriptions keep the full row width. */
-@media (max-width: 620px) {
-  .st-card .st-card-badge { display: none; }
-  .st-card-status-row:has(> .st-card-badge:only-child) { display: none; }
-  .st-card.is-row:has(.st-card-status-row > .st-card-badge:only-child) { grid-template-columns: 56px minmax(0, 1fr); }
-}
+/* Library rows hide the seal because the tab already says installed; Saved
+   mixes installed and not-yet-installed apps, so it keeps the seal. */
+.st-libpane.is-saved .st-lib-panel .st-installed-dot { display: flex; }
 `

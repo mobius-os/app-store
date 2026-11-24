@@ -93,7 +93,8 @@ test('every Library row keeps Details in its More menu, and only a ready app lau
       await tapRow()
       assert.deepEqual(calls, [['open', 7]], `an installed ${layout} card launches the app`)
       assert.equal(doc.querySelector('.st-card-action'), null, 'no Open button')
-      assert.equal(doc.querySelector('.st-card-badge')?.textContent, 'Installed')
+      assert.ok(doc.querySelector('.st-installed-dot'), 'installed apps carry the icon seal')
+      assert.equal(doc.querySelector('.st-card-status-row'), null, 'and nothing at the end of the row')
       assert.equal(doc.querySelector('.st-rowmenu-btn'), null, 'Browse cards have no More menu')
       assert.equal(named('Details'), undefined)
 
@@ -101,7 +102,7 @@ test('every Library row keeps Details in its More menu, and only a ready app lau
       await tapRow()
       assert.deepEqual(calls, [['details', 'pocket']], 'an app not yet installed opens its page, which owns Get')
       assert.equal(doc.querySelector('.st-card-action'), null, 'no Get button')
-      assert.equal(doc.querySelector('.st-card-badge'), null)
+      assert.equal(doc.querySelector('.st-installed-dot'), null)
     }
   } finally {
     await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
