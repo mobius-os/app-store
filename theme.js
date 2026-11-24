@@ -2359,8 +2359,9 @@ export const CSS = `
 .st-dh-category .st-cat-icon { width: 17px; height: 17px; font-size: 17px; background: none; border-radius: 0; }
 .st-dh-category:hover { color: var(--accent); }
 .st-detail-v2 .st-dh + .st-sec { margin-top: 24px; }
-.st-dh-dev { display: block; margin-top: 4px; padding: 0; min-height: 30px; border: 0; background: none; color: var(--accent); font: 500 15px var(--font); text-align: left; cursor: pointer; }
+.st-dh-dev { display: block; margin-top: 4px; padding: 0; min-height: 30px; border: 0; background: none; color: var(--accent-text, var(--accent)); font: 500 15px var(--font); text-align: left; cursor: pointer; }
 button.st-dh-dev:hover { text-decoration: underline; }
+.st-detail-v2 .st-see { color: var(--accent-text, var(--accent)); }
 .st-dh-sub { margin: 2px 0 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
 .st-dh-acts { display: flex; align-items: center; gap: 10px; margin-top: 13px; }
 .st-dbtn { min-width: 120px; height: 40px; padding: 0 18px; border: 0; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 600 15px var(--font); cursor: pointer; transition: transform .12s, filter .15s; }
@@ -2440,7 +2441,7 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-info > :nth-child(n+3) { border-top: 1px solid var(--border); }
 .st-info dt { color: var(--muted); }
 .st-info dd { margin: 0; text-align: right; font-weight: 500; }
-.st-lnk { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--accent); font: 500 15px var(--font); text-decoration: none; cursor: pointer; }
+.st-lnk { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--accent-text, var(--accent)); font: 500 15px var(--font); text-decoration: none; cursor: pointer; }
 .st-lnk:hover { text-decoration: underline; }
 .st-info-links { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 14px; }
 .st-detail-v2 .st-technical-details { margin-top: 14px; }
