@@ -48,7 +48,7 @@ test('unfinished listing opens the full existing editor with its AI-help actions
     assert.equal(dom.window.document.querySelector('.st-publish-heading.is-home'), null)
     assert.doesNotMatch(dom.window.document.body.textContent, /Publishing as|Open contributions/)
     await click('Publish an app')
-    await click('Publish')
+    await click('Prepare listing')
     assert.ok(dom.window.document.querySelector('.st-listing-editor'))
     assert.equal(dom.window.document.querySelector('.st-edit-field > input').value, 'Keep this draft')
     assert.ok(dom.window.document.querySelector('.st-listing-editor textarea'))
@@ -108,7 +108,7 @@ test('the release names the platform’s license and a refused license change sh
       },
     })))
     await click('Publish an app')
-    await click('Publish')
+    await click('Prepare listing')
     assert.equal(doc.querySelector('.st-publish-license strong').textContent, 'Mozilla Public License 2.0')
     await click('Change')
     await act(async () => doc.querySelector('.st-edit-license input[value="MIT"]').click())

@@ -624,6 +624,20 @@ export function hasAccessRows(preview) {
   return Array.isArray(preview?.access_rows) && Array.isArray(preview?.installed_access_rows)
 }
 
+// The Store can only decide which installs need a second tap after a live
+// platform check. Even a one-tap install sends the checked digest to the
+// installer, so a later change cannot turn it into an unreviewed broad grant.
+export function checkedInstallAccess(review) {
+  const preview = review?.preview
+  if (!['ready', 'refused'].includes(review?.status) || !hasAccessRows(preview)
+      || !preview.capability_contract || typeof preview.capability_contract !== 'object'
+      || !/^[0-9a-f]{64}$/.test(preview.capability_digest || '')) return null
+  const highImpact = !!preview.capability_contract.background || preview.access_rows.some(row =>
+    row.critical === true || ['background_job', 'github_access', 'github_connect'].includes(row.id)
+      || ['write', 'public', 'redacted+deleted'].includes(row.level))
+  return { digest: preview.capability_digest, requiresConfirmation: highImpact || review.status === 'refused' }
+}
+
 export function capabilityDiffNeedsReview(diff) {
   if (!diff || typeof diff !== 'object') return true
   if (diff.unknown_previous !== false) return true

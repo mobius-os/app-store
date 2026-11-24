@@ -80,11 +80,11 @@ const UNCHECKED_REASON = {
 // the single action that row offers. Every action opens the listing review.
 function publicationRow(state, hosted) {
   const live = state?.status === 'live'
-  if (hosted?.has_unpublished_changes) return { label: 'Draft changes', tone: 'pending', action: live ? 'Update' : 'Publish' }
-  if (!state) return { label: hosted ? 'Hosted' : 'Not in the Store', tone: '', action: 'Publish' }
-  if (live) return { label: 'Live', tone: 'live', action: 'Update' }
+  if (hosted?.has_unpublished_changes) return { label: 'Draft changes', tone: 'pending', action: live ? 'Prepare update' : 'Prepare listing' }
+  if (!state) return { label: hosted ? 'Hosted' : 'Not in the Store', tone: '', action: 'Prepare listing' }
+  if (live) return { label: 'Live', tone: 'live', action: 'Prepare update' }
   if (state.status === 'rejected' || state.status === 'failed') return { label: 'Needs attention', tone: 'problem', action: 'Fix' }
-  if (state.status === 'withdrawn') return { label: 'Withdrawn', tone: '', action: 'Publish' }
+  if (state.status === 'withdrawn') return { label: 'Withdrawn', tone: '', action: 'Prepare listing' }
   if (state.status === 'checking') return { label: 'Checking', tone: 'pending', action: 'View' }
   return { label: 'In review', tone: 'pending', action: 'View' }
 }

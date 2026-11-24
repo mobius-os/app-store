@@ -25,8 +25,8 @@ export const CSS = `
   /* Filled purple controls carry white text; a slightly deeper fill keeps that
      text readable (4.5:1 or better) while following the theme's accent. */
   --st-accent-fill: color-mix(in srgb, var(--accent) 86%, black);
-  /* Purple text on a neutral surface (Get), lifted for 4.5:1 contrast. */
-  --st-accent-text: color-mix(in srgb, var(--accent) 78%, #fff);
+  /* Match the shell's text accent; the decorative accent is too pale on light pills. */
+  --st-accent-text: var(--accent-text, var(--accent));
 }
 .st-scroll {
   flex: 1; min-height: 0;
@@ -2081,8 +2081,10 @@ export const CSS = `
 }
 @media (hover: hover) {
   .st-card.is-compact .st-card-action:not([class*=" is-"]):not(:disabled):hover,
-  .st-card.is-list .st-card-action:not([class*=" is-"]):not(:disabled):hover { background: color-mix(in srgb, var(--accent) 14%, var(--surface-2, var(--surface))); }
+  .st-card.is-list .st-card-action:not([class*=" is-"]):not(:disabled):hover { background: var(--surface); }
 }
+.st-card.is-compact .st-card-action:not([class*=" is-"]):not(:disabled):active,
+.st-card.is-list .st-card-action:not([class*=" is-"]):not(:disabled):active { opacity: 1; }
 .st-card.is-compact .st-card-action.is-installed, .st-card.is-list .st-card-action.is-installed { color: var(--text); background: var(--surface-2, var(--surface)); }
 
 /* Phone Library rows: the actions sit under the text, so names, descriptions
@@ -2201,7 +2203,7 @@ export const CSS = `
 .st-arrow { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: none; color: var(--text); cursor: pointer; }
 .st-arrow:disabled { opacity: .35; cursor: default; }
 .st-arrow:hover:not(:disabled) { background: var(--surface-2); }
-.st-backlink { display: inline-flex; align-items: center; gap: 2px; min-height: 40px; margin-top: 10px; padding: 0; border: 0; background: none; color: var(--accent); font: 500 16px var(--font); cursor: pointer; }
+.st-backlink { display: inline-flex; align-items: center; gap: 2px; min-height: 40px; margin-top: 10px; padding: 0; border: 0; background: none; color: var(--st-accent-text); font: 500 16px var(--font); cursor: pointer; }
 .st-pagehead-sub { margin: 6px 0 0; color: var(--muted); }
 
 /* One app row: icon, name, one line, and its action. */
@@ -2351,6 +2353,14 @@ export const CSS = `
 .st-dh .st-hero-icon { width: 104px; height: 104px; border-radius: 24px; flex: none; box-shadow: 0 0 0 1px var(--border); }
 .st-dh-text { min-width: 0; flex: 1; }
 .st-dh .st-detail-note { margin-top: 12px; grid-column: 1 / -1; }
+.st-detail-note .st-install-access-link { justify-self: start; padding: 0; color: var(--st-accent-text); font-size: inherit; min-height: 44px; }
+/* This review stays compact and centered regardless of the update dialog's layout. */
+.st-update-review-scrim.is-install-review { align-items: center; padding: 12px; }
+.is-install-review > .st-update-review { width: min(440px, 100%); height: auto; max-height: 100%; }
+.is-install-review .st-update-review-actions { display: flex; flex-wrap: wrap; padding-top: 12px; }
+.is-install-review .st-update-review-actions .st-btn { width: auto; margin: 0; order: 0; border-radius: 999px; }
+.is-install-review .st-update-review-actions .st-btn:first-child { margin-inline-end: auto; }
+.is-install-review .st-update-review-actions .st-btn-primary { background: var(--st-accent-fill); border-color: var(--st-accent-fill); }
 .st-dh-name { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -.035em; }
 .st-dh-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin: 4px 0 2px; min-height: 30px; grid-column: 2; }
 .st-dh-meta .st-dh-dev { display: inline-flex; align-items: center; min-height: 30px; margin: 0; font-size: 13px; }
@@ -2498,6 +2508,7 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-qempty { margin-top: 28px; padding: 32px; text-align: center; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
 .st-qempty b { display: block; font-size: 18px; }
 .st-qempty p { margin: 6px 0 0; color: var(--muted); }
+.st-qhead .st-see, .st-qempty .st-see { color: var(--st-accent-text); }
 .st-qempty .st-chips2 { justify-content: center; margin-top: 18px; }
 @media (max-width: 680px) { .st-qhead .st-pagehead-title { font-size: 24px; } }
 
@@ -2505,7 +2516,8 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-qdrop { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 30; min-width: 280px; max-height: 70vh; overflow: auto; padding: 6px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 16px 40px rgba(0,0,0,.28); }
 .st-qdrop-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 8px 4px; color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
 .st-qdrop-head b { font-weight: 600; }
-.st-qdrop-head button { border: 0; background: none; color: var(--accent); font: 500 13px var(--font); text-transform: none; letter-spacing: 0; cursor: pointer; }
+.st-search-controls { display: contents; }
+.st-qdrop-head button { border: 0; background: none; color: var(--st-accent-text); font: 500 13px var(--font); text-transform: none; letter-spacing: 0; cursor: pointer; }
 .st-qdrop-row { display: flex; align-items: center; }
 .st-qdrop-item { flex: 1; min-width: 0; width: 100%; display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--text); font: 15px var(--font); text-align: left; cursor: pointer; }
 .st-qdrop-item:hover, .st-qdrop-item:focus-visible { background: var(--surface-2); }
@@ -2795,9 +2807,9 @@ button.st-dh-dev:hover { text-decoration: underline; }
 
 /* Phones: every small control gets a 44px tap area without changing its look. */
 @media (max-width: 680px) {
-  .st-card-action, .st-rowmenu-btn, .st-mobius-back,
+  .st-card-action, .st-rowmenu-btn, .st-mobius-back, .st-search-clear, .st-icon-btn,
   .st-spotlight-pagination > button, .st-spotlight-toggle, .st-spotlight-open { position: relative; }
-  .st-card-action::before, .st-rowmenu-btn::before, .st-mobius-back::before,
+  .st-card-action::before, .st-rowmenu-btn::before, .st-mobius-back::before, .st-search-clear::before, .st-icon-btn::before,
   .st-spotlight-pagination > button::before, .st-spotlight-toggle::before, .st-spotlight-open::before {
     content: ""; position: absolute; top: 50%; left: 50%;
     width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%);

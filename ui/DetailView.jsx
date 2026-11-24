@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Code, Flag, SavedFilledXs, SavedXs, Share, X } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, catalogCategory, catalogPublisher, communityFeedbackOf, formatDownloadSize, storeCategory, hasAccessRows, isTrustedHost, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus, shortDate } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, catalogCategory, catalogPublisher, checkedInstallAccess, communityFeedbackOf, formatDownloadSize, storeCategory, hasAccessRows, isTrustedHost, MISSING_ACCESS_ROWS, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus, shortDate } from '../domain.js'
 import { CapabilityContract, capabilityRows } from './CapabilityContract.jsx'
 import { CategoryIcon } from './CategoryBrowse.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
@@ -36,7 +36,7 @@ function checkedAtText(value) {
   })
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onOpenMobiusAccount, canCommunityWithdraw = false, communityBusy = false, communityError = '', mobiusAccount = 'loading', token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '', related = null, renderRow = null, onOpenDeveloper = null, onOpenCategory = null, saved = false, onToggleSaved = null, onShare = null, updateStage = null }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, installError, canRetryInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onOpenMobiusAccount, canCommunityWithdraw = false, communityBusy = false, communityError = '', mobiusAccount = 'loading', token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '', related = null, renderRow = null, onOpenDeveloper = null, onOpenCategory = null, saved = false, onToggleSaved = null, onShare = null, updateStage = null }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   // The recovery note must not outlive its deadline: re-read the clock whenever the deadline changes (the
   // list can arrive after the page opened) and again when it passes.
@@ -69,22 +69,29 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   // Conflict resolution reuses the candidate already reviewed and journaled by
   // the backend. Do not disable its durable resolver action just because a new
   // read-only capability preview is temporarily unavailable.
-  // Only an update waits for the access check: it shows what changes. A fresh install does not, because
-  // an app asks what it may do the first time it opens.
   const requiresCapabilityReview = !blockedUpdate && hasUpdate
   const capabilityReviewReady = ['ready', 'changed', 'refused'].includes(capabilityReview?.status)
     && hasAccessRows(capabilityReview?.preview)
   const canRetryInstalled = typeof onRetryInstalled === 'function'
+  const isFreshInstall = lifecycle.actionKind === 'install'
+  const checkedInstall = isFreshInstall ? checkedInstallAccess(capabilityReview) : null
+  const checkingInstall = isFreshInstall && (!capabilityReview || capabilityReview.status === 'loading')
+  const retryAccess = isFreshInstall && !checkingInstall && !checkedInstall
+  const [installReview, setInstallReview] = useState(null)
+  const closeInstallReview = useCallback(() => setInstallReview(null), [])
+  useEffect(() => { closeInstallReview() }, [item.id, checkedInstall?.digest, closeInstallReview])
+  const showInstallReview = !busy && isFreshInstall && installReview
+    && installReview.itemId === item.id && installReview.digest === checkedInstall?.digest
   const primaryActionDisabled =
     busy ||
     lifecycle.actionKind === 'none' ||
     (lifecycle.actionKind === 'open' && !storeInstalled) ||
     (lifecycle.actionKind === 'retry' && !canRetryInstalled) ||
+    checkingInstall || (retryAccess && !onRetryCapabilityReview) ||
     (requiresCapabilityReview && !capabilityReviewReady)
   // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
   // already resolve to trusted hosts, so they pass silently. Invalid
-  // URLs fall through to the warn path on purpose. This is now the
-  // last checkpoint before install — there is no second confirm modal.
+  // URLs fall through to the warn path on purpose.
   const unfamiliarHost = item.manifest_url && !isTrustedHost(item.manifest_url)
   let warnHost = ''
   if (unfamiliarHost) {
@@ -128,6 +135,12 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   }, [item.manifest_url, changesFrom, token])
   const checkedAt = checkedAtText(sourceCheck?.checkedAt)
   const [accessOpen, setAccessOpen] = useState(accessChanged)
+  const accessToggle = useRef(null)
+  const revealAccess = () => {
+    setAccessOpen(true)
+    accessToggle.current?.scrollIntoView({ block: 'start' })
+    accessToggle.current?.focus({ preventScroll: true })
+  }
   // Each app page starts folded unless its access changed.
   useEffect(() => {
     setAccessOpen(accessChanged)
@@ -139,6 +152,17 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const accessSummary = !accessRows ? 'Checked by your Möbius before anything is installed.'
     : !accessRows.length ? 'No special access.'
       : `${accessRows.length} ${accessRows.length === 1 ? 'permission' : 'permissions'}${sensitiveCount ? ` · ${sensitiveCount} sensitive` : ''}`
+  const verifiedRows = checkedInstall ? capabilityReview.preview.access_rows : []
+  const runsAgents = verifiedRows.some(row => ['agent_role', 'agent_start'].includes(row.id))
+  const backgroundText = scheduleText || (checkedInstall && capabilityReview.preview.capability_contract.background
+    ? 'Can run in the background' : '')
+  const permissionCount = verifiedRows.length
+  const installAccessHeading = backgroundText
+    ? `${backgroundText}${runsAgents ? ' and can run AI agents' : ''}.`
+    : checkedInstall?.requiresConfirmation && permissionCount
+      ? 'Review what this app can access before installing.'
+      : permissionCount ? `${permissionCount} ${permissionCount === 1 ? 'permission requested' : 'permissions requested'}.`
+        : 'No special permissions requested.'
   // Until a live manifest arrives (the access preview reads one), the bundled
   // snapshot's version must not look authoritative.
   const catalogVersion = m === item.manifest && showsSnapshotManifest(item)
@@ -183,6 +207,8 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
     : item
 
   const primaryLabel = busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind)
+    : checkingInstall ? 'Checking access…'
+    : retryAccess ? 'Retry access check'
     : requiresCapabilityReview && !capabilityReviewReady
       ? (capabilityReview?.preview ? 'Access unavailable' : 'Checking access…')
     : blockedUpdate ? 'Fix update'
@@ -191,17 +217,21 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
     : storeInstalled ? 'Open'
     : lifecycle.actionKind === 'install' ? 'Get'
     : lifecycle.actionLabel
-  const runPrimary = () => {
+  const runPrimary = (event) => {
     if (primaryActionDisabled) return
     if (blockedUpdate) { onReviewUpdate(resolutionNotice); return }
     if (lifecycle.actionKind === 'retry') { onRetryInstalled?.(); return }
+    if (retryAccess) { onRetryCapabilityReview?.(); return }
     if (hasUpdate) onInstall(item, {
       isUpdate: true,
       existingId: storeInstalled.id,
       capabilityDigest: capabilityReview.preview.capability_digest,
     })
     else if (storeInstalled) onOpenInstalled(storeInstalled.id)
-    else onInstall(item)
+    else if (checkedInstall?.requiresConfirmation) {
+      event.currentTarget.focus({ preventScroll: true })
+      setInstallReview({ itemId: item.id, digest: checkedInstall.digest })
+    } else if (checkedInstall) onInstall(item, { capabilityDigest: checkedInstall.digest })
   }
   const developer = catalogPublisher(item)
   const releasedAt = detailFeedback?.released_at || detailFeedback?.published_at || item.published_at || ''
@@ -246,7 +276,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             </div>
             <p className="st-dh-sub">{listingTagline}</p>
             {!storeInstalled && recovery && (
-              <div className="st-detail-note" role="status">
+              <div className="st-detail-note is-recovery" role="status">
                 <strong>{recovery.title}</strong>
                 <span>{recovery.detail}</span>
               </div>
@@ -273,6 +303,24 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
                 <button type="button" className="st-dbtn is-link" onClick={() => onUninstall(storeInstalled)} disabled={busy}>Uninstall</button>
               ) : null}
             </div>
+            {isFreshInstall ? (
+              <div className="st-detail-note is-install-access">
+                <strong role="status">{checkingInstall ? 'Checking this app’s access before installing.'
+                  : retryAccess ? (capabilityReview?.status === 'error' ? 'Couldn’t verify access. Nothing was installed.' : MISSING_ACCESS_ROWS)
+                    : installAccessHeading}</strong>
+                {capabilityReview?.status === 'refused' ? <span role="alert">Access changed. Nothing was installed.</span> : null}
+                {permissionCount ? <button type="button" className="st-see st-install-access-link" onClick={revealAccess}>
+                  View {permissionCount === 1 ? 'permission' : `all ${permissionCount} permissions`}
+                </button> : null}
+              </div>
+            ) : null}
+            {isFreshInstall && installError ? (
+              <div className="st-detail-note is-install-error">
+                <strong role="alert">Couldn’t finish installing {m.name}.</strong>
+                {canRetryInstall ? <button type="button" className="st-dbtn is-link" onClick={runPrimary} disabled={primaryActionDisabled}>Try again</button> : null}
+                <details><summary>Details</summary><span>{installError}</span></details>
+              </div>
+            ) : null}
           </div>
         </header>
 
@@ -460,7 +508,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             how much an app asks for, and a change in access opens it. */}
         <section className={`st-sec st-access-sec${accessChanged ? ' is-attention' : ''}${accessOpen ? ' is-open' : ''}`} aria-labelledby="st-detail-access">
           <h2 className="st-access-head">
-            <button type="button" id="st-detail-access" className="st-access-summary"
+            <button ref={accessToggle} type="button" id="st-detail-access" className="st-access-summary"
               aria-expanded={accessOpen} aria-controls="st-detail-access-body" onClick={() => setAccessOpen(open => !open)}>
               <span className="st-access-summary-text">
                 <span className="st-sh-title">What it can access</span>
@@ -513,6 +561,37 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
         <ScreenshotViewer shots={shots} index={viewer} onIndex={setViewer} onClose={() => setViewer(-1)}
           render={(shot) => listingImage(shot.path, shot.alt, 'st-viewer-image', 'eager')} />
       ) : null}
+      {showInstallReview ? <InstallAccessReview name={m.name} preview={capabilityReview.preview}
+        onClose={closeInstallReview} onConfirm={() => {
+          closeInstallReview()
+          onInstall(item, { capabilityDigest: installReview.digest, confirmed: true })
+        }} /> : null}
+    </div>
+  )
+}
+
+function InstallAccessReview({ name, preview, onClose, onConfirm }) {
+  const sheetRef = useRef(null)
+  const cancelRef = useRef(null)
+  useSheetFocus({ sheetRef, initialRef: cancelRef, onClose })
+  return (
+    <div className="st-update-review-scrim is-install-review" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
+      <div className="st-update-review" ref={sheetRef} role="dialog" aria-modal="true" aria-labelledby="st-install-review-title">
+        <div className="st-update-review-head">
+          <div>
+            <h2 className="st-update-review-title" id="st-install-review-title">Review access for {name}</h2>
+            <p className="st-update-review-subtitle">You’ll still decide which access to allow when you first open the app.</p>
+          </div>
+          <button type="button" className="st-update-review-close" aria-label="Close" onClick={onClose}><X aria-hidden="true" /></button>
+        </div>
+        <div className="st-update-review-body">
+          <CapabilityContract review={{ status: 'ready', preview }} />
+        </div>
+        <div className="st-update-review-actions">
+          <button type="button" className="st-btn st-btn-ghost" ref={cancelRef} onClick={onClose}>Cancel</button>
+          <button type="button" className="st-btn st-btn-primary" onClick={onConfirm}>Confirm install</button>
+        </div>
+      </div>
     </div>
   )
 }

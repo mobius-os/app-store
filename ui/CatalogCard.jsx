@@ -96,7 +96,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, onUninstall, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, onRetryError = null, onReviewUpdate, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid', updateStage = null }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, onUninstall, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, onRetryError = null, onReviewUpdate, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid', updateStage = null, showRatingCount = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -241,7 +241,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
         <div className="st-card-desc">{description}</div>
       ) : null}
       {(layout === 'compact' || layout === 'list' || layout === 'row') ? (
-        <CardByline item={item} state={layout === 'compact' || layout === 'row' ? lifecycle.cardVariant : ''} />
+        <CardByline item={item} showRatingCount={showRatingCount} state={layout === 'compact' || layout === 'row' ? lifecycle.cardVariant : ''} />
       ) : null}
       {/* Discovery rows open the app page, which owns the one Install button,
           like Google Play; Library rows keep their maintenance actions. */}
@@ -305,7 +305,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
 
 // One quiet line under a row: the app's category, its rating and installs when
 // there are real numbers, whether it is installed, and who publishes it.
-function CardByline({ item, state = '' }) {
+function CardByline({ item, state = '', showRatingCount }) {
   const category = storeCategory(catalogCategory(item))
   const feedback = communityFeedbackOf(item)
   const count = feedback?.rating_count || 0
@@ -317,6 +317,7 @@ function CardByline({ item, state = '' }) {
       {count > 0 ? (
         <span className="st-card-rating" aria-label={`Rated ${Number(feedback.rating_average).toFixed(1)} out of 5 by ${count} ${count === 1 ? 'person' : 'people'}`}>
           <StarFilled width={11} height={11} aria-hidden="true" />{Number(feedback.rating_average).toFixed(1)}
+          {showRatingCount ? ` (${count})` : null}
         </span>
       ) : null}
       {installsLabel(item) ? <span className="st-card-installs">{installsLabel(item)}</span> : null}

@@ -33,6 +33,7 @@ import {
   storeDestinationFromMessage,
   capabilityDiffNeedsReview,
   hasAccessRows,
+  checkedInstallAccess,
   catalogUpdateItemForInstalled,
   collectCategories,
   sourceAvailabilityStatus,
@@ -119,6 +120,7 @@ import {
   openInstalledApp,
   openSystemSettings,
   previewApp,
+  readErrorDetail,
   readSetupCompletions,
   readSystemSetupReady,
   seedChatMessage,
@@ -462,6 +464,7 @@ export default function App({ appId, token }) {
   const communityCatalogRef = useRef(communityCatalog)
   useEffect(() => { communityCatalogRef.current = communityCatalog }, [communityCatalog])
   const [communityError, setCommunityError] = useState('')
+  const [communitySearch, setCommunitySearch] = useState(null)
   const [communityLoading, setCommunityLoading] = useState(false)
   const [communityHasMore, setCommunityHasMore] = useState(false)
   const [communityOffset, setCommunityOffset] = useState(0)
@@ -636,11 +639,13 @@ export default function App({ appId, token }) {
     setTab(next)
   }, [])
   const [pendingUninstall, setPendingUninstall] = useState(null)
+  const [uninstallFailure, setUninstallFailure] = useState(null)
   // pendingUninstall: the installed app row from /api/apps/.
   // Browser modal dialogs are silently no-op'd inside the AppCanvas
   // iframe (sandbox lacks `allow-modals`), so we stage the
   // confirmation as in-app state and render our own modal.
   const [busy, setBusy] = useState(false)
+  const freshInstallRef = useRef(false)
   const [busyItemId, setBusyItemId] = useState(null)
   const [busyActionKind, setBusyActionKind] = useState(null)
   // Candidate loading state for the pre-apply update review. The review opens
@@ -945,23 +950,26 @@ export default function App({ appId, token }) {
     communityRequestRef.current = requestId
     const limit = 24
     const offset = append ? communityOffset : 0
+    const term = query.trim()
+    const answersSearch = !!term && !append
     if (!background) setCommunityLoading(true)
+    if (answersSearch && !background) setCommunitySearch({ term, status: 'loading' })
     try {
       // Refresh the loaded window atomically: do not discard pages the owner
       // already loaded, or replace them with a partial failed refresh.
       // Category pages and shelves group whatever is loaded, so an unsearched
       // window starts wide; a search stays one page.
-      const firstWindow = query.trim() ? limit : COMMUNITY_BROWSE_WINDOW
+      const firstWindow = term ? limit : COMMUNITY_BROWSE_WINDOW
       const target = background ? Math.max(firstWindow, communityOffset) : firstWindow
       // The shelves' rankings refresh with the browse window. A failed
       // ranking keeps the last one rather than hiding its shelf.
-      const rankingsRequest = append || query.trim() ? null : Promise.all(
+      const rankingsRequest = append || term ? null : Promise.all(
         COMMUNITY_RANKINGS.map((sort) => loadCommunityApps(token, {
           sort, limit: RANKED_SHELF_SIZE, signal: controller.signal,
         }).then((payload) => [sort, communityRanking(payload, sort)], () => null)),
       )
       const page = await loadCommunityWindow(
-        params => loadCommunityApps(token, { ...params, query: query.trim(), signal: controller.signal }),
+        params => loadCommunityApps(token, { ...params, query: term, signal: controller.signal }),
         { offset, limit, target: append ? offset + limit : target },
       )
       const rankings = rankingsRequest ? (await rankingsRequest).filter(Boolean) : []
@@ -975,9 +983,11 @@ export default function App({ appId, token }) {
       setCommunityOffset(page.nextOffset)
       setCommunityHasMore(page.hasMore)
       setCommunityError('')
+      if (answersSearch) setCommunitySearch({ term, status: 'ready' })
     } catch (error) {
       if (communityRequestRef.current !== requestId || controller.signal.aborted) return
       setCommunityError(error?.message || 'Community apps are unavailable right now.')
+      if (answersSearch) setCommunitySearch({ term, status: 'unavailable' })
     } finally {
       if (communityRequestRef.current === requestId) {
         communityBusyRef.current = false
@@ -1027,6 +1037,7 @@ export default function App({ appId, token }) {
   const savedOpen = tab === 'library' && category === 'saved' && savedIds.length > 0
   useEffect(() => {
     if (!DISCOVERY_TABS.has(tab) && !savedOpen) return undefined
+    if (query.trim()) setCommunitySearch({ term: query.trim(), status: 'loading' })
     const timer = window.setTimeout(() => {
       setCommunityOffset(0)
       refreshCommunity({ append: false })
@@ -1470,10 +1481,13 @@ export default function App({ appId, token }) {
 
   const reviewCapabilities = useCallback(async (item) => {
     if (!item?.id) return
+    const checking = { status: 'loading', preview: null, error: '' }
     setCapabilityReviews(prev => ({
       ...prev,
-      [item.id]: { status: 'loading', preview: null, error: '' },
+      [item.id]: checking,
     }))
+    const settle = review => setCapabilityReviews(prev => prev[item.id] === checking
+      ? { ...prev, [item.id]: review } : prev)
     try {
       const preview = await previewApp({
         manifest_url: item.manifest_url,
@@ -1481,39 +1495,31 @@ export default function App({ appId, token }) {
         raw_base: item.raw_base,
         token,
       })
-      setCapabilityReviews(prev => ({
-        ...prev,
-        [item.id]: { status: 'ready', preview, error: '' },
-      }))
+      settle({ status: 'ready', preview, error: '' })
     } catch (error) {
-      setCapabilityReviews(prev => ({
-        ...prev,
-        [item.id]: {
-          status: 'error', preview: null,
-          error: error.message || 'Capabilities could not be checked.',
-        },
-      }))
+      settle({ status: 'error', preview: null, error: error.message || 'Capabilities could not be checked.' })
     }
   }, [token])
 
-  // Fresh installs run inline from DetailView, with no access check first. Reviewed updates never come here:
-  // they run as batches (see createBatchController). `busy` keeps the
-  // initiating surface dimensionally stable while the install is in flight.
-  const handleInstall = async item => {
-    if (busy) return { ok: false, reason: 'busy' }
+  // Only DetailView's current, verified access is accepted for fresh installs.
+  // Reviewed updates keep their own Git-bound, durable batch path.
+  const handleInstall = async (item, { capabilityDigest, confirmed } = {}) => {
+    if (busy || freshInstallRef.current) return { ok: false, reason: 'busy' }
+    const checked = checkedInstallAccess(capabilityReviews[item.id])
+    if (detail?.id !== item.id || !checked || checked.digest !== capabilityDigest
+        || (checked.requiresConfirmation && !confirmed)) return { ok: false, reason: 'review_required' }
+    freshInstallRef.current = true
     setBusy(true)
     setBusyItemId(item?.id || null)
     setBusyActionKind('install')
     setCardErrors(prev => withoutKey(prev, item.id))
     setCardErrorRetries(prev => withoutKey(prev, item.id))
     try {
-      // GitHub-backed apps install from manifest_url so the backend fetches
-      // the latest release at click time. The in-memory manifest is only the
-      // preview/fallback path for entries without a durable URL.
       const result = await installApp({
         manifest_url: item.manifest_url,
         manifest: item.manifest,
         raw_base: item.raw_base,
+        reviewed_capability_digest: checked.digest,
         token,
       })
       // A local mutation is newer than any background probe already in flight.
@@ -1594,27 +1600,29 @@ export default function App({ appId, token }) {
       // commit on the same surface the user committed it from. The user
       // can use the back arrow / device-back to dismiss when ready.
     } catch (e) {
+      if (e.code === 'capability_changed') {
+        // The platform refused before installing. Its replacement is shown,
+        // but never submitted, until the owner confirms it separately.
+        setCapabilityReviews(prev => ({ ...prev, [item.id]: { status: 'refused', preview: e.preview } }))
+        return { ok: false, reason: 'access_changed' }
+      }
       const message = e.message || String(e)
-      // A transient failure (the platform says `retryable`, or the request
-      // never got an answer) offers the same reviewed install again.
+      // Retry from a catalog row returns to the gate; it cannot install itself.
       const retry = e?.retryable === true || !e?.status
-        ? () => { void handleInstallRef.current(item) }
+        ? () => { void openDetail(item) }
         : null
       setCardErrors(prev => ({ ...prev, [item.id]: message }))
       setCardErrorRetries(prev => retry ? { ...prev, [item.id]: retry } : withoutKey(prev, item.id))
       window.mobius?.signal?.('error', { message, source: 'install' })
-      // Installs start from DetailView, where no card shows this error.
-      setToast({ kind: 'error', message, action: retry ? { label: 'Try again', onClick: retry } : null })
+      // The detail page keeps the failure next to Get, even after a toast would disappear.
       return { ok: false, reason: 'error', error: message }
     } finally {
+      freshInstallRef.current = false
       setBusy(false)
       setBusyItemId(null)
       setBusyActionKind(null)
     }
   }
-  const handleInstallRef = useRef(handleInstall)
-  handleInstallRef.current = handleInstall
-
   const handleReviewUpdate = async (notice, agent = null) => {
     if (!agent) {
       chooseUpdateAgent('Resolve update with agent', choice => handleReviewUpdateRef.current(notice, choice))
@@ -1657,12 +1665,39 @@ export default function App({ appId, token }) {
   // the DELETE. Splitting these out is required because the iframe
   // sandbox blocks browser modal dialogs; see pendingUninstall comment.
   const handleUninstall = (app) => {
+    setUninstallFailure(null)
     setPendingUninstall(app)
+  }
+
+  const finishUninstall = (app) => {
+    window.mobius?.signal?.('app_uninstalled', { slug: app.slug || app.id })
+    setToast({ kind: 'success', message: `${app.name} uninstalled.` })
+    setPendingUninstall(null)
+    setUninstallFailure(null)
+    closeDetail()
+  }
+
+  const observeUninstall = async (app, detail) => {
+    const apps = await refreshInstalled()
+    if (!apps) setUninstallFailure({ outcome: 'unknown', detail })
+    else if (apps.some(row => String(row.id) === String(app.id))) setUninstallFailure({ outcome: 'installed', detail })
+    else finishUninstall(app)
+  }
+
+  const checkUninstallStatus = async () => {
+    if (!pendingUninstall || busy) return
+    setBusy(true)
+    try {
+      await observeUninstall(pendingUninstall, uninstallFailure?.detail)
+    } finally {
+      setBusy(false)
+    }
   }
 
   const confirmUninstall = async () => {
     const app = pendingUninstall
-    if (!app) return
+    if (!app || busy || uninstallFailure?.outcome === 'unknown') return
+    setUninstallFailure(null)
     setBusy(true)
     setBusyItemId(detail?.id || null)
     setBusyActionKind('uninstall')
@@ -1671,19 +1706,14 @@ export default function App({ appId, token }) {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (!r.ok && r.status !== 204) {
-        const text = await r.text()
-        throw new Error(`Uninstall failed: ${r.status} ${text}`)
-      }
+      if (!r.ok) throw new Error(await readErrorDetail(r, `HTTP ${r.status}`))
       checkGenerationsRef.current.set(String(app.id), ++checkGenerationRef.current)
       await refreshInstalled()
-      window.mobius?.signal?.('app_uninstalled', { slug: app.slug || app.id })
-      setToast({ kind: 'success', message: `${app.name} uninstalled.` })
-      setPendingUninstall(null)
-      closeDetail()
+      finishUninstall(app)
     } catch (e) {
-      setToast({ kind: 'error', message: e.message || String(e) })
-      setPendingUninstall(null)
+      // A lost response isn't evidence that the app is still installed. Retry
+      // is a new explicit uninstall only after an installed list confirms it.
+      await observeUninstall(app, e.message || String(e))
     } finally {
       setBusy(false)
       setBusyItemId(null)
@@ -2414,15 +2444,6 @@ export default function App({ appId, token }) {
 
   // The Store's own update: a Library row, counted in Update all.
   const selfUpdate = useSelfUpdate({ appId, token })
-  const filterCounts = useMemo(() => {
-    let updates = selfUpdate.pending ? 1 : 0
-    for (const item of displayCatalog) {
-      const lifecycle = lifecycleById.get(item.id)
-      if (lifecycle?.key === 'update' || lifecycle?.key === 'conflict') updates += 1
-    }
-    return { update: updates }
-  }, [selfUpdate.pending, displayCatalog, lifecycleById])
-
   // Publishing and reviews need a linked mobius.you account with a handle.
   // Signing in and choosing the handle happen in Settings › Accounts › Möbius.
   const openMobiusAccount = useCallback(() => openSettings('mobius-account'), [openSettings])
@@ -2464,10 +2485,14 @@ export default function App({ appId, token }) {
     ? batchProgressOf(updateTransaction.entries)
     : null
 
-  const updateItems = useMemo(
-    () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'update' && !updatingItemIds.includes(item.id)),
-    [displayCatalog, lifecycleById, updatingItemIds],
+  // Use the exact rows shown in Updates, not every app with an available
+  // release: an app that also needs setup is in Needs attention instead.
+  const libraryGroups = useMemo(
+    () => libraryCollections(displayCatalog, lifecycleById),
+    [displayCatalog, lifecycleById],
   )
+  const listedUpdates = libraryGroups.find(group => group.id === 'updates')?.items || []
+  const updateItems = listedUpdates.filter(item => !updatingItemIds.includes(item.id))
 
   const conflictItems = useMemo(
     () => displayCatalog.filter((item) => lifecycleById.get(item.id)?.key === 'conflict'),
@@ -2517,10 +2542,11 @@ export default function App({ appId, token }) {
     })
   }
 
-  // Update all covers the App Store too, like any other app, and reviews it
-  // in its own sheet. It goes last: installing it reloads the Store, so the
-  // other apps' updates start first (they finish on the server either way).
-  const selfInUpdateAll = selfUpdate.kind === 'update' && selfUpdate.phase === 'idle'
+  // Update all covers the App Store too, like any other app. It goes last:
+  // installing it reloads the Store, so the other apps' updates start first
+  // (they finish on the server either way).
+  const selfListedInUpdates = selfUpdate.kind === 'update' && selfUpdate.pending
+  const selfInUpdateAll = selfListedInUpdates && ['idle', 'error'].includes(selfUpdate.phase)
   const updateAllCount = updateItems.length + (selfInUpdateAll ? 1 : 0)
   const selfAfterBatchRef = useRef(false)
   const handleUpdateAll = async () => {
@@ -2549,10 +2575,6 @@ export default function App({ appId, token }) {
   )
   // Library's tabs: what needs a decision, waiting updates, everything
   // installed and saved apps. The Store's own update counts where it shows.
-  const libraryGroups = useMemo(
-    () => libraryCollections(libraryCatalog, lifecycleById),
-    [libraryCatalog, lifecycleById],
-  )
   const groupCount = (id) => libraryGroups.find((group) => group.id === id)?.items.length || 0
 
   // Saved community apps outside the loaded window are read by id, once the
@@ -2587,7 +2609,7 @@ export default function App({ appId, token }) {
 
   const libraryCounts = {
     needs: groupCount('attention') + (selfUpdate.kind === 'conflict' && selfUpdate.pending ? 1 : 0),
-    update: groupCount('updates') + (selfUpdate.kind === 'update' && selfUpdate.pending ? 1 : 0),
+    update: listedUpdates.length + (selfListedInUpdates ? 1 : 0),
     installed: libraryCatalog.length,
     saved: savedApps.items.length,
   }
@@ -2813,6 +2835,12 @@ export default function App({ appId, token }) {
       : { kind: 'error', message: "Couldn't share or copy this app's link." })
   }
 
+  const uninstallDialog = pendingUninstall ? (
+    <UninstallConfirmModal app={pendingUninstall} busy={busy} failure={uninstallFailure}
+      onConfirm={confirmUninstall} onCheckStatus={checkUninstallStatus}
+      onCancel={() => { if (!busy) { setPendingUninstall(null); setUninstallFailure(null) } }} />
+  ) : null
+
   if (detail) {
     return (
       <div className="st-root" {...ownerInteraction}>
@@ -2825,10 +2853,12 @@ export default function App({ appId, token }) {
           uninstalledApp={findInstalled(uninstalledApps, detail)}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
           installed={installed}
+          installError={cardErrors[detail.id]}
+          canRetryInstall={!!cardErrorRetries[detail.id]}
           onBack={backDetail}
           onInstall={(item, opts) => opts?.isUpdate
             ? handleCatalogUpdate(item, opts)
-            : handleInstall(item)}
+            : handleInstall(item, opts)}
           onUninstall={handleUninstall}
           onOpenInstalled={handleOpenInstalled}
           onSetup={handleSetup}
@@ -2871,14 +2901,7 @@ export default function App({ appId, token }) {
           onShare={shareApp}
           updateStage={updateStages[detail.id] || null}
         />
-        {pendingUninstall && (
-          <UninstallConfirmModal
-            app={pendingUninstall}
-            busy={busy}
-            onConfirm={confirmUninstall}
-            onCancel={() => !busy && setPendingUninstall(null)}
-          />
-        )}
+        {uninstallDialog}
         {updateTransaction && (
           <UpdateReviewModal
             review={updateTransaction}
@@ -2901,17 +2924,48 @@ export default function App({ appId, token }) {
 
   // Recent searches and categories to browse: the header field's dropdown on
   // wider screens, the Search tab's own page on phones.
+  const selectRecentSearch = (entry) => {
+    if (!phone) searchInputRef.current?.focus()
+    setQuery(entry)
+  }
+  const removeSearchSuggestion = (entry) => {
+    if (!phone) searchInputRef.current?.focus()
+    forgetSearch(entry)
+  }
+  const handleSearchKeys = (event) => {
+    const input = searchInputRef.current
+    if (event.key === 'Escape') {
+      if (!phone && searchFocused && !query.trim()) {
+        event.preventDefault()
+        input?.focus()
+        setSearchFocused(false)
+      } else if (event.target === input) input?.blur()
+      return
+    }
+    if (event.key === 'Enter' && event.target === input) rememberSearch(query)
+    if (phone || query.trim() || !['ArrowDown', 'ArrowUp'].includes(event.key)) return
+    event.preventDefault()
+    const items = [...event.currentTarget.querySelectorAll('.st-qdrop-item')]
+    if (!items.length) {
+      if (event.target === input) setSearchFocused(true)
+      return
+    }
+    const step = event.key === 'ArrowDown' ? 1 : -1
+    const current = items.indexOf(event.target)
+    const next = current < 0 ? (step > 0 ? 0 : items.length - 1) : (current + step + items.length) % items.length
+    items[next].focus()
+  }
   const searchSuggestions = (categoryCount) => (
     <>
                 {recentSearches.length ? (
                   <>
-                    <div className="st-qdrop-head"><b>Recent</b><button type="button" onClick={() => forgetSearch(null)}>Clear</button></div>
+                    <div className="st-qdrop-head"><b>Recent</b><button type="button" onClick={() => removeSearchSuggestion(null)}>Clear</button></div>
                     {recentSearches.map((entry) => (
                       <div className="st-qdrop-row" key={entry}>
-                        <button type="button" className="st-qdrop-item" onClick={() => setQuery(entry)}>
+                        <button type="button" className="st-qdrop-item" onClick={() => selectRecentSearch(entry)}>
                           <Search width={16} height={16} aria-hidden="true" /><span>{entry}</span>
                         </button>
-                        <button type="button" className="st-qdrop-x" aria-label={`Remove ${entry}`} onClick={() => forgetSearch(entry)}><X width={12} height={12} /></button>
+                        <button type="button" className="st-qdrop-x" aria-label={`Remove ${entry}`} onClick={() => removeSearchSuggestion(entry)}><X width={12} height={12} /></button>
                       </div>
                     ))}
                   </>
@@ -2919,18 +2973,17 @@ export default function App({ appId, token }) {
                 <div className="st-qdrop-head"><b>Browse</b></div>
                 {topCategories.slice(0, categoryCount).map(({ category, count }) => (
                   <button key={category.id} type="button" className="st-qdrop-item"
-                    onClick={() => { searchInputRef.current?.blur(); browseCategory(category.id) }}>
+                    onClick={() => { searchInputRef.current?.blur(); setSearchFocused(false); browseCategory(category.id) }}>
                     <CategoryIcon category={category} size="sm" /><span>{category.title}</span><em>{count}</em>
                   </button>
                 ))}
     </>
   )
   const searchBox = (
-    <>
-            {/* Focus anywhere in the field or its suggestions keeps them open,
-                so Tab can move from the field into a suggestion. */}
-            <div className="st-searchwrap" onFocus={() => setSearchFocused(true)}
-              onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSearchFocused(false) }}>
+    <div className="st-search-controls"
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSearchFocused(false) }}
+      onKeyDown={handleSearchKeys}>
+            <div className="st-searchwrap">
             <label className="st-searchbox" htmlFor="st-catalog-search">
               <Search width="1em" height="1em" aria-hidden="true" />
               <span className="st-sr-only">Search apps and games</span>
@@ -2941,7 +2994,8 @@ export default function App({ appId, token }) {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') rememberSearch(query); if (event.key === 'Escape') event.currentTarget.blur() }}
+                onFocus={() => setSearchFocused(true)}
+                onClick={() => setSearchFocused(true)}
                 placeholder="Search apps and games"
                 autoComplete="off"
                 spellCheck={false}
@@ -2954,7 +3008,7 @@ export default function App({ appId, token }) {
               ) : null}
             </label>
             {searchFocused && !query.trim() && !phone ? (
-              <div className="st-qdrop" role="group" aria-label="Search suggestions" onMouseDown={(event) => event.preventDefault()}>
+              <div className="st-qdrop" role="group" aria-label="Search suggestions">
                 {searchSuggestions(5)}
               </div>
             ) : null}
@@ -2964,7 +3018,7 @@ export default function App({ appId, token }) {
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => { setQuery(''); searchInputRef.current?.blur(); setSearchFocused(false) }}>Cancel</button>
             ) : null}
-    </>
+    </div>
   )
   // A category page in Apps or Games has its own heading and Back link, so
   // the tab's big title gives way to it.
@@ -3027,12 +3081,12 @@ export default function App({ appId, token }) {
                         className={`st-tab${selected ? ' is-active' : ''}`}
                         onClick={() => { selectTab(id); if (id === 'library') setCategory('all') }}>
                   {label}
-                  {id === 'library' && filterCounts.update > 0 && (
+                  {id === 'library' && libraryCounts.update > 0 && (
                     <span
                       className="st-tab-count"
-                      aria-label={`${filterCounts.update} updates available`}
+                      aria-label={`${libraryCounts.update} ${libraryCounts.update === 1 ? 'update' : 'updates'} available`}
                     >
-                      {filterCounts.update}
+                      {libraryCounts.update}
                     </span>
                   )}
                 </button>
@@ -3169,7 +3223,7 @@ export default function App({ appId, token }) {
                       </button>
                     </div>
                   )}
-                  {discoveryTab && communityError ? (
+                  {discoveryTab && !query.trim() && communityError ? (
                     <div className="st-sr-only" role="status">
                       Shared listings are temporarily unavailable. The Store will retry automatically.
                     </div>
@@ -3177,6 +3231,7 @@ export default function App({ appId, token }) {
                   <CatalogList
                     selfUpdate={tab === 'library' && !query.trim() ? selfUpdate : null}
                     libraryTab={tab === 'library' ? libraryTab : null}
+                    libraryGroups={tab === 'library' ? libraryGroups : null}
                     appId={appId}
                     items={tab === 'library' ? libraryCatalog : visibleCatalog}
                     installed={installed}
@@ -3207,6 +3262,8 @@ export default function App({ appId, token }) {
                     systemSetupReady={systemSetupReady}
                     loadingMore={discoveryTab && communityLoading && communityOffset > 0}
                     searchLoading={discoveryTab && communityLoading && communityOffset === 0}
+                    sharedSearchStatus={communitySearch?.term === query.trim() ? communitySearch.status : 'loading'}
+                    onRetrySharedSearch={() => refreshCommunity()}
                     hasMore={discoveryTab && communityHasMore}
                     onLoadMore={() => refreshCommunity({ append: true })}
                     view={tab === 'library' ? 'library' : query.trim() ? 'search' : tab === 'browse' ? 'discover' : tab}
@@ -3301,21 +3358,18 @@ export default function App({ appId, token }) {
               }}>
               <TabIcon aria-hidden="true" />
               <span>{label}</span>
-              {id === 'library' && filterCounts.update > 0 ? <span className="st-bottombar-count">{filterCounts.update}</span> : null}
+              {id === 'library' && libraryCounts.update > 0 ? (
+                <span className="st-bottombar-count" aria-label={`${libraryCounts.update} ${libraryCounts.update === 1 ? 'update' : 'updates'} available`}>
+                  {libraryCounts.update}
+                </span>
+              ) : null}
             </button>
           )
         })}
       </nav>
 
       <SelfUpdateSheet self={selfUpdate} appId={appId} />
-      {pendingUninstall && (
-        <UninstallConfirmModal
-          app={pendingUninstall}
-          busy={busy}
-          onConfirm={confirmUninstall}
-          onCancel={() => !busy && setPendingUninstall(null)}
-        />
-      )}
+      {uninstallDialog}
       {updateTransaction && (
         <UpdateReviewModal
           review={updateTransaction}

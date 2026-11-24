@@ -2003,8 +2003,9 @@ test('both update entry points use one reviewed server batch with bound digests'
   for (const reviewed of ['capability_digest', 'source_digest', 'upstream_commit', 'manifest_url', 'app_id']) {
     assert.match(controller, new RegExp(`${reviewed}: entry\\.prepared`))
   }
-  // A fresh install carries no digest and waits for no access check; an app asks at first open.
-  assert.ok(!indexSource.includes('reviewed_capability_digest: _opts.capabilityDigest'))
+  // Fresh installs carry the checked capability digest, not a Git-update
+  // approval. The separate first-open consent remains platform-owned.
+  assert.match(indexSource, /reviewed_capability_digest: checked\.digest/)
   // The per-app fallback for a Möbius without batches binds the same review.
   assert.ok(indexSource.includes('reviewed_source_digest: preview.source_digest'))
   assert.ok(indexSource.includes('reviewed_upstream_commit: preview.upstream_commit'))
