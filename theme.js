@@ -1224,7 +1224,7 @@ export const CSS = `
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   padding-top: 14px; border-top: 1px solid var(--border);
 }
-.st-update-review-actions .st-btn:first-child { margin-right: auto; }
+.st-update-review-actions .st-btn:first-child:not(:only-child) { margin-right: auto; }
 
 @media (max-width: 520px) {
   .st-update-review-scrim { align-items: stretch; padding: 8px; }
@@ -1233,6 +1233,7 @@ export const CSS = `
   .st-update-review-actions .st-btn { width: 100%; margin: 0; }
   .st-update-review-actions .st-btn-primary { grid-column: 1 / -1; order: -2; }
   .st-update-review-actions .st-btn-secondary { order: -1; }
+  .st-update-review-actions .st-btn:only-child { grid-column: -2; }
 }
 
 @media (max-width: 360px) {
