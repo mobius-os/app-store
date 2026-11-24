@@ -87,6 +87,38 @@ async function mountApp(dom, routes) {
   return root
 }
 
+test('each Library tab controls the same rendered panel and supplies its current label', async () => {
+  const { dom, restore } = useDom()
+  const doc = dom.window.document
+  let root
+  try {
+    root = await mountApp(dom, () => null)
+    const strip = doc.querySelector('[role="tablist"][aria-label="Library"]')
+    const tabs = [...strip.querySelectorAll('[role="tab"]')]
+    assert.equal(tabs.length, 5)
+    const panel = doc.getElementById(tabs[0].getAttribute('aria-controls'))
+    assert.ok(panel, 'the controlled panel is rendered')
+    assert.equal(panel.getAttribute('role'), 'tabpanel')
+    assert.equal(panel.tabIndex, 0, 'the panel is reachable even when empty')
+    assert.equal(strip.contains(panel) || panel.contains(strip), false)
+
+    for (const tab of tabs) {
+      await act(async () => tab.click())
+      assert.equal(doc.getElementById(tab.getAttribute('aria-controls')), panel)
+      assert.equal(panel.getAttribute('aria-labelledby'), tab.id)
+      assert.equal(strip.querySelector('[aria-selected="true"]'), tab)
+    }
+
+    tabs.at(-1).focus()
+    await act(async () => tabs.at(-1).dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    assert.equal(doc.activeElement, tabs[0], 'arrow navigation wraps from Your apps to Needs you')
+    assert.equal(panel.getAttribute('aria-labelledby'), tabs[0].id)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+  }
+})
+
 function entry(id, status = 'ready', extra = {}) {
   return {
     item: { id, manifest_url: `https://example.test/${id}/mobius.json`, manifest: { name: id, version: '2.0.0' } },

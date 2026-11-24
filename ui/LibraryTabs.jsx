@@ -13,6 +13,13 @@ export const LIBRARY_TABS = [
   { id: 'yours', label: 'Your apps' },
 ]
 const TAB_IDS = new Set(LIBRARY_TABS.map((tab) => tab.id))
+const PANEL_ID = 'st-library-panel'
+const tabId = id => `st-libtab-${id}`
+
+export function LibraryPanel({ active, children }) {
+  if (!active) return children
+  return <div id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(active)} tabIndex={0}>{children}</div>
+}
 
 // `category` is the Library place the Store remembers. 'all' (the default
 // when Library opens) lands on the first tab with something to act on: Needs
@@ -43,7 +50,7 @@ export function LibraryTabs({ active, counts = {}, onChange }) {
         const count = counts[id] || 0
         return (
           <button key={id} type="button" role="tab" data-library-tab={id}
-            id={`st-libtab-${id}`} aria-selected={selected}
+            id={tabId(id)} aria-selected={selected} aria-controls={PANEL_ID}
             tabIndex={selected ? 0 : -1} className="st-libtab" onClick={() => onChange(id)}>
             {label}
             {counted && count > 0 ? <span className="st-libtab-count" aria-label={`${count} waiting`}>{count}</span> : null}
