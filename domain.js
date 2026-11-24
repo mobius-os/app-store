@@ -1100,17 +1100,26 @@ export function catalogSearchText(item) {
 }
 
 export function filterCatalog(items, { query = '', category = 'all' } = {}) {
-  const terms = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const normalizedName = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+  const search = normalizedName(query)
+  const terms = search ? search.split(' ') : []
   const activeCategory = String(category || 'all').toLowerCase()
-  return (items || []).filter((item) => {
+  const exact = []
+  const matches = []
+  for (const item of items || []) {
     if (activeCategory !== 'all') {
       const categories = itemCategories(item).map(c => c.toLowerCase())
-      if (!categories.includes(activeCategory)) return false
+      if (!categories.includes(activeCategory)) continue
     }
-    if (!terms.length) return true
-    const text = catalogSearchText(item)
-    return terms.every(term => text.includes(term))
-  })
+    if (search && normalizedName(item.manifest?.name || item.name) === search) {
+      exact.push(item)
+    } else {
+      const text = terms.length ? catalogSearchText(item) : ''
+      if (terms.every(term => text.includes(term))) matches.push(item)
+    }
+  }
+  // Keep catalog ordering within both groups; only the exact names move first.
+  return exact.concat(matches)
 }
 
 // People in the community registry are named by whichever public identity

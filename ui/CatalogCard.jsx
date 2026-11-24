@@ -1,6 +1,6 @@
 import { appLifecycleFor, busyLabelForAction, catalogCardDescription, catalogCategory, catalogPublisher, communityFeedbackOf, installsLabel, storeCategory } from '../domain.js'
 import { ProgressFill } from './ProgressFill.jsx'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowRotateCw, ArrowUpRight, Chat, Check, DotsHorizontal, Download, StarFilled } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 
@@ -47,32 +47,64 @@ export function progressStageFor(busyActionKind, updateStage) {
 // A Library row keeps one visible action; Details and Review sit behind a
 // small "More" menu, so a long list stays calm and every row reads the same.
 export function RowMenu({ name, items }) {
-  const [open, setOpen] = useState(false)
+  const [edge, setEdge] = useState(null)
+  const open = edge !== null
   const wrapRef = useRef(null)
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
+  useLayoutEffect(() => {
+    if (edge === 'first') menuRef.current?.firstElementChild?.focus()
+    if (edge === 'last') menuRef.current?.lastElementChild?.focus()
+  }, [edge])
   useEffect(() => {
     if (!open) return undefined
-    const onDown = (event) => { if (!wrapRef.current?.contains(event.target)) setOpen(false) }
-    const onKey = (event) => {
-      if (event.key !== 'Escape') return
-      setOpen(false)
-      wrapRef.current?.querySelector('.st-rowmenu-btn')?.focus()
-    }
+    const onDown = (event) => { if (!wrapRef.current?.contains(event.target)) setEdge(null) }
     document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey) }
+    return () => document.removeEventListener('pointerdown', onDown)
   }, [open])
   if (!items.length) return null
+
+  const closeAndRestore = () => {
+    triggerRef.current?.focus()
+    setEdge(null)
+  }
+  const onMenuKeyDown = (event) => {
+    const { key } = event
+    if (key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeAndRestore()
+    } else if (key === 'Tab') {
+      // Resume the page's usual tab order from the trigger, not the popup.
+      closeAndRestore()
+    } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(key)) {
+      const buttons = [...menuRef.current.children]
+      const current = buttons.indexOf(event.target)
+      if (current < 0) return
+      event.preventDefault()
+      const next = key === 'Home' ? 0 : key === 'End' ? buttons.length - 1
+        : (current + (key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+      buttons[next].focus()
+    }
+  }
+
   return (
-    <div className="st-rowmenu" ref={wrapRef}>
+    <div className="st-rowmenu" ref={wrapRef}
+      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setEdge(null) }}>
       <button type="button" className="st-rowmenu-btn" aria-label={`More for ${name}`} aria-haspopup="menu"
-        aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        ref={triggerRef} aria-expanded={open} onClick={() => open ? closeAndRestore() : setEdge('first')}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+          event.preventDefault()
+          setEdge(event.key === 'ArrowDown' ? 'first' : 'last')
+        }}>
         <DotsHorizontal width={18} height={18} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="st-rowmenu-pop" role="menu">
+        <div className="st-rowmenu-pop" ref={menuRef} role="menu" aria-label={`Actions for ${name}`} onKeyDown={onMenuKeyDown}>
           {items.map(({ label, ariaLabel, run, danger }) => (
-            <button key={label} type="button" role="menuitem" aria-label={ariaLabel} className={danger ? 'is-danger' : undefined}
-              onClick={() => { setOpen(false); run() }}>{label}</button>
+            <button key={label} type="button" role="menuitem" tabIndex={-1} aria-label={ariaLabel} className={danger ? 'is-danger' : undefined}
+              onClick={() => { closeAndRestore(); run() }}>{label}</button>
           ))}
         </div>
       ) : null}

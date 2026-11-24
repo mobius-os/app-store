@@ -2233,6 +2233,22 @@ test('filterCatalog matches categories, descriptions, and setup metadata', async
   assert.deepEqual(filterCatalog(items, { query: 'earth', category: 'reference' }).map(i => i.id), ['atlas'])
 })
 
+test('filterCatalog puts exact app names first without reordering other matches', async () => {
+  const { filterCatalog } = await bundle()
+  const items = [
+    { id: 'memory', manifest: { name: 'Memory', description: 'Connect your notes.' } },
+    { id: 'related', manifest: { name: 'Connect Link' } },
+    { id: 'connect', displayName: 'ignored', manifest: { name: 'Connect' }, categories: ['utilities'] },
+    { id: 'another-exact', manifest: { name: 'CONNECT' }, categories: ['utilities'] },
+    { id: 'multi', manifest: { name: 'Daily Brief' }, categories: ['utilities'] },
+  ]
+  const ids = options => filterCatalog(items, options).map(item => item.id)
+  assert.deepEqual(ids({ query: '  cOnNecT ' }), ['connect', 'another-exact', 'memory', 'related'])
+  assert.deepEqual(ids({ query: 'connect', category: 'utilities' }), ['connect', 'another-exact'])
+  assert.deepEqual(ids({ query: 'daily   BRIEF' }), ['multi'])
+  assert.deepEqual(ids({ query: '   ' }), items.map(item => item.id))
+})
+
 test('catalog cards prefer concise discovery copy and use stable browse collections', async () => {
   const {
     CARD_DESCRIPTION_LIMIT,
