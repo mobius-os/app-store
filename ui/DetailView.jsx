@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Code, Flag, SavedFilledXs, SavedXs, Share, X } from '@openai/apps-sdk-ui/components/Icon'
 import { appLifecycleFor, busyLabelForAction, catalogCategory, catalogPublisher, checkedInstallAccess, communityFeedbackOf, formatDownloadSize, storeCategory, hasAccessRows, isTrustedHost, MISSING_ACCESS_ROWS, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus, shortDate } from '../domain.js'
 import { CapabilityContract, capabilityRows } from './CapabilityContract.jsx'
@@ -136,11 +136,23 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const checkedAt = checkedAtText(sourceCheck?.checkedAt)
   const [accessOpen, setAccessOpen] = useState(accessChanged)
   const accessToggle = useRef(null)
-  const revealAccess = () => {
-    setAccessOpen(true)
+  const accessJumpPending = useRef(false)
+  const focusAccess = useCallback(() => {
     accessToggle.current?.scrollIntoView({ block: 'start' })
     accessToggle.current?.focus({ preventScroll: true })
+  }, [])
+  const revealAccess = () => {
+    if (accessOpen) { focusAccess(); return }
+    accessJumpPending.current = true
+    setAccessOpen(true)
   }
+  // The folded section sits near the end of the page. Scroll only after
+  // opening it, when its permission rows contribute to the scroll range.
+  useLayoutEffect(() => {
+    if (!accessOpen || !accessJumpPending.current) return
+    accessJumpPending.current = false
+    focusAccess()
+  }, [accessOpen, focusAccess])
   // Each app page starts folded unless its access changed.
   useEffect(() => {
     setAccessOpen(accessChanged)
