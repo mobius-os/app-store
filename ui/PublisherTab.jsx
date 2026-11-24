@@ -1,6 +1,6 @@
 /* PublisherTab turns an accepted local app revision into one reviewable public listing. */
 import { ChevronLeft, FileUpload, Search } from '@openai/apps-sdk-ui/components/Icon'
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   LISTING_AGENT_POLL_MS,
   LISTING_FIELD_LABELS,
@@ -159,6 +159,7 @@ export function PublisherTab({
   // host Back gesture can move between them.
   view = 'home',
   onViewChange,
+  publishLauncherRef,
 }) {
   const apps = publishableApps(installed).sort((left, right) => (
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
@@ -192,6 +193,30 @@ export function PublisherTab({
   // home: your published apps · choose: pick an app to publish · app: one published app
   const setView = (next) => onViewChange?.(next)
   const [openAppId, setOpenAppId] = useState(null)
+  const publisherRef = useRef(null)
+  const chooserHeadingRef = useRef(null)
+  const reviewFocusRef = useRef(null)
+  const emptyLauncherRef = useRef(null)
+  const reviewOpenerId = useRef(null)
+  const previousStep = useRef(null)
+  const step = candidate ? 'review' : view
+  // Loading a preview or refreshing publication status is not navigation.
+  useLayoutEffect(() => {
+    const previous = previousStep.current
+    previousStep.current = step
+    if (previous === step || !document.hasFocus()) return
+    if (step === 'review') {
+      reviewFocusRef.current?.focus()
+    } else if (step === 'home' && ['choose', 'review'].includes(previous)) {
+      const launcher = publishLauncherRef?.current || emptyLauncherRef.current
+      launcher?.focus()
+    } else if (step === 'choose' || (step === 'app' && previous === 'review')) {
+      const opener = previous === 'review' && [...publisherRef.current.querySelectorAll('[data-prepare-listing]')]
+        .find(button => button.dataset.prepareListing === reviewOpenerId.current && !button.disabled)
+      const destination = opener || chooserHeadingRef.current || publisherRef.current.querySelector('.st-mine-page .st-back-btn')
+      destination?.focus()
+    }
+  }, [step, publishLauncherRef])
   // The stored check result; undefined until storage is read for this app.
   const [checkRaw, setCheckRaw] = useState(undefined)
   // { appId, commit, prior, startedAt, failed } for the check the owner most
@@ -346,6 +371,7 @@ export function PublisherTab({
 
   async function prepare(app) {
     const requestId = previewGateRef.current.begin()
+    reviewOpenerId.current = String(app.id)
     onNavigate?.()
     setCandidate(app)
     setAgentRun(null)
@@ -596,7 +622,7 @@ export function PublisherTab({
           <h3>{app.name}</h3>
           <span className={`st-publish-status${row.tone ? ` is-${row.tone}` : ''}`}>{row.label}</span>
         </div>
-        <button type="button" className="st-publish-pill" aria-label={`${row.action} ${app.name}`}
+        <button type="button" className="st-publish-pill" aria-label={`${row.action} ${app.name}`} data-prepare-listing={app.id}
                 disabled={!!publishingId || !signedIn || !githubReady}
                 onClick={() => prepare(app)}>
           {row.action}
@@ -606,14 +632,14 @@ export function PublisherTab({
   }
 
   return (
-    <div className={`st-publisher${candidate ? ' is-reviewing' : ''}`}>
+    <div ref={publisherRef} className={`st-publisher${candidate ? ' is-reviewing' : ''}`}>
       {!candidate && view === 'choose' ? (
         <section className="st-publish-heading is-choose">
           <div>
             <button type="button" className="st-back-btn" onClick={() => setView('home')}>
               <ChevronLeft width="16" height="16" aria-hidden="true" />Your apps
             </button>
-            <h2>Publish an app</h2>
+            <h2 ref={chooserHeadingRef} tabIndex={-1}>Publish an app</h2>
             <p>Choose an app. You’ll check its listing before it goes live.</p>
           </div>
           <div className="st-publish-heading-actions">
@@ -686,7 +712,8 @@ export function PublisherTab({
       ) : null}
 
       {candidate ? (
-        <section className="st-listing-review" aria-label={`${candidate.name || 'App'} publishing review`}>
+        <section ref={reviewFocusRef} className="st-listing-review" tabIndex={-1}
+                 aria-label={`${candidate.name || 'App'} publishing review`}>
           <div className="st-listing-review-top">
             <button type="button" className="st-back-btn" onClick={closePreview} disabled={!!publishingId}>Back</button>
             <span>{preview ? (preview.ready ? 'Ready to publish' : 'Not ready yet') : 'Accepted source only'}</span>
@@ -864,11 +891,12 @@ export function PublisherTab({
           <div className="st-empty">
             <div className="st-empty-title">You haven’t published an app yet</div>
             <p className="st-empty-text">Pick one of your apps and share it with everyone on Möbius.</p>
-            <button type="button" className="st-btn st-btn-primary" onClick={() => setView('choose')}>Publish an app</button>
+            <button ref={emptyLauncherRef} type="button" className="st-btn st-btn-primary" onClick={() => setView('choose')}>Publish an app</button>
           </div>
         )
       ) : (
         <>
+          <span className="st-sr-only" role="status">{apps.length > 0 && !visibleApps.length ? 'No matching apps' : ''}</span>
           <div className={`st-publish-list${visibleApps.length ? ' is-card' : ''}`} aria-label="Apps you can publish">
             {visibleApps.length ? visibleApps.map(renderApp) : apps.length ? (
               <div className="st-empty"><div className="st-empty-title">No matching apps</div><p className="st-empty-text">Try another name.</p></div>

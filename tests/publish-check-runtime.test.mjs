@@ -47,7 +47,7 @@ test.after(() => rm(buildDir, { recursive: true, force: true }))
 // Renders the Publish tab at one app's ready release panel. `stored` is the
 // Store storage the agent writes into; `storage: false` models a Möbius
 // without app storage.
-async function openReleasePanel({ stored = {}, storage = true, read, props = {} } = {}) {
+async function openReleasePanel({ stored = {}, storage = true, read, trackFocus = false, props = {} } = {}) {
   const dom = new JSDOM('<div id="root"></div>')
   const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
   const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
@@ -57,6 +57,7 @@ async function openReleasePanel({ stored = {}, storage = true, read, props = {} 
   const root = createRoot(dom.window.document.getElementById('root'))
   const calls = { publish: [], checks: [], saves: [] }
   const doc = dom.window.document
+  if (trackFocus) doc.hasFocus = () => true // This fixture stands in for the active Store frame.
   const buttons = () => [...doc.querySelectorAll('button')]
   const button = label => buttons().find(b => b.textContent.trim() === label)
   async function click(label) {
@@ -73,6 +74,7 @@ async function openReleasePanel({ stored = {}, storage = true, read, props = {} 
     ...props,
   })))
   await click('Publish an app')
+  const chooserFocus = doc.activeElement
   await click('Publish')
   await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
   async function consent() {
@@ -82,8 +84,40 @@ async function openReleasePanel({ stored = {}, storage = true, read, props = {} 
     await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
   }
   async function settle() { await act(async () => { await new Promise(resolve => setImmediate(resolve)) }) }
-  return { dom, doc, calls, click, button, consent, close, settle, text: () => doc.body.textContent }
+  return { dom, doc, calls, click, button, consent, close, settle, chooserFocus, text: () => doc.body.textContent }
 }
+
+test('creator steps focus their destination, restore the opener, and announce an empty filter', async () => {
+  const panel = await openReleasePanel({ trackFocus: true })
+  const { doc } = panel
+  try {
+    assert.equal(panel.chooserFocus.textContent, 'Publish an app')
+    assert.equal(panel.chooserFocus.tagName, 'H2')
+    assert.ok(doc.activeElement === doc.querySelector('.st-listing-review'))
+    await panel.click('Back')
+    assert.ok(doc.activeElement === doc.querySelector('[data-prepare-listing]'))
+
+    const field = doc.querySelector('.st-publish-search input')
+    const status = doc.querySelector('.st-publisher [role="status"].st-sr-only')
+    assert.ok(status)
+    assert.equal(status.textContent, '')
+    const change = value => act(async () => {
+      Object.getOwnPropertyDescriptor(panel.dom.window.HTMLInputElement.prototype, 'value').set.call(field, value)
+      field.dispatchEvent(new panel.dom.window.Event('input', { bubbles: true }))
+    })
+    field.focus()
+    await change('no matches here')
+    assert.equal(status.textContent, 'No matching apps')
+    assert.ok(doc.activeElement === field)
+    await change('')
+    assert.equal(status.textContent, '')
+    await panel.click('Your apps')
+    assert.ok(doc.activeElement === panel.button('Publish an app'))
+    assert.deepEqual(panel.calls.publish, [])
+  } finally {
+    await panel.close()
+  }
+})
 
 test('without app storage the check is skipped and publishing stays available', async () => {
   const view = await openReleasePanel({ storage: false })

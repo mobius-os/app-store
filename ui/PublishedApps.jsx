@@ -124,7 +124,7 @@ export function PublishedAppPage({
         {communityId && state?.status === 'live' && onViewInStore ? (
           <button type="button" className="st-btn st-btn-secondary" onClick={() => onViewInStore(communityId)}>View in Store</button>
         ) : null}
-        <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled}
+        <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled} data-prepare-listing={app.id}
                 onClick={onPublishUpdate}>
           Publish update
         </button>

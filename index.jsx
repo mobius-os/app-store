@@ -440,6 +440,7 @@ export default function App({ appId, token }) {
   // Back steps too.
   const categoryNavRef = useRef(null)
   const publishNavRef = useRef(null)
+  const publishLauncherRef = useRef(null)
   const leaveCategoryRef = useRef(null)
   const closeLayersRef = useRef(null)
   const closeTopLayerRef = useRef(null)
@@ -3062,7 +3063,7 @@ export default function App({ appId, token }) {
               <div className="st-pagehead-row">
                 <h1 className="st-pagehead-title">Library</h1>
                 {/* One Publish an app for every Library tab, Your apps included. */}
-                <button type="button" className="st-upload-btn" onClick={() => openYourApps('choose')}>
+                <button ref={publishLauncherRef} type="button" className="st-upload-btn" onClick={() => openYourApps('choose')}>
                   <Plus width={18} height={18} aria-hidden="true" /> Publish an app
                 </button>
               </div>
@@ -3077,7 +3078,7 @@ export default function App({ appId, token }) {
         ) : null}
         {/* Phones: publishing in plain sight, at the top of Library. */}
         {phone && tab === 'library' && !query.trim() ? (
-          <button type="button" className="st-upload-wide" onClick={() => openYourApps('choose')}>
+          <button ref={publishLauncherRef} type="button" className="st-upload-wide" onClick={() => openYourApps('choose')}>
             <Plus width={18} height={18} aria-hidden="true" /> Publish an app
           </button>
         ) : null}
@@ -3240,6 +3241,7 @@ export default function App({ appId, token }) {
           <PublisherTab
             view={publishView}
             onViewChange={showPublishStep}
+            publishLauncherRef={publishLauncherRef}
             installed={installed}
             identity={communityIdentity}
             identityError={communityIdentityError}
