@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {openDetailEntry, closeDetailEntry} from '../store-navigation.js'
+import { JSDOM } from 'jsdom'
+import {openDetailEntry, closeDetailEntry, backDetailEntry, detailOpenerOf, findDetailOpener, focusDetailTransition} from '../store-navigation.js'
 
 function harness() {
   const current={current:null}
@@ -79,4 +80,70 @@ test('a page between two apps is redrawn when Back leaves the second app', async
   assert.equal(h.shown, null, 'the first app stays beneath, hidden')
   assert.equal(category, 1, 'the category page between them is shown again')
   assert.equal(h.current.current.item.id, 'first')
+})
+
+test('screen Back and host Back restore their own opener, including after Forward', async () => {
+  const h = harness(), shown = []
+  h.context.show = (item, section, returnTo) => shown.push([item?.id ?? null, section, returnTo])
+  const outer = { key: 'card:first', shelf: 'picks' }
+  const inner = { key: 'card:second', shelf: 'similar' }
+  const one = openDetailEntry(h.current, app('first'), { ...h.context, opener: outer, focus: 'reviews' }); h.own(); await one
+  const two = openDetailEntry(h.current, app('second'), { ...h.context, opener: inner, push: true }); h.own(); await two
+  h.back()
+  h.forward()
+  backDetailEntry(h.current, h.context.show)
+  backDetailEntry(h.current, h.context.show)
+  assert.deepEqual(shown, [
+    ['first', 'reviews', undefined], ['second', '', undefined],
+    ['first', 'reviews', inner], ['second', '', undefined],
+    ['first', 'reviews', inner], [null, '', outer],
+  ])
+})
+
+test('a detail opener resolves after remount without picking another shelf or action', () => {
+  const dom = new JSDOM(`<main>
+    <section aria-label="Recently updated"><button data-detail-opener="card:news">News</button></section>
+    <section aria-labelledby="picks">
+      <button data-detail-opener="card:news">News</button>
+      <button data-detail-opener="more:news">More</button>
+    </section>
+  </main>`)
+  const root = dom.window.document.querySelector('main')
+  const original = root.querySelector('[aria-labelledby="picks"] [data-detail-opener="card:news"]')
+  const replacement = original.cloneNode(true)
+  const opener = detailOpenerOf(original)
+  original.replaceWith(replacement)
+  assert.equal(findDetailOpener(root, opener), replacement)
+  replacement.remove()
+  assert.equal(findDetailOpener(root, opener), null)
+  dom.window.close()
+})
+
+test('focus enters the detail, then returns to the revived control or page heading', () => {
+  const dom = new JSDOM(`<main>
+    <div class="st-scroll">
+      <h1 class="st-sr-only">Library</h1>
+      <h1>Installed</h1>
+      <div class="st-rowmenu">
+        <button data-detail-opener="more:news">More</button>
+        <div role="menu"><button role="menuitem">Details</button></div>
+      </div>
+    </div>
+    <h1 id="st-detail-name" tabindex="-1">News</h1>
+  </main>`)
+  const { document } = dom.window
+  const root = document.querySelector('main')
+  const more = root.querySelector('[data-detail-opener]')
+  const opener = detailOpenerOf(root.querySelector('[role="menuitem"]'))
+  focusDetailTransition(root, app('news'), { section: '' })
+  assert.equal(document.activeElement.id, 'st-detail-name')
+  more.focus()
+  focusDetailTransition(root, app('news'), { section: 'reviews' })
+  assert.equal(document.activeElement, more, 'the existing review jump still owns this request')
+  focusDetailTransition(root, null, { returnTo: opener })
+  assert.equal(document.activeElement, more)
+  more.remove()
+  focusDetailTransition(root, null, { returnTo: opener })
+  assert.equal(document.activeElement.textContent, 'Installed')
+  dom.window.close()
 })

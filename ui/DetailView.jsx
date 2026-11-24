@@ -229,7 +229,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
         <header className="st-dh">
           <IconBox item={heroItemWithIcon} size="hero" token={token} />
           <div className="st-dh-text">
-            <h1 id="st-detail-name" className="st-dh-name">{m.name}</h1>
+            <h1 id="st-detail-name" className="st-dh-name" tabIndex={-1}>{m.name}</h1>
             <div className="st-dh-meta">
               {onOpenDeveloper ? (
                 <button type="button" className="st-dh-dev" onClick={() => onOpenDeveloper(developer)}>{developer}</button>

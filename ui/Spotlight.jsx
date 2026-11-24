@@ -103,7 +103,7 @@ export function Spotlight({ appId, token, spotlights, onPick, title = 'Spotlight
               <h3 id={`st-spotlight-${active.id}`}>{name}</h3>
               <p>{listingFor(active)?.tagline || active.summary || active.description}</p>
             </div>
-            <button type="button" className="st-spotlight-open" onClick={() => onPick(active)}
+            <button type="button" className="st-spotlight-open" data-detail-opener={`spotlight:${active.id}`} onClick={() => onPick(active)}
               aria-label={`Explore ${name}`}>
               Explore
             </button>

@@ -1,5 +1,5 @@
 import { mapWithConcurrency, createUpdateBatch, updateBatchBusy, newestBatchSnapshot, normalizeBatchSnapshot, batchProgress as batchProgressOf } from './update-batch.js'
-import { openDetailEntry, closeDetailEntry, backDetailEntry } from './store-navigation.js'
+import { openDetailEntry, closeDetailEntry, backDetailEntry, detailOpenerOf, focusDetailTransition } from './store-navigation.js'
 import { restoredStoreLocation, storeLocation } from './store-location.js'
 import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
 // App Store — thin app shell. The module tree is declared in mobius.json's
@@ -510,9 +510,8 @@ export default function App({ appId, token }) {
   // Apps still recoverable after an uninstall. Read together with the installed apps (see refreshInstalled), so
   // both lists change on the same triggers and a note never outlives its app.
   const [uninstalledApps, setUninstalledApps] = useState([])
-  // A section the open detail should scroll to ('reviews'), owned by the
-  // navigation entry that requested it; see openDetailEntry.
-  const [detailFocus, setDetailFocus] = useState('')
+  // One focus request per detail transition, after the destination mounts.
+  const [detailFocus, setDetailFocus] = useState(null)
   // Apps the owner saved for later, kept in this app's own storage.
   const [savedIds, setSavedIds] = useState([])
   useEffect(() => {
@@ -569,10 +568,10 @@ export default function App({ appId, token }) {
   }, [])
   // Coming back from an app page slides the store back in.
   const [returning, setReturning] = useState(false)
-  const showDetail = useCallback((item, focus = '') => {
+  const showDetail = useCallback((item, section = '', returnTo) => {
     if (!item) setReturning(true)
     setDetail(item)
-    setDetailFocus(item ? focus : '')
+    setDetailFocus({ section, returnTo })
   }, [])
   // Only nested destinations need data and host Back ownership. Scalars are
   // already restored on first paint, without waiting for network hydration.
@@ -1700,13 +1699,14 @@ export default function App({ appId, token }) {
 
   // Each nested level owns one reversible host entry. No iframe history or
   // timeout fallback: an unowned view would strand the device's Back gesture.
-  const openDetail = useCallback((item, signal, { focus = '', push = false, below = null } = {}) => openDetailEntry(navDetailRef, item, {
+  const openDetail = useCallback((item, signal, { focus = '', push = false, below = null, opener = null } = {}) => openDetailEntry(navDetailRef, item, {
     nav: window.mobius.nav,
     show: showDetail,
     signal,
     focus,
     push,
     below,
+    opener,
     cancelPendingDestination,
     prepare: target => {
       reviewCapabilities(target)
@@ -2331,8 +2331,9 @@ export default function App({ appId, token }) {
   // An app opened from a layer page goes above it, and Back returns to it.
   const openDetailFromPage = (item) => {
     const layer = !detail ? overlaysRef.current.at(-1) : null
-    return layer ? openDetail(item, undefined, { push: true, below: () => { layer.show(); setOverlay({ kind: layer.kind, label: layer.label }) } })
-      : openDetail(item)
+    const opener = detailOpenerOf(document.activeElement)
+    return layer ? openDetail(item, undefined, { opener, push: true, below: () => { layer.show(); setOverlay({ kind: layer.kind, label: layer.label }) } })
+      : openDetail(item, undefined, { opener })
   }
 
   const handleCommunityWithdraw = useCallback(async () => {
@@ -2367,6 +2368,11 @@ export default function App({ appId, token }) {
       gridScrollRef.current.scrollTop = savedGridScrollRef.current
     }
   }, [detail, activeCollection])
+
+  useLayoutEffect(() => {
+    if (!detailFocus || !document.hasFocus()) return
+    focusDetailTransition(document.querySelector('.st-root'), detail, detailFocus)
+  }, [detail, detailFocus])
 
   // Roving tab navigation: ArrowLeft/ArrowRight move selection between the
   // tabs with wrap, and move DOM focus to the newly-selected tab (the
@@ -2756,7 +2762,7 @@ export default function App({ appId, token }) {
   }
   const renderDetailRow = (item) => (
     <CatalogCard key={item.id} item={item} installed={installed} updateChecks={updateChecks}
-      onPick={(next) => { if (next.manifest) openDetail(next, undefined, { push: true }) }}
+      onPick={(next) => { if (next.manifest) openDetail(next, undefined, { push: true, opener: detailOpenerOf(document.activeElement) }) }}
       onUpdate={(next, opts) => handleCatalogUpdate(next, opts, page => openDetail(page, undefined, { push: true }))} onOpenInstalled={handleOpenInstalled} onRetryInstalled={handleRetryInstalled}
       onReviewUpdate={handleReviewUpdate} busy={busyItemId === item.id || updatingItemIds.includes(item.id)}
       busyActionKind={busyItemId === item.id ? busyActionKind : updatingItemIds.includes(item.id) ? 'update' : null}
@@ -2820,7 +2826,7 @@ export default function App({ appId, token }) {
         <DetailView
           storeAppId={appId}
           item={detail}
-          focusSection={detailFocus}
+          focusSection={detailFocus?.returnTo ? '' : detailFocus?.section}
           capabilityReview={capabilityReviews[detail.id]}
           uninstalledApp={findInstalled(uninstalledApps, detail)}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
@@ -3183,7 +3189,7 @@ export default function App({ appId, token }) {
                     updateChecks={updateChecks}
                     onPick={item => { if (!item.manifest) return; if (query.trim()) rememberSearch(query); openDetailFromPage(item) }}
                     pickOpensApp={tab === 'library'}
-                    onRateApp={tab === 'library' ? (item => { if (item.manifest) openDetail(item, undefined, { focus: 'reviews' }) }) : undefined}
+                    onRateApp={tab === 'library' ? (item => { if (item.manifest) openDetail(item, undefined, { focus: 'reviews', opener: detailOpenerOf(document.activeElement) }) }) : undefined}
                     onUninstall={tab === 'library' ? handleUninstall : undefined}
                     onRetry={retryCatalogItem}
                     onUpdate={handleCatalogUpdate}
