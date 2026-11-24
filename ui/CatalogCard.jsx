@@ -145,12 +145,16 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   const { lifecycle, storeInstalled } = primary
   const cardVariant = lifecycle.cardVariant
   const canOpenInstalledApp = primary.canOpen
-  // In the Library, tapping a ready installed app launches it. A row with an
-  // update, conflict, retry or unfinished setup opens its details instead, so
-  // it never silently launches the old version. Details stays on every row
-  // for uninstall, setup and permissions.
-  const opensApp = pickOpensApp && canOpenInstalledApp &&
+  // Tapping a ready installed app launches it, wherever it is listed. A row
+  // with an update, conflict, retry or unfinished setup opens its details
+  // instead, so it never silently launches the old version. Everything else
+  // opens the app page, which owns the one Get button.
+  const opensApp = canOpenInstalledApp &&
     lifecycle.actionKind === 'open' && !lifecycle.setupNeedsAttention
+  // Get and Open are the row tap itself, so only real maintenance actions
+  // (update, retry, resolve) and in-flight progress keep a button.
+  const showAction = !!busy || !['install', 'open'].includes(lifecycle.actionKind)
+  const showInstalledBadge = !showAction && !!storeInstalled
   const cardActionDisabled = primary.disabled
   const actionLabel = busy ? primary.busyLabel
     : layout === 'row' ? primary.shortLabel : primary.reviewLabel
@@ -245,9 +249,10 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       ) : null}
       {/* Discovery rows open the app page, which owns the one Install button,
           like Google Play; Library rows keep their maintenance actions. */}
-      {layout === 'compact' ? null : (
+      {layout === 'compact' || (!showAction && !showInstalledBadge && !pickOpensApp) ? null : (
       <div className="st-card-status-row">
-        <button
+        {showInstalledBadge ? <InstalledBadge /> : null}
+        {showAction ? <button
           type="button"
           className={cardActionClass}
           disabled={cardActionDisabled}
@@ -258,7 +263,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
           {(layout === 'compact' || layout === 'list' || layout === 'row')
             ? <ProgressFill busy={busy} label={progressStageFor(busyActionKind, updateStage).label}>{actionLabel}</ProgressFill>
             : <ActionIcon width={20} height={20} aria-hidden="true" />}
-        </button>
+        </button> : null}
         {pickOpensApp ? (
           <RowMenu name={m.name} items={[
             { label: 'Details', ariaLabel: `${m.name} details`, run: () => onPick(item) },
@@ -300,6 +305,16 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
         </div>
       ) : null}
     </div>
+  )
+}
+
+// A quiet, non-interactive marker for apps already on this Möbius. Taps pass
+// through to the row, which opens the app.
+export function InstalledBadge() {
+  return (
+    <span className="st-card-badge">
+      <Check width={12} height={12} aria-hidden="true" />Installed
+    </span>
   )
 }
 

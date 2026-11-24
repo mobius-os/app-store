@@ -612,7 +612,8 @@ test('a candidate the platform would not apply says why on the card and in the r
     const card = name => [...doc.querySelectorAll('.st-card')].find(node => node.querySelector('.st-card-open')?.textContent === name)
     assert.match(card('Voice').textContent, /Repository moved/)
     assert.match(card('Voice').textContent, /another repository/)
-    assert.equal(card('Voice').querySelector('.st-card-status-row button[aria-label$=" Voice"]').getAttribute('aria-label'), 'Open Voice')
+    assert.equal(card('Voice').querySelector('.st-card-action'), null, 'a rejected candidate leaves no update action')
+    assert.equal(card('Voice').querySelector('.st-card-open').getAttribute('aria-label'), 'Voice — open app')
     await act(async () => { card('Memory').querySelector('button[aria-label="Update Memory"]').click(); await wait(20) })
     const modal = doc.querySelector('.st-update-review')
     assert.match(modal.textContent, /different app than the one installed/)
@@ -777,7 +778,7 @@ test('a Möbius without server batches still updates through the per-app reviewe
     assert.match(doc.querySelector('.st-update-review').textContent, /1 updated · 0 need attention/)
     await act(async () => doc.querySelector('.st-update-review-actions .st-btn-ghost').click())
     assert.equal(doc.querySelector('.st-update-review'), null)
-    assert.ok(doc.querySelector('button[aria-label="Open Voice"]'))
+    assert.ok(doc.querySelector('button[aria-label="Voice — open app"]'), 'the updated row launches the app again')
   } finally {
     if (root) await act(async () => root.unmount())
     restore()

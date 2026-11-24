@@ -601,26 +601,22 @@ export const CSS = `
   border: 1px solid var(--border);
 }
 .st-icon-letter { font-size: 34px; font-weight: 700; color: var(--text); }
-/* A tiny check dot sits at the icon's bottom-right when the app is
-   already installed. Quicker to read than the pill text, lets the grid
-   double as an "at a glance" inventory. */
+/* Installed apps wear a small accent check seal on the icon's corner, so
+   every list doubles as an at-a-glance inventory without costing row width.
+   Its ring takes the colour of whatever the icon sits on (--st-seal-ring). */
 .st-installed-dot {
   position: absolute;
-  bottom: -2px; right: -2px;
+  right: -5px; bottom: -5px;
   width: 22px; height: 22px; border-radius: 999px;
-  background: var(--surface);
-  border: 2px solid var(--surface);
+  background: var(--accent);
+  color: var(--accent-fg, #fff);
+  box-shadow: 0 0 0 3px var(--st-seal-ring, var(--bg)), 0 2px 6px rgba(0, 0, 0, 0.28);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
 }
-.st-installed-dot-inner {
-  width: 18px; height: 18px; border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 80%, var(--surface));
-  color: var(--accent-fg);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; line-height: 1;
-}
-.st-installed-dot-inner.is-update { background: var(--accent); }
+.st-installed-dot-inner { display: flex; align-items: center; justify-content: center; line-height: 0; }
+.st-installed-dot-inner svg { width: 13px; height: 13px; stroke-width: 2.5; }
+.st-card.is-catalog, .st-panel, .st-fcard-tile { --st-seal-ring: var(--surface); }
 .st-card-name {
   font-size: 14px; font-weight: 600; line-height: 1.25;
   margin-bottom: 4px;
@@ -2208,7 +2204,6 @@ export const CSS = `
 .st-card.is-row { grid-template-columns: 60px minmax(0, 1fr) auto; grid-template-rows: auto auto; min-height: 84px; padding: 12px 0; gap: 2px 16px; }
 .st-card.is-row .st-icon-slot { grid-row: 1 / span 2; }
 .st-card.is-row .st-icon-wrap { width: 60px; height: 60px; border-radius: 16px; }
-.st-card.is-row .st-installed-dot { display: none; }
 .st-card.is-row .st-card-byline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* An app's name is never cut short: a long one wraps onto a second line. */
 .st-card.is-row .st-card-open { align-self: end; font-size: 15px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
@@ -2229,8 +2224,11 @@ export const CSS = `
   transition: transform .12s, filter .15s;
 }
 .st-card.is-row .st-card-action.is-installed { background: var(--surface-2); color: var(--text); }
-.st-card.is-row .st-card-action.is-update { background: var(--st-accent-fill); color: var(--accent-fg, #fff); }
+/* Update is a compact pill sized like the Installed chip, so it reads as a
+   status with an action, not a second headline. */
+.st-card.is-row .st-card-action.is-update { min-width: 0; min-height: 30px; height: 30px; padding: 0 13px; border-radius: 999px; background: var(--st-accent-fill); color: var(--accent-fg, #fff); font: 600 13px/1 var(--font); }
 .st-card.is-row .st-card-action:active:not(:disabled) { transform: scale(.94); }
+.st-card.is-row .st-card-action.is-update .st-fillp-text { font-size: 12px; }
 .st-card.is-row:has(.st-card-open:hover) .st-card-open { color: var(--accent); }
 
 .st-ranked { grid-template-columns: 20px minmax(0, 1fr); gap: 12px; }
@@ -2903,5 +2901,30 @@ button.st-dh-dev:hover { text-decoration: underline; }
   .st-info-links { margin-top: 12px; }
   .st-access .st-permission-row { padding: 12px 0; }
   .st-scroll.is-detail { padding-bottom: 40px; }
+}
+
+/* The Installed chip sits where Get/Open used to be: a soft accent tint that
+   reads as status, never as a button, and lets taps fall through to the row. */
+.st-card-badge {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  height: 28px; padding: 0 11px 0 9px; border-radius: 999px; pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: color-mix(in srgb, var(--accent) 55%, var(--text));
+  font: 600 12px/1 var(--font); letter-spacing: .01em; white-space: nowrap;
+}
+.st-card-badge svg { width: 13px; height: 13px; flex: none; color: var(--accent); }
+.st-fcard-copy .st-card-badge {
+  height: 32px; padding: 0 13px 0 11px; font-size: 13px; color: #fff;
+  background: rgba(255,255,255,.14); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+}
+.st-fcard-copy .st-card-badge svg { color: #c4b5fd; }
+/* Every row in the Library's Installed tab is installed; the chip adds nothing there. */
+.st-libpane.is-installed .st-card-badge { display: none; }
+/* Phones: the icon seal says it, so descriptions keep the full row width. */
+@media (max-width: 620px) {
+  .st-card .st-card-badge { display: none; }
+  .st-card-status-row:has(> .st-card-badge:only-child) { display: none; }
+  .st-card.is-row:has(.st-card-status-row > .st-card-badge:only-child) { grid-template-columns: 56px minmax(0, 1fr); }
 }
 `

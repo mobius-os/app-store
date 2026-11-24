@@ -30,7 +30,7 @@ function catalogCard() {
 }
 test.after(() => rm(buildDir, { recursive: true, force: true }))
 
-test('every Library row keeps Details in its More menu, and only a ready app launches on tap', async () => {
+test('every Library row keeps Details in its More menu, and only a ready app launches on tap; no row shows Get or Open', async () => {
   const CatalogCard = await catalogCard()
   const dom = new JSDOM('<div id="root"></div>')
   const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
@@ -87,11 +87,22 @@ test('every Library row keeps Details in its More menu, and only a ready app lau
     await act(async () => (await menu('Review')).click())
     assert.deepEqual(calls, [['rate', 'pocket']])
 
-    await show({ pickOpensApp: false, layout: 'grid' })
-    await tapRow()
-    assert.deepEqual(calls, [['details', 'pocket']], 'Browse cards still open details')
-    assert.equal(doc.querySelector('.st-rowmenu-btn'), null, 'Browse cards have no More menu')
-    assert.equal(named('Details'), undefined)
+    // Browse rows have no Get or Open button: the row is the action.
+    for (const layout of ['row', 'grid']) {
+      await show({ pickOpensApp: false, layout })
+      await tapRow()
+      assert.deepEqual(calls, [['open', 7]], `an installed ${layout} card launches the app`)
+      assert.equal(doc.querySelector('.st-card-action'), null, 'no Open button')
+      assert.equal(doc.querySelector('.st-card-badge')?.textContent, 'Installed')
+      assert.equal(doc.querySelector('.st-rowmenu-btn'), null, 'Browse cards have no More menu')
+      assert.equal(named('Details'), undefined)
+
+      await show({ pickOpensApp: false, layout, installed: [] })
+      await tapRow()
+      assert.deepEqual(calls, [['details', 'pocket']], 'an app not yet installed opens its page, which owns Get')
+      assert.equal(doc.querySelector('.st-card-action'), null, 'no Get button')
+      assert.equal(doc.querySelector('.st-card-badge'), null)
+    }
   } finally {
     await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
   }
