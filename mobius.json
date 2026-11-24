@@ -78,6 +78,7 @@
     "LISTING_ART.md",
     "catalog-freshness.js",
     "store-navigation.js",
+    "ui/SwipeBack.jsx",
     "store-location.js",
     "update-batch.js",
     "sleep.js",
