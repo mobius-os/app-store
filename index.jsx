@@ -2970,6 +2970,9 @@ export default function App({ appId, token }) {
   // the tab's big title gives way to it.
   const inCategory = (tab === 'apps' || tab === 'games') && (shelfCategories[tab] || 'all') !== 'all'
   const yourAppsOpen = tab === 'library' && libraryTab === 'yours'
+  // A creator page is opened from an app page and sits above it, so it looks
+  // like one: its own Back link, without the Store's tabs above or below.
+  const creatorOpen = discoveryTab && String(activeCollection || '').startsWith('dev:')
 
   return (
     <div className="st-root" {...ownerInteraction}>
@@ -2978,7 +2981,7 @@ export default function App({ appId, token }) {
       {/* Phones: the App Store's own bar, fixed above the page so it stays put
           while you scroll. The way back to Möbius on the left, the Store's
           name in the middle, your profile (and publishing) on the right. */}
-      {phone ? (
+      {phone && !creatorOpen ? (
         <div className={`st-phonebar${barTucked ? ' is-tucked' : ''}`}>
           <div className="st-storebar">
             <div className="st-storebar-start">
@@ -2996,7 +2999,7 @@ export default function App({ appId, token }) {
           </div>
         </div>
       ) : null}
-      {phone ? null : <div className="st-header">
+      {phone || creatorOpen ? null : <div className="st-header">
         <div className="st-title-row">
           <div className="st-store-brand">
             <img
@@ -3046,12 +3049,20 @@ export default function App({ appId, token }) {
         </div>
       </div>}
 
+      {/* The same fixed Back bar as an app page, above the creator's page. */}
+      {creatorOpen ? (
+        <div className="st-lnav">
+          <button type="button" className="st-backlink" onClick={closeCollection}>
+            <ChevronLeft width={18} height={18} aria-hidden="true" /> Back
+          </button>
+        </div>
+      ) : null}
       <div className={`st-scroll is-${tab}${returning ? ' is-returning' : ''}`} ref={gridScrollRef}
            onAnimationEnd={(event) => { if (event.target === event.currentTarget) setReturning(false) }}
-           id="st-tabpanel" role="tabpanel"
-           aria-labelledby={phone ? undefined : `st-tab-${tab}`}
-           aria-label={phone ? PHONE_TABS.find((entry) => entry.id === tab)?.label : undefined}>
-        {(((discoveryTab || tab === 'library') && !activeCollection && !query.trim()) || (phone && tab === 'search'))
+           id="st-tabpanel" role={creatorOpen ? undefined : 'tabpanel'}
+           aria-labelledby={phone || creatorOpen ? undefined : `st-tab-${tab}`}
+           aria-label={phone && !creatorOpen ? PHONE_TABS.find((entry) => entry.id === tab)?.label : undefined}>
+        {(((discoveryTab || tab === 'library') && !activeCollection && !query.trim()) || (phone && tab === 'search' && !creatorOpen))
           && (!inCategory || phone) ? (
           <div className="st-pagehead">
             {phone ? (
@@ -3072,7 +3083,7 @@ export default function App({ appId, token }) {
             {phone && tab === 'search' ? <div className="st-phone-search">{searchBox}</div> : null}
           </div>
         ) : null}
-        {tab === 'search' && !query.trim() ? (
+        {tab === 'search' && !query.trim() && !creatorOpen ? (
           <div className="st-search-landing">{searchSuggestions(8)}</div>
         ) : null}
         {/* Phones: publishing in plain sight, at the top of Library. */}
@@ -3285,7 +3296,7 @@ export default function App({ appId, token }) {
         )}
       </div>
 
-      <nav className="st-bottombar" aria-label="Store sections">
+      {creatorOpen ? null : <nav className="st-bottombar" aria-label="Store sections">
         {PHONE_TABS.map(({ id, label }) => {
           const selected = tab === id
           const TabIcon = TAB_ICONS[id]
@@ -3305,7 +3316,7 @@ export default function App({ appId, token }) {
             </button>
           )
         })}
-      </nav>
+      </nav>}
 
       <SelfUpdateSheet self={selfUpdate} appId={appId} />
       {pendingUninstall && (

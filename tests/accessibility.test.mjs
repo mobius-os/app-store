@@ -43,11 +43,12 @@ test('Discover, Apps, Games and Library form one keyboard-navigable tab set', ()
   // Publishing is Library's Your apps tab, so there is no separate page.
   assert.doesNotMatch(app, /tab === 'publish'/)
   assert.match(app, /className="st-upload-btn" onClick=\{\(\) => openYourApps\('choose'\)\}/)
-  assert.match(app, /role="tabpanel"/)
+  // The panel is a tabpanel only while tabs are shown: a creator page hides them.
+  assert.match(app, /role=\{creatorOpen \? undefined : 'tabpanel'\}/)
   // Wider screens label the panel by its header tab; phones (no header tabs)
   // name it directly, and the bottom bar adds Search.
-  assert.match(app, /aria-labelledby=\{phone \? undefined : `st-tab-\$\{tab\}`\}/)
-  assert.match(app, /aria-label=\{phone \? PHONE_TABS\.find/)
+  assert.match(app, /aria-labelledby=\{phone \|\| creatorOpen \? undefined : `st-tab-\$\{tab\}`\}/)
+  assert.match(app, /aria-label=\{phone && !creatorOpen \? PHONE_TABS\.find/)
   assert.match(app, /const PHONE_TABS = \[\.\.\.STORE_TABS, \{ id: 'search', label: 'Search' \}\]/)
 })
 
