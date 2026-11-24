@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Code, Flag, SavedFilledXs, SavedXs, Share, X } from '@openai/apps-sdk-ui/components/Icon'
 import { appLifecycleFor, busyLabelForAction, catalogCategory, catalogPublisher, communityFeedbackOf, formatDownloadSize, storeCategory, hasAccessRows, isTrustedHost, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus, shortDate } from '../domain.js'
 import { CapabilityContract, capabilityRows } from './CapabilityContract.jsx'
 import { CategoryIcon } from './CategoryBrowse.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
-import { CatalogStoreImage, StoreImage, catalogAssetUrl } from './StoreImage.jsx'
+import { CatalogStoreImage, StoreImage, catalogAssetUrl, storeAssetUrls } from './StoreImage.jsx'
 import { SectionHead } from './StoreSections.jsx'
 import { progressStageFor } from './CatalogCard.jsx'
 import { ProgressFill } from './ProgressFill.jsx'
@@ -173,9 +173,12 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const listingScreenshots = Array.isArray(listing?.screenshots) ? listing.screenshots : []
   const listingTagline = catalogListing?.tagline || manifestListing?.tagline || item.summary || m.description
   const listingDescription = catalogListing?.description || manifestListing?.description || m.description
-  const listingImage = (path, alt, className, loading = 'lazy') => catalogListing
-    ? <CatalogStoreImage storeAppId={storeAppId} path={path} alt={alt} className={className} loading={loading} />
-    : <StoreImage item={reviewedItem} path={path} token={token} alt={alt} className={className} loading={loading} />
+  const ScreenshotAsset = catalogListing ? CatalogStoreImage : StoreImage
+  const renderScreenshot = (shot, { retry, onLoad, onFailure }, className, inViewer = false) => (
+    <ScreenshotAsset key={retry} storeAppId={storeAppId} item={reviewedItem} token={token} path={shot.path}
+      alt={inViewer ? shot.alt : ''} className={className} loading={inViewer ? 'eager' : 'lazy'}
+      retry={retry} onLoad={onLoad} onFailure={onFailure} />
+  )
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
@@ -209,11 +212,12 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const publishedAt = detailFeedback?.published_at || item.published_at || ''
   const sourceUrl = item.community?.repository_url || m.homepage || ''
   const [viewer, setViewer] = useState(-1)
-  const shots = listingScreenshots.map((shot, index) => ({
-    path: typeof shot === 'string' ? shot : shot.src,
-    alt: typeof shot === 'string' ? `${m.name} screenshot ${index + 1}` : shot.alt,
-    label: typeof shot === 'object' ? shot.label : '',
-  }))
+  const closeViewer = useCallback(() => setViewer(-1), [])
+  const shots = listingScreenshots.map((shot, index) => {
+    const path = typeof shot === 'string' ? shot : shot.src
+    const source = catalogListing ? catalogAssetUrl(storeAppId, path) : storeAssetUrls(reviewedItem, path).join('|')
+    return { path, alt: shot.alt || `${m.name} screenshot ${index + 1}`, key: `${item.id}:${index}:${source}` }
+  })
   const infoRow = (label, value) => value ? (
     <div className="st-info-row"><dt>{label}</dt><dd>{value}</dd></div>
   ) : null
@@ -338,10 +342,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             <SectionHead id="st-detail-preview" title="Preview" />
             <div className="st-detail-gallery" aria-label={`${m.name} screenshots`}>
               {shots.map((shot, index) => (
-                <button key={`${shot.path}-${index}`} type="button" className="st-shot" onClick={() => setViewer(index)}
-                  aria-label={`View ${shot.alt || `screenshot ${index + 1}`} full screen`}>
-                  {listingImage(shot.path, '', 'st-detail-gallery-image')}
-                </button>
+                <ScreenshotThumb key={shot.key} shot={shot} render={renderScreenshot} onOpen={() => setViewer(index)} />
               ))}
             </div>
           </section>
@@ -510,8 +511,60 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
         </div>
       </div>
       {viewer >= 0 && shots[viewer] ? (
-        <ScreenshotViewer shots={shots} index={viewer} onIndex={setViewer} onClose={() => setViewer(-1)}
-          render={(shot) => listingImage(shot.path, shot.alt, 'st-viewer-image', 'eager')} />
+        <ScreenshotViewer shots={shots} index={viewer} onIndex={setViewer} onClose={closeViewer} render={renderScreenshot} />
+      ) : null}
+    </div>
+  )
+}
+
+const SCREENSHOT_LOADING = 'Loading screenshot…'
+const SCREENSHOT_FAILED = 'Screenshot couldn’t load.'
+
+function useScreenshotLoad() {
+  const [state, setState] = useState('loading')
+  const [retry, setRetry] = useState(0)
+  const onLoad = useCallback(() => setState('ready'), [])
+  const onFailure = useCallback(() => setState('failed'), [])
+  const tryAgain = () => { setState('loading'); setRetry(value => value + 1) }
+  return { state, tryAgain, request: { retry, onLoad, onFailure } }
+}
+
+function ScreenshotThumb({ shot, render, onOpen }) {
+  const { state, tryAgain, request } = useScreenshotLoad()
+  const failed = state === 'failed'
+  return (
+    <button type="button" className="st-shot" data-state={state}
+      aria-disabled={state === 'loading' || undefined}
+      aria-label={state === 'ready' ? `View ${shot.alt} full screen` : failed
+        ? `${SCREENSHOT_FAILED} Try again: ${shot.alt}` : `${SCREENSHOT_LOADING} ${shot.alt}`}
+      onClick={(event) => {
+        if (state === 'loading') return
+        if (failed) { tryAgain(); return }
+        event.currentTarget.focus({ preventScroll: true })
+        onOpen()
+      }}>
+      {render(shot, request, 'st-detail-gallery-image')}
+      {state !== 'ready' ? (
+        <span className="st-shot-status" aria-hidden="true">
+          {failed ? <>{SCREENSHOT_FAILED}<span>Try again</span></> : SCREENSHOT_LOADING}
+        </span>
+      ) : null}
+    </button>
+  )
+}
+
+function ViewerFrame({ shot, render, beforeRetry }) {
+  const { state, tryAgain, request } = useScreenshotLoad()
+  return (
+    <div className="st-viewer-stage" data-state={state}>
+      {render(shot, request, 'st-viewer-image', true)}
+      {state !== 'ready' ? (
+        <div className="st-viewer-status">
+          <p role="status">{state === 'failed' ? SCREENSHOT_FAILED : SCREENSHOT_LOADING}</p>
+          {state === 'failed' ? (
+            <button type="button" className="st-viewer-retry" onClick={() => { beforeRetry(); tryAgain() }}>Try again</button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )
@@ -522,23 +575,28 @@ function ScreenshotViewer({ shots, index, onIndex, onClose, render }) {
   const sheetRef = useRef(null)
   const closeRef = useRef(null)
   useSheetFocus({ sheetRef, initialRef: closeRef, onClose })
-  useEffect(() => {
-    const key = (event) => {
-      if (event.key === 'ArrowRight') onIndex((index + 1) % shots.length)
-      if (event.key === 'ArrowLeft') onIndex((index - 1 + shots.length) % shots.length)
-    }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [index, shots.length, onIndex])
+  const focusClose = () => closeRef.current?.focus()
+  const move = (step) => {
+    if (document.activeElement?.classList.contains('st-viewer-retry')) focusClose()
+    onIndex(current => (current + step + shots.length) % shots.length)
+  }
+  const onKeyDown = (event) => {
+    if (shots.length < 2 || !['ArrowRight', 'ArrowLeft'].includes(event.key)) return
+    event.preventDefault()
+    move(event.key === 'ArrowRight' ? 1 : -1)
+  }
   return (
-    <div ref={sheetRef} className="st-viewer" role="dialog" aria-modal="true" aria-label="Screenshots" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div ref={sheetRef} className="st-viewer" role="dialog" aria-modal="true" aria-label="Screenshots"
+      onKeyDown={onKeyDown} onClick={(event) => {
+        if (event.target === event.currentTarget || event.target.classList.contains('st-viewer-stage')) onClose()
+      }}>
       <button ref={closeRef} type="button" className="st-viewer-close" onClick={onClose} aria-label="Close"><X width={18} height={18} /></button>
-      {render(shots[index])}
+      <ViewerFrame key={shots[index].key} shot={shots[index]} render={render} beforeRetry={focusClose} />
       {shots.length > 1 ? (
         <div className="st-viewer-bar">
-          <button type="button" onClick={() => onIndex((index - 1 + shots.length) % shots.length)} aria-label="Previous screenshot"><ChevronLeft width={18} height={18} /></button>
-          <span>{index + 1} of {shots.length}</span>
-          <button type="button" onClick={() => onIndex((index + 1) % shots.length)} aria-label="Next screenshot"><ChevronRight width={18} height={18} /></button>
+          <button type="button" onClick={() => move(-1)} aria-label="Previous screenshot"><ChevronLeft width={18} height={18} /></button>
+          <span aria-live="polite">{index + 1} of {shots.length}</span>
+          <button type="button" onClick={() => move(1)} aria-label="Next screenshot"><ChevronRight width={18} height={18} /></button>
         </div>
       ) : null}
     </div>

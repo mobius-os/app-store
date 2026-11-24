@@ -2385,10 +2385,22 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-strip b .st-cat-icon.is-sm { width: 26px; height: 26px; font-size: 20px; background: none; }
 .st-strip span { display: block; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.st-detail-gallery { display: flex; gap: 16px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; }
+.st-detail-gallery { display: flex; align-items: start; gap: 16px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; }
 .st-detail-gallery::-webkit-scrollbar { display: none; }
 .st-shot { flex: none; padding: 0; border: 0; border-radius: 12px; background: none; cursor: zoom-in; scroll-snap-align: start; }
 .st-shot .st-detail-gallery-image { display: block; height: clamp(320px, 32vw, 440px); width: auto; max-width: 100%; object-fit: contain; object-position: left center; border-radius: 12px; border: 1px solid var(--border); }
+.st-shot:not([data-state="ready"]) {
+  position: relative; display: grid; place-items: center; width: min(100%, 520px); aspect-ratio: 5 / 3;
+  border: 1px solid var(--border); background: var(--surface); cursor: default;
+}
+.st-shot[data-state="failed"] { cursor: pointer; }
+.st-shot:not([data-state="ready"]) > .st-detail-gallery-image,
+.st-viewer-stage:not([data-state="ready"]) > .st-viewer-image {
+  position: absolute; inset: 0; width: 100%; height: 100%; visibility: hidden;
+}
+.st-shot-status { display: grid; gap: 8px; padding: 16px; color: var(--muted); font: 500 14px var(--font); text-align: center; }
+.st-shot-status > span { color: var(--accent-text, var(--accent)); font-weight: 650; }
+.st-shot:focus-visible { outline-offset: -3px; }
 /* Native release-notes disclosure shares the access summary's appearance. */
 .st-whats-new > summary { list-style: none; }
 .st-whats-new > summary::-webkit-details-marker { display: none; }
@@ -2447,11 +2459,29 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-detail-foot { margin-top: 20px; }
 .st-detail-foot > .st-info-links:first-child { margin-top: 0; }
 
-.st-viewer { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; background: rgba(8,8,8,.92); }
-.st-viewer-image { max-width: min(1100px, 92vw); max-height: 78vh; border-radius: 16px; border: 1px solid rgba(255,255,255,.1); }
-.st-viewer-close { position: absolute; top: 16px; right: 16px; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: rgba(255,255,255,.12); color: #fff; cursor: pointer; }
-.st-viewer-bar { display: flex; align-items: center; gap: 16px; color: #ccc; font-size: 14px; }
-.st-viewer-bar button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: rgba(255,255,255,.12); color: #fff; cursor: pointer; }
+.st-viewer {
+  position: fixed; inset: 0; z-index: 100; display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(8px, 2vh, 16px); padding: clamp(12px, 2vh, 24px) 16px; background: rgba(8,8,8,.92);
+}
+.st-viewer-stage { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; }
+.st-viewer-image {
+  position: absolute; inset: 0; margin: auto; display: block;
+  width: auto; height: auto; max-width: min(1100px, 100%); max-height: 100%;
+  object-fit: contain; border-radius: 16px; border: 1px solid rgba(255,255,255,.1);
+}
+.st-viewer-close { justify-self: end; }
+.st-viewer-close, .st-viewer-bar button {
+  width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: rgba(255,255,255,.12); color: #fff; cursor: pointer;
+}
+.st-viewer-bar { justify-self: center; display: flex; align-items: center; gap: 16px; color: #ccc; font-size: 14px; }
+.st-viewer-bar > span { min-width: 8ch; text-align: center; font-variant-numeric: tabular-nums; }
+.st-viewer-status { max-height: 100%; overflow: auto; padding: 8px 12px; color: #fff; text-align: center; font-size: 15px; }
+.st-viewer-status p { margin: 0; }
+.st-viewer-retry {
+  min-height: 44px; margin-top: 12px; padding: 0 16px; border: 0; border-radius: 999px;
+  background: rgba(255,255,255,.16); color: #fff; font: 650 14px var(--font); cursor: pointer;
+}
 
 @media (max-width: 680px) {
   .st-dh { display: grid; grid-template-columns: 88px minmax(0, 1fr); grid-template-rows: min-content min-content 1fr; column-gap: 16px; row-gap: 6px; align-items: start; }
