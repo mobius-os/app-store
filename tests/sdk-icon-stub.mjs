@@ -12,8 +12,8 @@ export const Download = icon
 export const X = icon
 export const Search = icon
 export const FileUpload = icon
-export const Pause = icon
-export const Play = icon
+export const PauseSm = icon
+export const PlaySm = icon
 
 export const ChevronLeft = icon
 export const ChevronDown = icon
