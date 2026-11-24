@@ -153,7 +153,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     lifecycle.actionKind === 'open' && !lifecycle.setupNeedsAttention
   const cardActionDisabled = primary.disabled
   const actionLabel = busy ? primary.busyLabel
-    : layout === 'row' ? primary.shortLabel : primary.reviewLabel
+    : layout === 'row' || layout === 'list' ? primary.shortLabel : primary.reviewLabel
   const ActionIcon = busy
     ? ArrowRotateCw
     : lifecycle.actionKind === 'install'
