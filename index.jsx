@@ -2931,28 +2931,30 @@ export default function App({ appId, token }) {
                 so Tab can move from the field into a suggestion. */}
             <div className="st-searchwrap" onFocus={() => setSearchFocused(true)}
               onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSearchFocused(false) }}>
-            <label className="st-searchbox" htmlFor="st-catalog-search">
-              <Search width="1em" height="1em" aria-hidden="true" />
-              <span className="st-sr-only">Search apps and games</span>
-              <input
-                ref={searchInputRef}
-                id="st-catalog-search"
-                className="st-search-input"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') rememberSearch(query); if (event.key === 'Escape') event.currentTarget.blur() }}
-                placeholder="Search apps and games"
-                autoComplete="off"
-                spellCheck={false}
-              />
+            <div className="st-searchbox">
+              <label className="st-search-label" htmlFor="st-catalog-search">
+                <Search width="1em" height="1em" aria-hidden="true" />
+                <span className="st-sr-only">Search apps and games</span>
+                <input
+                  ref={searchInputRef}
+                  id="st-catalog-search"
+                  className="st-search-input"
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Enter') rememberSearch(query); if (event.key === 'Escape') event.currentTarget.blur() }}
+                  placeholder="Search apps and games"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
               {query ? (
                 <button type="button" className="st-search-clear" aria-label="Clear search"
                   onClick={() => { setQuery(''); searchInputRef.current?.focus() }}>
                   <X width="1em" height="1em" aria-hidden="true" />
                 </button>
               ) : null}
-            </label>
+            </div>
             {searchFocused && !query.trim() && !phone ? (
               <div className="st-qdrop" role="group" aria-label="Search suggestions" onMouseDown={(event) => event.preventDefault()}>
                 {searchSuggestions(5)}

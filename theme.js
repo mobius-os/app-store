@@ -2123,16 +2123,20 @@ export const CSS = `
 .st-header-tools { grid-area: tools; display: flex; align-items: center; gap: 12px; justify-content: flex-end; min-width: 0; }
 .st-searchbox {
   display: flex; align-items: center; gap: 8px; flex: 0 1 300px; min-width: 0; height: 38px;
-  padding: 0 8px 0 12px; border: 1px solid var(--border); border-radius: 12px;
+  border: 1px solid var(--border); border-radius: 12px;
   background: var(--surface); color: var(--muted); cursor: text;
   transition: border-color .15s, box-shadow .15s;
 }
-.st-searchbox > svg { width: 16px; height: 16px; flex: none; }
+.st-search-label {
+  display: flex; align-items: center; align-self: stretch; gap: 8px; flex: 1; min-width: 0; padding-inline-start: 12px;
+}
+.st-search-label:last-child { padding-inline-end: 8px; }
+.st-search-label > svg { width: 16px; height: 16px; flex: none; }
 .st-searchbox:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
-.st-searchbox:focus-within > svg { color: var(--accent); }
+.st-searchbox:focus-within .st-search-label > svg { color: var(--accent); }
 .st-searchbox .st-search-input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; padding: 0; background: none; color: var(--text); font: 15px var(--font); }
 .st-searchbox .st-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
-.st-search-clear { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); cursor: pointer; }
+.st-search-clear { width: 28px; height: 28px; flex: none; margin-inline-end: 8px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); cursor: pointer; }
 .st-search-clear svg { width: 13px; height: 13px; }
 .st-tab.is-active::after { background: var(--accent); }
 @media (min-width: 900px) {
