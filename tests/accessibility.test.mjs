@@ -67,6 +67,16 @@ test('App Store preserves its reviewed immersive hold gesture', () => {
   assert.match(app, /window\.mobius\.immersive\.holdToToggle/)
 })
 
+test('small accent text uses the text-safe accent, not the decorative one', () => {
+  // The decorative --accent is about 3.3:1 on the light page; the shell's
+  // --accent-text is contrast-adjusted for text in every theme.
+  assert.match(theme, /--st-accent-text: var\(--accent-text, var\(--accent\)\);/)
+  for (const selector of ['.st-link-btn', '.st-pagehead-eyebrow', '.st-search-cancel', '.st-mine-status.is-accent', '.st-card-installed.is-update']) {
+    const escaped = selector.replace(/[.-]/g, '\\$&')
+    assert.match(theme, new RegExp(`\\n${escaped} \\{[^}]*?color: var\\(--st-accent-text\\);`), `${selector} base rule`)
+  }
+})
+
 test('Discover keeps its pausable auto-advancing spotlight carousel at the top', () => {
   assert.match(catalogList, /hostedSpotlights\.length \? hostedSpotlights : bundledSpotlights\(items\)/)
   assert.match(catalogList, /Array\.isArray\(spotlightFeed\?\.items\)/)
