@@ -91,6 +91,17 @@ test('every Library row keeps Details in its More menu, and only a ready app lau
     assert.equal((await press('Tab')).defaultPrevented, false, 'the browser keeps normal tab navigation')
     assert.equal(more.getAttribute('aria-expanded'), 'false')
 
+    // Safari (WebKit) does not focus a button on mouse press, so a second click
+    // on More first blurs the open menu to the page and only then clicks.
+    await act(async () => more.click())
+    assert.equal(more.getAttribute('aria-expanded'), 'true')
+    await act(async () => {
+      more.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true }))
+      doc.activeElement.blur()
+    })
+    await act(async () => more.click())
+    assert.equal(more.getAttribute('aria-expanded'), 'false', 'a second click on More closes its menu in Safari')
+
     await show({})
     await tapRow()
     await act(async () => (await menu('Details')).click())

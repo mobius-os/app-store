@@ -2233,7 +2233,7 @@ test('filterCatalog matches categories, descriptions, and setup metadata', async
   assert.deepEqual(filterCatalog(items, { query: 'earth', category: 'reference' }).map(i => i.id), ['atlas'])
 })
 
-test('filterCatalog puts exact app names first without reordering other matches', async () => {
+test('filterCatalog ranks exact names, then name starts, then word starts, keeping catalog order within a tier', async () => {
   const { filterCatalog } = await bundle()
   const items = [
     { id: 'memory', manifest: { name: 'Memory', description: 'Connect your notes.' } },
@@ -2243,26 +2243,31 @@ test('filterCatalog puts exact app names first without reordering other matches'
     { id: 'multi', manifest: { name: 'Daily Brief' }, categories: ['utilities'] },
   ]
   const ids = options => filterCatalog(items, options).map(item => item.id)
-  assert.deepEqual(ids({ query: '  cOnNecT ' }), ['connect', 'another-exact', 'memory', 'related'])
+  assert.deepEqual(ids({ query: '  cOnNecT ' }), ['connect', 'another-exact', 'related', 'memory'])
   assert.deepEqual(ids({ query: 'connect', category: 'utilities' }), ['connect', 'another-exact'])
   assert.deepEqual(ids({ query: 'daily   BRIEF' }), ['multi'])
   assert.deepEqual(ids({ query: '   ' }), items.map(item => item.id))
 })
 
-test('filterCatalog matches the start of words, not text inside them', async () => {
+test('filterCatalog puts a name match above a description match without dropping substring matches', async () => {
   const { filterCatalog } = await bundle()
   const items = [
+    { id: 'memory', manifest: { name: 'Memory', description: 'Saves notes about you.' } },
+    { id: 'skills', manifest: { name: 'Skills', description: 'Reusable playbooks.' } },
     { id: 'maps', manifest: { name: 'Maps', description: 'Keep maps linked to places.' } },
-    { id: 'inkwell', manifest: { name: 'Inkwell', description: 'Notes and tasks.' } },
-    { id: 'songs', manifest: { name: 'Songs', description: 'Tagged results from shared links.' } },
+    { id: 'notes', manifest: { name: 'Notes', description: 'Quick writing.' } },
+    { id: 'workflows', manifest: { name: 'Workflows', description: 'Automate steps.' } },
     { id: 'oni', manifest: { name: 'Ink of the Oni', description: 'A lone ronin.' } },
+    { id: 'inkwell', manifest: { name: 'Inkwell', description: 'Drafts.' } },
     { id: 'identity', manifest: { name: 'Möbius · You', description: 'Your account.' } },
   ]
   const ids = query => filterCatalog(items, { query }).map(item => item.id)
-  assert.deepEqual(ids('ink'), ['inkwell', 'oni'])
-  assert.deepEqual(ids('link'), ['maps', 'songs'])
+  assert.deepEqual(ids('note'), ['notes', 'memory'], 'a name prefix outranks a description word')
+  assert.deepEqual(ids('flow'), ['workflows'], 'the tail of a compound name still matches')
+  assert.deepEqual(ids('book'), ['skills'], 'the tail of a compound description word still matches')
+  assert.deepEqual(ids('ink'), ['oni', 'inkwell', 'maps'], 'name starts first, then text that merely contains it')
   assert.deepEqual(ids('oni ink'), ['oni'])
-  assert.deepEqual(ids('möbius you'), ['identity'])
+  assert.deepEqual(ids('you'), ['identity', 'memory'], 'a word after punctuation counts as a word start')
   assert.deepEqual(ids('Möbius · You'), ['identity'])
 })
 

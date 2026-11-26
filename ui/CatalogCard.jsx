@@ -89,8 +89,10 @@ export function RowMenu({ name, items }) {
   }
 
   return (
-    <div className="st-rowmenu" ref={wrapRef}
-      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setEdge(null) }}>
+    // No close-on-blur: Safari does not focus a clicked button, so a second
+    // press on More would blur to the page first and then reopen the menu.
+    // Escape, Tab and an outside pointerdown close it instead.
+    <div className="st-rowmenu" ref={wrapRef}>
       <button type="button" className="st-rowmenu-btn" aria-label={`More for ${name}`} aria-haspopup="menu"
         ref={triggerRef} aria-expanded={open} onClick={() => open ? closeAndRestore() : setEdge('first')}
         onKeyDown={event => {
