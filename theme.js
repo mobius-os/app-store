@@ -2457,11 +2457,17 @@ button.st-dh-dev:hover { text-decoration: underline; }
   .st-dbtn.is-primary { min-height: 44px; }
   .st-detail-v2 .st-dh + .st-sec { margin-top: 20px; }
   .st-dh-acts .st-dbtn { flex: 1; min-width: 0; }
+  .st-detail-v2 .st-lnav .st-backlink,
+  .st-dh-acts .st-dbtn.is-link,
+  .st-detail-foot .st-info-links .st-lnk { min-height: 44px; }
+  .st-dh-acts .st-dbtn.is-link { flex: 0 0 auto; padding-inline: 8px; white-space: nowrap; }
   .st-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 14px; }
   .st-strip > *:nth-child(3n+1) { border-left: 0; }
   .st-shot .st-detail-gallery-image { height: auto; max-height: 380px; max-width: calc(100vw - 32px); width: auto; }
   .st-info { grid-template-columns: minmax(0, 1fr); }
   .st-info > :nth-child(n+2) { border-top: 1px solid var(--border); }
+  .st-info-row:has(dd > .st-lnk) { align-items: center; padding-block: 0; }
+  .st-info-row dd > .st-lnk { min-width: 44px; min-height: 44px; justify-content: flex-end; }
 }
 
 /* Library. */
