@@ -127,7 +127,7 @@ export function CatalogList({
     const name = activeCollection.slice(4)
     return <CreatorStorefront key={name} name={name} items={allItems} appId={appId} token={token}
       filter={creatorFilter.name === name ? creatorFilter.value : 'all'} onFilter={value => onCreatorFilter?.(name, value)}
-      onPick={onPick} onBack={onCloseCollection} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={onLoadMore} />
+      onPick={onPick} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={onLoadMore} />
   }
 
   if (items.length === 0 && !activeCollection && view !== 'search' && !libraryTab) {
