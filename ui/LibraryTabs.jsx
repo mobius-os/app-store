@@ -16,9 +16,16 @@ const TAB_IDS = new Set(LIBRARY_TABS.map((tab) => tab.id))
 const PANEL_ID = 'st-library-panel'
 const tabId = id => `st-libtab-${id}`
 
+// The panel's element is always rendered and only its tab-panel attributes
+// follow `active`. Swapping between a bare fragment and a wrapper would change
+// the root element type, and React would remount the whole Store body (the
+// Library list, an update's progress, an open row menu) each time search or
+// the Store tab toggles the Library tabs.
 export function LibraryPanel({ active, children }) {
-  if (!active) return children
-  return <div id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(active)} tabIndex={0}>{children}</div>
+  const panel = active
+    ? { id: PANEL_ID, role: 'tabpanel', 'aria-labelledby': tabId(active), tabIndex: 0 }
+    : {}
+  return <div {...panel}>{children}</div>
 }
 
 // `category` is the Library place the Store remembers. 'all' (the default
