@@ -6,6 +6,7 @@ import { batchProgress, failedEntryActions, updateBatchBusy } from '../update-ba
 import { parseUnifiedDiff } from './diff/parseUnifiedDiff.js'
 import FileDiffList from './diff/FileDiffList.jsx'
 import { CapabilityContract } from './CapabilityContract.jsx'
+import { installedIconUrl } from './IconBox.jsx'
 
 const appName = entry => entry.item?.manifest?.name || entry.item?.name || String(entry.item?.id ?? '')
 const providerNames = { codex: 'OpenAI Codex', claude: 'Claude Code', mobius: 'Möbius' }
@@ -127,9 +128,7 @@ function ReviewEntry({ entry, locked, onRetry, onAskAgent, onResolveOne, onOpenC
     entry.prepared?.capabilityReview?.preview?.capability_diff,
   )
   const version = preview.upstream_version || entry.version || entry.item?.manifest?.version || 'latest'
-  const [label, tone] = entry.status === 'ready'
-    ? [capabilitiesChanged ? 'Access review required' : 'Ready to update', 'ready']
-    : STATUS[entry.status] || STATUS.failed
+  const [label, tone] = STATUS[entry.status] || STATUS.failed
   const actions = failedEntryActions(entry)
   const changes = [
     added ? `${added} added` : '',
@@ -137,12 +136,19 @@ function ReviewEntry({ entry, locked, onRetry, onAskAgent, onResolveOne, onOpenC
     removed ? `${removed} removed` : '',
   ].filter(Boolean).join(' · ')
   const appId = entry.prepared?.installedApp?.id
+  const icon = installedIconUrl(entry.prepared?.installedApp)
+  const changeSummary = files.length && changed === files.length
+    ? `${changed} ${changed === 1 ? 'file' : 'files'} changed`
+    : files.length ? changes : 'No source-file changes to show'
 
   return (
     <section className="st-update-review-section" data-status={entry.status}>
       <div className="st-update-review-section-head">
-        <div><h3>{appName(entry)}</h3><span className="st-update-version">Version {version}</span></div>
-        <span className={`st-update-status is-${tone}`}>{label}</span>
+        <div className="st-update-app-line">
+          {icon ? <img className="st-update-app-icon" src={icon} alt="" /> : null}
+          <div><h3>{appName(entry)}</h3><span className="st-update-version">Version {version}</span></div>
+        </div>
+        {entry.status !== 'ready' ? <span className={`st-update-status is-${tone}`}>{label}</span> : null}
       </div>
       {entry.status === 'updated' ? (
         <div className="st-update-review-notice is-success" role="status">
@@ -189,17 +195,14 @@ function ReviewEntry({ entry, locked, onRetry, onAskAgent, onResolveOne, onOpenC
           ) : null}
         </div>
       ) : (
-        <div className="st-update-change-summary">
-          <h4>What changed</h4>
-          <p>
-            {files.length
-              ? `${files.length} ${files.length === 1 ? 'file' : 'files'} in this preview: ${changes}.`
-              : 'No source-file changes to show. This release may update app settings or artwork.'}
-          </p>
-          <p className="st-update-summary-note">
-            {capabilitiesChanged ? 'Review the access changes below before confirming.' : 'No new access is requested.'}
-          </p>
-        </div>
+        <dl className="st-update-facts">
+          <div className="st-update-fact"><dt>What changed</dt><dd>{changeSummary}</dd></div>
+          <div className="st-update-fact"><dt>Access</dt>
+            {capabilitiesChanged
+              ? <dd>Review changes below</dd>
+              : <dd className="st-update-access-ok"><Check width={16} height={16} aria-hidden="true" /> No new access</dd>}
+          </div>
+        </dl>
       )}
       {entry.warnings?.length ? (
         <ul className="st-update-review-warnings" aria-label={`${appName(entry)} update notes`}>
@@ -208,17 +211,17 @@ function ReviewEntry({ entry, locked, onRetry, onAskAgent, onResolveOne, onOpenC
           ))}
         </ul>
       ) : null}
+      {capabilitiesChanged ? (
+        <div className="st-update-access-detail">
+          <h4>{entry.prepared.capabilityReview.preview.capability_diff?.unknown_previous ? 'Access review' : 'Access changes'}</h4>
+          <CapabilityContract review={entry.prepared.capabilityReview} isInstalled updateReview />
+        </div>
+      ) : null}
       {files.length > 0 ? (
         <details className="st-update-technical">
           <summary>Technical details <span>{files.length} {files.length === 1 ? 'file' : 'files'}</span></summary>
           <FileDiffList files={files} />
         </details>
-      ) : null}
-      {capabilitiesChanged ? (
-        <div>
-          <h3>{entry.prepared.capabilityReview.preview.capability_diff?.unknown_previous ? 'Access review' : 'Access changes'}</h3>
-          <CapabilityContract review={entry.prepared.capabilityReview} isInstalled updateReview />
-        </div>
       ) : null}
     </section>
   )
@@ -243,6 +246,7 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
   const checking = phase === 'checking'
   const locked = applying || checking || phase === 'resolving' || agentReviewing
   const hasResults = Boolean(review.batchId) || review.applied === true || updatedCount > 0
+  const cleanReview = phase === 'review' && !error && !hasResults && ready.length === entries.length && ready.length > 0
   const title = checking ? 'Checking for updates'
     : phase === 'resolving' ? 'Starting resolver chat'
       : applying ? 'Updating apps'
@@ -276,10 +280,18 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
       if (event.key !== 'Tab' || !dialogRef.current) return
       const focusable = [...dialogRef.current.querySelectorAll(
         'button:not(:disabled), a[href], summary, [tabindex]:not([tabindex="-1"])',
-      )]
-      if (!focusable.length) return
+      )].filter(node => {
+        const collapsed = node.closest('details:not([open])')
+        return !collapsed || collapsed.querySelector('summary') === node
+      })
+      if (!focusable.length) { event.preventDefault(); return }
       const first = focusable[0], last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      const active = document.activeElement
+      if (active === dialogRef.current) {
+        event.preventDefault()
+        const target = event.shiftKey ? last : first
+        target.focus()
+      } else if (event.shiftKey && active === first) { event.preventDefault(); last.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
     }
     document.addEventListener('keydown', onKeyDown)
@@ -292,7 +304,7 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
         <div className="st-update-review-head">
           <div>
             <h2 id="st-update-review-title" className="st-update-review-title">{title}</h2>
-            <p className="st-update-review-subtitle" role="status" aria-live="polite">{subtitle}</p>
+            <p className={cleanReview ? 'st-update-review-subtitle st-sr-only' : 'st-update-review-subtitle'} role="status" aria-live="polite">{subtitle}</p>
           </div>
           <button ref={closeRef} type="button" className="st-update-review-close" onClick={requestClose} disabled={localApply} aria-label="Close update review"><X width="1em" height="1em" aria-hidden="true" /></button>
         </div>
@@ -310,6 +322,11 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
             <ReviewEntry key={entry.item.id} entry={entry} locked={locked}
               onRetry={onRetry} onAskAgent={onAskAgent} onResolveOne={onResolveOne} onOpenChat={onOpenChat} />
           ))}
+          {ready.length && onAskAgent ? (
+            <button type="button" className="st-btn st-btn-ghost st-update-review-agent" onClick={() => onAskAgent(ready)} disabled={locked}>
+              {agentReviewing ? 'Opening agent…' : 'Review with agent'}
+            </button>
+          ) : null}
         </div>
 
         <div className="st-update-review-actions">
@@ -318,11 +335,6 @@ export function UpdateReviewModal({ review, agentReviewing = false, onClose, onC
           </button>
           {unresolved.length > 1 && onResolveAll ? (
             <button type="button" className="st-btn st-btn-secondary" onClick={onResolveAll} disabled={locked}>Fix all · {unresolved.length}</button>
-          ) : null}
-          {ready.length && onAskAgent ? (
-            <button type="button" className="st-btn st-btn-secondary" onClick={() => onAskAgent(ready)} disabled={locked}>
-              {agentReviewing ? 'Opening agent…' : 'Review with agent'}
-            </button>
           ) : null}
           {ready.length || phase === 'submitting' ? (
             <button type="button" className="st-btn st-btn-primary" onClick={onConfirm} disabled={locked}>
