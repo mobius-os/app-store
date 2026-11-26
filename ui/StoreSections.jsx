@@ -145,7 +145,7 @@ export function CategoryList({ groups, onSelect, limit = 0, expanded = false, on
 
 // Creator portfolios reuse the catalog's real identity, artwork and detail
 // navigation. No install action lives here: exploring always opens the app page.
-export function CreatorStorefront({ name, items, appId, token, onPick, onBack, hasMore, loadingMore, onLoadMore, filter = 'all', onFilter }) {
+export function CreatorStorefront({ name, items, appId, token, onPick, hasMore, loadingMore, onLoadMore, filter = 'all', onFilter }) {
   const creator = creatorStorefront(items, name)
   const work = creator.items.filter(item => filter === 'all' || catalogKind(item) === filter)
   const hasGames = creator.items.some(item => catalogKind(item) === 'games')
@@ -161,7 +161,6 @@ export function CreatorStorefront({ name, items, appId, token, onPick, onBack, h
   const featured = creator.featured
   return (
     <div className="st-creator">
-      <button type="button" className="st-backlink" onClick={onBack}><ChevronLeft width={18} height={18} aria-hidden="true" /> Back</button>
       <header className="st-creator-profile">
         <div className="st-creator-avatar"><span aria-hidden="true">{Array.from(name)[0]?.toUpperCase() || '?'}</span><CreatorPicture url={creator.picture} token={token} name={name} /></div>
         <div className="st-creator-identity">
