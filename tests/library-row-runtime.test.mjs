@@ -95,11 +95,21 @@ test('every Library row keeps Details in its More menu, only a ready app launche
     assert.deepEqual(calls, [['details', 'pocket'], ['update', 'pocket', false]], 'the row opens the page; Get installs')
     assert.equal(doc.querySelector('.st-installed-dot'), null)
 
-    // Browse rows have no Get or Open button: the row is the action.
+    await show({ blocked: true })
+    await tapRow()
+    assert.deepEqual(calls, [['open', 7]], 'another app installing does not stop a launch')
+
+    await show({ busy: true, busyActionKind: 'checking_update' })
+    await tapRow()
+    assert.deepEqual(calls, [['details', 'pocket']], 'an app busy with its own action opens its page')
+
+    // Browse rows have no Get or Open button: a tap opens the app page, even
+    // for an installed app, so its reviews and what's new stay one tap away.
     for (const layout of ['row', 'grid']) {
       await show({ pickOpensApp: false, layout })
+      assert.equal(doc.querySelector('.st-card-open').getAttribute('aria-label'), 'Pocket — open details')
       await tapRow()
-      assert.deepEqual(calls, [['open', 7]], `an installed ${layout} card launches the app`)
+      assert.deepEqual(calls, [['details', 'pocket']], `an installed ${layout} card opens its page, not the app`)
       assert.equal(doc.querySelector('.st-card-action'), null, 'no Open button')
       assert.ok(doc.querySelector('.st-installed-dot'), 'installed apps carry the icon seal')
       assert.equal(doc.querySelector('.st-card-status-row'), null, 'and nothing at the end of the row')
@@ -117,7 +127,7 @@ test('every Library row keeps Details in its More menu, only a ready app launche
   }
 })
 
-test('a featured card and a catalog row agree on what a tap does, whether a button shows and the installed seal', async () => {
+test('a featured card and a browse row agree on what a tap does, whether a button shows and the installed seal', async () => {
   const CatalogCard = await catalogCard()
   const { FeatureCard } = await buildUi('StoreSections.jsx')
   const dom = new JSDOM('<div id="root"></div>')
@@ -153,8 +163,9 @@ test('a featured card and a catalog row agree on what a tap does, whether a butt
     }
   }
   const states = {
-    ready: [{}, { tap: 'open app', calls: [['open', 7]], button: false, seal: true }],
-    'ready while another app installs': [{ blocked: true }, { tap: 'open app', calls: [['open', 7]], button: false, seal: true }],
+    // Browse surfaces never launch: an installed app opens its page and keeps the seal.
+    ready: [{}, { tap: 'open details', calls: [['details', 'pocket']], button: false, seal: true }],
+    'ready while another app installs': [{ blocked: true }, { tap: 'open details', calls: [['details', 'pocket']], button: false, seal: true }],
     'busy with its own action': [{ busy: true, busyActionKind: 'checking_update' },
       { tap: 'open details', calls: [['details', 'pocket']], button: true, seal: true }],
     'with an update': [{ updateChecks: { 7: { available: true } } },

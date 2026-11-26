@@ -188,18 +188,8 @@ async function openPublish(account) {
   return view
 }
 
-// Shared listings show in the Apps tab. An installed app's row launches it,
-// so its page is reached from the Library row's More menu instead.
-async function openSharedListing(view, { installed = false } = {}) {
-  if (installed) {
-    await act(async () => view.doc.querySelector('#st-tab-library').click())
-    await until(() => view.doc.querySelector('#st-libtab-installed'), 'the Installed tab')
-    await act(async () => view.doc.querySelector('#st-libtab-installed').click())
-    await until(() => view.doc.querySelector('[aria-label="More for Shared Notes"]'), 'the installed row')
-    await act(async () => view.doc.querySelector('[aria-label="More for Shared Notes"]').click())
-    await act(async () => view.doc.querySelector('[aria-label="Shared Notes details"]').click())
-    return
-  }
+// Shared listings show in the Apps tab.
+async function openSharedListing(view) {
   const tab = [...view.doc.querySelectorAll('button.st-tab')].find(button => button.textContent.startsWith('Apps'))
   await act(async () => tab.click())
   await until(() => view.doc.querySelector('[aria-label="Shared Notes — open details"]'), 'the shared listing')
@@ -308,8 +298,8 @@ test('coming back from Settings re-reads a detail page review gate that asked fo
   }
 })
 
-async function openSharedNotes(view, options) {
-  await openSharedListing(view, options)
+async function openSharedNotes(view) {
+  await openSharedListing(view)
   await until(() => view.signInButtons().length === 1, 'the review gate')
 }
 
@@ -351,7 +341,7 @@ test('a listing read issued before the install receipt cannot undo the eligibili
   }
   const view = await mountStore(account)
   try {
-    await openSharedNotes(view, { installed: true })
+    await openSharedNotes(view)
     await view.leaveForSettings()
     account.linked = true
     account.handle = 'example'

@@ -88,7 +88,8 @@ export function hasFeatureArt(item) { return !!artFor(item) }
 export function FeatureCard({ item, kicker, appId, token, onPick, actionProps }) {
   const art = artFor(item)
   const name = item.manifest?.name || item.name
-  // The card follows the same tap, button and seal rules as catalog rows.
+  // The card follows the same tap, button and seal rules as browse rows: a
+  // tap opens the app page, even for an installed app.
   const primary = appPrimaryAction(item, actionProps)
   const tagline = listingFor(item)?.tagline || item.summary || item.manifest?.description || ''
   return (

@@ -9,8 +9,9 @@ import { IconBox, installedIconUrl } from './IconBox.jsx'
 // together with what tapping the listing itself does (tapOpensApp), whether
 // the listing keeps a visible button (showsButton) and whether it carries the
 // installed seal (installed), so no surface decides those on its own.
-// inLibrary marks the Library's own rows: the owner's shelf, where a saved app
-// that is not installed yet keeps its Get button.
+// inLibrary marks the Library's own rows: the owner's shelf, where a ready
+// installed app launches on tap and a saved app that is not installed yet
+// keeps its Get button. Everywhere else a tap opens the app page.
 export function appPrimaryAction(item, { installed, updateChecks = {}, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, onOpenInstalled, onReviewUpdate, onRetryInstalled, onUpdate, busy = false, blocked = false, busyActionKind = null, inLibrary = false }) {
   const lifecycle = appLifecycleFor(item, { installed, updateChecks, installedUnavailable, setupCompletions, systemSetupReady })
   const storeInstalled = lifecycle.installedApp
@@ -30,14 +31,16 @@ export function appPrimaryAction(item, { installed, updateChecks = {}, installed
     if (lifecycle.actionKind === 'retry') return onRetryInstalled?.()
     return onUpdate?.(item, { isUpdate: lifecycle.actionKind === 'update' })
   }
-  // Tapping a ready installed app launches it. An update, conflict, retry or
-  // unfinished setup opens the app page instead, so an old version never
-  // launches silently, and so does an app with its own action in progress.
-  // Another app's install or update (blocked) does not stop a launch.
-  const tapOpensApp = canOpen && lifecycle.actionKind === 'open'
+  // In the Library, tapping a ready installed app launches it. Browse
+  // surfaces open the app page, where its reviews, what's new and Uninstall
+  // live. An update, conflict, retry or unfinished setup opens the page too,
+  // so an old version never launches silently, and so does an app with its
+  // own action in progress. Another app's install or update (blocked) does
+  // not stop a launch.
+  const tapOpensApp = inLibrary && canOpen && lifecycle.actionKind === 'open'
     && !lifecycle.setupNeedsAttention && !busy
   const launch = () => onOpenInstalled(storeInstalled.id)
-  // Open is the tap itself and Get belongs to the app page, so only
+  // Open is the Library row's tap and Get belongs to the app page, so only
   // maintenance actions (update, retry, resolve) and progress keep a button.
   const showsButton = busy || lifecycle.actionKind === 'update' || lifecycle.actionKind === 'retry'
     || lifecycle.actionKind === 'resolve' || (inLibrary && lifecycle.actionKind === 'install')
@@ -248,9 +251,9 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       {(layout === 'compact' || layout === 'list' || layout === 'row') ? (
         <CardByline item={item} state={layout === 'compact' || layout === 'row' ? lifecycle.cardVariant : ''} />
       ) : null}
-      {/* A ready installed app launches from its row wherever it is listed;
-          any other row opens the app page, which owns the one Get button.
-          Maintenance actions stay, and Library rows keep their More menu. */}
+      {/* A browse row opens the app page, which owns the one Get button; a
+          ready installed app launches from its Library row. Maintenance
+          actions stay, and Library rows keep their More menu. */}
       {layout === 'compact' || (!showsButton && !pickOpensApp) ? null : (
       <div className="st-card-status-row">
         {showsButton ? <button
