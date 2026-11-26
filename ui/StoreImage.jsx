@@ -27,7 +27,7 @@ const ART_WIDTH = 1400
 const PICTURE_WIDTH = 160
 
 function remoteImage(url, token, width = ART_WIDTH, retry = 0) {
-  const key = `${width}|${url}|${retry}`
+  const key = `${width}|${url}`
   if (remoteImages.has(key)) return remoteImages.get(key)
   const request = fetch(proxyUrl(url, { width }), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},

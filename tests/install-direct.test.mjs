@@ -181,6 +181,13 @@ test('screenshot viewers keep keyboard focus inside and return it to the opening
         await press(next, 'ArrowLeft')
         assert.match(dialog.querySelector('.st-viewer-bar').textContent, /1 of 2/)
         assert.equal(doc.activeElement, next)
+        // A mouse click on the image or counter leaves focus on the page body;
+        // the arrow keys must still change screenshots.
+        next.blur()
+        assert.equal(doc.activeElement, doc.body)
+        assert.equal((await press(doc.body, 'ArrowRight')).defaultPrevented, true)
+        assert.match(dialog.querySelector('.st-viewer-bar').textContent, /2 of 2/)
+        next.focus()
       }
       await press(doc.activeElement, 'Escape')
       assert.equal(doc.querySelector('.st-viewer'), null)

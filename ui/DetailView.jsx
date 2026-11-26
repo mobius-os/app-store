@@ -576,18 +576,27 @@ function ScreenshotViewer({ shots, index, onIndex, onClose, render }) {
   const closeRef = useRef(null)
   useSheetFocus({ sheetRef, initialRef: closeRef, onClose })
   const focusClose = () => closeRef.current?.focus()
-  const move = (step) => {
-    if (document.activeElement?.classList.contains('st-viewer-retry')) focusClose()
-    onIndex(current => (current + step + shots.length) % shots.length)
-  }
-  const onKeyDown = (event) => {
-    if (shots.length < 2 || !['ArrowRight', 'ArrowLeft'].includes(event.key)) return
-    event.preventDefault()
-    move(event.key === 'ArrowRight' ? 1 : -1)
-  }
+  const count = shots.length
+  const move = useCallback((step) => {
+    if (document.activeElement?.classList.contains('st-viewer-retry')) closeRef.current?.focus()
+    onIndex(current => (current + step + count) % count)
+  }, [count, onIndex])
+  // On the document, like useSheetFocus's Escape: clicking the image or the
+  // counter moves focus out of the viewer's controls, and the arrows must
+  // keep working for that mouse user.
+  useEffect(() => {
+    if (count < 2) return undefined
+    const onKeyDown = (event) => {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+      event.preventDefault()
+      move(event.key === 'ArrowRight' ? 1 : -1)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [count, move])
   return (
     <div ref={sheetRef} className="st-viewer" role="dialog" aria-modal="true" aria-label="Screenshots"
-      onKeyDown={onKeyDown} onClick={(event) => {
+      onClick={(event) => {
         if (event.target === event.currentTarget || event.target.classList.contains('st-viewer-stage')) onClose()
       }}>
       <button ref={closeRef} type="button" className="st-viewer-close" onClick={onClose} aria-label="Close"><X width={18} height={18} /></button>

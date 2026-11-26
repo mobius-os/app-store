@@ -2928,6 +2928,8 @@ button.st-dh-dev:hover { text-decoration: underline; }
   .st-dh-acts { margin-top: 13px; }
   .st-strip { margin-top: 20px; padding: 12px 0; }
   .st-shot .st-detail-gallery-image { height: clamp(320px, 32vw, 440px); }
+  /* A loading or failed tile keeps the loaded image's height so the page below never moves. */
+  .st-shot:not([data-state="ready"]) { height: clamp(320px, 32vw, 440px); aspect-ratio: auto; }
   .st-detail-v2 .st-community-feedback { margin-top: 32px; }
   .st-info-row { padding: 11px 0; }
   .st-info-links { margin-top: 12px; }
