@@ -624,22 +624,18 @@ export function hasAccessRows(preview) {
   return Array.isArray(preview?.access_rows) && Array.isArray(preview?.installed_access_rows)
 }
 
-// The Store can only decide which installs need a second tap after a live
-// platform check. Every install sends the checked capability digest, and the
-// installer refuses a manifest whose capability contract changed since then.
-// The digest covers only that contract: access rows derived from other
-// manifest fields (project_templates becomes project_builders) can still
-// change without a refusal. The owner's consent at first open is what grants
-// access either way.
-export function checkedInstallAccess(review) {
+// Get installs only after a live platform check, and sends that check's
+// capability digest so the installer refuses a manifest whose capability
+// contract changed since. The digest covers only that contract: access rows
+// derived from other manifest fields (project_templates becomes
+// project_builders) can still change without a refusal. Access itself is
+// granted by the platform's consent at first open, not here.
+export function checkedInstallDigest(review) {
   const preview = review?.preview
   if (!['ready', 'refused'].includes(review?.status) || !hasAccessRows(preview)
       || !preview.capability_contract || typeof preview.capability_contract !== 'object'
       || !/^[0-9a-f]{64}$/.test(preview.capability_digest || '')) return null
-  const highImpact = !!preview.capability_contract.background || preview.access_rows.some(row =>
-    row.critical === true || ['background_job', 'github_access', 'github_connect'].includes(row.id)
-      || ['write', 'public', 'redacted+deleted'].includes(row.level))
-  return { digest: preview.capability_digest, requiresConfirmation: highImpact || review.status === 'refused' }
+  return preview.capability_digest
 }
 
 export function capabilityDiffNeedsReview(diff) {

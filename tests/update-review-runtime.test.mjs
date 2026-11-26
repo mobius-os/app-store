@@ -408,7 +408,7 @@ test('a refused install says nothing was installed, in words that fit a fresh in
   }
 })
 
-test('a changed install access contract is never resubmitted without new confirmation', async () => {
+test('a changed install access contract is shown and resubmitted only when the owner presses Get again', async () => {
   const { dom, restore } = useDom()
   const doc = dom.window.document
   const lowDigest = 'a'.repeat(64)
@@ -446,10 +446,10 @@ test('a changed install access contract is never resubmitted without new confirm
     assert.equal(requests.length, 1)
     assert.equal(requests[0].reviewed_capability_digest, lowDigest)
     assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /Nothing was installed/)
+    assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /1 permission requested/)
+    assert.equal(requests.length, 1, 'the changed access is never sent on its own')
     await click(get)
-    assert.match(doc.querySelector('[aria-modal=true]').textContent, /Install and remove apps/)
-    assert.equal(requests.length, 1)
-    await click('[aria-modal=true] .st-btn-primary')
+    assert.equal(doc.querySelector('[aria-modal=true]'), null)
     assert.equal(requests.length, 2)
     assert.deepEqual(requests[1], { ...requests[0], reviewed_capability_digest: nextDigest })
   } finally {

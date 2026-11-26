@@ -49,7 +49,7 @@ const item = {
   manifest: { id: 'maps', name: 'Maps', version: '1.0.0', description: 'Find places.', author: 'mobius-os', license: 'MIT' },
 }
 
-test('Get waits for access, supports retry, and binds a low-impact one-tap install', async () => {
+test('Get waits for access, supports retry, and binds the checked digest to a one-tap install', async () => {
   const { dom, restore } = useDom()
   const { DetailView } = await bundleDetailView()
   const installs = []
@@ -86,7 +86,7 @@ test('Get waits for access, supports retry, and binds a low-impact one-tap insta
   }
 })
 
-test('scheduled and broad access require centered confirmation; cancel restores Get', async () => {
+test('scheduled and broad access is summarized next to Get and installs in one tap; first-open consent decides access', async () => {
   const { dom, restore } = useDom()
   const { DetailView } = await bundleDetailView()
   const installs = []
@@ -99,7 +99,6 @@ test('scheduled and broad access require centered confirmation; cancel restores 
       capability_contract: { background }, access_rows: rows } }, token: 't',
   })))
   const cta = () => doc.querySelector('.st-dh-acts .st-dbtn.is-primary')
-  const review = () => doc.querySelector('[aria-modal=true]')
   try {
     await show([daily, { id: 'agent_role', title: 'Run AI agents', text: 'Runs agents.' }], { job: 'report.py', cron: '0 10 * * *' })
     assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /Runs daily at 10:00 UTC and can run AI agents/)
@@ -118,19 +117,16 @@ test('scheduled and broad access require centered confirmation; cancel restores 
     await act(async () => access.click())
     assert.equal(region.hidden, true)
     assert.deepEqual(jumpStates, [false, false], 'using the disclosure itself does not replay the jump')
+    // The Store adds no second confirmation of its own: the platform asks
+    // which access to allow when the app first opens.
     await act(async () => cta().click())
-    assert.equal(installs.length, 0)
-    assert.match(review().textContent, /Run on a schedule/)
-    assert.match(review().textContent, /first open/)
-    assert.equal(doc.activeElement.textContent, 'Cancel')
-    await act(async () => doc.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    assert.equal(review(), null)
-    assert.equal(doc.activeElement, cta())
-    await show([{ id: 'shared_memory', title: 'Use shared memory', text: 'Can change it.', level: 'write' }])
+    assert.equal(doc.querySelector('[aria-modal]'), null)
+    assert.deepEqual(installs.map(([, opts]) => opts), [{ capabilityDigest: 'c'.repeat(64) }])
+    await show([{ id: 'manage_apps', title: 'Install and remove apps', text: 'Can install apps.', critical: true }])
+    assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /1 permission requested/)
     await act(async () => cta().click())
-    assert.equal(installs.length, 0)
-    await act(async () => review().querySelector('.st-btn-primary').click())
-    assert.deepEqual(installs.map(([, opts]) => opts), [{ capabilityDigest: 'c'.repeat(64), confirmed: true }])
+    assert.equal(doc.querySelector('[aria-modal]'), null)
+    assert.equal(installs.length, 2)
   } finally {
     await act(async () => root.unmount()); restore()
     await rm(buildDir, { recursive: true, force: true })

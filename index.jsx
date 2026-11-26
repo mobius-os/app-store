@@ -33,7 +33,7 @@ import {
   storeDestinationFromMessage,
   capabilityDiffNeedsReview,
   hasAccessRows,
-  checkedInstallAccess,
+  checkedInstallDigest,
   catalogUpdateItemForInstalled,
   collectCategories,
   sourceAvailabilityStatus,
@@ -1505,11 +1505,12 @@ export default function App({ appId, token }) {
 
   // Only DetailView's current, verified access is accepted for fresh installs.
   // Reviewed updates keep their own Git-bound, durable batch path.
-  const handleInstall = async (item, { capabilityDigest, confirmed } = {}) => {
+  const handleInstall = async (item, { capabilityDigest } = {}) => {
     if (busy || freshInstallRef.current) return { ok: false, reason: 'busy' }
-    const checked = checkedInstallAccess(capabilityReviews[item.id])
-    if (detail?.id !== item.id || !checked || checked.digest !== capabilityDigest
-        || (checked.requiresConfirmation && !confirmed)) return { ok: false, reason: 'review_required' }
+    const checkedDigest = checkedInstallDigest(capabilityReviews[item.id])
+    if (detail?.id !== item.id || !checkedDigest || checkedDigest !== capabilityDigest) {
+      return { ok: false, reason: 'review_required' }
+    }
     freshInstallRef.current = true
     setBusy(true)
     setBusyItemId(item?.id || null)
@@ -1521,7 +1522,7 @@ export default function App({ appId, token }) {
         manifest_url: item.manifest_url,
         manifest: item.manifest,
         raw_base: item.raw_base,
-        reviewed_capability_digest: checked.digest,
+        reviewed_capability_digest: checkedDigest,
         token,
       })
       // A local mutation is newer than any background probe already in flight.
@@ -1603,8 +1604,8 @@ export default function App({ appId, token }) {
       // can use the back arrow / device-back to dismiss when ready.
     } catch (e) {
       if (e.code === 'capability_changed') {
-        // The platform refused before installing. Its replacement is shown,
-        // but never submitted, until the owner confirms it separately.
+        // The platform refused before installing. The changed access is shown
+        // next to Get, and is submitted only when the owner presses Get again.
         setCapabilityReviews(prev => ({ ...prev, [item.id]: { status: 'refused', preview: e.preview } }))
         return { ok: false, reason: 'access_changed' }
       }
