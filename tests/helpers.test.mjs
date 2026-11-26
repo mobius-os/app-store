@@ -2688,7 +2688,7 @@ test('app details end with a folded access section, then source links and update
   // Every Store update opens the sheet first; an access change also needs its review.
   assert.match(selfUpdateSource, /if \(!panelOpen \|\| \(needsAccessReview && !showReview\)\)/)
   assert.match(selfUpdateSource, /'Update App Store'/)
-  assert.match(selfUpdateSource, /later updates stop only when access changes/)
+  assert.match(selfUpdateSource, /Review the current access before confirming/)
 })
 
 test('desktop measure applies to every direct scroll child without a class allowlist', async () => {
