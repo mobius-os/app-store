@@ -70,14 +70,14 @@ test('creator navigation owns the full portfolio from search, filters, explores 
   const keys = ['window', 'document', 'IS_REACT_ACT_ENVIRONMENT']
   const old = Object.fromEntries(keys.map(k => [k, globalThis[k]]))
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true })
-  const root = createRoot(dom.window.document.getElementById('root')); const picks = []; let backs = 0
+  const root = createRoot(dom.window.document.getElementById('root')); const picks = []
   const list = [item('world', 'games'), item('tool'), item('other', 'apps', 'elsewhere')]
   function Harness({ name }) {
     const [creatorFilter, setCreatorFilter] = React.useState({ name: '', value: 'all' })
     return React.createElement(CatalogList, {
     creatorFilter, onCreatorFilter: (name, value) => setCreatorFilter({ name, value }),
     activeCollection: `dev:${name}`, view: 'search', items: [list[0]], allItems: list, token: 'test',
-    onPick: x => picks.push(x.id), onCloseCollection: () => { backs++ },
+    onPick: x => picks.push(x.id),
   })
   }
   const render = name => act(async () => root.render(React.createElement(Harness, { name })))
@@ -94,8 +94,7 @@ test('creator navigation owns the full portfolio from search, filters, explores 
     assert.equal(doc.querySelectorAll('.st-creator-card').length, 1, 'new creator never inherits the Games filter')
     assert.match(doc.querySelector('.st-creator-card').textContent, /other/)
     assert.equal(doc.querySelector('.st-creator-filters'), null, 'irrelevant filters do not crowd a single-kind portfolio')
-    await act(async () => doc.querySelector('.st-backlink').click())
-    assert.equal(backs, 1)
+    assert.equal(doc.querySelector('.st-backlink'), null, 'the page bar above owns Back, as on an app page')
     await render('missing')
     assert.equal(doc.querySelectorAll('.st-creator-card').length, 0)
     assert.match(doc.body.textContent, /No published apps/)

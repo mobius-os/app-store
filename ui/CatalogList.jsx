@@ -127,7 +127,7 @@ export function CatalogList({
     const name = activeCollection.slice(4)
     return <CreatorStorefront key={name} name={name} items={allItems} appId={appId} token={token}
       filter={creatorFilter.name === name ? creatorFilter.value : 'all'} onFilter={value => onCreatorFilter?.(name, value)}
-      onPick={onPick} onBack={onCloseCollection} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={onLoadMore} />
+      onPick={onPick} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={onLoadMore} />
   }
 
   if (items.length === 0 && !activeCollection && view !== 'search' && !libraryTab) {
@@ -220,7 +220,12 @@ export function CatalogList({
       installed: [emptyTitle, emptyText],
     }
     if (tab === 'saved' && savedItems.length) {
-      return <div className={`st-libpane is-${tab}`} aria-busy={searchLoading || undefined}>{grid3(savedItems)}</div>
+      // Saved rows are Library rows like every other tab: one action and More.
+      return (
+        <div className={`st-libpane is-${tab}`} aria-busy={searchLoading || undefined}>
+          <div className="st-lib-panel">{savedItems.map((item) => renderCard(item, 'list'))}</div>
+        </div>
+      )
     }
     if (!listed.length && !selfHere) {
       const [title, text] = EMPTY[tab]
