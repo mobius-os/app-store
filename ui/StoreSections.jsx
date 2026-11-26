@@ -88,25 +88,21 @@ export function hasFeatureArt(item) { return !!artFor(item) }
 export function FeatureCard({ item, kicker, appId, token, onPick, actionProps }) {
   const art = artFor(item)
   const name = item.manifest?.name || item.name
+  // The card follows the same tap, button and seal rules as catalog rows.
   const primary = appPrimaryAction(item, actionProps)
-  // Same rule as catalog rows: the card itself opens a ready installed app or
-  // the app page; only maintenance actions and progress keep a button.
-  const { lifecycle } = primary
-  const opensApp = primary.canOpen && lifecycle.actionKind === 'open' && !lifecycle.setupNeedsAttention && !primary.disabled
-  const showAction = !!primary.busyLabel || !['install', 'open'].includes(lifecycle.actionKind)
   const tagline = listingFor(item)?.tagline || item.summary || item.manifest?.description || ''
   return (
     <article className="st-fcard">
       {art ? (item.community
         ? <StoreImage item={item} path={art} token={token} alt="" className="st-fcard-art" />
         : <CatalogStoreImage storeAppId={appId} path={art} alt="" className="st-fcard-art" />) : null}
-      <button type="button" className="st-fcard-open" onClick={() => (opensApp ? primary.run() : onPick(item))}
-        aria-label={opensApp ? `${name} — open app` : `${name} — open details`} />
+      <button type="button" className="st-fcard-open" onClick={() => (primary.tapOpensApp ? primary.launch() : onPick(item))}
+        aria-label={primary.tapOpensApp ? `${name} — open app` : `${name} — open details`} />
       <div className="st-fcard-copy">
         <div className="st-fcard-who">
           <span className="st-fcard-tile-slot">
             <span className="st-fcard-tile"><IconBox item={item} token={token} /></span>
-            {primary.storeInstalled ? <InstalledSeal /> : null}
+            {primary.installed ? <InstalledSeal /> : null}
           </span>
           <div>
             <div className="st-fcard-kicker">{kicker}</div>
@@ -115,7 +111,7 @@ export function FeatureCard({ item, kicker, appId, token, onPick, actionProps })
         </div>
         <div className="st-fcard-row">
           <p className="st-fcard-tag">{tagline}</p>
-          {showAction ? (
+          {primary.showsButton ? (
             <button type="button" className="st-pill is-light" disabled={primary.disabled} onClick={primary.run}
               aria-label={`${primary.busyLabel || primary.shortLabel} ${name}`}>
               <ProgressFill busy={!!primary.busyLabel} label={progressStageFor(actionProps.busyActionKind, actionProps.updateStage).label}>{primary.shortLabel}</ProgressFill>

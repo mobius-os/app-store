@@ -1,7 +1,7 @@
 // One module-level stylesheet rendered once at the app root as
 // <style>{CSS}</style>. Style is via semantic `st-`-prefixed classNames;
 // inline style={} is reserved for render-time dynamic values (the skeleton
-// block dimensions, the installed-dot's update tint). App-driven variants
+// block dimensions). App-driven variants
 // (including every action button's state) ride is-* / variant classNames,
 // never JS style helpers — the action buttons share the one canonical
 // st-btn component so they're identical across the card and detail views.
@@ -2217,8 +2217,8 @@ export const CSS = `
   transition: transform .12s, filter .15s;
 }
 .st-card.is-row .st-card-action.is-installed { background: var(--surface-2); color: var(--text); }
-/* Update is a compact pill sized like the Installed chip, so it reads as a
-   status with an action, not a second headline. */
+/* Update is a compact 30 px pill, so it reads as a status with an action,
+   not a second headline. */
 .st-card.is-row .st-card-action.is-update { min-width: 0; min-height: 30px; height: 30px; padding: 0 13px; border-radius: 999px; background: var(--st-accent-fill); color: var(--accent-fg, #fff); font: 600 13px/1 var(--font); }
 .st-card.is-row .st-card-action:active:not(:disabled) { transform: scale(.94); }
 .st-card.is-row .st-card-action.is-update .st-fillp-text { font-size: 12px; }

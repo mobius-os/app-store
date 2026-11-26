@@ -12,25 +12,26 @@ import { createRoot } from 'react-dom/client'
 const here = dirname(fileURLToPath(import.meta.url))
 const buildDir = join(here, '.build-library-row')
 
-let cardModule
-function catalogCard() {
-  cardModule ||= (async () => {
+const builds = {}
+function buildUi(file) {
+  builds[file] ||= (async () => {
     const require = createRequire(join(process.env.MOBIUS_FRONTEND_NODE_MODULES, 'package.json'))
     const { rolldown } = await import(pathToFileURL(require.resolve('rolldown')).href)
     await mkdir(buildDir, { recursive: true })
-    const build = await rolldown({ input: join(here, '..', 'ui', 'CatalogCard.jsx'), platform: 'node', tsconfig: false,
+    const build = await rolldown({ input: join(here, '..', 'ui', file), platform: 'node', tsconfig: false,
       external: ['react', 'react/jsx-runtime'],
       resolve: { alias: { '@openai/apps-sdk-ui/components/Icon': join(here, 'runtime-icon-stub.mjs') } },
       transform: { jsx: 'react-jsx' } })
-    const output = join(buildDir, 'card.mjs')
+    const output = join(buildDir, file.replace(/\.jsx$/, '.mjs'))
     await build.write({ file: output, format: 'es' }); await build.close()
-    return (await import(pathToFileURL(output).href)).CatalogCard
+    return import(pathToFileURL(output).href)
   })()
-  return cardModule
+  return builds[file]
 }
+const catalogCard = async () => (await buildUi('CatalogCard.jsx')).CatalogCard
 test.after(() => rm(buildDir, { recursive: true, force: true }))
 
-test('every Library row keeps Details in its More menu, and only a ready app launches on tap; no row shows Get or Open', async () => {
+test('every Library row keeps Details in its More menu, only a ready app launches on tap, and only an app not installed yet keeps Get', async () => {
   const CatalogCard = await catalogCard()
   const dom = new JSDOM('<div id="root"></div>')
   const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
@@ -87,6 +88,13 @@ test('every Library row keeps Details in its More menu, and only a ready app lau
     await act(async () => (await menu('Review')).click())
     assert.deepEqual(calls, [['rate', 'pocket']])
 
+    // A saved app that is not installed yet keeps Get on its Library row.
+    await show({ installed: [] })
+    await tapRow()
+    await act(async () => named('Get').click())
+    assert.deepEqual(calls, [['details', 'pocket'], ['update', 'pocket', false]], 'the row opens the page; Get installs')
+    assert.equal(doc.querySelector('.st-installed-dot'), null)
+
     // Browse rows have no Get or Open button: the row is the action.
     for (const layout of ['row', 'grid']) {
       await show({ pickOpensApp: false, layout })
@@ -103,6 +111,62 @@ test('every Library row keeps Details in its More menu, and only a ready app lau
       assert.deepEqual(calls, [['details', 'pocket']], 'an app not yet installed opens its page, which owns Get')
       assert.equal(doc.querySelector('.st-card-action'), null, 'no Get button')
       assert.equal(doc.querySelector('.st-installed-dot'), null)
+    }
+  } finally {
+    await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
+  }
+})
+
+test('a featured card and a catalog row agree on what a tap does, whether a button shows and the installed seal', async () => {
+  const CatalogCard = await catalogCard()
+  const { FeatureCard } = await buildUi('StoreSections.jsx')
+  const dom = new JSDOM('<div id="root"></div>')
+  const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const doc = dom.window.document
+  const item = { id: 'pocket', manifest: { id: 'pocket', name: 'Pocket', package_id: 'pkg.pocket' } }
+  const ready = [{ id: 7, slug: 'pocket', name: 'Pocket', package_id: 'pkg.pocket' }]
+  let calls = []
+  const handlers = {
+    onOpenInstalled: id => calls.push(['open', id]),
+    onUpdate: picked => calls.push(['update', picked.id]),
+    onReviewUpdate: () => calls.push(['resolve']),
+  }
+  const onPick = picked => calls.push(['details', picked.id])
+  // What a person sees and gets on one surface: the tap's result, a button, the seal.
+  async function observe(surface, state) {
+    calls = []
+    const props = { installed: ready, updateChecks: {}, ...handlers, ...state }
+    await act(async () => root.render(surface === 'row'
+      ? React.createElement(CatalogCard, { item, layout: 'row', onPick, ...props })
+      : React.createElement(FeatureCard, { item, kicker: 'Pick', appId: 1, token: 't', onPick, actionProps: props })))
+    const open = doc.querySelector(surface === 'row' ? '.st-card-open' : '.st-fcard-open')
+    const label = open.getAttribute('aria-label')
+    await act(async () => open.click())
+    return {
+      tap: label.replace('Pocket — ', ''), calls,
+      button: !!doc.querySelector(surface === 'row' ? '.st-card-action' : '.st-pill'),
+      seal: !!doc.querySelector('.st-installed-dot'),
+    }
+  }
+  const states = {
+    ready: [{}, { tap: 'open app', calls: [['open', 7]], button: false, seal: true }],
+    'ready while another app installs': [{ blocked: true }, { tap: 'open app', calls: [['open', 7]], button: false, seal: true }],
+    'busy with its own action': [{ busy: true, busyActionKind: 'checking_update' },
+      { tap: 'open details', calls: [['details', 'pocket']], button: true, seal: true }],
+    'with an update': [{ updateChecks: { 7: { available: true } } },
+      { tap: 'open details', calls: [['details', 'pocket']], button: true, seal: true }],
+    'in conflict': [{ updateChecks: { 7: { available: true, pendingUpdateState: 'needs_resolution' } } },
+      { tap: 'open details', calls: [['details', 'pocket']], button: true, seal: true }],
+    'not installed': [{ installed: [] }, { tap: 'open details', calls: [['details', 'pocket']], button: false, seal: false }],
+  }
+  try {
+    for (const [name, [state, expected]] of Object.entries(states)) {
+      assert.deepEqual(await observe('row', state), expected, `row, ${name}`)
+      assert.deepEqual(await observe('feature', state), expected, `featured card, ${name}`)
     }
   } finally {
     await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
