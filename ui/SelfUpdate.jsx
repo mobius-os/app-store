@@ -260,76 +260,81 @@ function SelfUpdateSheetBody({ self, appId, close }) {
   const conflict = self.kind === 'conflict'
   const version = conflict ? self.conflictVersion : self.releaseName
   const released = shortDate(self.notes.releasedAt)
-  const accessWord = conflict ? 'Needs you' : self.accessRowsMissing ? 'Unknown' : self.needsAccessReview ? 'Changes' : 'Same'
   const accessRows = self.review?.preview?.access_rows || []
   return (
-    <div className="st-scrim st-selfupd-scrim" onClick={busy ? null : close} role="dialog" aria-modal="true" aria-labelledby="st-selfupd-title">
-      <div className="st-sheet st-selfupd-sheet" ref={sheetRef} tabIndex={-1} onClick={e => e.stopPropagation()}>
-        <div className="st-selfupd-head">
-          <img src={`/api/apps/${appId}/icon?size=128`} alt="" width={56} height={56} />
-          <div className="st-selfupd-head-text">
-            <h3 className="st-sheet-title" id="st-selfupd-title">App Store</h3>
-            <div className="st-selfupd-sub">{done ? `You're on version ${self.releaseName}` : `Version ${version} · by mobius-os`}</div>
-          </div>
-          <button type="button" className="st-selfupd-close" onClick={close} disabled={busy} aria-label="Close">
-            <X width={16} height={16} aria-hidden="true" />
+    <div className="st-update-review-scrim" onClick={busy ? null : close}>
+      <div className="st-update-review st-selfupd-sheet" role="dialog" aria-modal="true" aria-labelledby="st-selfupd-title"
+           ref={sheetRef} tabIndex={-1} onClick={e => e.stopPropagation()}>
+        <div className="st-update-review-head">
+          <h2 className="st-update-review-title" id="st-selfupd-title">{done ? 'Update complete' : 'Review update'}</h2>
+          <button type="button" className="st-update-review-close" onClick={close} disabled={busy} aria-label="Close">
+            <X width={18} height={18} aria-hidden="true" />
           </button>
         </div>
-        {done ? (
-          <>
-            <p className="st-sheet-body st-selfupd-donebody">
-              The update is installed. The Store reloads by itself.
-            </p>
-            <div className="st-selfupd-cta">
-              <button type="button" className="st-btn st-btn-primary" onClick={close}>Done</button>
+        <div className="st-update-review-body">
+          <section className="st-update-review-section">
+            <div className="st-update-app-line">
+              <img className="st-update-app-icon" src={`/api/apps/${appId}/icon?size=128`} alt="" />
+              <div><h3>App Store</h3>
+                <span className="st-update-version">{done ? `You're on version ${self.releaseName}` : `Version ${version} · mobius-os`}</span>
+              </div>
             </div>
-          </>
-        ) : (
-          <>
-            <div className="st-selfupd-facts">
-              <div><b>{version}</b><span>Version</span></div>
-              <div><b>{released || '—'}</b><span>Released</span></div>
-              <div><b>{accessWord}</b><span>Access</span></div>
-            </div>
-            <div className="st-selfupd-k">What's new</div>
-            {self.notes.status === 'loading' ? (
-              <p className="st-selfupd-muted" role="status">Reading the change list…</p>
-            ) : self.notes.items.length ? (
-              <ul className="st-selfupd-list">
-                {self.notes.items.map((line, index) => <li key={index}>{line}</li>)}
-              </ul>
-            ) : (
-              <p className="st-selfupd-muted">No notes for this release.</p>
-            )}
-            <div className="st-selfupd-k">Access</div>
-            {conflict ? (
-              <p className="st-selfupd-muted">The update overlaps your changes. Your current version keeps working while Möbius combines the two.</p>
-            ) : self.accessRowsMissing ? (
-              <p className="st-selfupd-muted">{MISSING_ACCESS_ROWS}</p>
-            ) : self.needsAccessReview ? (
-              <>
-                <p className="st-selfupd-muted">
-                  {self.previousAccessUnrecorded
-                    ? 'Möbius has no earlier access record for the Store. Confirm it once; later updates stop only when access changes.'
-                    : 'This update changes what the App Store can access. Review the changes, then update.'}
-                </p>
-                <div className="st-selfupd-review"><CapabilityContract review={self.review} isInstalled updateReview /></div>
-              </>
+            {done ? (
+              <p className="st-update-review-notice is-success" role="status">
+                The update is installed. The Store reloads by itself.
+              </p>
             ) : (
               <>
-                <div className="st-selfupd-access"><Check width={18} height={18} aria-hidden="true" /> Same as now</div>
-                {accessRows.length ? (
+                <dl className="st-update-facts">
+                  {released ? <div className="st-update-fact"><dt>Released</dt><dd>{released}</dd></div> : null}
+                  <div className="st-update-fact"><dt>Access</dt>
+                    {conflict ? <dd>Needs a decision</dd>
+                      : self.accessRowsMissing ? <dd>Unavailable</dd>
+                        : self.needsAccessReview ? <dd>Review changes below</dd>
+                          : <dd className="st-update-access-ok"><Check width={16} height={16} aria-hidden="true" /> Same as now — no new access</dd>}
+                  </div>
+                </dl>
+                {conflict ? (
+                  <p className="st-update-review-notice">The update overlaps your changes. Your current version keeps working while Möbius combines the two.</p>
+                ) : self.accessRowsMissing ? (
+                  <p className="st-update-review-notice">{MISSING_ACCESS_ROWS}</p>
+                ) : self.needsAccessReview ? (
+                  <div className="st-update-access-detail">
+                    <p>{self.previousAccessUnrecorded
+                      ? 'Möbius has no earlier access record for the Store. Review the current access before confirming.'
+                      : 'This update changes what the App Store can access. Review the changes, then update.'}</p>
+                    <CapabilityContract review={self.review} isInstalled updateReview />
+                  </div>
+                ) : accessRows.length ? (
                   <div className="st-selfupd-chips">{accessRows.map(row => <span key={row.id || row.title}>{row.title}</span>)}</div>
                 ) : null}
+                <div className="st-selfupd-notes">
+                  <h4>What's new</h4>
+                  {self.notes.status === 'loading' ? (
+                    <p role="status">Reading the change list…</p>
+                  ) : self.notes.items.length ? (
+                    <ul className="st-selfupd-list">
+                      {self.notes.items.map((line, index) => <li key={index}>{line}</li>)}
+                    </ul>
+                  ) : (
+                    <p>{self.notes.status === 'error' ? 'Release notes are unavailable.' : 'No notes for this release.'}</p>
+                  )}
+                </div>
+                {self.msg ? <p className="st-update-review-notice is-error" role="alert">{self.msg}</p> : null}
               </>
             )}
-            {self.msg ? <p className="st-selfupd-err" role="alert">{self.msg}</p> : null}
-            <div className="st-selfupd-cta"><SelfAction self={self} className={`st-btn ${conflict ? 'st-btn-secondary' : 'st-btn-primary'}`} /></div>
-            {self.kind === 'update' && !busy ? (
-              <button type="button" className="st-selfupd-later" onClick={close}>Later</button>
-            ) : null}
-          </>
-        )}
+          </section>
+        </div>
+        <div className="st-update-review-actions">
+          {!done && self.kind === 'update' ? (
+            <button type="button" className="st-btn st-btn-ghost" onClick={close} disabled={busy}>Later</button>
+          ) : null}
+          {done ? (
+            <button type="button" className="st-btn st-btn-primary" onClick={close}>Done</button>
+          ) : (
+            <SelfAction self={self} className={`st-btn ${conflict ? 'st-btn-secondary' : 'st-btn-primary'}`} />
+          )}
+        </div>
       </div>
     </div>
   )

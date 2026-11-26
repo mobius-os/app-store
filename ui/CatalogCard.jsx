@@ -1,7 +1,7 @@
 import { appLifecycleFor, busyLabelForAction, catalogCardDescription, catalogCategory, catalogPublisher, communityFeedbackOf, installsLabel, storeCategory } from '../domain.js'
 import { ProgressFill } from './ProgressFill.jsx'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowRotateCw, ArrowUpRight, Chat, Check, DotsHorizontal, Download, StarFilled } from '@openai/apps-sdk-ui/components/Icon'
+import { ArrowRotateCw, ArrowUpRight, Chat, Check, DotsVertical, Download, StarFilled } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 
 // The one primary action for an app wherever it is shown: install, open,
@@ -98,7 +98,7 @@ export function RowMenu({ name, items }) {
           event.preventDefault()
           setEdge(event.key === 'ArrowDown' ? 'first' : 'last')
         }}>
-        <DotsHorizontal width={18} height={18} aria-hidden="true" />
+        <DotsVertical width={18} height={18} aria-hidden="true" />
       </button>
       {open ? (
         <div className="st-rowmenu-pop" ref={menuRef} role="menu" aria-label={`Actions for ${name}`} onKeyDown={onMenuKeyDown}>
@@ -185,7 +185,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     lifecycle.actionKind === 'open' && !lifecycle.setupNeedsAttention
   const cardActionDisabled = primary.disabled
   const actionLabel = busy ? primary.busyLabel
-    : layout === 'row' ? primary.shortLabel : primary.reviewLabel
+    : layout === 'row' || layout === 'list' ? primary.shortLabel : primary.reviewLabel
   const ActionIcon = busy
     ? ArrowRotateCw
     : lifecycle.actionKind === 'install'
