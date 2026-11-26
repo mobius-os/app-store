@@ -2345,13 +2345,6 @@ export const CSS = `
 .st-dh-text { min-width: 0; flex: 1; }
 .st-dh .st-detail-note { margin-top: 12px; grid-column: 1 / -1; }
 .st-detail-note .st-install-access-link { justify-self: start; padding: 0; color: var(--st-accent-text); font-size: inherit; min-height: 44px; }
-/* This review stays compact and centered regardless of the update dialog's layout. */
-.st-update-review-scrim.is-install-review { align-items: center; padding: 12px; }
-.is-install-review > .st-update-review { width: min(440px, 100%); height: auto; max-height: 100%; }
-.is-install-review .st-update-review-actions { display: flex; flex-wrap: wrap; padding-top: 12px; }
-.is-install-review .st-update-review-actions .st-btn { width: auto; margin: 0; order: 0; border-radius: 999px; }
-.is-install-review .st-update-review-actions .st-btn:first-child { margin-inline-end: auto; }
-.is-install-review .st-update-review-actions .st-btn-primary { background: var(--st-accent-fill); border-color: var(--st-accent-fill); }
 .st-dh-name { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -.035em; }
 .st-dh-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin: 4px 0 2px; min-height: 30px; grid-column: 2; }
 .st-dh-meta .st-dh-dev { display: inline-flex; align-items: center; min-height: 30px; margin: 0; font-size: 13px; }

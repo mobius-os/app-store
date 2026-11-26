@@ -587,7 +587,7 @@ function InstallAccessReview({ name, preview, onClose, onConfirm }) {
   const cancelRef = useRef(null)
   useSheetFocus({ sheetRef, initialRef: cancelRef, onClose })
   return (
-    <div className="st-update-review-scrim is-install-review" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="st-update-review-scrim" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
       <div className="st-update-review" ref={sheetRef} role="dialog" aria-modal="true" aria-labelledby="st-install-review-title">
         <div className="st-update-review-head">
           <div>

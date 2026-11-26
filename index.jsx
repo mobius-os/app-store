@@ -645,6 +645,8 @@ export default function App({ appId, token }) {
   // iframe (sandbox lacks `allow-modals`), so we stage the
   // confirmation as in-app state and render our own modal.
   const [busy, setBusy] = useState(false)
+  // `busy` only blocks after React re-renders; this ref also refuses a
+  // second tap that arrives before then, so one review can't install twice.
   const freshInstallRef = useRef(false)
   const [busyItemId, setBusyItemId] = useState(null)
   const [busyActionKind, setBusyActionKind] = useState(null)
@@ -3010,7 +3012,10 @@ export default function App({ appId, token }) {
               ) : null}
             </div>
             {searchFocused && !query.trim() && !phone ? (
-              <div className="st-qdrop" role="group" aria-label="Search suggestions">
+              // Safari and macOS Firefox don't focus a clicked button, so a
+              // mouse press would blur the field and remove this list before
+              // its click lands. Arrow keys move focus here themselves.
+              <div className="st-qdrop" role="group" aria-label="Search suggestions" onMouseDown={(event) => event.preventDefault()}>
                 {searchSuggestions(5)}
               </div>
             ) : null}

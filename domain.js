@@ -625,8 +625,12 @@ export function hasAccessRows(preview) {
 }
 
 // The Store can only decide which installs need a second tap after a live
-// platform check. Even a one-tap install sends the checked digest to the
-// installer, so a later change cannot turn it into an unreviewed broad grant.
+// platform check. Every install sends the checked capability digest, and the
+// installer refuses a manifest whose capability contract changed since then.
+// The digest covers only that contract: access rows derived from other
+// manifest fields (project_templates becomes project_builders) can still
+// change without a refusal. The owner's consent at first open is what grants
+// access either way.
 export function checkedInstallAccess(review) {
   const preview = review?.preview
   if (!['ready', 'refused'].includes(review?.status) || !hasAccessRows(preview)
