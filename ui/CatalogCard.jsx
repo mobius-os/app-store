@@ -46,7 +46,7 @@ export function progressStageFor(busyActionKind, updateStage) {
 
 // A Library row keeps one visible action; Details and Review sit behind a
 // small "More" menu, so a long list stays calm and every row reads the same.
-export function RowMenu({ name, items, detailOpener }) {
+export function RowMenu({ name, items, focusReturn }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
   useEffect(() => {
@@ -65,7 +65,7 @@ export function RowMenu({ name, items, detailOpener }) {
   return (
     <div className="st-rowmenu" ref={wrapRef}>
       <button type="button" className="st-rowmenu-btn" aria-label={`More for ${name}`} aria-haspopup="menu"
-        data-detail-opener={detailOpener}
+        data-focus-return={focusReturn}
         aria-expanded={open} onClick={() => setOpen((value) => !value)}>
         <DotsHorizontal width={18} height={18} aria-hidden="true" />
       </button>
@@ -212,7 +212,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       <button
         type="button"
         className="st-card-open"
-        data-detail-opener={`card:${item.id}`}
+        data-focus-return={`card:${item.id}`}
         onClick={() => (opensApp ? onOpenInstalled(storeInstalled.id) : onPick(item))}
         aria-label={opensApp ? `${m.name} — open app` : `${m.name} — open details`}
       >
@@ -262,7 +262,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
             : <ActionIcon width={20} height={20} aria-hidden="true" />}
         </button>
         {pickOpensApp ? (
-          <RowMenu name={m.name} detailOpener={`more:${item.id}`} items={[
+          <RowMenu name={m.name} focusReturn={`more:${item.id}`} items={[
             { label: 'Details', ariaLabel: `${m.name} details`, run: () => onPick(item) },
             ...(layout === 'list' && storeInstalled && typeof onRateApp === 'function' && communityFeedbackOf(item)?.id
               ? [{ label: 'Review', ariaLabel: `Rate and review ${m.name}`, run: () => onRateApp(item) }]

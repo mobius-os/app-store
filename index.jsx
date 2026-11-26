@@ -1,5 +1,6 @@
 import { mapWithConcurrency, createUpdateBatch, updateBatchBusy, newestBatchSnapshot, normalizeBatchSnapshot, batchProgress as batchProgressOf } from './update-batch.js'
-import { openDetailEntry, closeDetailEntry, backDetailEntry, detailOpenerOf, focusDetailTransition } from './store-navigation.js'
+import { openDetailEntry, closeDetailEntry, backDetailEntry } from './store-navigation.js'
+import { focusReturnOf, focusTransition, viewHeading } from './focus-return.js'
 import { restoredStoreLocation, storeLocation } from './store-location.js'
 import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
 // App Store — thin app shell. The module tree is declared in mobius.json's
@@ -440,6 +441,11 @@ export default function App({ appId, token }) {
   // Back steps too.
   const categoryNavRef = useRef(null)
   const publishNavRef = useRef(null)
+  // The control that opened each of these Back steps, for focus on the way
+  // back (see focus-return.js). App pages and layers keep theirs in the entry.
+  const collectionReturnRef = useRef(null)
+  const categoryReturnRef = useRef(null)
+  const publishReturnRef = useRef(null)
   const leaveCategoryRef = useRef(null)
   const closeLayersRef = useRef(null)
   const closeTopLayerRef = useRef(null)
@@ -510,8 +516,15 @@ export default function App({ appId, token }) {
   // Apps still recoverable after an uninstall. Read together with the installed apps (see refreshInstalled), so
   // both lists change on the same triggers and a note never outlives its app.
   const [uninstalledApps, setUninstalledApps] = useState([])
-  // One focus request per detail transition, after the destination mounts.
-  const [detailFocus, setDetailFocus] = useState(null)
+  // A section the open detail should scroll to ('reviews'), owned by the
+  // navigation entry that requested it; see openDetailEntry.
+  const [detailFocus, setDetailFocus] = useState('')
+  // Where focus goes after the current view swap (see focus-return.js). Each
+  // transition sets a fresh request, applied once by the layout effect below,
+  // so data refreshing the same view never moves focus again.
+  const [focusRequest, setFocusRequest] = useState(null)
+  const enterViewFocus = useCallback(() => setFocusRequest({ destination: viewHeading }), [])
+  const returnViewFocus = useCallback((returnTo) => setFocusRequest({ destination: viewHeading, returnTo }), [])
   // Apps the owner saved for later, kept in this app's own storage.
   const [savedIds, setSavedIds] = useState([])
   useEffect(() => {
@@ -568,11 +581,16 @@ export default function App({ appId, token }) {
   }, [])
   // Coming back from an app page slides the store back in.
   const [returning, setReturning] = useState(false)
+  // `returnTo` is set only when Back leaves a level (see store-navigation.js).
   const showDetail = useCallback((item, section = '', returnTo) => {
+    const back = returnTo !== undefined
     if (!item) setReturning(true)
     setDetail(item)
-    setDetailFocus({ section, returnTo })
-  }, [])
+    setDetailFocus(item && !back ? section : '')
+    if (back) returnViewFocus(returnTo)
+    // The reviews section moves focus to its own form (DetailView).
+    else if (item && section !== 'reviews') enterViewFocus()
+  }, [enterViewFocus, returnViewFocus])
   // Only nested destinations need data and host Back ownership. Scalars are
   // already restored on first paint, without waiting for network hydration.
   const [intentDestination, setIntentDestination] = useState(() =>
@@ -1699,14 +1717,14 @@ export default function App({ appId, token }) {
 
   // Each nested level owns one reversible host entry. No iframe history or
   // timeout fallback: an unowned view would strand the device's Back gesture.
-  const openDetail = useCallback((item, signal, { focus = '', push = false, below = null, opener = null } = {}) => openDetailEntry(navDetailRef, item, {
+  const openDetail = useCallback((item, signal, { focus = '', push = false, below = null } = {}) => openDetailEntry(navDetailRef, item, {
     nav: window.mobius.nav,
     show: showDetail,
     signal,
     focus,
     push,
     below,
-    opener,
+    opener: focusReturnOf(document.activeElement),
     cancelPendingDestination,
     prepare: target => {
       reviewCapabilities(target)
@@ -1718,11 +1736,13 @@ export default function App({ appId, token }) {
     if (collectionNavRef.current) return
     const fromTab = DISCOVERY_TABS.has(tab) ? tab : 'browse'
     homeScrollRef.current = gridScrollRef.current?.scrollTop || 0
+    collectionReturnRef.current = focusReturnOf(document.activeElement)
     const leave = () => {
       cancelPendingDestination()
       collectionNavRef.current = null
       savedGridScrollRef.current = homeScrollRef.current
       setActiveCollection(null)
+      returnViewFocus(collectionReturnRef.current)
     }
     let handle
     handle = window.mobius.nav.open('app-store-collection', {
@@ -1734,6 +1754,7 @@ export default function App({ appId, token }) {
         collectionNavRef.current = handle
         savedGridScrollRef.current = 0
         setActiveCollection(id)
+        enterViewFocus()
       },
     })
     collectionNavRef.current = handle
@@ -1748,15 +1769,17 @@ export default function App({ appId, token }) {
     if (status !== 'owned') { collectionNavRef.current = null; return }
     savedGridScrollRef.current = 0
     setActiveCollection(id)
-  }, [cancelPendingDestination, tab])
+    enterViewFocus()
+  }, [cancelPendingDestination, tab, enterViewFocus, returnViewFocus])
 
   const closeCollection = useCallback(() => {
     if (closeTopLayerRef.current?.('creator')) return
+    if (collectionNavRef.current) returnViewFocus(collectionReturnRef.current)
     collectionNavRef.current?.close()
     collectionNavRef.current = null
     savedGridScrollRef.current = homeScrollRef.current
     setActiveCollection(null)
-  }, [])
+  }, [returnViewFocus])
 
   useEffect(() => () => {
     cancelDestinationRef.current?.()
@@ -2290,15 +2313,16 @@ export default function App({ appId, token }) {
   const backDetail = useCallback(() => backDetailEntry(navDetailRef, showDetail), [showDetail])
 
   // Layers above an app page (see overlaysRef). `show` draws the layer,
-  // `restore` returns to exactly what was beneath it.
+  // `restore(returnTo)` returns to exactly what was beneath it, and to the
+  // control that opened the layer.
   const openLayer = (kind, show, restore, label) => {
-    const layer = { kind, show, restore, label, handle: null }
-    const enter = () => { showDetail(null); show(); setOverlay({ kind, label }) }
+    const layer = { kind, show, restore, label, handle: null, opener: focusReturnOf(document.activeElement) }
+    const enter = () => { showDetail(null); show(); setOverlay({ kind, label }); enterViewFocus() }
     layer.handle = window.mobius.nav.open(`app-store-${kind}`, {
       onBack: () => {
         overlaysRef.current = overlaysRef.current.filter((entry) => entry !== layer)
         setOverlay(overlaysRef.current.at(-1) || null)
-        restore()
+        restore(layer.opener)
       },
       onForward: () => { overlaysRef.current = [...overlaysRef.current, layer]; enter() },
     })
@@ -2317,7 +2341,7 @@ export default function App({ appId, token }) {
     overlaysRef.current = overlaysRef.current.slice(0, -1)
     setOverlay(overlaysRef.current.at(-1) || null)
     layer.handle.close()
-    layer.restore()
+    layer.restore(layer.opener)
     return true
   }
   // Moving to another tab leaves every layer and the app pages under them.
@@ -2331,9 +2355,8 @@ export default function App({ appId, token }) {
   // An app opened from a layer page goes above it, and Back returns to it.
   const openDetailFromPage = (item) => {
     const layer = !detail ? overlaysRef.current.at(-1) : null
-    const opener = detailOpenerOf(document.activeElement)
-    return layer ? openDetail(item, undefined, { opener, push: true, below: () => { layer.show(); setOverlay({ kind: layer.kind, label: layer.label }) } })
-      : openDetail(item, undefined, { opener })
+    return layer ? openDetail(item, undefined, { push: true, below: () => { layer.show(); setOverlay({ kind: layer.kind, label: layer.label }) } })
+      : openDetail(item)
   }
 
   const handleCommunityWithdraw = useCallback(async () => {
@@ -2369,10 +2392,12 @@ export default function App({ appId, token }) {
     }
   }, [detail, activeCollection])
 
+  // After the scroll restore above, so Back lands where the page was left.
+  // Without focus in this frame (a host Back gesture) the request is dropped.
   useLayoutEffect(() => {
-    if (!detailFocus || !document.hasFocus()) return
-    focusDetailTransition(document.querySelector('.st-root'), detail, detailFocus)
-  }, [detail, detailFocus])
+    if (!focusRequest || !document.hasFocus()) return
+    focusTransition(document.querySelector('.st-root'), focusRequest)
+  }, [focusRequest])
 
   // Roving tab navigation: ArrowLeft/ArrowRight move selection between the
   // tabs with wrap, and move DOM focus to the newly-selected tab (the
@@ -2698,13 +2723,16 @@ export default function App({ appId, token }) {
     setShelfCategories((current) => ({ ...current, [kind]: id }))
     setCategorySort('top')
     if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
+    enterViewFocus()
     if (categoryNavRef.current) return
+    categoryReturnRef.current = focusReturnOf(document.activeElement)
     const handle = window.mobius.nav.open('app-store-category', {
       onBack: () => { categoryNavRef.current = null; leaveCategoryRef.current?.(kind, true) },
       onForward: () => {
         categoryNavRef.current = handle
         if (tab !== kind) setTab(kind)
         setShelfCategories((current) => ({ ...current, [kind]: id }))
+        enterViewFocus()
       },
     })
     categoryNavRef.current = handle
@@ -2716,6 +2744,7 @@ export default function App({ appId, token }) {
     if (!entryClosed && closeTopLayerRef.current?.('category')) return
     if (!entryClosed) { categoryNavRef.current?.close(); categoryNavRef.current = null }
     setShelfCategories((current) => ({ ...current, [kind]: 'all' }))
+    returnViewFocus(categoryReturnRef.current)
   }
   leaveCategoryRef.current = leaveCategory
   const browseCategory = (id) => {
@@ -2727,12 +2756,18 @@ export default function App({ appId, token }) {
   // Publishing lives in Library's Your apps tab. Its steps past that list
   // (choosing an app, one published app, a listing review) share one Back
   // step that returns to Your apps.
+  // Entering a step leaves focus to PublisherTab, which owns those views;
+  // returning to Your apps goes back to the control that left it.
   const showPublishStep = (next) => {
     setPublishView(next)
-    if (next === 'home') { publishNavRef.current?.close(); publishNavRef.current = null; return }
+    if (next === 'home') {
+      if (publishNavRef.current) returnViewFocus(publishReturnRef.current)
+      publishNavRef.current?.close(); publishNavRef.current = null; return
+    }
     if (publishNavRef.current) return
+    publishReturnRef.current = focusReturnOf(document.activeElement)
     const handle = window.mobius.nav.open('app-store-publish', {
-      onBack: () => { publishNavRef.current = null; setPublishView('home') },
+      onBack: () => { publishNavRef.current = null; setPublishView('home'); returnViewFocus(publishReturnRef.current) },
       onForward: () => { publishNavRef.current = handle; setTab('library'); setCategory('yours'); setPublishView(next) },
     })
     publishNavRef.current = handle
@@ -2762,7 +2797,7 @@ export default function App({ appId, token }) {
   }
   const renderDetailRow = (item) => (
     <CatalogCard key={item.id} item={item} installed={installed} updateChecks={updateChecks}
-      onPick={(next) => { if (next.manifest) openDetail(next, undefined, { push: true, opener: detailOpenerOf(document.activeElement) }) }}
+      onPick={(next) => { if (next.manifest) openDetail(next, undefined, { push: true }) }}
       onUpdate={(next, opts) => handleCatalogUpdate(next, opts, page => openDetail(page, undefined, { push: true }))} onOpenInstalled={handleOpenInstalled} onRetryInstalled={handleRetryInstalled}
       onReviewUpdate={handleReviewUpdate} busy={busyItemId === item.id || updatingItemIds.includes(item.id)}
       busyActionKind={busyItemId === item.id ? busyActionKind : updatingItemIds.includes(item.id) ? 'update' : null}
@@ -2771,10 +2806,11 @@ export default function App({ appId, token }) {
   )
   // What is beneath a layer opened from the current app page.
   const pageBeneath = () => ({ tab, collection: activeCollection, level: navDetailRef.current })
-  const restorePage = (under) => {
+  const restorePage = (under, returnTo) => {
     setTab(under.tab)
     setActiveCollection(under.collection)
-    if (under.level) showDetail(under.level.item, under.level.focus)
+    if (under.level) showDetail(under.level.item, under.level.focus, returnTo)
+    else returnViewFocus(returnTo)
   }
   const openDeveloper = (name) => {
     const under = pageBeneath()
@@ -2782,7 +2818,7 @@ export default function App({ appId, token }) {
       if (!DISCOVERY_TABS.has(under.tab)) setTab('browse')
       setActiveCollection(`dev:${name}`)
       if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
-    }, () => restorePage(under), under.level?.item?.manifest?.name)
+    }, (returnTo) => restorePage(under, returnTo), under.level?.item?.manifest?.name)
   }
   const openCategoryFromApp = (kind, id) => {
     const under = pageBeneath()
@@ -2792,9 +2828,9 @@ export default function App({ appId, token }) {
       setShelfCategories((current) => ({ ...current, [kind]: id }))
       setCategorySort('top')
       if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
-    }, () => {
+    }, (returnTo) => {
       setShelfCategories((current) => ({ ...current, [kind]: 'all' }))
-      restorePage(under)
+      restorePage(under, returnTo)
     }, under.level?.item?.manifest?.name)
   }
   const shareApp = async (item) => {
@@ -2826,7 +2862,7 @@ export default function App({ appId, token }) {
         <DetailView
           storeAppId={appId}
           item={detail}
-          focusSection={detailFocus?.returnTo ? '' : detailFocus?.section}
+          focusSection={detailFocus}
           capabilityReview={capabilityReviews[detail.id]}
           uninstalledApp={findInstalled(uninstalledApps, detail)}
           onRetryCapabilityReview={() => reviewCapabilities(detail)}
@@ -3068,7 +3104,7 @@ export default function App({ appId, token }) {
               <div className="st-pagehead-row">
                 <h1 className="st-pagehead-title">Library</h1>
                 {/* One Publish an app for every Library tab, Your apps included. */}
-                <button type="button" className="st-upload-btn" onClick={() => openYourApps('choose')}>
+                <button type="button" className="st-upload-btn" onClick={() => openYourApps('choose')} data-focus-return="publish">
                   <Plus width={18} height={18} aria-hidden="true" /> Publish an app
                 </button>
               </div>
@@ -3083,7 +3119,7 @@ export default function App({ appId, token }) {
         ) : null}
         {/* Phones: publishing in plain sight, at the top of Library. */}
         {phone && tab === 'library' && !query.trim() ? (
-          <button type="button" className="st-upload-wide" onClick={() => openYourApps('choose')}>
+          <button type="button" className="st-upload-wide" onClick={() => openYourApps('choose')} data-focus-return="publish">
             <Plus width={18} height={18} aria-hidden="true" /> Publish an app
           </button>
         ) : null}
@@ -3189,7 +3225,7 @@ export default function App({ appId, token }) {
                     updateChecks={updateChecks}
                     onPick={item => { if (!item.manifest) return; if (query.trim()) rememberSearch(query); openDetailFromPage(item) }}
                     pickOpensApp={tab === 'library'}
-                    onRateApp={tab === 'library' ? (item => { if (item.manifest) openDetail(item, undefined, { focus: 'reviews', opener: detailOpenerOf(document.activeElement) }) }) : undefined}
+                    onRateApp={tab === 'library' ? (item => { if (item.manifest) openDetail(item, undefined, { focus: 'reviews' }) }) : undefined}
                     onUninstall={tab === 'library' ? handleUninstall : undefined}
                     onRetry={retryCatalogItem}
                     onUpdate={handleCatalogUpdate}

@@ -232,12 +232,12 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             <h1 id="st-detail-name" className="st-dh-name" tabIndex={-1}>{m.name}</h1>
             <div className="st-dh-meta">
               {onOpenDeveloper ? (
-                <button type="button" className="st-dh-dev" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
+                <button type="button" className="st-dh-dev" data-focus-return="developer" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
               ) : <span className="st-dh-dev">{developer}</span>}
               {showCategoryInHeader ? (
                 <>
                   <span className="st-dh-separator" aria-hidden="true">·</span>
-                  <button type="button" className="st-dh-category"
+                  <button type="button" className="st-dh-category" data-focus-return="category"
                     aria-label={`Category: ${detailCategory.title}`} onClick={() => onOpenCategory?.(detailCategory.id)}>
                     <CategoryIcon category={detailCategory} size="sm" />{detailCategory.title}
                   </button>
@@ -288,7 +288,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             </div>
           ) : null}
           {detailCategory && !showCategoryInHeader ? (
-            <button type="button" className="st-strip-cell" onClick={() => onOpenCategory?.(detailCategory.id)}>
+            <button type="button" className="st-strip-cell" data-focus-return="category" onClick={() => onOpenCategory?.(detailCategory.id)}>
               <small>Category</small><b><CategoryIcon category={detailCategory} size="sm" /></b><span>{detailCategory.title}</span>
             </button>
           ) : null}
@@ -373,11 +373,11 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           <SectionHead id="st-detail-info" title="Information" />
           <dl className="st-info">
             {infoRow('Developer', onOpenDeveloper
-              ? <button type="button" className="st-lnk" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
+              ? <button type="button" className="st-lnk" data-focus-return="developer" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
               : developer)}
             {infoRow('Version', catalogVersion)}
             {infoRow('Category', detailCategory ? (onOpenCategory
-              ? <button type="button" className="st-lnk" onClick={() => onOpenCategory(detailCategory.id)}>{detailCategory.title}</button>
+              ? <button type="button" className="st-lnk" data-focus-return="category" onClick={() => onOpenCategory(detailCategory.id)}>{detailCategory.title}</button>
               : detailCategory.title) : '')}
             {infoRow('Works offline', m.offline_capable ? 'Yes' : 'Needs a connection')}
             {infoRow('License', m.license || 'Not stated')}

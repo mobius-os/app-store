@@ -23,7 +23,7 @@ export function SectionHead({ id, title, sub, seeAll, onSeeAll, arrows }) {
       <div className="st-sh-tools">
         {arrows}
         {onSeeAll ? (
-          <button type="button" className="st-see" onClick={onSeeAll} aria-label={`${seeAll || 'See all'} ${title}`}>
+          <button type="button" className="st-see" data-focus-return={`see-all:${id}`} onClick={onSeeAll} aria-label={`${seeAll || 'See all'} ${title}`}>
             {seeAll || 'See all'}
           </button>
         ) : null}
@@ -95,7 +95,7 @@ export function FeatureCard({ item, kicker, appId, token, onPick, actionProps })
       {art ? (item.community
         ? <StoreImage item={item} path={art} token={token} alt="" className="st-fcard-art" />
         : <CatalogStoreImage storeAppId={appId} path={art} alt="" className="st-fcard-art" />) : null}
-      <button type="button" className="st-fcard-open" data-detail-opener={`feature:${item.id}`} onClick={() => onPick(item)} aria-label={`${name} — open details`} />
+      <button type="button" className="st-fcard-open" data-focus-return={`feature:${item.id}`} onClick={() => onPick(item)} aria-label={`${name} — open details`} />
       <div className="st-fcard-copy">
         <div className="st-fcard-who">
           <span className="st-fcard-tile"><IconBox item={item} token={token} /></span>
@@ -123,7 +123,7 @@ export function CategoryList({ groups, onSelect, limit = 0, expanded = false, on
     <>
       <div className="st-catlist">
         {shown.map(({ category, items }) => (
-          <button key={category.id} type="button" className="st-catrow" onClick={() => onSelect(category.id)}
+          <button key={category.id} type="button" className="st-catrow" data-focus-return={`category:${category.id}`} onClick={() => onSelect(category.id)}
             style={{ '--cat': category.color }}>
             <CategoryIcon category={category} size="sm" />
             <span className="st-catrow-name">{category.title}</span>
@@ -179,7 +179,7 @@ export function CreatorStorefront({ name, items, appId, token, onPick, onBack, h
             <span className="st-creator-kicker">Explore their work</span>
             <h2 id="st-creator-feature-title">{featured.manifest.name}</h2>
             <p>{listingFor(featured)?.tagline || featured.summary || featured.manifest.description}</p>
-            <button type="button" data-detail-opener={`creator-feature:${featured.id}`} onClick={() => onPick(featured)}>Explore the app <ArrowUpRight width={18} height={18} aria-hidden="true" /></button>
+            <button type="button" data-focus-return={`creator-feature:${featured.id}`} onClick={() => onPick(featured)}>Explore the app <ArrowUpRight width={18} height={18} aria-hidden="true" /></button>
             <span>{storeCategory(catalogCategory(featured))?.title}{featured.manifest.version ? ` · v${featured.manifest.version}` : ''}</span>
           </div>
         </section>
@@ -198,7 +198,7 @@ export function CreatorStorefront({ name, items, appId, token, onPick, onBack, h
         <p className="st-sr-only" role="status">{work.length} {work.length === 1 ? 'app' : 'apps'}</p>
         <div className="st-creator-grid">
           {work.map(item => (
-            <button type="button" key={item.id} className="st-creator-card" data-detail-opener={`creator-card:${item.id}`} onClick={() => onPick(item)} aria-label={`${item.manifest.name} — open details`}>
+            <button type="button" key={item.id} className="st-creator-card" data-focus-return={`creator-card:${item.id}`} onClick={() => onPick(item)} aria-label={`${item.manifest.name} — open details`}>
               <div className="st-creator-art">{art(item) ? picture(item, art(item), 'st-creator-card-art') : <div className="st-creator-no-art"><IconBox item={item} size="hero" token={token} /></div>}</div>
               <div className="st-creator-card-info"><IconBox item={item} token={token} /><div><h3>{item.manifest.name}</h3><span>{storeCategory(catalogCategory(item))?.title || (catalogKind(item) === 'games' ? 'Game' : 'App')}{item.manifest.version ? ` · v${item.manifest.version}` : ''}</span></div></div>
               <p>{listingFor(item)?.tagline || item.summary || item.manifest.description}</p>

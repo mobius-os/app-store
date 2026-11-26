@@ -60,6 +60,8 @@ export const CSS = `
   outline-offset: 2px;
 }
 /* /mobius-ui:Focus */
+/* A view's heading takes focus when the view opens (focus-return.js). */
+.st-scroll h1[tabindex="-1"]:focus-visible { outline: 2px solid var(--accent-text, var(--accent)); outline-offset: 3px; border-radius: 3px; }
 
 /* Honor reduced-motion: collapse every animation/transition to ~instant
    so the skeleton pulse, card lift, and active-state scales don't move
@@ -2352,7 +2354,6 @@ export const CSS = `
 .st-dh-text { min-width: 0; flex: 1; }
 .st-dh .st-detail-note { margin-top: 12px; grid-column: 1 / -1; }
 .st-dh-name { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -.035em; }
-.st-dh-name:focus-visible { outline: 2px solid var(--accent-text, var(--accent)); outline-offset: 3px; border-radius: 3px; }
 .st-dh-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin: 4px 0 2px; min-height: 30px; grid-column: 2; }
 .st-dh-meta .st-dh-dev { display: inline-flex; align-items: center; min-height: 30px; margin: 0; font-size: 13px; }
 .st-dh-separator { color: var(--muted); font-size: 12px; }

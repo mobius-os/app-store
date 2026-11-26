@@ -37,50 +37,11 @@ export async function openDetailEntry(current, item, { nav, show, prepare, signa
   show(entry.item, entry.focus)
 }
 
+// Leaving a level passes its opener (see focus-return.js) as `show`'s third
+// argument, which is how `show` tells a Back from an open or Forward.
 function showBelow(level, show) {
   if (level.below) { show(null, '', level.opener); level.below(); return }
   show(level.prev?.item ?? null, level.prev?.focus ?? '', level.opener)
-}
-
-// The Store remounts its list after detail, so the DOM node itself is gone.
-// Scope duplicate listings to their shelf rather than focusing another copy.
-const detailOpeners = '[data-detail-opener]'
-const openerShelf = node => {
-  const shelf = node.closest('section[aria-labelledby], section[aria-label]')
-  return shelf?.getAttribute('aria-labelledby') ?? shelf?.getAttribute('aria-label') ?? null
-}
-
-export function detailOpenerOf(node) {
-  // On older menus the focused item disappears on activation; return to More.
-  if (node?.matches('[role=menuitem]')) node = node.closest('.st-rowmenu')?.querySelector(detailOpeners)
-  if (!node?.matches(detailOpeners)) return null
-  return { key: node.dataset.detailOpener, shelf: openerShelf(node) }
-}
-
-export function findDetailOpener(root, opener) {
-  if (!opener) return null
-  return [...root.querySelectorAll(detailOpeners)].find(node =>
-    node.dataset.detailOpener === opener.key && openerShelf(node) === opener.shelf
-  ) ?? null
-}
-
-// Run after the destination and its saved scroll position have committed.
-export function focusDetailTransition(root, detail, { section, returnTo }) {
-  if (!root) return
-  if (returnTo !== undefined) {
-    const opener = findDetailOpener(root, returnTo)
-    if (opener) {
-      opener.focus({ preventScroll: !detail })
-      return
-    }
-    if (!detail) {
-      const heading = root.querySelector('.st-scroll h1:not(.st-sr-only)') ?? root.querySelector('.st-scroll h1')
-      heading?.setAttribute('tabindex', '-1')
-      heading?.focus({ preventScroll: true })
-      return
-    }
-  }
-  if (detail && (section !== 'reviews' || returnTo)) root.querySelector('#st-detail-name')?.focus()
 }
 
 // The on-screen Back: one level.
