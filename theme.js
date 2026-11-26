@@ -1223,7 +1223,7 @@ export const CSS = `
   padding: 10px 12px; border-top: 1px solid var(--border);
 }
 .st-update-review-actions .st-btn { max-width: 100%; border-radius: 999px; white-space: normal; }
-.st-update-review-actions .st-btn-ghost { margin-right: auto; }
+.st-update-review-actions .st-btn-ghost:not(:only-child) { margin-right: auto; }
 .st-update-review-actions .st-btn-primary { background: var(--st-accent-fill); border-color: var(--st-accent-fill); }
 .st-selfupd-sheet .st-update-review-actions .st-btn:has(.st-fillp) { opacity: 1; cursor: default; }
 
