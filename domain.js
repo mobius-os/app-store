@@ -1099,10 +1099,15 @@ export function catalogSearchText(item) {
     .toLowerCase()
 }
 
+// Letters and digits in any script; punctuation and spaces separate words.
+const searchWords = value => String(value || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+
 export function filterCatalog(items, { query = '', category = 'all' } = {}) {
   const normalizedName = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
   const search = normalizedName(query)
-  const terms = search ? search.split(' ') : []
+  // Each typed word must start a word in the listing, so "ink" finds Inkwell
+  // but not every description that mentions links.
+  const terms = searchWords(search)
   const activeCategory = String(category || 'all').toLowerCase()
   const exact = []
   const matches = []
@@ -1114,8 +1119,8 @@ export function filterCatalog(items, { query = '', category = 'all' } = {}) {
     if (search && normalizedName(item.manifest?.name || item.name) === search) {
       exact.push(item)
     } else {
-      const text = terms.length ? catalogSearchText(item) : ''
-      if (terms.every(term => text.includes(term))) matches.push(item)
+      const words = terms.length ? searchWords(catalogSearchText(item)) : []
+      if (terms.every(term => words.some(word => word.startsWith(term)))) matches.push(item)
     }
   }
   // Keep catalog ordering within both groups; only the exact names move first.

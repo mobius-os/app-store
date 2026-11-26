@@ -2249,6 +2249,23 @@ test('filterCatalog puts exact app names first without reordering other matches'
   assert.deepEqual(ids({ query: '   ' }), items.map(item => item.id))
 })
 
+test('filterCatalog matches the start of words, not text inside them', async () => {
+  const { filterCatalog } = await bundle()
+  const items = [
+    { id: 'maps', manifest: { name: 'Maps', description: 'Keep maps linked to places.' } },
+    { id: 'inkwell', manifest: { name: 'Inkwell', description: 'Notes and tasks.' } },
+    { id: 'songs', manifest: { name: 'Songs', description: 'Tagged results from shared links.' } },
+    { id: 'oni', manifest: { name: 'Ink of the Oni', description: 'A lone ronin.' } },
+    { id: 'identity', manifest: { name: 'Möbius · You', description: 'Your account.' } },
+  ]
+  const ids = query => filterCatalog(items, { query }).map(item => item.id)
+  assert.deepEqual(ids('ink'), ['inkwell', 'oni'])
+  assert.deepEqual(ids('link'), ['maps', 'songs'])
+  assert.deepEqual(ids('oni ink'), ['oni'])
+  assert.deepEqual(ids('möbius you'), ['identity'])
+  assert.deepEqual(ids('Möbius · You'), ['identity'])
+})
+
 test('catalog cards prefer concise discovery copy and use stable browse collections', async () => {
   const {
     CARD_DESCRIPTION_LIMIT,
