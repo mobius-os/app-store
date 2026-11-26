@@ -2845,7 +2845,6 @@ button.st-dh-dev:hover { text-decoration: underline; }
   .st-card.is-row { grid-template-columns: 56px minmax(0, 1fr) auto; min-height: 76px; padding: 10px 0; column-gap: 16px; }
   .st-card.is-row .st-icon-wrap { width: 56px; height: 56px; border-radius: 15px; }
   .st-catrow { min-height: 50px; }
-  .st-lib-panel .st-card.is-list { min-height: 76px; padding: 10px 0; }
   .st-dh { margin-top: 12px; gap: 22px; }
   .st-dh .st-hero-icon { width: 104px; height: 104px; border-radius: 24px; }
   .st-dh-acts { margin-top: 13px; }

@@ -110,7 +110,7 @@ test('browse cards reserve accepted screenshots for the app description', () => 
 })
 
 test('catalog cards use one labelled icon action without repeating routine lifecycle text', () => {
-  assert.match(catalogCard, /ArrowRotateCw, ArrowUpRight, Chat, Check, DotsHorizontal, Download/)
+  assert.match(catalogCard, /ArrowRotateCw, ArrowUpRight, Chat, Check, DotsVertical, Download/)
   assert.match(catalogCard, /aria-label=\{`\$\{actionLabel\} \$\{m\.name\}`\}/)
   assert.match(catalogCard, /title=\{actionLabel\}/)
   assert.match(catalogCard, /\['unavailable', 'conflict', 'rejected', 'unverified'\]\.includes\(lifecycle\.key\)/)
