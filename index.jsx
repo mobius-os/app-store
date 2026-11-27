@@ -1,5 +1,6 @@
 import { mapWithConcurrency, createUpdateBatch, updateBatchBusy, newestBatchSnapshot, normalizeBatchSnapshot, batchProgress as batchProgressOf } from './update-batch.js'
 import { openDetailEntry, closeDetailEntry, backDetailEntry } from './store-navigation.js'
+import { SwipeBack } from './ui/SwipeBack.jsx'
 import { restoredStoreLocation, storeLocation } from './store-location.js'
 import { watchCatalogFreshness, loadCommunityWindow } from './catalog-freshness.js'
 // App Store — thin app shell. The module tree is declared in mobius.json's
@@ -2817,6 +2818,7 @@ export default function App({ appId, token }) {
     return (
       <div className="st-root" {...ownerInteraction}>
         <style>{CSS}</style>
+        <SwipeBack />
         <DetailView
           storeAppId={appId}
           item={detail}
@@ -2980,6 +2982,7 @@ export default function App({ appId, token }) {
   return (
     <div className="st-root" {...ownerInteraction}>
       <style>{CSS}</style>
+      <SwipeBack />
       <h1 className="st-sr-only">App Store</h1>
       {/* Phones: the App Store's own bar, fixed above the page so it stays put
           while you scroll. The way back to Möbius on the left, the Store's
