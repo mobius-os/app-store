@@ -52,7 +52,8 @@ const sharedListing = {
 }
 
 // `reviews` holds the shared listing's reviews read until the test resolves it.
-async function mountStore({ reviews = null } = {}) {
+// `installed` and `publications` are this Möbius's apps and what it has published.
+async function mountStore({ reviews = null, installed = [], publications = [] } = {}) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://store.test/', pretendToBeVisual: true })
   const keys = ['window', 'document', 'HTMLElement', 'ResizeObserver', 'fetch', 'IS_REACT_ACT_ENVIRONMENT']
   const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
@@ -81,7 +82,8 @@ async function mountStore({ reviews = null } = {}) {
     IS_REACT_ACT_ENVIRONMENT: true,
     fetch: async (url) => {
       const path = String(url)
-      if (path === '/api/apps/') return json([])
+      if (path === '/api/apps/') return json(installed)
+      if (path.startsWith('/api/community/publications?')) return json({ items: publications, viewer: { handle: 'owner-handle' } })
       if (path.startsWith('/api/community/apps?')) return json({ items: [sharedListing] })
       if (path === `/api/community/apps/${sharedListing.id}/reviews`) {
         if (reviews) await reviews.promise
@@ -195,5 +197,51 @@ test('a creator page opened from an app page returns focus to the developer link
     await view.hostBack('app-store-creator')
     await until(() => view.doc.querySelector('#st-detail-name'), 'the app page to return')
     assert.ok(view.focused()?.matches('.st-dh-dev'), 'focus is back on the developer link in the header')
+  } finally { await view.close() }
+})
+
+test('publishing steps open at their heading, and Back returns to the row or launcher that opened them', async () => {
+  const notebook = { id: 42, name: 'Sample Notebook', slug: 'sample-notebook', source_dir: '/data/apps/sample-notebook' }
+  const view = await mountStore({
+    installed: [notebook],
+    publications: [{ id: 'pub-1', local_app_id: 'app:42', status: 'live', community_app_id: 'sample-notebook' }],
+  })
+  try {
+    await act(async () => tabNamed(view.doc, 'Library').click())
+    await act(async () => view.doc.querySelector('#st-libtab-yours').click())
+    const row = await view.find('.st-mine-row', 'the published app row')
+    await view.activate(row)
+    await until(() => view.focused()?.matches('.st-mine-page h2'), 'the published app name to take focus')
+    assert.equal(view.focused().textContent, 'Sample Notebook')
+    await act(async () => view.doc.querySelector('.st-mine-page .st-back-btn').click())
+    assert.equal(view.focused()?.dataset.focusReturn, 'published:42', 'the page Back button returns to the row')
+
+    await view.activate(view.doc.querySelector('.st-mine-row'))
+    await until(() => view.focused()?.matches('.st-mine-page h2'), 'the published app name again')
+    await view.hostBack('app-store-publish')
+    assert.equal(view.focused()?.dataset.focusReturn, 'published:42', 'host Back returns to the row')
+
+    const launcher = view.doc.querySelector('[data-focus-return="publish"]')
+    await view.activate(launcher)
+    await until(() => view.doc.querySelector('.st-publish-heading.is-choose'), 'the app chooser')
+    assert.equal(view.focused(), launcher, 'Library’s launcher outlives the swap, so it keeps focus')
+    view.doc.querySelector('.st-publish-heading .st-back-btn').focus()
+    await act(async () => view.doc.querySelector('.st-publish-heading .st-back-btn').click())
+    assert.equal(view.focused()?.dataset.focusReturn, 'publish', 'Your apps returns to the launcher')
+  } finally { await view.close() }
+})
+
+test('the app chooser opens at its heading from the first-publish button, and Your apps returns to it', async () => {
+  const view = await mountStore({
+    installed: [{ id: 42, name: 'Sample Notebook', slug: 'sample-notebook', source_dir: '/data/apps/sample-notebook' }],
+  })
+  try {
+    await act(async () => tabNamed(view.doc, 'Library').click())
+    await act(async () => view.doc.querySelector('#st-libtab-yours').click())
+    await view.activate(await view.find('[data-focus-return="publish-first"]', 'the first-publish button'))
+    await until(() => view.focused()?.matches('.st-publish-heading h2'), 'the chooser heading to take focus')
+    assert.equal(view.focused().textContent, 'Publish an app')
+    await act(async () => view.doc.querySelector('.st-publish-heading .st-back-btn').click())
+    assert.equal(view.focused()?.dataset.focusReturn, 'publish-first')
   } finally { await view.close() }
 })

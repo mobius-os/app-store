@@ -1,6 +1,7 @@
 /* PublisherTab turns an accepted local app revision into one reviewable public listing. */
 import { ChevronLeft, FileUpload, Search } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { focusReturnOf, focusTransition } from '../focus-return.js'
 import {
   LISTING_AGENT_POLL_MS,
   LISTING_FIELD_LABELS,
@@ -121,6 +122,11 @@ function AgentConflicts({ conflicts, onResolve }) {
   )
 }
 
+// Where entering a publishing step puts focus (see focus-return.js): the
+// chooser's heading or a published app's name, and the listing review itself.
+export const publishStepHeading = root => root.querySelector('.st-publisher [data-publish-step-heading]')
+const listingReview = root => root.querySelector('.st-listing-review')
+
 export function PublisherTab({
   installed,
   identity,
@@ -159,7 +165,6 @@ export function PublisherTab({
   // host Back gesture can move between them.
   view = 'home',
   onViewChange,
-  publishLauncherRef,
 }) {
   const apps = publishableApps(installed).sort((left, right) => (
     Date.parse(right.updated_at || '') - Date.parse(left.updated_at || '')
@@ -194,29 +199,16 @@ export function PublisherTab({
   const setView = (next) => onViewChange?.(next)
   const [openAppId, setOpenAppId] = useState(null)
   const publisherRef = useRef(null)
-  const chooserHeadingRef = useRef(null)
-  const reviewFocusRef = useRef(null)
-  const emptyLauncherRef = useRef(null)
-  const reviewOpenerId = useRef(null)
-  const previousStep = useRef(null)
-  const step = candidate ? 'review' : view
-  // Loading a preview or refreshing publication status is not navigation.
+  // A listing review opens over the chooser or a published app's page; Library
+  // owns focus for the other steps (see showPublishStep). Like Library's, the
+  // request is applied once, so a preview loading or a status refresh leaves
+  // focus where the person is.
+  const reviewReturnRef = useRef(null)
+  const [reviewFocus, setReviewFocus] = useState(null)
   useLayoutEffect(() => {
-    const previous = previousStep.current
-    previousStep.current = step
-    if (previous === step || !document.hasFocus()) return
-    if (step === 'review') {
-      reviewFocusRef.current?.focus()
-    } else if (step === 'home' && ['choose', 'review'].includes(previous)) {
-      const launcher = publishLauncherRef?.current || emptyLauncherRef.current
-      launcher?.focus()
-    } else if (step === 'choose' || (step === 'app' && previous === 'review')) {
-      const opener = previous === 'review' && [...publisherRef.current.querySelectorAll('[data-prepare-listing]')]
-        .find(button => button.dataset.prepareListing === reviewOpenerId.current && !button.disabled)
-      const destination = opener || chooserHeadingRef.current || publisherRef.current.querySelector('.st-mine-page .st-back-btn')
-      destination?.focus()
-    }
-  }, [step, publishLauncherRef])
+    if (!reviewFocus || !document.hasFocus()) return
+    focusTransition(publisherRef.current, reviewFocus)
+  }, [reviewFocus])
   // The stored check result; undefined until storage is read for this app.
   const [checkRaw, setCheckRaw] = useState(undefined)
   // { appId, commit, prior, startedAt, failed } for the check the owner most
@@ -371,9 +363,10 @@ export function PublisherTab({
 
   async function prepare(app) {
     const requestId = previewGateRef.current.begin()
-    reviewOpenerId.current = String(app.id)
+    reviewReturnRef.current = focusReturnOf(document.activeElement)
     onNavigate?.()
     setCandidate(app)
+    setReviewFocus({ destination: listingReview })
     setAgentRun(null)
     setAgentConflicts({})
     onListingAgentStatus?.(app).then((status) => {
@@ -445,6 +438,7 @@ export function PublisherTab({
     previewGateRef.current.invalidate()
     onNavigate?.()
     setCandidate(null)
+    setReviewFocus({ destination: publishStepHeading, returnTo: reviewReturnRef.current })
     setPreview(null)
     setPreviewError('')
     setConfirmed(false)
@@ -622,7 +616,7 @@ export function PublisherTab({
           <h3>{app.name}</h3>
           <span className={`st-publish-status${row.tone ? ` is-${row.tone}` : ''}`}>{row.label}</span>
         </div>
-        <button type="button" className="st-publish-pill" aria-label={`${row.action} ${app.name}`} data-prepare-listing={app.id}
+        <button type="button" className="st-publish-pill" aria-label={`${row.action} ${app.name}`} data-focus-return={`publish:${app.id}`}
                 disabled={!!publishingId || !signedIn || !githubReady}
                 onClick={() => prepare(app)}>
           {row.action}
@@ -639,7 +633,7 @@ export function PublisherTab({
             <button type="button" className="st-back-btn" onClick={() => setView('home')}>
               <ChevronLeft width="16" height="16" aria-hidden="true" />Your apps
             </button>
-            <h2 ref={chooserHeadingRef} tabIndex={-1}>Publish an app</h2>
+            <h2 data-publish-step-heading>Publish an app</h2>
             <p>Choose an app. You’ll check its listing before it goes live.</p>
           </div>
           <div className="st-publish-heading-actions">
@@ -712,8 +706,7 @@ export function PublisherTab({
       ) : null}
 
       {candidate ? (
-        <section ref={reviewFocusRef} className="st-listing-review" tabIndex={-1}
-                 aria-label={`${candidate.name || 'App'} publishing review`}>
+        <section className="st-listing-review" aria-label={`${candidate.name || 'App'} publishing review`}>
           <div className="st-listing-review-top">
             <button type="button" className="st-back-btn" onClick={closePreview} disabled={!!publishingId}>Back</button>
             <span>{preview ? (preview.ready ? 'Ready to publish' : 'Not ready yet') : 'Accepted source only'}</span>
@@ -891,7 +884,7 @@ export function PublisherTab({
           <div className="st-empty">
             <div className="st-empty-title">You haven’t published an app yet</div>
             <p className="st-empty-text">Pick one of your apps and share it with everyone on Möbius.</p>
-            <button ref={emptyLauncherRef} type="button" className="st-btn st-btn-primary" onClick={() => setView('choose')}>Publish an app</button>
+            <button type="button" className="st-btn st-btn-primary" data-focus-return="publish-first" onClick={() => setView('choose')}>Publish an app</button>
           </div>
         )
       ) : (

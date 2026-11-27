@@ -134,7 +134,7 @@ import { ResolveAllButton, UpdateAllButton } from './ui/LibraryActions.jsx'
 import { LibraryPanel, LibraryTabs, libraryTabFor } from './ui/LibraryTabs.jsx'
 import { CatalogSkeleton } from './ui/CatalogSkeleton.jsx'
 import { DetailView } from './ui/DetailView.jsx'
-import { PublisherTab } from './ui/PublisherTab.jsx'
+import { PublisherTab, publishStepHeading } from './ui/PublisherTab.jsx'
 import { SelfUpdateSheet, useSelfUpdate } from './ui/SelfUpdate.jsx'
 import { UninstallConfirmModal } from './ui/UninstallConfirmModal.jsx'
 import { UpdateReviewModal, UpdateAgentChooser } from './ui/UpdateReviewModal.jsx'
@@ -2781,19 +2781,21 @@ export default function App({ appId, token }) {
   // Publishing lives in Library's Your apps tab. Its steps past that list
   // (choosing an app, one published app, a listing review) share one Back
   // step that returns to Your apps.
-  // Entering a step leaves focus to PublisherTab, which owns those views;
-  // returning to Your apps goes back to the control that left it.
+  // Entering a step focuses its heading; returning to Your apps goes back to
+  // the control that left it. A listing review is PublisherTab's own step.
+  const enterPublishStepFocus = () => setFocusRequest({ destination: publishStepHeading })
   const showPublishStep = (next) => {
     setPublishView(next)
     if (next === 'home') {
       if (publishNavRef.current) returnViewFocus(publishReturnRef.current)
       publishNavRef.current?.close(); publishNavRef.current = null; return
     }
+    enterPublishStepFocus()
     if (publishNavRef.current) return
     publishReturnRef.current = focusReturnOf(document.activeElement)
     const handle = window.mobius.nav.open('app-store-publish', {
       onBack: () => { publishNavRef.current = null; setPublishView('home'); returnViewFocus(publishReturnRef.current) },
-      onForward: () => { publishNavRef.current = handle; setTab('library'); setCategory('yours'); setPublishView(next) },
+      onForward: () => { publishNavRef.current = handle; setTab('library'); setCategory('yours'); setPublishView(next); enterPublishStepFocus() },
     })
     publishNavRef.current = handle
     handle.outcome.then(({ status }) => {
