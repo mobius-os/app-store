@@ -2668,11 +2668,9 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-upload-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .st-libtabs {
   /* The scroller's 16px top padding would leave a gap above a top:0 strip. */
-  position: sticky; top: -16px; z-index: 4; display: flex; gap: 4px; margin-block: 18px 22px;
-  background: var(--bg); overflow-x: auto; scrollbar-width: none;
+  position: sticky; top: -16px; z-index: 4; display: flex; flex-wrap: wrap; gap: 0 4px; margin-block: 18px 22px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
 }
-.st-libtabs::-webkit-scrollbar { display: none; }
-.st-libtabs::after { content: ""; position: absolute; left: -100vmax; right: -100vmax; bottom: 0; border-bottom: 1px solid var(--border); pointer-events: none; }
 .st-libtab {
   position: relative; display: inline-flex; align-items: center; gap: 8px; flex: none; height: 46px; padding: 0 14px;
   border: 0; background: none; color: var(--muted); font: 600 15px var(--font); cursor: pointer; white-space: nowrap;
