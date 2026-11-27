@@ -2750,7 +2750,8 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-rowmenu-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .st-rowmenu-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 160px; padding: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 14px 34px rgba(0,0,0,.32); }
 .st-rowmenu-pop button { display: block; width: 100%; height: 38px; padding: 0 12px; border: 0; border-radius: 8px; background: none; color: var(--text); font: 500 14px var(--font); text-align: left; cursor: pointer; }
-.st-rowmenu-pop button:hover, .st-rowmenu-pop button:focus-visible { background: var(--surface-2); outline: none; }
+.st-rowmenu-pop button:hover, .st-rowmenu-pop button:focus-visible { background: var(--surface-2); }
+.st-rowmenu-pop button:focus-visible { outline: 2px solid var(--accent-text, var(--accent)); outline-offset: -2px; }
 @media (max-width: 680px) {
   .st-upload-btn { height: 38px; padding: 0 14px 0 10px; font-size: 14px; }
   .st-libtabs { margin: 14px 0 16px; gap: 0; }
