@@ -1501,7 +1501,7 @@ export const CSS = `
 .st-edit-identity strong { font-size: 18px; }
 .st-edit-icon { width: 60px; height: 60px; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 16px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); }
 .st-edit-icon img { width: 100%; height: 100%; object-fit: cover; }
-.st-link-btn { justify-self: start; display: inline-flex; align-items: center; min-height: 32px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.st-link-btn { justify-self: start; display: inline-flex; align-items: center; min-height: 32px; padding: 0; border: 0; background: none; color: var(--st-accent-text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .st-link-btn:disabled { opacity: .55; cursor: default; }
 .st-edit-field { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .st-edit-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; padding: 0; font-size: 13px; font-weight: 700; }
@@ -1897,7 +1897,7 @@ export const CSS = `
 .st-mine-facts { color: var(--muted); font-size: 14px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-mine-status { color: var(--muted); font-size: 13px; }
 .st-mine-facts .st-mine-status { font-size: 14px; }
-.st-mine-status.is-accent { color: var(--accent); }
+.st-mine-status.is-accent { color: var(--st-accent-text); }
 .st-mine-rating { display: inline-flex; align-items: center; gap: 3px; }
 .st-mine-rating svg { width: 13px; height: 13px; color: var(--st-star); }
 .st-mine-status.is-warning { color: var(--orange, #e8b45a); }
@@ -2102,7 +2102,7 @@ export const CSS = `
 
 /* App page: one quiet line of facts under the name. */
 .st-card-installed { color: var(--muted); }
-.st-card-installed.is-update { color: var(--accent); font-weight: 600; }
+.st-card-installed.is-update { color: var(--st-accent-text); font-weight: 600; }
 
 /* Every app icon reads as an app icon: cut-out illustrations sit on the same
    rounded-square tile that full-bleed icons already are. */
@@ -2147,7 +2147,7 @@ export const CSS = `
 
 /* Big page titles inside the scroll area. */
 .st-pagehead { padding: 18px 0 4px; }
-.st-pagehead-eyebrow { display: block; color: var(--accent); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.st-pagehead-eyebrow { display: block; color: var(--st-accent-text); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .st-pagehead-title { margin: 4px 0 0; font-size: 34px; line-height: 1.1; font-weight: 700; letter-spacing: -.03em; }
 
 /* Phone bottom tab bar. */
@@ -2542,7 +2542,7 @@ button.st-dh-dev:hover { text-decoration: underline; }
 .st-qdrop-item .st-cat-icon.is-sm { flex: none; width: 28px; height: 28px; border-radius: 8px; font-size: 16px; background: var(--surface-2); }
 .st-qdrop-x { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
 .st-qdrop-x:hover { background: var(--surface-2); color: var(--text); }
-.st-search-cancel { display: none; border: 0; background: none; color: var(--accent); font: 500 15px var(--font); min-height: 38px; cursor: pointer; }
+.st-search-cancel { display: none; border: 0; background: none; color: var(--st-accent-text); font: 500 15px var(--font); min-height: 38px; cursor: pointer; }
 @media (max-width: 680px) {
   .st-search-cancel { display: block; }
   .st-qdrop { min-width: 0; }
