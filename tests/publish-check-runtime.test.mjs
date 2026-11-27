@@ -44,10 +44,11 @@ test.before(async () => {
 })
 test.after(() => rm(buildDir, { recursive: true, force: true }))
 
-// Renders the Publish tab at one app's ready release panel. `stored` is the
-// Store storage the agent writes into; `storage: false` models a Möbius
-// without app storage.
-async function openReleasePanel({ stored = {}, storage = true, read, props = {} } = {}) {
+// Renders the Publish tab at Your apps. `stored` is the Store storage the
+// agent writes into; `storage: false` models a Möbius without app storage.
+// With `keyboard`, the frame has focus and each click first focuses its
+// control, as a keyboard user's activation does.
+async function mountPublisher({ stored = {}, storage = true, read, keyboard = false, props = {} } = {}) {
   const dom = new JSDOM('<div id="root"></div>')
   const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
   const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
@@ -57,12 +58,13 @@ async function openReleasePanel({ stored = {}, storage = true, read, props = {} 
   const root = createRoot(dom.window.document.getElementById('root'))
   const calls = { publish: [], checks: [], saves: [] }
   const doc = dom.window.document
+  if (keyboard) doc.hasFocus = () => true // This fixture stands in for the active Store frame.
   const buttons = () => [...doc.querySelectorAll('button')]
   const button = label => buttons().find(b => b.textContent.trim() === label)
   async function click(label) {
     const target = button(label)
     assert.ok(target, `${label} in: ${buttons().map(b => b.textContent.trim()).join(' | ')}`)
-    await act(async () => target.click())
+    await act(async () => { if (keyboard) target.focus(); target.click() })
   }
   await act(async () => root.render(React.createElement(inLibrary(PublisherTab), {
     installed: [app], identity: { linked: true }, viewer: { github: { connected: true, login: 'owner' } },
@@ -72,9 +74,6 @@ async function openReleasePanel({ stored = {}, storage = true, read, props = {} 
     onRunCheck: async (...args) => { calls.checks.push(args); return true },
     ...props,
   })))
-  await click('Publish an app')
-  await click('Prepare listing')
-  await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
   async function consent() {
     await act(async () => doc.querySelector('.st-publish-consent input').click())
   }
@@ -84,6 +83,74 @@ async function openReleasePanel({ stored = {}, storage = true, read, props = {} 
   async function settle() { await act(async () => { await new Promise(resolve => setImmediate(resolve)) }) }
   return { dom, doc, calls, click, button, consent, close, settle, text: () => doc.body.textContent }
 }
+
+// Renders the Publish tab at one app's ready release panel.
+async function openReleasePanel(options) {
+  const panel = await mountPublisher(options)
+  await panel.click('Publish an app')
+  await panel.click('Prepare listing')
+  await panel.settle()
+  return panel
+}
+
+test('a listing review takes focus, and Back returns to the Prepare listing that opened it', async () => {
+  const panel = await openReleasePanel({ keyboard: true })
+  const { doc } = panel
+  try {
+    assert.equal(doc.activeElement, doc.querySelector('.st-listing-review'))
+    await panel.settle()
+    assert.equal(doc.activeElement, doc.querySelector('.st-listing-review'), 'the preview arriving is not another step')
+    await panel.click('Back')
+    assert.equal(doc.activeElement, panel.button('Prepare listing'))
+    assert.equal(doc.activeElement.dataset.focusReturn, `publish:${app.id}`)
+    assert.deepEqual(panel.calls.publish, [])
+  } finally {
+    await panel.close()
+  }
+})
+
+test('Back from a listing review returns to Publish update on the published app page', async () => {
+  const panel = await mountPublisher({ keyboard: true, props: {
+    publicationStates: { [app.id]: { id: 'pub-1', status: 'live', community_app_id: 'pocket-list' } },
+    onLoadReviews: async () => [],
+  } })
+  const { doc } = panel
+  try {
+    // Library owns focus for opening the page (see focus-return-runtime).
+    await act(async () => doc.querySelector('.st-mine-row').click())
+    await panel.click('Publish update')
+    await panel.settle()
+    assert.equal(doc.activeElement, doc.querySelector('.st-listing-review'))
+    await panel.click('Back')
+    assert.equal(doc.activeElement, panel.button('Publish update'))
+  } finally {
+    await panel.close()
+  }
+})
+
+test('No matching apps is announced from a mounted status while focus stays in the search field', async () => {
+  const panel = await mountPublisher({ keyboard: true })
+  const { doc } = panel
+  try {
+    await panel.click('Publish an app')
+    const field = doc.querySelector('.st-publish-search input')
+    const status = doc.querySelector('.st-publisher [role="status"].st-sr-only')
+    assert.ok(status)
+    assert.equal(status.textContent, '')
+    const change = value => act(async () => {
+      Object.getOwnPropertyDescriptor(panel.dom.window.HTMLInputElement.prototype, 'value').set.call(field, value)
+      field.dispatchEvent(new panel.dom.window.Event('input', { bubbles: true }))
+    })
+    field.focus()
+    await change('no matches here')
+    assert.equal(status.textContent, 'No matching apps')
+    assert.equal(doc.activeElement, field)
+    await change('')
+    assert.equal(status.textContent, '')
+  } finally {
+    await panel.close()
+  }
+})
 
 test('without app storage the check is skipped and publishing stays available', async () => {
   const view = await openReleasePanel({ storage: false })

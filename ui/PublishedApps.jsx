@@ -62,7 +62,7 @@ export function YourAppsList({ entries, onOpen }) {
     <ul className="st-mine-list" aria-label="Your published apps">
       {entries.map(({ app, state }) => (
         <li key={app.id}>
-          <button type="button" className="st-mine-row" onClick={() => onOpen(app)}>
+          <button type="button" className="st-mine-row" data-focus-return={`published:${app.id}`} onClick={() => onOpen(app)}>
             <AppIcon app={app} />
             <span className="st-mine-copy">
               <strong>{app.name}</strong>
@@ -118,13 +118,13 @@ export function PublishedAppPage({
       <header className="st-mine-head">
         <AppIcon app={app} size={64} />
         <div className="st-mine-title">
-          <h2>{app.name}</h2>
+          <h2 data-publish-step-heading>{app.name}</h2>
           <StatusLine state={state} hosted={app.hosted_publication} />
         </div>
         {communityId && state?.status === 'live' && onViewInStore ? (
           <button type="button" className="st-btn st-btn-secondary" onClick={() => onViewInStore(communityId)}>View in Store</button>
         ) : null}
-        <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled}
+        <button type="button" className="st-btn st-btn-primary" disabled={publishDisabled} data-focus-return={`publish:${app.id}`}
                 onClick={onPublishUpdate}>
           Publish update
         </button>
