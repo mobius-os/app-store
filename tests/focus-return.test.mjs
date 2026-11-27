@@ -26,15 +26,6 @@ test('an opener is found again after its list remounts, on its own shelf only', 
   dom.window.close()
 })
 
-test('a row menu item records the menu button it closes back to', () => {
-  const { dom, root } = page(`<div class="st-rowmenu">
-    <button data-focus-return="more:news">More</button>
-    <div role="menu"><button role="menuitem">Details</button></div>
-  </div>`)
-  assert.deepEqual(focusReturnOf(root.querySelector('[role=menuitem]')), { key: 'more:news', scope: null })
-  dom.window.close()
-})
-
 test('entering focuses the destination; Back returns to the opener, else the destination', () => {
   const { dom, document, root } = page(`<div class="st-scroll">
     <h1 class="st-sr-only">Library</h1>

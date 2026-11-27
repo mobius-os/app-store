@@ -165,3 +165,35 @@ test('a card for an app with a built-in agent shows a labelled Agent badge in ev
     .filter(selector => /st-card-agent|st-card-state-row(?!:empty)\b/.test(selector))
   assert.deepEqual(hiding, [])
 })
+
+test('a More menu item runs with focus back on More, so its page can return there', async () => {
+  const CatalogCard = await catalogCard()
+  const { focusReturnOf } = await import('../focus-return.js')
+  const dom = new JSDOM('<div id="root"></div>')
+  const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const doc = dom.window.document
+  const item = { id: 'pocket', community: { id: 'app_pocket' }, manifest: { id: 'pocket', name: 'Pocket', package_id: 'pkg.pocket' } }
+  const installed = [{ id: 7, slug: 'pocket', name: 'Pocket', package_id: 'pkg.pocket' }]
+  const openers = []
+  const record = () => openers.push(focusReturnOf(doc.activeElement))
+  try {
+    await act(async () => root.render(React.createElement(CatalogCard, {
+      item, installed, layout: 'list', pickOpensApp: true,
+      onPick: record, onRateApp: record, onOpenInstalled() {}, onUpdate() {},
+    })))
+    const more = doc.querySelector('.st-rowmenu-btn')
+    for (const label of ['Details', 'Review']) {
+      more.focus()
+      await act(async () => more.click())
+      const action = [...doc.querySelectorAll('[role=menuitem]')].find(button => button.textContent === label)
+      await act(async () => action.click())
+    }
+    assert.deepEqual(openers, [{ key: 'more:pocket', scope: null }, { key: 'more:pocket', scope: null }])
+  } finally {
+    await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
+  }
+})

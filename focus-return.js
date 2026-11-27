@@ -20,10 +20,9 @@ const openerScope = node => {
   return shelf?.getAttribute('aria-labelledby') ?? shelf?.getAttribute('aria-label') ?? null
 }
 
+// A row menu puts focus back on its More button before running an item (see
+// RowMenu), so an item's page records More as its opener.
 export function focusReturnOf(node) {
-  // A row menu item disappears on activation, so return to the menu's More.
-  // Remove once the row menu restores focus to More before running an item.
-  if (node?.matches?.('[role=menuitem]')) node = node.closest('.st-rowmenu')?.querySelector(OPENERS)
   if (!node?.matches?.(OPENERS)) return null
   return { key: node.dataset.focusReturn, scope: openerScope(node) }
 }
