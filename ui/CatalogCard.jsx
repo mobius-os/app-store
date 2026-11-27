@@ -1,6 +1,6 @@
 import { appLifecycleFor, busyLabelForAction, catalogCardDescription, catalogCategory, catalogPublisher, communityFeedbackOf, installsLabel, storeCategory } from '../domain.js'
 import { ProgressFill } from './ProgressFill.jsx'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowRotateCw, ArrowUpRight, Chat, Check, DotsVertical, Download, StarFilled } from '@openai/apps-sdk-ui/components/Icon'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 
@@ -66,33 +66,68 @@ export function progressStageFor(busyActionKind, updateStage) {
 
 // A Library row keeps one visible action; Details and Review sit behind a
 // small "More" menu, so a long list stays calm and every row reads the same.
-export function RowMenu({ name, items }) {
-  const [open, setOpen] = useState(false)
+export function RowMenu({ name, items, focusReturn }) {
+  const [edge, setEdge] = useState(null)
+  const open = edge !== null
   const wrapRef = useRef(null)
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
+  useLayoutEffect(() => {
+    if (edge === 'first') menuRef.current?.firstElementChild?.focus()
+    if (edge === 'last') menuRef.current?.lastElementChild?.focus()
+  }, [edge])
   useEffect(() => {
     if (!open) return undefined
-    const onDown = (event) => { if (!wrapRef.current?.contains(event.target)) setOpen(false) }
-    const onKey = (event) => {
-      if (event.key !== 'Escape') return
-      setOpen(false)
-      wrapRef.current?.querySelector('.st-rowmenu-btn')?.focus()
-    }
+    const onDown = (event) => { if (!wrapRef.current?.contains(event.target)) setEdge(null) }
     document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey) }
+    return () => document.removeEventListener('pointerdown', onDown)
   }, [open])
   if (!items.length) return null
+
+  const closeAndRestore = () => {
+    triggerRef.current?.focus()
+    setEdge(null)
+  }
+  const onMenuKeyDown = (event) => {
+    const { key } = event
+    if (key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeAndRestore()
+    } else if (key === 'Tab') {
+      // Resume the page's usual tab order from the trigger, not the popup.
+      closeAndRestore()
+    } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(key)) {
+      const buttons = [...menuRef.current.children]
+      const current = buttons.indexOf(event.target)
+      if (current < 0) return
+      event.preventDefault()
+      const next = key === 'Home' ? 0 : key === 'End' ? buttons.length - 1
+        : (current + (key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+      buttons[next].focus()
+    }
+  }
+
   return (
+    // No close-on-blur: Safari does not focus a clicked button, so a second
+    // press on More would blur to the page first and then reopen the menu.
+    // Escape, Tab and an outside pointerdown close it instead.
     <div className="st-rowmenu" ref={wrapRef}>
       <button type="button" className="st-rowmenu-btn" aria-label={`More for ${name}`} aria-haspopup="menu"
-        aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        data-focus-return={focusReturn}
+        ref={triggerRef} aria-expanded={open} onClick={() => open ? closeAndRestore() : setEdge('first')}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+          event.preventDefault()
+          setEdge(event.key === 'ArrowDown' ? 'first' : 'last')
+        }}>
         <DotsVertical width={18} height={18} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="st-rowmenu-pop" role="menu">
+        <div className="st-rowmenu-pop" ref={menuRef} role="menu" aria-label={`Actions for ${name}`} onKeyDown={onMenuKeyDown}>
           {items.map(({ label, ariaLabel, run, danger }) => (
-            <button key={label} type="button" role="menuitem" aria-label={ariaLabel} className={danger ? 'is-danger' : undefined}
-              onClick={() => { setOpen(false); run() }}>{label}</button>
+            <button key={label} type="button" role="menuitem" tabIndex={-1} aria-label={ariaLabel} className={danger ? 'is-danger' : undefined}
+              onClick={() => { closeAndRestore(); run() }}>{label}</button>
           ))}
         </div>
       ) : null}
@@ -116,7 +151,7 @@ function cardVariantClass(variant) {
 // interactive lift (hover/focus) lives in CSS pseudo-classes via
 // .st-card:has(.st-card-open:hover/:focus-visible), not JS state, so the
 // grid no longer rerenders a tile on every pointer move.
-export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, onUninstall, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, onRetryError = null, onReviewUpdate, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid', updateStage = null }) {
+export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetry, onUpdate, onOpenInstalled, onRateApp, onUninstall, pickOpensApp = false, onRetryInstalled, busy, busyActionKind, blocked, error, onRetryError = null, onReviewUpdate, onAskAgentError, askingAgentAboutError = false, token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, layout = 'grid', updateStage = null, showRatingCount = false }) {
   const m = item.manifest
 
   if (!m) {
@@ -219,6 +254,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       <button
         type="button"
         className="st-card-open"
+        data-focus-return={`card:${item.id}`}
         onClick={() => (tapOpensApp ? primary.launch() : onPick(item))}
         aria-label={tapOpensApp ? `${m.name} — open app` : `${m.name} — open details`}
       >
@@ -249,7 +285,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
         <div className="st-card-desc">{description}</div>
       ) : null}
       {(layout === 'compact' || layout === 'list' || layout === 'row') ? (
-        <CardByline item={item} state={layout === 'compact' || layout === 'row' ? lifecycle.cardVariant : ''} />
+        <CardByline item={item} showRatingCount={showRatingCount} state={layout === 'compact' || layout === 'row' ? lifecycle.cardVariant : ''} />
       ) : null}
       {/* A browse row opens the app page, which owns the one Get button; a
           ready installed app launches from its Library row. Maintenance
@@ -269,7 +305,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
             : <ActionIcon width={20} height={20} aria-hidden="true" />}
         </button> : null}
         {pickOpensApp ? (
-          <RowMenu name={m.name} items={[
+          <RowMenu name={m.name} focusReturn={`more:${item.id}`} items={[
             { label: 'Details', ariaLabel: `${m.name} details`, run: () => onPick(item) },
             ...(layout === 'list' && storeInstalled && typeof onRateApp === 'function' && communityFeedbackOf(item)?.id
               ? [{ label: 'Review', ariaLabel: `Rate and review ${m.name}`, run: () => onRateApp(item) }]
@@ -326,7 +362,7 @@ export function InstalledSeal() {
 
 // One quiet line under a row: the app's category, its rating and installs when
 // there are real numbers, whether it is installed, and who publishes it.
-function CardByline({ item, state = '' }) {
+function CardByline({ item, state = '', showRatingCount }) {
   const category = storeCategory(catalogCategory(item))
   const feedback = communityFeedbackOf(item)
   const count = feedback?.rating_count || 0
@@ -338,6 +374,7 @@ function CardByline({ item, state = '' }) {
       {count > 0 ? (
         <span className="st-card-rating" aria-label={`Rated ${Number(feedback.rating_average).toFixed(1)} out of 5 by ${count} ${count === 1 ? 'person' : 'people'}`}>
           <StarFilled width={11} height={11} aria-hidden="true" />{Number(feedback.rating_average).toFixed(1)}
+          {showRatingCount ? ` (${count})` : null}
         </span>
       ) : null}
       {installsLabel(item) ? <span className="st-card-installs">{installsLabel(item)}</span> : null}

@@ -94,7 +94,7 @@ test('one agent works the listing: rows lock, its parts fill the form, the owner
         onPreviewLocal: async () => { previewReads += 1; return preview },
       })))
       await click('Publish an app')
-      await click('Publish')
+      await click('Prepare listing')
       assert.equal(buttons('Ask an agent').length, 2, 'the license is the owner’s choice, never an agent’s')
 
       await click('Ask an agent')
@@ -199,7 +199,7 @@ test('publish consent names one revision: an agent’s new revision asks for it 
       onPublishLocal: async (...args) => { published.push(args); return false },
     })))
     await click(button('Publish an app'))
-    await click(button('Publish'))
+    await click(button('Prepare listing'))
     await click(button('Revise with an agent'))
     assert.ok(button('Agent working… View'), 'the agent works on the listing')
 

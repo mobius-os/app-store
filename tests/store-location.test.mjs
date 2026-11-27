@@ -660,6 +660,40 @@ test('the search label never includes the separate Clear search button', async (
   }
 })
 
+test('a mouse click on a desktop search suggestion lands in browsers that do not focus clicked buttons', async () => {
+  const nav = fakeNav({ tab: 'browse', category: 'all', query: 'voice' })
+  const view = await mountStore(nav)
+  const { window } = view.dom
+  const doc = window.document
+  // Safari and macOS Firefox: mousedown blurs the field (relatedTarget null)
+  // unless it was cancelled, and the button itself never takes focus.
+  const clickWithoutFocus = async (button) => {
+    await act(async () => {
+      const press = new window.MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      if (button.dispatchEvent(press)) doc.activeElement?.blur()
+    })
+    await act(async () => button.click())
+  }
+  try {
+    const input = doc.querySelector('#st-catalog-search')
+    await act(async () => input.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })))
+    await act(async () => doc.querySelector('.st-search-clear').click())
+    assert.ok(doc.activeElement === input)
+    const recent = [...doc.querySelectorAll('.st-qdrop .st-qdrop-item')].find(item => item.textContent === 'voice')
+    assert.ok(recent, 'the remembered search is offered')
+    await clickWithoutFocus(recent)
+    assert.equal(input.value, 'voice')
+    assert.equal(nav.reports.at(-1).query, 'voice')
+
+    await act(async () => doc.querySelector('.st-search-clear').click())
+    await clickWithoutFocus(doc.querySelector('.st-qdrop .st-qdrop-x[aria-label="Remove voice"]'))
+    assert.equal(doc.querySelector('.st-qdrop .st-qdrop-x'), null, 'the remove button removed its entry')
+    assert.ok(doc.activeElement === input)
+  } finally {
+    await view.close()
+  }
+})
+
 test('keyboard interaction in the search box cancels a pending restored detail', async () => {
   const lookup = deferred()
   let signal
