@@ -80,27 +80,27 @@ test('the app page shows the note above Install only for an app that can still b
   const { DetailView } = await bundleDetailView()
   const root = createRoot(dom.window.document.getElementById('root'))
   const render = uninstalledApp => act(async () => root.render(React.createElement(DetailView, {
-    item, installed: [], uninstalledApp, onBack() {}, onInstall() {}, token: 't',
+    item: { ...item, manifest_url: undefined }, installed: [], uninstalledApp, onBack() {}, onInstall() {}, token: 't',
   })))
   // Dates relative to now, because the page reads the real clock: a fixed date would start failing at its deadline.
   const day = 24 * 60 * 60 * 1000
   const recoverable = { id: 5, name: 'Maps', deleted_at: new Date(Date.now() - day).toISOString(), expires_at: new Date(Date.now() + 6 * day).toISOString() }
   try {
     await render(recoverable)
-    const note = dom.window.document.querySelector('.st-detail-note')
+    const note = dom.window.document.querySelector('.st-detail-note.is-recovery')
     assert.ok(note, 'the note renders')
     const cta = dom.window.document.querySelector('.st-dh-acts .st-dbtn.is-primary')
     assert.ok(note.compareDocumentPosition(cta) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, 'recovery information appears before the install action')
     assert.match(note.textContent, /Previously installed.*You uninstalled this app on .+brings everything back\./)
     await render(null)
-    assert.equal(dom.window.document.querySelector('.st-detail-note'), null)
+    assert.equal(dom.window.document.querySelector('.st-detail-note.is-recovery'), null)
 
     // Data that arrives after the page opened, already past its deadline, must not show the note: the
     // deadline falls between the page opening and the data arriving.
     const opened = Date.now()
     await new Promise(resolve => setTimeout(resolve, 300))
     await render({ ...recoverable, expires_at: new Date(opened + 100).toISOString() })
-    assert.equal(dom.window.document.querySelector('.st-detail-note'), null)
+    assert.equal(dom.window.document.querySelector('.st-detail-note.is-recovery'), null)
   } finally {
     await act(async () => root.unmount()); restore()
     await rm(buildDir, { recursive: true, force: true })

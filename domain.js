@@ -624,6 +624,20 @@ export function hasAccessRows(preview) {
   return Array.isArray(preview?.access_rows) && Array.isArray(preview?.installed_access_rows)
 }
 
+// Get installs only after a live platform check, and sends that check's
+// capability digest so the installer refuses a manifest whose capability
+// contract changed since. The digest covers only that contract: access rows
+// derived from other manifest fields (project_templates becomes
+// project_builders) can still change without a refusal. Access itself is
+// granted by the platform's consent at first open, not here.
+export function checkedInstallDigest(review) {
+  const preview = review?.preview
+  if (!['ready', 'refused'].includes(review?.status) || !hasAccessRows(preview)
+      || !preview.capability_contract || typeof preview.capability_contract !== 'object'
+      || !/^[0-9a-f]{64}$/.test(preview.capability_digest || '')) return null
+  return preview.capability_digest
+}
+
 export function capabilityDiffNeedsReview(diff) {
   if (!diff || typeof diff !== 'object') return true
   if (diff.unknown_previous !== false) return true

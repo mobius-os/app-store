@@ -47,6 +47,7 @@ export function CatalogList({
   appId,
   selfUpdate = null,
   libraryTab = null,
+  libraryGroups = null,
   categoryBackLabel = null,
   items,
   installed,
@@ -78,6 +79,8 @@ export function CatalogList({
   emptyText = 'No apps in the catalog yet.',
   loadingMore = false,
   searchLoading = false,
+  sharedSearchStatus = 'ready',
+  onRetrySharedSearch,
   hasMore = false,
   onLoadMore,
   // discover | apps | games | search | library
@@ -138,10 +141,11 @@ export function CatalogList({
       </div>
     )
   }
-  const renderCard = (item, cardLayout = layout) => (
+  const renderCard = (item, cardLayout = layout, showRatingCount = false) => (
     <CatalogCard
       key={item.id}
       item={item}
+      showRatingCount={showRatingCount}
       installed={installed}
       updateChecks={updateChecks}
       onPick={onPick}
@@ -199,7 +203,7 @@ export function CatalogList({
 
   if (layout === 'list') {
     // Library: one focused list per tab. Search shows every match in one list.
-    const groups = libraryCollections(items, lifecycleById)
+    const groups = libraryGroups || libraryCollections(items, lifecycleById)
     const groupItems = (id) => groups.find((group) => group.id === id)?.items || []
     const tab = libraryTab || 'installed'
     const selfHere = selfUpdate?.pending
@@ -247,6 +251,16 @@ export function CatalogList({
 
   if (view === 'search') {
     const q = String(searchQuery || '').trim()
+    const searchingShared = sharedSearchStatus === 'loading'
+    const sharedUnavailable = sharedSearchStatus === 'unavailable'
+    const retrySharedSearch = (event) => {
+      // Retry replaces the error state: don't leave keyboard focus on a removed button.
+      event.currentTarget.closest('.st-catalog-sections')?.querySelector('h1')?.focus()
+      onRetrySharedSearch()
+    }
+    const retry = onRetrySharedSearch
+      ? <button type="button" className="st-see" onClick={retrySharedSearch}>Retry shared search</button>
+      : null
     const lower = q.toLowerCase()
     const allGroups = STORE_CATEGORIES.map((category) => ({ category, items: [] }))
     const counts = new Map()
@@ -265,25 +279,34 @@ export function CatalogList({
       </div>
     )
     return (
-      <div className="st-catalog-sections is-v2" aria-busy={searchLoading || undefined}>
+      <div className="st-catalog-sections is-v2">
         <span className="st-sr-only" role="status" aria-live="polite">
-          {searchLoading ? 'Refreshing shared listings.' : `${items.length} results`}
+          {searchingShared ? 'Searching shared listings.'
+            : sharedUnavailable ? 'Shared listings are unavailable.' : `${items.length} results`}
         </span>
         <div className="st-qhead">
-          <h1 className="st-pagehead-title">Results for “{q}”</h1>
-          <span>{items.length} {items.length === 1 ? 'app' : 'apps'}</span>
+          <h1 className="st-pagehead-title" tabIndex={-1}>Results for “{q}”</h1>
+          {(items.length > 0 || (!searchingShared && !sharedUnavailable))
+            ? <span>{items.length} {items.length === 1 ? 'app' : 'apps'}</span> : null}
+          {items.length > 0 && sharedUnavailable ? <span>Shared listings unavailable. {retry}</span> : null}
         </div>
         {matchingCategories.length ? chips(matchingCategories) : null}
         {items.length ? (
           <section className="st-sec" style={{ marginTop: 20 }} aria-label="Results">{grid3(items)}</section>
         ) : (
           <div className="st-qempty">
-            <b>Nothing matches “{q}”</b>
-            <p>Try a shorter word, or browse a category.</p>
-            {chips(suggestions)}
+            {searchingShared ? <b>Searching shared listings…</b>
+              : sharedUnavailable ? <>
+                <b>Shared listings unavailable</b>
+                <p>No available listings match this search. {retry}</p>
+              </> : <>
+                <b>Nothing matches “{q}”</b>
+                <p>Try a shorter word, or browse a category.</p>
+                {chips(suggestions)}
+              </>}
           </div>
         )}
-        {loadMore}
+        {!searchingShared && !sharedUnavailable ? loadMore : null}
       </div>
     )
   }
@@ -399,7 +422,7 @@ export function CatalogList({
             {topRated.length ? (
               <Panel id="top" title="Highest rated">
                 {topRated.map((item, index) => (
-                  <div className="st-ranked" key={item.id}><span className="st-rank" aria-hidden="true">{index + 1}</span>{row(item)}</div>
+                  <div className="st-ranked" key={item.id}><span className="st-rank" aria-hidden="true">{index + 1}</span>{renderCard(item, 'row', true)}</div>
                 ))}
               </Panel>
             ) : null}

@@ -490,6 +490,57 @@ test('a refused install says nothing was installed, in words that fit a fresh in
   }
 })
 
+test('a changed install access contract is shown and resubmitted only when the owner presses Get again', async () => {
+  const { dom, restore } = useDom()
+  const doc = dom.window.document
+  const lowDigest = 'a'.repeat(64)
+  const nextDigest = 'b'.repeat(64)
+  const requests = []
+  let root
+  dom.window.mobius.nav = { open: () => ({ outcome: Promise.resolve({ status: 'owned' }), close() {} }) }
+  const click = selector => act(async () => {
+    const target = doc.querySelector(selector)
+    assert.ok(target, selector)
+    target.click()
+  })
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([])
+      if (path === '/api/apps/preview') return json({
+        ...platformPreview(platformContract(), platformContract()), installed_contract: null, capability_digest: lowDigest,
+      })
+      if (path === '/api/apps/install') {
+        requests.push(JSON.parse(options.body))
+        if (requests.length === 1) return json({ detail: {
+          code: 'capability_changed', capability_digest: nextDigest,
+          capability_contract: platformContract({ data: { manage_apps: true } }),
+          access_rows: [{ id: 'manage_apps', title: 'Install and remove apps', text: 'Can install and uninstall apps.', critical: true }],
+        } }, 409)
+        return json({ detail: 'Fixture: no installation ran.' }, 503)
+      }
+      return null
+    })
+    await click('#st-tab-browse')
+    await click('.st-spotlight-open')
+    const get = '.st-dh-acts .st-dbtn.is-primary'
+    assert.equal(doc.querySelector(get)?.textContent, 'Get')
+    await click(get)
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0].reviewed_capability_digest, lowDigest)
+    assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /Nothing was installed/)
+    assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /1 permission requested/)
+    assert.equal(requests.length, 1, 'the changed access is never sent on its own')
+    await click(get)
+    assert.equal(doc.querySelector('[aria-modal=true]'), null)
+    assert.equal(requests.length, 2)
+    assert.deepEqual(requests[1], { ...requests[0], reviewed_capability_digest: nextDigest })
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
 test('App submits one server batch despite repeated confirmation; a retry needs a fresh check and batch', async () => {
   const { dom, restore } = useDom()
   const submitted = []
@@ -498,6 +549,7 @@ test('App submits one server batch despite repeated confirmation; a retry needs 
   try {
     root = await mountApp(dom, async (path, options) => {
       if (path === '/api/apps/') return json([voiceRow, memoryRow])
+      if (path === '/api/auth/providers/status') return json({ openai: { configured: true } })
       if (path === '/api/apps/update-batches' && options.method === 'POST') {
         const payload = JSON.parse(options.body)
         submitted.push(payload)

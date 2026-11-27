@@ -49,22 +49,84 @@ const item = {
   manifest: { id: 'maps', name: 'Maps', version: '1.0.0', description: 'Find places.', author: 'mobius-os', license: 'MIT' },
 }
 
-test('a fresh install is available at once and installs with no access check or digest', async () => {
+test('Get waits for access, supports retry, and binds the checked digest to a one-tap install', async () => {
   const { dom, restore } = useDom()
   const { DetailView } = await bundleDetailView()
   const installs = []
+  let retries = 0
   const root = createRoot(dom.window.document.getElementById('root'))
+  const show = review => act(async () => root.render(React.createElement(DetailView, {
+    item: { ...item, manifest_url: undefined }, installed: [], capabilityReview: review, onBack() {},
+    onInstall: (...args) => installs.push(args), onRetryCapabilityReview: () => retries++, token: 't',
+  })))
   try {
-    // No capability review has loaded (or it failed): a fresh install must not wait for it.
-    await act(async () => root.render(React.createElement(DetailView, {
-      item, installed: [], capabilityReview: undefined, onBack() {}, onInstall: (...args) => installs.push(args), token: 't',
-    })))
+    await show(undefined)
     const cta = dom.window.document.querySelector('.st-dh-acts .st-dbtn.is-primary')
-    assert.ok(cta, 'the primary button renders')
-    assert.equal(cta.disabled, false)
-    assert.doesNotMatch(cta.textContent, /Reviewing access|Access unavailable/)
+    assert.equal(cta.disabled, true)
+    assert.equal(cta.textContent, 'Checking access…')
     await act(async () => cta.click())
-    assert.deepEqual(installs, [[item]])
+    assert.equal(installs.length, 0)
+    await show({ status: 'error' })
+    assert.equal(cta.textContent, 'Retry access check')
+    await act(async () => cta.click())
+    assert.deepEqual([retries, installs.length], [1, 0])
+    await show({ status: 'ready', preview: { capability_digest: 'a'.repeat(64), access_rows: [] } })
+    assert.equal(cta.textContent, 'Retry access check', 'incomplete preview does not certify zero access')
+    await show({ status: 'ready', preview: {
+      capability_digest: 'a'.repeat(64), capability_contract: {}, access_rows: [], installed_access_rows: [],
+    } })
+    assert.equal(cta.textContent, 'Get')
+    assert.equal(cta.disabled, false)
+    await act(async () => cta.click())
+    assert.deepEqual(installs.map(([, opts]) => opts), [{ capabilityDigest: 'a'.repeat(64) }])
+    assert.equal(dom.window.document.querySelector('[aria-modal]'), null)
+  } finally {
+    await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('scheduled and broad access is summarized next to Get and installs in one tap; first-open consent decides access', async () => {
+  const { dom, restore } = useDom()
+  const { DetailView } = await bundleDetailView()
+  const installs = []
+  const doc = dom.window.document
+  const root = createRoot(doc.getElementById('root'))
+  const daily = { id: 'background_job', title: 'Run on a schedule', text: 'Runs daily at 10:00.', critical: false }
+  const show = (rows, background = null) => act(async () => root.render(React.createElement(DetailView, {
+    item: { ...item, manifest_url: undefined }, installed: [], onBack() {}, onInstall: (...args) => installs.push(args),
+    capabilityReview: { status: 'ready', preview: { capability_digest: 'c'.repeat(64), installed_access_rows: [],
+      capability_contract: { background }, access_rows: rows } }, token: 't',
+  })))
+  const cta = () => doc.querySelector('.st-dh-acts .st-dbtn.is-primary')
+  try {
+    await show([daily, { id: 'agent_role', title: 'Run AI agents', text: 'Runs agents.' }], { job: 'report.py', cron: '0 10 * * *' })
+    assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /Runs daily at 10:00 UTC and can run AI agents/)
+    const access = doc.getElementById('st-detail-access')
+    const region = doc.getElementById('st-detail-access-body')
+    const jumpStates = []
+    access.scrollIntoView = () => jumpStates.push(region.hidden)
+    const jump = () => act(async () => doc.querySelector('.st-install-access-link').click())
+    assert.equal(region.hidden, true)
+    await jump()
+    assert.ok(doc.activeElement === access)
+    assert.equal(region.hidden, false)
+    assert.deepEqual(jumpStates, [false], 'scroll measures the expanded listing, not the folded one')
+    await jump()
+    assert.deepEqual(jumpStates, [false, false], 'the shortcut also scrolls when access is already open')
+    await act(async () => access.click())
+    assert.equal(region.hidden, true)
+    assert.deepEqual(jumpStates, [false, false], 'using the disclosure itself does not replay the jump')
+    // The Store adds no second confirmation of its own: the platform asks
+    // which access to allow when the app first opens.
+    await act(async () => cta().click())
+    assert.equal(doc.querySelector('[aria-modal]'), null)
+    assert.deepEqual(installs.map(([, opts]) => opts), [{ capabilityDigest: 'c'.repeat(64) }])
+    await show([{ id: 'manage_apps', title: 'Install and remove apps', text: 'Can install apps.', critical: true }])
+    assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /1 permission requested/)
+    await act(async () => cta().click())
+    assert.equal(doc.querySelector('[aria-modal]'), null)
+    assert.equal(installs.length, 2)
   } finally {
     await act(async () => root.unmount()); restore()
     await rm(buildDir, { recursive: true, force: true })
