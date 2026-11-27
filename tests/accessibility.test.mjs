@@ -142,3 +142,14 @@ test('Discover leads with the Spotlight carousel, then featured cards, rated and
   assert.ok(order.every(index => index >= 0), String(order))
   assert.deepEqual([...order].sort((a, b) => a - b), order)
 })
+
+test('Store text links take the text-safe accent from one Store token in their base rules', () => {
+  // The decorative --accent is about 3.3:1 on the light page; the shell's
+  // --accent-text is contrast-adjusted for text. Fixing the base rule keeps
+  // every "See all" (shelves, category list, Library) and listing link right.
+  assert.match(theme, /--st-accent-text: var\(--accent-text, var\(--accent\)\);/)
+  for (const selector of ['.st-see', '.st-lnk', '.st-dh-dev']) {
+    const escaped = selector.replace(/[.-]/g, '\\$&')
+    assert.match(theme, new RegExp(`\\n${escaped} \\{[^}]*?color: var\\(--st-accent-text\\);`), `${selector} base rule`)
+  }
+})
