@@ -43,11 +43,12 @@ test('Discover, Apps, Games and Library form one keyboard-navigable tab set', ()
   // Publishing is Library's Your apps tab, so there is no separate page.
   assert.doesNotMatch(app, /tab === 'publish'/)
   assert.match(app, /className="st-upload-btn" onClick=\{\(\) => openYourApps\('choose'\)\}/)
-  assert.match(app, /role="tabpanel"/)
+  // The panel is a tabpanel only while tabs are shown: a creator page hides them.
+  assert.match(app, /role=\{creatorOpen \? undefined : 'tabpanel'\}/)
   // Wider screens label the panel by its header tab; phones (no header tabs)
   // name it directly, and the bottom bar adds Search.
-  assert.match(app, /aria-labelledby=\{phone \? undefined : `st-tab-\$\{tab\}`\}/)
-  assert.match(app, /aria-label=\{phone \? PHONE_TABS\.find/)
+  assert.match(app, /aria-labelledby=\{phone \|\| creatorOpen \? undefined : `st-tab-\$\{tab\}`\}/)
+  assert.match(app, /aria-label=\{phone && !creatorOpen \? PHONE_TABS\.find/)
   assert.match(app, /const PHONE_TABS = \[\.\.\.STORE_TABS, \{ id: 'search', label: 'Search' \}\]/)
 })
 
@@ -98,7 +99,19 @@ test('shared-listing refresh stays accessible without inserting a visible progre
   assert.match(catalogList, /aria-busy=\{searchLoading \|\| undefined\}/)
   assert.match(catalogList, /className="st-sr-only" role="status" aria-live="polite"/)
   assert.doesNotMatch(catalogList, /st-registry-progress/)
-  assert.doesNotMatch(catalogList, />Searching shared listings…</)
+  // Only the existing zero-results card may show a pending message; refreshes
+  // must not insert a progress row into the shelves or above actual results.
+  const browsing = catalogList.slice(catalogList.indexOf('// Each app has one category'))
+  assert.doesNotMatch(browsing, />Searching shared listings…</)
+})
+
+test('search uses the existing empty state for pending and unavailable results', () => {
+  const search = catalogList.slice(catalogList.indexOf("if (view === 'search') {"), catalogList.indexOf('// Each app has one category'))
+  assert.match(app, /communitySearch\?\.term === query\.trim\(\)/)
+  assert.match(search, /searchingShared \? <b>Searching shared listings…<\/b>[\s\S]*?sharedUnavailable \?[\s\S]*?Nothing matches/)
+  assert.match(search, /items\.length > 0 && sharedUnavailable/)
+  assert.match(search, /onClick=\{retrySharedSearch\}/)
+  assert.match(search, /!searchingShared && !sharedUnavailable \? loadMore/)
 })
 
 test('browse cards reserve accepted screenshots for the app description', () => {
@@ -109,7 +122,7 @@ test('browse cards reserve accepted screenshots for the app description', () => 
 })
 
 test('catalog cards use one labelled icon action without repeating routine lifecycle text', () => {
-  assert.match(catalogCard, /ArrowRotateCw, ArrowUpRight, Chat, Check, DotsHorizontal, Download/)
+  assert.match(catalogCard, /ArrowRotateCw, ArrowUpRight, Chat, Check, DotsVertical, Download/)
   assert.match(catalogCard, /aria-label=\{`\$\{actionLabel\} \$\{m\.name\}`\}/)
   assert.match(catalogCard, /title=\{actionLabel\}/)
   assert.match(catalogCard, /\['unavailable', 'conflict', 'rejected', 'unverified'\]\.includes\(lifecycle\.key\)/)
@@ -134,10 +147,30 @@ test('Library exposes one Update all action and keyboard-reachable tabs', () => 
   assert.match(libraryTabs, /event\.key !== 'ArrowLeft' && event\.key !== 'ArrowRight'/)
 })
 
+test('the Library navigation, Updates rows, and bulk review use the same update group', () => {
+  assert.match(app, /listedUpdates = libraryGroups\.find\(group => group\.id === 'updates'\)/)
+  assert.match(app, /updateItems = listedUpdates\.filter/)
+  assert.match(app, /update: listedUpdates\.length \+ \(selfListedInUpdates \? 1 : 0\)/)
+  assert.equal(app.match(/id === 'library' && libraryCounts\.update > 0/g)?.length, 2)
+  assert.match(catalogList, /groups = libraryGroups \|\| libraryCollections/)
+  assert.match(catalogList, /tab === 'update' \? groupItems\('updates'\)/)
+})
+
 test('Discover leads with the Spotlight carousel, then featured cards, rated and picked panels, rankings, honest shelves and categories', () => {
   const home = catalogList.slice(catalogList.indexOf('if (discover) {'))
   const order = ['<Spotlight ', 'title="Highest rated"', 'title="Our picks"', "rankedShelf('trending'", "rankedShelf('most-downloaded'", 'id="updated"', 'id="arrivals"', '<CategoryList ']
     .map(marker => home.indexOf(marker))
   assert.ok(order.every(index => index >= 0), String(order))
   assert.deepEqual([...order].sort((a, b) => a - b), order)
+})
+
+test('Store text links take the text-safe accent from one Store token in their base rules', () => {
+  // The decorative --accent is about 3.3:1 on the light page; the shell's
+  // --accent-text is contrast-adjusted for text. Fixing the base rule keeps
+  // every "See all" (shelves, category list, Library) and listing link right.
+  assert.match(theme, /--st-accent-text: var\(--accent-text, var\(--accent\)\);/)
+  for (const selector of ['.st-see', '.st-lnk', '.st-dh-dev']) {
+    const escaped = selector.replace(/[.-]/g, '\\$&')
+    assert.match(theme, new RegExp(`\\n${escaped} \\{[^}]*?color: var\\(--st-accent-text\\);`), `${selector} base rule`)
+  }
 })

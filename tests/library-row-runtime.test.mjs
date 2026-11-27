@@ -65,6 +65,43 @@ test('every Library row keeps Details in its More menu, and only a ready app lau
     return item
   }
   try {
+    await show({ item: { ...item, community: { id: 'app_pocket' } }, onUninstall() {} })
+    const more = doc.querySelector('.st-rowmenu-btn')
+    const press = async key => {
+      const event = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      await act(async () => doc.activeElement.dispatchEvent(event))
+      return event
+    }
+    more.focus()
+    await act(async () => more.click()) // The browser's native Enter/Space activation is a click.
+    assert.equal(doc.activeElement.textContent, 'Details')
+    await press('ArrowDown')
+    assert.equal(doc.activeElement.textContent, 'Review')
+    await press('End')
+    assert.equal(doc.activeElement.textContent, 'Uninstall')
+    await press('ArrowDown')
+    assert.equal(doc.activeElement.textContent, 'Details')
+    await press('Escape')
+    assert.equal(doc.activeElement, more)
+    assert.equal(more.getAttribute('aria-expanded'), 'false')
+    await press('ArrowUp')
+    assert.equal(doc.activeElement.textContent, 'Uninstall')
+    await press('Home')
+    assert.equal(doc.activeElement.textContent, 'Details')
+    assert.equal((await press('Tab')).defaultPrevented, false, 'the browser keeps normal tab navigation')
+    assert.equal(more.getAttribute('aria-expanded'), 'false')
+
+    // Safari (WebKit) does not focus a button on mouse press, so a second click
+    // on More first blurs the open menu to the page and only then clicks.
+    await act(async () => more.click())
+    assert.equal(more.getAttribute('aria-expanded'), 'true')
+    await act(async () => {
+      more.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true }))
+      doc.activeElement.blur()
+    })
+    await act(async () => more.click())
+    assert.equal(more.getAttribute('aria-expanded'), 'false', 'a second click on More closes its menu in Safari')
+
     await show({})
     await tapRow()
     await act(async () => (await menu('Details')).click())
@@ -127,4 +164,36 @@ test('a card for an app with a built-in agent shows a labelled Agent badge in ev
     .map(match => match[1].trim())
     .filter(selector => /st-card-agent|st-card-state-row(?!:empty)\b/.test(selector))
   assert.deepEqual(hiding, [])
+})
+
+test('a More menu item runs with focus back on More, so its page can return there', async () => {
+  const CatalogCard = await catalogCard()
+  const { focusReturnOf } = await import('../focus-return.js')
+  const dom = new JSDOM('<div id="root"></div>')
+  const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  const root = createRoot(dom.window.document.getElementById('root'))
+  const doc = dom.window.document
+  const item = { id: 'pocket', community: { id: 'app_pocket' }, manifest: { id: 'pocket', name: 'Pocket', package_id: 'pkg.pocket' } }
+  const installed = [{ id: 7, slug: 'pocket', name: 'Pocket', package_id: 'pkg.pocket' }]
+  const openers = []
+  const record = () => openers.push(focusReturnOf(doc.activeElement))
+  try {
+    await act(async () => root.render(React.createElement(CatalogCard, {
+      item, installed, layout: 'list', pickOpensApp: true,
+      onPick: record, onRateApp: record, onOpenInstalled() {}, onUpdate() {},
+    })))
+    const more = doc.querySelector('.st-rowmenu-btn')
+    for (const label of ['Details', 'Review']) {
+      more.focus()
+      await act(async () => more.click())
+      const action = [...doc.querySelectorAll('[role=menuitem]')].find(button => button.textContent === label)
+      await act(async () => action.click())
+    }
+    assert.deepEqual(openers, [{ key: 'more:pocket', scope: null }, { key: 'more:pocket', scope: null }])
+  } finally {
+    await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, old)
+  }
 })

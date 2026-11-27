@@ -87,6 +87,88 @@ async function mountApp(dom, routes) {
   return root
 }
 
+test('each Library tab controls the same rendered panel and supplies its current label', async () => {
+  const { dom, restore } = useDom()
+  const doc = dom.window.document
+  let root
+  try {
+    root = await mountApp(dom, () => null)
+    const strip = doc.querySelector('[role="tablist"][aria-label="Library"]')
+    const tabs = [...strip.querySelectorAll('[role="tab"]')]
+    assert.equal(tabs.length, 5)
+    const panel = doc.getElementById(tabs[0].getAttribute('aria-controls'))
+    assert.ok(panel, 'the controlled panel is rendered')
+    assert.equal(panel.getAttribute('role'), 'tabpanel')
+    assert.equal(panel.tabIndex, 0, 'the panel is reachable even when empty')
+    assert.equal(strip.contains(panel) || panel.contains(strip), false)
+
+    for (const tab of tabs) {
+      await act(async () => tab.click())
+      assert.equal(doc.getElementById(tab.getAttribute('aria-controls')), panel)
+      assert.equal(panel.getAttribute('aria-labelledby'), tab.id)
+      assert.equal(strip.querySelector('[aria-selected="true"]'), tab)
+    }
+
+    tabs.at(-1).focus()
+    await act(async () => tabs.at(-1).dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    assert.equal(doc.activeElement, tabs[0], 'arrow navigation wraps from Your apps to Needs you')
+    assert.equal(panel.getAttribute('aria-labelledby'), tabs[0].id)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+  }
+})
+
+test('searching from Library keeps the mounted Library list instead of remounting it', async () => {
+  const { dom, restore } = useDom()
+  const doc = dom.window.document
+  let root
+  try {
+    root = await mountApp(dom, async path => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      return null
+    })
+    await act(async () => doc.querySelector('[data-library-tab="installed"]').click())
+    const voiceCard = () => [...doc.querySelectorAll('.st-card')].find(node => node.querySelector('.st-card-open')?.textContent === 'Voice')
+    const card = voiceCard()
+    assert.ok(card, 'Installed lists Voice')
+    const panel = doc.getElementById('st-library-panel')
+    assert.ok(panel.contains(card))
+
+    const input = doc.getElementById('st-catalog-search')
+    const setValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
+    // react-dom loads before this file installs a DOM, so React watches text
+    // fields through its keyup fallback rather than the input event.
+    const type = async value => act(async () => {
+      input.focus()
+      setValue.call(input, value)
+      input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      input.dispatchEvent(new dom.window.KeyboardEvent('keyup', { key: value.at(-1) || 'Backspace', bubbles: true }))
+    })
+
+    await type('v')
+    assert.ok(!doc.querySelector('[role="tablist"][aria-label="Library"]'), 'search hides the Library tabs')
+    assert.equal(panel.isConnected, true, 'the panel element stays mounted while searching')
+    assert.equal(panel.hasAttribute('role') || panel.hasAttribute('id'), false, 'without tabs it is no longer a tab panel')
+    assert.ok(voiceCard() === card, 'the first keystroke keeps the same Voice row')
+
+    await type('')
+    assert.ok(voiceCard() === card, 'clearing the search keeps the same Voice row')
+    assert.ok(doc.getElementById('st-library-panel') === panel, 'the tabs control the same panel again')
+    assert.equal(panel.getAttribute('aria-labelledby'), 'st-libtab-installed')
+
+    // Leaving Library for another Store tab and coming back keeps the body too.
+    await act(async () => doc.querySelector('#st-tab-apps').click())
+    assert.ok(panel.isConnected && !panel.hasAttribute('role'), 'Apps reuses the same, untabbed body')
+    await act(async () => doc.querySelector('#st-tab-library').click())
+    assert.ok(doc.getElementById('st-library-panel') === panel, 'Library returns to the same panel')
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+  }
+})
+
 function entry(id, status = 'ready', extra = {}) {
   return {
     item: { id, manifest_url: `https://example.test/${id}/mobius.json`, manifest: { name: id, version: '2.0.0' } },
@@ -278,8 +360,8 @@ test('update review leads with verified changes and keeps technical details coll
     assert.ok(details)
     assert.equal(details.open, false)
     assert.match(dom.window.document.body.textContent, /What changed/)
-    assert.match(dom.window.document.body.textContent, /1 file in this preview: 1 changed/)
-    assert.match(dom.window.document.body.textContent, /Ready to update/)
+    assert.match(dom.window.document.body.textContent, /1 file changed/)
+    assert.match(dom.window.document.querySelector('.st-update-facts').textContent, /Access.*No new access/)
     assert.match(dom.window.document.querySelector('button.st-btn-primary').textContent, /Confirm update/)
     await render([entry('Local edits', 'conflict')])
     assert.match(dom.window.document.body.textContent, /Local edits need review/)
@@ -408,6 +490,57 @@ test('a refused install says nothing was installed, in words that fit a fresh in
   }
 })
 
+test('a changed install access contract is shown and resubmitted only when the owner presses Get again', async () => {
+  const { dom, restore } = useDom()
+  const doc = dom.window.document
+  const lowDigest = 'a'.repeat(64)
+  const nextDigest = 'b'.repeat(64)
+  const requests = []
+  let root
+  dom.window.mobius.nav = { open: () => ({ outcome: Promise.resolve({ status: 'owned' }), close() {} }) }
+  const click = selector => act(async () => {
+    const target = doc.querySelector(selector)
+    assert.ok(target, selector)
+    target.click()
+  })
+  try {
+    root = await mountApp(dom, async (path, options) => {
+      if (path === '/api/apps/') return json([])
+      if (path === '/api/apps/preview') return json({
+        ...platformPreview(platformContract(), platformContract()), installed_contract: null, capability_digest: lowDigest,
+      })
+      if (path === '/api/apps/install') {
+        requests.push(JSON.parse(options.body))
+        if (requests.length === 1) return json({ detail: {
+          code: 'capability_changed', capability_digest: nextDigest,
+          capability_contract: platformContract({ data: { manage_apps: true } }),
+          access_rows: [{ id: 'manage_apps', title: 'Install and remove apps', text: 'Can install and uninstall apps.', critical: true }],
+        } }, 409)
+        return json({ detail: 'Fixture: no installation ran.' }, 503)
+      }
+      return null
+    })
+    await click('#st-tab-browse')
+    await click('.st-spotlight-open')
+    const get = '.st-dh-acts .st-dbtn.is-primary'
+    assert.equal(doc.querySelector(get)?.textContent, 'Get')
+    await click(get)
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0].reviewed_capability_digest, lowDigest)
+    assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /Nothing was installed/)
+    assert.match(doc.querySelector('.st-dh .st-detail-note').textContent, /1 permission requested/)
+    assert.equal(requests.length, 1, 'the changed access is never sent on its own')
+    await click(get)
+    assert.equal(doc.querySelector('[aria-modal=true]'), null)
+    assert.equal(requests.length, 2)
+    assert.deepEqual(requests[1], { ...requests[0], reviewed_capability_digest: nextDigest })
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
 test('App submits one server batch despite repeated confirmation; a retry needs a fresh check and batch', async () => {
   const { dom, restore } = useDom()
   const submitted = []
@@ -416,6 +549,7 @@ test('App submits one server batch despite repeated confirmation; a retry needs 
   try {
     root = await mountApp(dom, async (path, options) => {
       if (path === '/api/apps/') return json([voiceRow, memoryRow])
+      if (path === '/api/auth/providers/status') return json({ openai: { configured: true } })
       if (path === '/api/apps/update-batches' && options.method === 'POST') {
         const payload = JSON.parse(options.body)
         submitted.push(payload)

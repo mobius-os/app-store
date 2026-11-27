@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Code, Flag, SavedFilledXs, SavedXs, Share, X } from '@openai/apps-sdk-ui/components/Icon'
-import { appLifecycleFor, busyLabelForAction, catalogCategory, catalogPublisher, communityFeedbackOf, formatDownloadSize, storeCategory, hasAccessRows, isTrustedHost, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus, shortDate } from '../domain.js'
+import { appLifecycleFor, busyLabelForAction, catalogCategory, catalogPublisher, checkedInstallDigest, communityFeedbackOf, formatDownloadSize, storeCategory, hasAccessRows, isTrustedHost, MISSING_ACCESS_ROWS, recoveryNote, scheduleSummary, showsSnapshotManifest, sourceAvailabilityStatus, shortDate } from '../domain.js'
 import { CapabilityContract, capabilityRows } from './CapabilityContract.jsx'
 import { CategoryIcon } from './CategoryBrowse.jsx'
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 import { CommunityFeedback } from './CommunityFeedback.jsx'
-import { CatalogStoreImage, StoreImage, catalogAssetUrl } from './StoreImage.jsx'
+import { CatalogStoreImage, StoreImage, catalogAssetUrl, storeAssetUrls } from './StoreImage.jsx'
 import { SectionHead } from './StoreSections.jsx'
 import { progressStageFor } from './CatalogCard.jsx'
 import { ProgressFill } from './ProgressFill.jsx'
@@ -36,7 +36,7 @@ function checkedAtText(value) {
   })
 }
 
-export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onOpenMobiusAccount, canCommunityWithdraw = false, communityBusy = false, communityError = '', mobiusAccount = 'loading', token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '', related = null, renderRow = null, onOpenDeveloper = null, onOpenCategory = null, saved = false, onToggleSaved = null, onShare = null, updateStage = null }) {
+export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabilityReview, uninstalledApp, installed, updateChecks = {}, onBack, onInstall, installError, canRetryInstall, onUninstall, onOpenInstalled, onSetup, onRetryInstalled, busy, busyActionKind, onReviewUpdate, onCommunityFeedback, onCommunityWithdraw, onOpenMobiusAccount, canCommunityWithdraw = false, communityBusy = false, communityError = '', mobiusAccount = 'loading', token, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, focusSection = '', related = null, renderRow = null, onOpenDeveloper = null, onOpenCategory = null, saved = false, onToggleSaved = null, onShare = null, updateStage = null }) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   // The recovery note must not outlive its deadline: re-read the clock whenever the deadline changes (the
   // list can arrive after the page opened) and again when it passes.
@@ -69,22 +69,24 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   // Conflict resolution reuses the candidate already reviewed and journaled by
   // the backend. Do not disable its durable resolver action just because a new
   // read-only capability preview is temporarily unavailable.
-  // Only an update waits for the access check: it shows what changes. A fresh install does not, because
-  // an app asks what it may do the first time it opens.
   const requiresCapabilityReview = !blockedUpdate && hasUpdate
   const capabilityReviewReady = ['ready', 'changed', 'refused'].includes(capabilityReview?.status)
     && hasAccessRows(capabilityReview?.preview)
   const canRetryInstalled = typeof onRetryInstalled === 'function'
+  const isFreshInstall = lifecycle.actionKind === 'install'
+  const checkedDigest = isFreshInstall ? checkedInstallDigest(capabilityReview) : null
+  const checkingInstall = isFreshInstall && (!capabilityReview || capabilityReview.status === 'loading')
+  const retryAccess = isFreshInstall && !checkingInstall && !checkedDigest
   const primaryActionDisabled =
     busy ||
     lifecycle.actionKind === 'none' ||
     (lifecycle.actionKind === 'open' && !storeInstalled) ||
     (lifecycle.actionKind === 'retry' && !canRetryInstalled) ||
+    checkingInstall || (retryAccess && !onRetryCapabilityReview) ||
     (requiresCapabilityReview && !capabilityReviewReady)
   // Soft warn for unfamiliar hosts (paste-a-URL flow). Catalog entries
   // already resolve to trusted hosts, so they pass silently. Invalid
-  // URLs fall through to the warn path on purpose. This is now the
-  // last checkpoint before install — there is no second confirm modal.
+  // URLs fall through to the warn path on purpose.
   const unfamiliarHost = item.manifest_url && !isTrustedHost(item.manifest_url)
   let warnHost = ''
   if (unfamiliarHost) {
@@ -128,6 +130,24 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   }, [item.manifest_url, changesFrom, token])
   const checkedAt = checkedAtText(sourceCheck?.checkedAt)
   const [accessOpen, setAccessOpen] = useState(accessChanged)
+  const accessToggle = useRef(null)
+  const accessJumpPending = useRef(false)
+  const focusAccess = useCallback(() => {
+    accessToggle.current?.scrollIntoView({ block: 'start' })
+    accessToggle.current?.focus({ preventScroll: true })
+  }, [])
+  const revealAccess = () => {
+    if (accessOpen) { focusAccess(); return }
+    accessJumpPending.current = true
+    setAccessOpen(true)
+  }
+  // The folded section sits near the end of the page. Scroll only after
+  // opening it, when its permission rows contribute to the scroll range.
+  useLayoutEffect(() => {
+    if (!accessOpen || !accessJumpPending.current) return
+    accessJumpPending.current = false
+    focusAccess()
+  }, [accessOpen, focusAccess])
   // Each app page starts folded unless its access changed.
   useEffect(() => {
     setAccessOpen(accessChanged)
@@ -139,6 +159,15 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const accessSummary = !accessRows ? 'Checked by your Möbius before anything is installed.'
     : !accessRows.length ? 'No special access.'
       : `${accessRows.length} ${accessRows.length === 1 ? 'permission' : 'permissions'}${sensitiveCount ? ` · ${sensitiveCount} sensitive` : ''}`
+  const verifiedRows = checkedDigest ? capabilityReview.preview.access_rows : []
+  const runsAgents = verifiedRows.some(row => ['agent_role', 'agent_start'].includes(row.id))
+  const backgroundText = scheduleText || (checkedDigest && capabilityReview.preview.capability_contract.background
+    ? 'Can run in the background' : '')
+  const permissionCount = verifiedRows.length
+  const installAccessHeading = backgroundText
+    ? `${backgroundText}${runsAgents ? ' and can run AI agents' : ''}.`
+    : permissionCount ? `${permissionCount} ${permissionCount === 1 ? 'permission requested' : 'permissions requested'}.`
+      : 'No special permissions requested.'
   // Until a live manifest arrives (the access preview reads one), the bundled
   // snapshot's version must not look authoritative.
   const catalogVersion = m === item.manifest && showsSnapshotManifest(item)
@@ -173,9 +202,12 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const listingScreenshots = Array.isArray(listing?.screenshots) ? listing.screenshots : []
   const listingTagline = catalogListing?.tagline || manifestListing?.tagline || item.summary || m.description
   const listingDescription = catalogListing?.description || manifestListing?.description || m.description
-  const listingImage = (path, alt, className, loading = 'lazy') => catalogListing
-    ? <CatalogStoreImage storeAppId={storeAppId} path={path} alt={alt} className={className} loading={loading} />
-    : <StoreImage item={reviewedItem} path={path} token={token} alt={alt} className={className} loading={loading} />
+  const ScreenshotAsset = catalogListing ? CatalogStoreImage : StoreImage
+  const renderScreenshot = (shot, { retry, onLoad, onFailure }, className, inViewer = false) => (
+    <ScreenshotAsset key={retry} storeAppId={storeAppId} item={reviewedItem} token={token} path={shot.path}
+      alt={inViewer ? shot.alt : ''} className={className} loading={inViewer ? 'eager' : 'lazy'}
+      retry={retry} onLoad={onLoad} onFailure={onFailure} />
+  )
 
   // Use the same first-paint, browser-cacheable installed icon as the grid.
   const heroItemWithIcon = storeInstalled
@@ -183,6 +215,8 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
     : item
 
   const primaryLabel = busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind)
+    : checkingInstall ? 'Checking access…'
+    : retryAccess ? 'Retry access check'
     : requiresCapabilityReview && !capabilityReviewReady
       ? (capabilityReview?.preview ? 'Access unavailable' : 'Checking access…')
     : blockedUpdate ? 'Fix update'
@@ -195,13 +229,14 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
     if (primaryActionDisabled) return
     if (blockedUpdate) { onReviewUpdate(resolutionNotice); return }
     if (lifecycle.actionKind === 'retry') { onRetryInstalled?.(); return }
+    if (retryAccess) { onRetryCapabilityReview?.(); return }
     if (hasUpdate) onInstall(item, {
       isUpdate: true,
       existingId: storeInstalled.id,
       capabilityDigest: capabilityReview.preview.capability_digest,
     })
     else if (storeInstalled) onOpenInstalled(storeInstalled.id)
-    else onInstall(item)
+    else if (checkedDigest) onInstall(item, { capabilityDigest: checkedDigest })
   }
   const developer = catalogPublisher(item)
   const releasedAt = detailFeedback?.released_at || detailFeedback?.published_at || item.published_at || ''
@@ -209,11 +244,12 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
   const publishedAt = detailFeedback?.published_at || item.published_at || ''
   const sourceUrl = item.community?.repository_url || m.homepage || ''
   const [viewer, setViewer] = useState(-1)
-  const shots = listingScreenshots.map((shot, index) => ({
-    path: typeof shot === 'string' ? shot : shot.src,
-    alt: typeof shot === 'string' ? `${m.name} screenshot ${index + 1}` : shot.alt,
-    label: typeof shot === 'object' ? shot.label : '',
-  }))
+  const closeViewer = useCallback(() => setViewer(-1), [])
+  const shots = listingScreenshots.map((shot, index) => {
+    const path = typeof shot === 'string' ? shot : shot.src
+    const source = catalogListing ? catalogAssetUrl(storeAppId, path) : storeAssetUrls(reviewedItem, path).join('|')
+    return { path, alt: shot.alt || `${m.name} screenshot ${index + 1}`, key: `${item.id}:${index}:${source}` }
+  })
   const infoRow = (label, value) => value ? (
     <div className="st-info-row"><dt>{label}</dt><dd>{value}</dd></div>
   ) : null
@@ -229,15 +265,15 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
         <header className="st-dh">
           <IconBox item={heroItemWithIcon} size="hero" token={token} />
           <div className="st-dh-text">
-            <h1 id="st-detail-name" className="st-dh-name">{m.name}</h1>
+            <h1 id="st-detail-name" className="st-dh-name" tabIndex={-1}>{m.name}</h1>
             <div className="st-dh-meta">
               {onOpenDeveloper ? (
-                <button type="button" className="st-dh-dev" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
+                <button type="button" className="st-dh-dev" data-focus-return="developer" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
               ) : <span className="st-dh-dev">{developer}</span>}
               {showCategoryInHeader ? (
                 <>
                   <span className="st-dh-separator" aria-hidden="true">·</span>
-                  <button type="button" className="st-dh-category"
+                  <button type="button" className="st-dh-category" data-focus-return="category"
                     aria-label={`Category: ${detailCategory.title}`} onClick={() => onOpenCategory?.(detailCategory.id)}>
                     <CategoryIcon category={detailCategory} size="sm" />{detailCategory.title}
                   </button>
@@ -246,7 +282,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             </div>
             <p className="st-dh-sub">{listingTagline}</p>
             {!storeInstalled && recovery && (
-              <div className="st-detail-note" role="status">
+              <div className="st-detail-note is-recovery" role="status">
                 <strong>{recovery.title}</strong>
                 <span>{recovery.detail}</span>
               </div>
@@ -273,6 +309,24 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
                 <button type="button" className="st-dbtn is-link" onClick={() => onUninstall(storeInstalled)} disabled={busy}>Uninstall</button>
               ) : null}
             </div>
+            {isFreshInstall ? (
+              <div className="st-detail-note is-install-access">
+                <strong role="status">{checkingInstall ? 'Checking this app’s access before installing.'
+                  : retryAccess ? (capabilityReview?.status === 'error' ? 'Couldn’t verify access. Nothing was installed.' : MISSING_ACCESS_ROWS)
+                    : installAccessHeading}</strong>
+                {capabilityReview?.status === 'refused' ? <span role="alert">Access changed. Nothing was installed.</span> : null}
+                {permissionCount ? <button type="button" className="st-see st-install-access-link" onClick={revealAccess}>
+                  View {permissionCount === 1 ? 'permission' : `all ${permissionCount} permissions`}
+                </button> : null}
+              </div>
+            ) : null}
+            {isFreshInstall && installError ? (
+              <div className="st-detail-note is-install-error">
+                <strong role="alert">Couldn’t finish installing {m.name}.</strong>
+                {canRetryInstall ? <button type="button" className="st-dbtn is-link" onClick={runPrimary} disabled={primaryActionDisabled}>Try again</button> : null}
+                <details><summary>Details</summary><span>{installError}</span></details>
+              </div>
+            ) : null}
           </div>
         </header>
 
@@ -288,7 +342,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             </div>
           ) : null}
           {detailCategory && !showCategoryInHeader ? (
-            <button type="button" className="st-strip-cell" onClick={() => onOpenCategory?.(detailCategory.id)}>
+            <button type="button" className="st-strip-cell" data-focus-return="category" onClick={() => onOpenCategory?.(detailCategory.id)}>
               <small>Category</small><b><CategoryIcon category={detailCategory} size="sm" /></b><span>{detailCategory.title}</span>
             </button>
           ) : null}
@@ -338,10 +392,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             <SectionHead id="st-detail-preview" title="Preview" />
             <div className="st-detail-gallery" aria-label={`${m.name} screenshots`}>
               {shots.map((shot, index) => (
-                <button key={`${shot.path}-${index}`} type="button" className="st-shot" onClick={() => setViewer(index)}
-                  aria-label={`View ${shot.alt || `screenshot ${index + 1}`} full screen`}>
-                  {listingImage(shot.path, '', 'st-detail-gallery-image')}
-                </button>
+                <ScreenshotThumb key={shot.key} shot={shot} render={renderScreenshot} onOpen={() => setViewer(index)} />
               ))}
             </div>
           </section>
@@ -373,11 +424,11 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
           <SectionHead id="st-detail-info" title="Information" />
           <dl className="st-info">
             {infoRow('Developer', onOpenDeveloper
-              ? <button type="button" className="st-lnk" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
+              ? <button type="button" className="st-lnk" data-focus-return="developer" onClick={() => onOpenDeveloper(developer)}>{developer}</button>
               : developer)}
             {infoRow('Version', catalogVersion)}
             {infoRow('Category', detailCategory ? (onOpenCategory
-              ? <button type="button" className="st-lnk" onClick={() => onOpenCategory(detailCategory.id)}>{detailCategory.title}</button>
+              ? <button type="button" className="st-lnk" data-focus-return="category" onClick={() => onOpenCategory(detailCategory.id)}>{detailCategory.title}</button>
               : detailCategory.title) : '')}
             {infoRow('Works offline', m.offline_capable ? 'Yes' : 'Needs a connection')}
             {infoRow('License', m.license || 'Not stated')}
@@ -460,7 +511,7 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
             how much an app asks for, and a change in access opens it. */}
         <section className={`st-sec st-access-sec${accessChanged ? ' is-attention' : ''}${accessOpen ? ' is-open' : ''}`} aria-labelledby="st-detail-access">
           <h2 className="st-access-head">
-            <button type="button" id="st-detail-access" className="st-access-summary"
+            <button ref={accessToggle} type="button" id="st-detail-access" className="st-access-summary"
               aria-expanded={accessOpen} aria-controls="st-detail-access-body" onClick={() => setAccessOpen(open => !open)}>
               <span className="st-access-summary-text">
                 <span className="st-sh-title">What it can access</span>
@@ -510,8 +561,60 @@ export function DetailView({ item, storeAppId, capabilityReview, onRetryCapabili
         </div>
       </div>
       {viewer >= 0 && shots[viewer] ? (
-        <ScreenshotViewer shots={shots} index={viewer} onIndex={setViewer} onClose={() => setViewer(-1)}
-          render={(shot) => listingImage(shot.path, shot.alt, 'st-viewer-image', 'eager')} />
+        <ScreenshotViewer shots={shots} index={viewer} onIndex={setViewer} onClose={closeViewer} render={renderScreenshot} />
+      ) : null}
+    </div>
+  )
+}
+
+const SCREENSHOT_LOADING = 'Loading screenshot…'
+const SCREENSHOT_FAILED = 'Screenshot couldn’t load.'
+
+function useScreenshotLoad() {
+  const [state, setState] = useState('loading')
+  const [retry, setRetry] = useState(0)
+  const onLoad = useCallback(() => setState('ready'), [])
+  const onFailure = useCallback(() => setState('failed'), [])
+  const tryAgain = () => { setState('loading'); setRetry(value => value + 1) }
+  return { state, tryAgain, request: { retry, onLoad, onFailure } }
+}
+
+function ScreenshotThumb({ shot, render, onOpen }) {
+  const { state, tryAgain, request } = useScreenshotLoad()
+  const failed = state === 'failed'
+  return (
+    <button type="button" className="st-shot" data-state={state}
+      aria-disabled={state === 'loading' || undefined}
+      aria-label={state === 'ready' ? `View ${shot.alt} full screen` : failed
+        ? `${SCREENSHOT_FAILED} Try again: ${shot.alt}` : `${SCREENSHOT_LOADING} ${shot.alt}`}
+      onClick={(event) => {
+        if (state === 'loading') return
+        if (failed) { tryAgain(); return }
+        event.currentTarget.focus({ preventScroll: true })
+        onOpen()
+      }}>
+      {render(shot, request, 'st-detail-gallery-image')}
+      {state !== 'ready' ? (
+        <span className="st-shot-status" aria-hidden="true">
+          {failed ? <>{SCREENSHOT_FAILED}<span>Try again</span></> : SCREENSHOT_LOADING}
+        </span>
+      ) : null}
+    </button>
+  )
+}
+
+function ViewerFrame({ shot, render, beforeRetry }) {
+  const { state, tryAgain, request } = useScreenshotLoad()
+  return (
+    <div className="st-viewer-stage" data-state={state}>
+      {render(shot, request, 'st-viewer-image', true)}
+      {state !== 'ready' ? (
+        <div className="st-viewer-status">
+          <p role="status">{state === 'failed' ? SCREENSHOT_FAILED : SCREENSHOT_LOADING}</p>
+          {state === 'failed' ? (
+            <button type="button" className="st-viewer-retry" onClick={() => { beforeRetry(); tryAgain() }}>Try again</button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )
@@ -522,23 +625,37 @@ function ScreenshotViewer({ shots, index, onIndex, onClose, render }) {
   const sheetRef = useRef(null)
   const closeRef = useRef(null)
   useSheetFocus({ sheetRef, initialRef: closeRef, onClose })
+  const focusClose = () => closeRef.current?.focus()
+  const count = shots.length
+  const move = useCallback((step) => {
+    if (document.activeElement?.classList.contains('st-viewer-retry')) closeRef.current?.focus()
+    onIndex(current => (current + step + count) % count)
+  }, [count, onIndex])
+  // On the document, like useSheetFocus's Escape: clicking the image or the
+  // counter moves focus out of the viewer's controls, and the arrows must
+  // keep working for that mouse user.
   useEffect(() => {
-    const key = (event) => {
-      if (event.key === 'ArrowRight') onIndex((index + 1) % shots.length)
-      if (event.key === 'ArrowLeft') onIndex((index - 1 + shots.length) % shots.length)
+    if (count < 2) return undefined
+    const onKeyDown = (event) => {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+      event.preventDefault()
+      move(event.key === 'ArrowRight' ? 1 : -1)
     }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [index, shots.length, onIndex])
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [count, move])
   return (
-    <div ref={sheetRef} className="st-viewer" role="dialog" aria-modal="true" aria-label="Screenshots" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div ref={sheetRef} className="st-viewer" role="dialog" aria-modal="true" aria-label="Screenshots"
+      onClick={(event) => {
+        if (event.target === event.currentTarget || event.target.classList.contains('st-viewer-stage')) onClose()
+      }}>
       <button ref={closeRef} type="button" className="st-viewer-close" onClick={onClose} aria-label="Close"><X width={18} height={18} /></button>
-      {render(shots[index])}
+      <ViewerFrame key={shots[index].key} shot={shots[index]} render={render} beforeRetry={focusClose} />
       {shots.length > 1 ? (
         <div className="st-viewer-bar">
-          <button type="button" onClick={() => onIndex((index - 1 + shots.length) % shots.length)} aria-label="Previous screenshot"><ChevronLeft width={18} height={18} /></button>
-          <span>{index + 1} of {shots.length}</span>
-          <button type="button" onClick={() => onIndex((index + 1) % shots.length)} aria-label="Next screenshot"><ChevronRight width={18} height={18} /></button>
+          <button type="button" onClick={() => move(-1)} aria-label="Previous screenshot"><ChevronLeft width={18} height={18} /></button>
+          <span aria-live="polite">{index + 1} of {shots.length}</span>
+          <button type="button" onClick={() => move(1)} aria-label="Next screenshot"><ChevronRight width={18} height={18} /></button>
         </div>
       ) : null}
     </div>

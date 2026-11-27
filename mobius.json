@@ -81,6 +81,7 @@
     "store-location.js",
     "update-batch.js",
     "sleep.js",
+    "focus-return.js",
     "ui/PublishCheck.jsx",
     "ui/PublishedApps.jsx"
   ],

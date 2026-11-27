@@ -75,7 +75,7 @@ async function openReleasePanel({ stored = {}, storage = true, read, trackFocus 
   })))
   await click('Publish an app')
   const chooserFocus = doc.activeElement
-  await click('Publish')
+  await click('Prepare listing')
   await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
   async function consent() {
     await act(async () => doc.querySelector('.st-publish-consent input').click())
@@ -216,7 +216,7 @@ test('reopening an app mid-check keeps waiting instead of flashing an error', as
     assert.match(view.text(), /Your agent is checking the app/)
     await view.click('Back')
     release = true // storage answers slowly after reopening
-    await view.click('Publish')
+    await view.click('Prepare listing')
     await view.settle()
     assert.doesNotMatch(view.text(), /didn’t finish/)
     assert.match(view.text(), /Your agent is checking the app/)

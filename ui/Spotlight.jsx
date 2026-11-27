@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Pause, Play } from '@openai/apps-sdk-ui/components/Icon'
+import { ChevronLeft, ChevronRight, PauseSm, PlaySm } from '@openai/apps-sdk-ui/components/Icon'
 import { catalogCategory, storeCategory } from '../domain.js'
 import { IconBox } from './IconBox.jsx'
 import { CatalogStoreImage, StoreImage } from './StoreImage.jsx'
@@ -19,6 +19,9 @@ export function listingHero(item) {
 // progress segment filling; the segment's animation end is what advances, so
 // pausing and resuming continue exactly where they were. It pauses for hover,
 // touch, keyboard focus, a hidden page, reduced motion, or the owner's pause.
+// The owner's Play outranks the hover, touch and focus pauses: the pointer is
+// necessarily over the carousel when they press it, so it would otherwise stay
+// frozen. That override lasts until the pointer and focus have both left.
 // Swipe, the arrows, or a segment jump straight to an entry.
 const SWIPE_MIN_PX = 40
 
@@ -28,6 +31,7 @@ export function Spotlight({ appId, token, spotlights, onPick, title = 'Spotlight
   const [focusPaused, setFocusPaused] = useState(false)
   const [touchPaused, setTouchPaused] = useState(false)
   const [userPaused, setUserPaused] = useState(false)
+  const [userResumed, setUserResumed] = useState(false)
   const [reducedMotion, setReducedMotion] = useState(false)
   const [pageVisible, setPageVisible] = useState(true)
   const touchStart = useRef(null)
@@ -35,7 +39,13 @@ export function Spotlight({ appId, token, spotlights, onPick, title = 'Spotlight
   const activeIndex = count ? Math.min(spotlightIndex, count - 1) : 0
   const active = spotlights[activeIndex]
   const playing = count > 1 && !reducedMotion
-  const autoPaused = paused || hoverPaused || focusPaused || touchPaused || userPaused || !pageVisible
+  const presencePaused = hoverPaused || focusPaused || touchPaused
+  const autoPaused = paused || userPaused || !pageVisible || (presencePaused && !userResumed)
+
+  // Once the pointer and focus have left, hovering pauses again as usual.
+  useEffect(() => {
+    if (!presencePaused) setUserResumed(false)
+  }, [presencePaused])
 
   useEffect(() => {
     const media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
@@ -68,7 +78,11 @@ export function Spotlight({ appId, token, spotlights, onPick, title = 'Spotlight
       aria-roledescription="carousel"
       onMouseEnter={() => setHoverPaused(true)}
       onMouseLeave={() => setHoverPaused(false)}
-      onFocusCapture={() => setFocusPaused(true)}
+      onFocusCapture={(event) => {
+        // Only keyboard focus pauses; a mouse click on Explore or an arrow
+        // should not leave the carousel frozen after the pointer moves away.
+        if (event.target.matches(':focus-visible')) setFocusPaused(true)
+      }}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocusPaused(false)
       }}
@@ -103,7 +117,7 @@ export function Spotlight({ appId, token, spotlights, onPick, title = 'Spotlight
               <h3 id={`st-spotlight-${active.id}`}>{name}</h3>
               <p>{listingFor(active)?.tagline || active.summary || active.description}</p>
             </div>
-            <button type="button" className="st-spotlight-open" onClick={() => onPick(active)}
+            <button type="button" className="st-spotlight-open" data-focus-return={`spotlight:${active.id}`} onClick={() => onPick(active)}
               aria-label={`Explore ${name}`}>
               Explore
             </button>
@@ -145,11 +159,14 @@ export function Spotlight({ appId, token, spotlights, onPick, title = 'Spotlight
                 className="st-spotlight-toggle"
                 aria-label={userPaused ? `Resume ${title.toLowerCase()}` : `Pause ${title.toLowerCase()}`}
                 aria-pressed={userPaused}
-                onClick={() => setUserPaused((value) => !value)}
+                onClick={() => {
+                  setUserResumed(userPaused)
+                  setUserPaused(!userPaused)
+                }}
               >
                 {userPaused
-                  ? <Play width={14} height={14} aria-hidden="true" />
-                  : <Pause width={14} height={14} aria-hidden="true" />}
+                  ? <PlaySm width={18} height={18} aria-hidden="true" />
+                  : <PauseSm width={18} height={18} aria-hidden="true" />}
               </button>
             </div>
           </>
