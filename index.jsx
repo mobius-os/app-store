@@ -130,7 +130,7 @@ import {
 import { CatalogList } from './ui/CatalogList.jsx'
 import { CatalogCard } from './ui/CatalogCard.jsx'
 import { ResolveAllButton, UpdateAllButton } from './ui/LibraryActions.jsx'
-import { LibraryTabs, libraryTabFor } from './ui/LibraryTabs.jsx'
+import { LibraryPanel, LibraryTabs, libraryTabFor } from './ui/LibraryTabs.jsx'
 import { CatalogSkeleton } from './ui/CatalogSkeleton.jsx'
 import { DetailView } from './ui/DetailView.jsx'
 import { PublisherTab } from './ui/PublisherTab.jsx'
@@ -3031,6 +3031,7 @@ export default function App({ appId, token }) {
   // A category page in Apps or Games has its own heading and Back link, so
   // the tab's big title gives way to it.
   const inCategory = (tab === 'apps' || tab === 'games') && (shelfCategories[tab] || 'all') !== 'all'
+  const showLibraryTabs = tab === 'library' && !query.trim()
   const yourAppsOpen = tab === 'library' && libraryTab === 'yours'
   // A creator page is opened from an app page and sits above it, so it looks
   // like one: its own Back link, without the Store's tabs above or below.
@@ -3154,7 +3155,7 @@ export default function App({ appId, token }) {
             <Plus width={18} height={18} aria-hidden="true" /> Publish an app
           </button>
         ) : null}
-        {tab === 'library' && !query.trim() ? (
+        {showLibraryTabs ? (
           <LibraryTabs active={libraryTab} counts={libraryCounts}
             onChange={(next) => {
               setCategory(next)
@@ -3162,6 +3163,7 @@ export default function App({ appId, token }) {
               if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
             }} />
         ) : null}
+        <LibraryPanel active={showLibraryTabs ? libraryTab : null}>
         {(discoveryTab || (tab === 'library' && !yourAppsOpen)) && !(tab === 'search' && !query.trim()) && (
           <>
             {loadingCatalog
@@ -3359,6 +3361,7 @@ export default function App({ appId, token }) {
             )}
           />
         )}
+        </LibraryPanel>
       </div>
 
       {creatorOpen ? null : <nav className="st-bottombar" aria-label="Store sections">

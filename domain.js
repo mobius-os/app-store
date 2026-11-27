@@ -1113,18 +1113,46 @@ export function catalogSearchText(item) {
     .toLowerCase()
 }
 
+const normalizeSearch = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+const WORD_CHAR = /[\p{L}\p{N}]/u
+
+// True when term occurs in text right after a non-letter, non-digit (or at the
+// start), so "ink" starts a word in "Ink of the Oni" but not in "linked".
+function startsAWord(text, term) {
+  for (let at = text.indexOf(term); at >= 0; at = text.indexOf(term, at + 1)) {
+    if (at === 0 || !WORD_CHAR.test(text[at - 1])) return true
+  }
+  return false
+}
+
+// Lower is a better match. Every listing that contains all typed words still
+// matches (tier 4); the tiers only decide which matches come first.
+function searchTier(item, search, terms, text) {
+  const name = normalizeSearch(item.manifest?.name || item.name)
+  if (name === search) return 0
+  if (name.startsWith(search)) return 1
+  if (terms.every(term => startsAWord(name, term))) return 2
+  if (terms.every(term => startsAWord(text, term))) return 3
+  return 4
+}
+
 export function filterCatalog(items, { query = '', category = 'all' } = {}) {
-  const terms = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const search = normalizeSearch(query)
+  const terms = search.split(' ').filter(Boolean)
   const activeCategory = String(category || 'all').toLowerCase()
-  return (items || []).filter((item) => {
+  const ranked = []
+  for (const item of items || []) {
     if (activeCategory !== 'all') {
       const categories = itemCategories(item).map(c => c.toLowerCase())
-      if (!categories.includes(activeCategory)) return false
+      if (!categories.includes(activeCategory)) continue
     }
-    if (!terms.length) return true
+    if (!terms.length) { ranked.push({ item, tier: 0 }); continue }
     const text = catalogSearchText(item)
-    return terms.every(term => text.includes(term))
-  })
+    if (!terms.every(term => text.includes(term))) continue
+    ranked.push({ item, tier: searchTier(item, search, terms, text) })
+  }
+  // Array sort is stable, so catalog order holds within each tier.
+  return ranked.sort((a, b) => a.tier - b.tier).map(entry => entry.item)
 }
 
 // People in the community registry are named by whichever public identity

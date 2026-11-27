@@ -26,11 +26,12 @@ function hostedEditorialAssetUrl(value) {
 const ART_WIDTH = 1400
 const PICTURE_WIDTH = 160
 
-function remoteImage(url, token, width = ART_WIDTH) {
+function remoteImage(url, token, width = ART_WIDTH, retry = 0) {
   const key = `${width}|${url}`
   if (remoteImages.has(key)) return remoteImages.get(key)
   const request = fetch(proxyUrl(url, { width }), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
+    ...(retry ? { cache: 'reload' } : {}),
   })
     .then((response) => {
       if (!response.ok) throw new Error(`listing image ${response.status}`)
@@ -123,17 +124,23 @@ export function catalogAssetUrl(storeAppId, filename) {
 // Curated official artwork belongs to the App Store package rather than the
 // app it depicts. Keeping this route separate from StoreImage means community
 // artwork remains bound to the exact app revision the owner reviews.
-export function CatalogStoreImage({ storeAppId, path, alt = '', className = '', loading = 'lazy' }) {
+function retrySource(url, retry) {
+  return retry ? `${url}${url.includes('?') ? '&' : '?'}image_retry=${retry}` : url
+}
+
+export function CatalogStoreImage({ storeAppId, path, alt = '', className = '', loading = 'lazy', retry = 0, onLoad, onFailure }) {
   const url = catalogAssetUrl(storeAppId, path)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => setFailed(false), [url])
+  useEffect(() => { if (!url || failed) onFailure?.() }, [url, failed, onFailure])
 
   if (!url || failed) return <span className={`${className} st-store-image-placeholder`} aria-hidden="true" />
-  return <img src={url} alt={alt} className={className} loading={loading} decoding="async" onError={() => setFailed(true)} />
+  return <img src={retrySource(url, retry)} alt={alt} className={className} loading={loading} decoding="async"
+    onLoad={onLoad} onError={() => setFailed(true)} />
 }
 
-export function StoreImage({ item, path, token, alt = '', className = '', loading = 'lazy' }) {
+export function StoreImage({ item, path, token, alt = '', className = '', loading = 'lazy', retry = 0, onLoad, onFailure }) {
   const urls = storeAssetUrls(item, path)
   const candidatesKey = urls.join('|')
   const [attempt, setAttempt] = useState(0)
@@ -145,6 +152,7 @@ export function StoreImage({ item, path, token, alt = '', className = '', loadin
     setSrc('')
     setFailed(false)
   }, [candidatesKey])
+  useEffect(() => { if (failed) onFailure?.() }, [failed, onFailure])
 
   const url = urls[attempt] || ''
   const external = /^https:\/\//i.test(url)
@@ -152,11 +160,11 @@ export function StoreImage({ item, path, token, alt = '', className = '', loadin
 
   useEffect(() => {
     if (!url) { setSrc(''); setFailed(true); return }
-    if (!external) { setSrc(url); return }
+    if (!external) { setSrc(retrySource(url, retry)); return }
     if (!near) return
     let active = true
     let objectUrl = ''
-    remoteImage(url, token)
+    remoteImage(url, token, ART_WIDTH, retry)
       .then((blob) => {
         objectUrl = URL.createObjectURL(blob)
         if (active) setSrc(objectUrl)
@@ -172,7 +180,7 @@ export function StoreImage({ item, path, token, alt = '', className = '', loadin
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
     // candidatesKey covers urls; attempt selects within them.
-  }, [url, external, token, attempt, candidatesKey, near]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [url, external, token, attempt, candidatesKey, near, retry]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const advance = () => {
     if (attempt + 1 < urls.length) { setSrc(''); setAttempt((a) => a + 1) }
@@ -180,7 +188,7 @@ export function StoreImage({ item, path, token, alt = '', className = '', loadin
   }
 
   if (!src || failed) return <span ref={viewRef} className={`${className} st-store-image-placeholder`} aria-hidden="true" />
-  return <img src={src} alt={alt} className={className} loading={loading} decoding="async" onError={advance} />
+  return <img src={src} alt={alt} className={className} loading={loading} decoding="async" onLoad={onLoad} onError={advance} />
 }
 
 // Account pictures use the same authenticated image transport as listing art.
