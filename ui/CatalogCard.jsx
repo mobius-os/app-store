@@ -5,8 +5,14 @@ import { ArrowRotateCw, ArrowUpRight, Chat, Check, DotsVertical, Download, StarF
 import { IconBox, installedIconUrl } from './IconBox.jsx'
 
 // The one primary action for an app wherever it is shown: install, open,
-// update, retry or resolve. Cards, featured cards and the app page share it.
-export function appPrimaryAction(item, { installed, updateChecks = {}, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, onOpenInstalled, onReviewUpdate, onRetryInstalled, onUpdate, busy = false, blocked = false, busyActionKind = null }) {
+// update, retry or resolve. Cards, featured cards and the app page share it,
+// together with what tapping the listing itself does (tapOpensApp), whether
+// the listing keeps a visible button (showsButton) and whether it carries the
+// installed seal (installed), so no surface decides those on its own.
+// inLibrary marks the Library's own rows: the owner's shelf, where a ready
+// installed app launches on tap and a saved app that is not installed yet
+// keeps its Get button. Everywhere else a tap opens the app page.
+export function appPrimaryAction(item, { installed, updateChecks = {}, installedUnavailable = false, setupCompletions = {}, systemSetupReady = false, onOpenInstalled, onReviewUpdate, onRetryInstalled, onUpdate, busy = false, blocked = false, busyActionKind = null, inLibrary = false }) {
   const lifecycle = appLifecycleFor(item, { installed, updateChecks, installedUnavailable, setupCompletions, systemSetupReady })
   const storeInstalled = lifecycle.installedApp
   const canOpen = !!storeInstalled && typeof onOpenInstalled === 'function'
@@ -25,9 +31,23 @@ export function appPrimaryAction(item, { installed, updateChecks = {}, installed
     if (lifecycle.actionKind === 'retry') return onRetryInstalled?.()
     return onUpdate?.(item, { isUpdate: lifecycle.actionKind === 'update' })
   }
+  // In the Library, tapping a ready installed app launches it. Browse
+  // surfaces open the app page, where its reviews, what's new and Uninstall
+  // live. An update, conflict, retry or unfinished setup opens the page too,
+  // so an old version never launches silently, and so does an app with its
+  // own action in progress. Another app's install or update (blocked) does
+  // not stop a launch.
+  const tapOpensApp = inLibrary && canOpen && lifecycle.actionKind === 'open'
+    && !lifecycle.setupNeedsAttention && !busy
+  const launch = () => onOpenInstalled(storeInstalled.id)
+  // Open is the Library row's tap and Get belongs to the app page, so only
+  // maintenance actions (update, retry, resolve) and progress keep a button.
+  const showsButton = busy || lifecycle.actionKind === 'update' || lifecycle.actionKind === 'retry'
+    || lifecycle.actionKind === 'resolve' || (inLibrary && lifecycle.actionKind === 'install')
   return {
     lifecycle, storeInstalled, canOpen, disabled, run, reviewLabel, shortLabel,
     busyLabel: busy ? busyLabelForAction(busyActionKind || lifecycle.actionKind) : '',
+    tapOpensApp, launch, showsButton, installed: !!storeInstalled,
   }
 }
 
@@ -176,16 +196,10 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
   const primary = appPrimaryAction(item, {
     installed, updateChecks, installedUnavailable, setupCompletions, systemSetupReady,
     onOpenInstalled, onReviewUpdate, onRetryInstalled, onUpdate, busy, blocked, busyActionKind,
+    inLibrary: pickOpensApp,
   })
-  const { lifecycle, storeInstalled } = primary
+  const { lifecycle, storeInstalled, tapOpensApp, showsButton } = primary
   const cardVariant = lifecycle.cardVariant
-  const canOpenInstalledApp = primary.canOpen
-  // In the Library, tapping a ready installed app launches it. A row with an
-  // update, conflict, retry or unfinished setup opens its details instead, so
-  // it never silently launches the old version. Details stays on every row
-  // for uninstall, setup and permissions.
-  const opensApp = pickOpensApp && canOpenInstalledApp &&
-    lifecycle.actionKind === 'open' && !lifecycle.setupNeedsAttention
   const cardActionDisabled = primary.disabled
   const actionLabel = busy ? primary.busyLabel
     : layout === 'row' || layout === 'list' ? primary.shortLabel : primary.reviewLabel
@@ -235,20 +249,14 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
     <div className={`${cardVariantClass(cardVariant)}${layout === 'row' ? ' is-compact is-row' : layout === 'compact' ? ' is-compact' : layout === 'list' ? ' is-list' : layout === 'editorial' ? ' is-editorial-row' : ' is-catalog'}`}>
       <div className="st-icon-slot">
         <IconBox item={itemWithIcon} token={token} />
-        {(cardVariant === 'installed' || cardVariant === 'update') && (
-          <div className="st-installed-dot" aria-hidden="true">
-            <div className={`st-installed-dot-inner${cardVariant === 'update' ? ' is-update' : ''}`}>
-              <Check width={10} height={10} aria-hidden="true" />
-            </div>
-          </div>
-        )}
+        {primary.installed ? <InstalledSeal /> : null}
       </div>
       <button
         type="button"
         className="st-card-open"
         data-focus-return={`card:${item.id}`}
-        onClick={() => (opensApp ? onOpenInstalled(storeInstalled.id) : onPick(item))}
-        aria-label={opensApp ? `${m.name} — open app` : `${m.name} — open details`}
+        onClick={() => (tapOpensApp ? primary.launch() : onPick(item))}
+        aria-label={tapOpensApp ? `${m.name} — open app` : `${m.name} — open details`}
       >
         {m.name}
       </button>
@@ -279,11 +287,12 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       {(layout === 'compact' || layout === 'list' || layout === 'row') ? (
         <CardByline item={item} showRatingCount={showRatingCount} state={layout === 'compact' || layout === 'row' ? lifecycle.cardVariant : ''} />
       ) : null}
-      {/* Discovery rows open the app page, which owns the one Install button,
-          like Google Play; Library rows keep their maintenance actions. */}
-      {layout === 'compact' ? null : (
+      {/* A browse row opens the app page, which owns the one Get button; a
+          ready installed app launches from its Library row. Maintenance
+          actions stay, and Library rows keep their More menu. */}
+      {layout === 'compact' || (!showsButton && !pickOpensApp) ? null : (
       <div className="st-card-status-row">
-        <button
+        {showsButton ? <button
           type="button"
           className={cardActionClass}
           disabled={cardActionDisabled}
@@ -294,7 +303,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
           {(layout === 'compact' || layout === 'list' || layout === 'row')
             ? <ProgressFill busy={busy} label={progressStageFor(busyActionKind, updateStage).label}>{actionLabel}</ProgressFill>
             : <ActionIcon width={20} height={20} aria-hidden="true" />}
-        </button>
+        </button> : null}
         {pickOpensApp ? (
           <RowMenu name={m.name} focusReturn={`more:${item.id}`} items={[
             { label: 'Details', ariaLabel: `${m.name} details`, run: () => onPick(item) },
@@ -335,6 +344,18 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
           ) : null}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+// The one installed marker: a small check seal on the app icon's corner.
+// Rows carry no label, so it is the same at every width.
+export function InstalledSeal() {
+  return (
+    <div className="st-installed-dot" aria-hidden="true">
+      <div className="st-installed-dot-inner">
+        <Check width={10} height={10} aria-hidden="true" />
+      </div>
     </div>
   )
 }

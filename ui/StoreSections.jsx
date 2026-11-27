@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, ChevronLeft, ChevronRight } from '@openai/apps-sdk-ui/components/Icon'
 import { catalogCategory, catalogKind, creatorStorefront, storeCategory } from '../domain.js'
-import { appPrimaryAction, progressStageFor } from './CatalogCard.jsx'
+import { InstalledSeal, appPrimaryAction, progressStageFor } from './CatalogCard.jsx'
 import { ProgressFill } from './ProgressFill.jsx'
 import { CategoryIcon } from './CategoryBrowse.jsx'
 import { IconBox } from './IconBox.jsx'
@@ -88,6 +88,8 @@ export function hasFeatureArt(item) { return !!artFor(item) }
 export function FeatureCard({ item, kicker, appId, token, onPick, actionProps }) {
   const art = artFor(item)
   const name = item.manifest?.name || item.name
+  // The card follows the same tap, button and seal rules as browse rows: a
+  // tap opens the app page, even for an installed app.
   const primary = appPrimaryAction(item, actionProps)
   const tagline = listingFor(item)?.tagline || item.summary || item.manifest?.description || ''
   return (
@@ -95,10 +97,15 @@ export function FeatureCard({ item, kicker, appId, token, onPick, actionProps })
       {art ? (item.community
         ? <StoreImage item={item} path={art} token={token} alt="" className="st-fcard-art" />
         : <CatalogStoreImage storeAppId={appId} path={art} alt="" className="st-fcard-art" />) : null}
-      <button type="button" className="st-fcard-open" data-focus-return={`feature:${item.id}`} onClick={() => onPick(item)} aria-label={`${name} — open details`} />
+      <button type="button" className="st-fcard-open" data-focus-return={`feature:${item.id}`}
+        onClick={() => (primary.tapOpensApp ? primary.launch() : onPick(item))}
+        aria-label={primary.tapOpensApp ? `${name} — open app` : `${name} — open details`} />
       <div className="st-fcard-copy">
         <div className="st-fcard-who">
-          <span className="st-fcard-tile"><IconBox item={item} token={token} /></span>
+          <span className="st-fcard-tile-slot">
+            <span className="st-fcard-tile"><IconBox item={item} token={token} /></span>
+            {primary.installed ? <InstalledSeal /> : null}
+          </span>
           <div>
             <div className="st-fcard-kicker">{kicker}</div>
             <h3 className="st-fcard-name">{name}</h3>
@@ -106,10 +113,12 @@ export function FeatureCard({ item, kicker, appId, token, onPick, actionProps })
         </div>
         <div className="st-fcard-row">
           <p className="st-fcard-tag">{tagline}</p>
-          <button type="button" className="st-pill is-light" disabled={primary.disabled} onClick={primary.run}
-            aria-label={`${primary.busyLabel || primary.shortLabel} ${name}`}>
-            <ProgressFill busy={!!primary.busyLabel} label={progressStageFor(actionProps.busyActionKind, actionProps.updateStage).label}>{primary.shortLabel}</ProgressFill>
-          </button>
+          {primary.showsButton ? (
+            <button type="button" className="st-pill is-light" disabled={primary.disabled} onClick={primary.run}
+              aria-label={`${primary.busyLabel || primary.shortLabel} ${name}`}>
+              <ProgressFill busy={!!primary.busyLabel} label={progressStageFor(actionProps.busyActionKind, actionProps.updateStage).label}>{primary.shortLabel}</ProgressFill>
+            </button>
+          ) : null}
         </div>
       </div>
     </article>

@@ -134,9 +134,14 @@ async function mount(fetchApps, { catalog = [], hidden = false, catalogGate = nu
       await act(async () => dom.window.document.querySelector('#st-tab-library').click())
       await act(async () => dom.window.document.querySelector(`[data-library-tab="${libraryTab}"]`)?.click())
     },
+    // A maintenance action (Update, Resolve…) is a button; a ready installed
+    // row has none and the row tap itself opens the app.
     voiceAction() {
-      return [...dom.window.document.querySelectorAll('.st-card-action')]
-        .find(button => button.getAttribute('aria-label')?.endsWith(' Voice'))?.getAttribute('aria-label')
+      const card = [...dom.window.document.querySelectorAll('.st-card')]
+        .find(node => node.querySelector('.st-card-open')?.textContent === 'Voice')
+      if (!card) return undefined
+      const action = card.querySelector('.st-card-action')
+      return action ? action.getAttribute('aria-label') : card.querySelector('.st-card-open').getAttribute('aria-label')
     },
     async close() {
       await act(async () => root.unmount())
@@ -186,7 +191,7 @@ test('resolver completion refreshes an open Store, including repeated events dur
     await view.message()
     assert.equal(reads, 3)
     assert.equal(checks, 2, 'completion bypasses the foreground-check debounce')
-    assert.equal(view.voiceAction(), 'Open Voice', 'fresh pending state removes the resolver action')
+    assert.equal(view.voiceAction(), 'Voice — open app', 'fresh pending state removes the resolver action')
 
     await view.message()
     assert.ok(release, 'the fourth installed read is still in flight')
@@ -220,7 +225,7 @@ test('a completion during mount cannot be overwritten by the older mount snapsho
     assert.equal(reads, 2)
     await act(async () => releaseMount())
     await view.library()
-    assert.equal(view.voiceAction(), 'Open Voice', 'mount must not erase the newly installed row')
+    assert.equal(view.voiceAction(), 'Voice — open app', 'mount must not erase the newly installed row')
     assert.equal(checks, 1, 'mount must not probe its stale installed-app snapshot')
   } finally {
     await view.close()
@@ -244,7 +249,7 @@ test('completion never waits for a pre-event update check and ignores its stale 
     await act(async () => releaseCheck())
     await view.library()
     assert.equal(checks, 2)
-    assert.equal(view.voiceAction(), 'Open Voice', 'the old resolver state cannot overwrite completion')
+    assert.equal(view.voiceAction(), 'Voice — open app', 'the old resolver state cannot overwrite completion')
   } finally {
     await act(async () => releaseCheck?.())
     await view.close()
@@ -300,7 +305,7 @@ test('an event during startup still checks all apps using the live catalog URLs'
     const voice = checks.find(path => path.startsWith('/api/apps/11/'))
     assert.equal(new URL(voice, 'https://store.test').searchParams.get('manifest_url'), liveUrl)
     await view.library()
-    assert.equal(view.voiceAction(), 'Open Voice')
+    assert.equal(view.voiceAction(), 'Voice — open app')
   } finally { await view.close() }
 })
 
@@ -398,7 +403,7 @@ test('an event during hung startup checks probes only its app and preserves unre
     assert.deepEqual(checks, [11, 12, 11], 'the event does not fan out across the hung startup round')
     await act(async () => releaseMaps())
     await view.library()
-    assert.equal(view.voiceAction(), 'Open Voice', 'older startup state cannot overwrite the event result')
+    assert.equal(view.voiceAction(), 'Voice — open app', 'older startup state cannot overwrite the event result')
     const mapsAction = [...view.dom.window.document.querySelectorAll('.st-card-action')]
       .find(button => button.getAttribute('aria-label')?.endsWith(' Maps'))?.getAttribute('aria-label')
     assert.match(mapsAction, /Fix/, 'the unaffected startup answer is not discarded')
@@ -438,9 +443,9 @@ test('a local update supersedes an older background check without waiting for it
     assert.ok(confirm)
     await act(async () => confirm.click())
     assert.ok(updated)
-    assert.equal(view.voiceAction(), 'Open Voice')
+    assert.equal(view.voiceAction(), 'Voice — open app')
     await act(async () => releaseCheck())
-    assert.equal(view.voiceAction(), 'Open Voice', 'the pre-install resolver answer cannot undo local success')
+    assert.equal(view.voiceAction(), 'Voice — open app', 'the pre-install resolver answer cannot undo local success')
   } finally { await act(async () => releaseCheck?.()); await view.close() }
 })
 
@@ -487,7 +492,7 @@ for (const event of ['completion', 'focus', 'failed older read']) {
       assert.equal(view.signals.some(signal => signal.name === 'app_ready'), false)
       await act(async () => releases[1]())
       await view.library()
-      assert.equal(view.voiceAction(), 'Open Voice')
+      assert.equal(view.voiceAction(), 'Voice — open app')
       assert.ok(view.manifests.some(url => url.includes('app-voice')), 'installed apps get a live manifest')
       assert.deepEqual(view.signals.filter(signal => signal.name === 'app_ready'), [{ name: 'app_ready', data: { installed_count: 1 } }])
     } finally { await act(async () => releases.forEach(release => release())); await view.close() }
@@ -503,7 +508,7 @@ test('ready is signalled once installed apps are painted, without waiting for th
   }, { catalogGate })
   try {
     await view.library()
-    assert.equal(view.voiceAction(), 'Open Voice', 'the baked catalog painted with installed state')
+    assert.equal(view.voiceAction(), 'Voice — open app', 'the baked catalog painted with installed state')
     assert.equal(view.manifests.some(url => url.includes('app-voice') && url.endsWith('mobius.json')), false, 'the remote registry is still loading')
     assert.deepEqual(view.signals.filter(signal => signal.name === 'app_ready'), [{ name: 'app_ready', data: { installed_count: 1 } }])
     await act(async () => releaseCatalog())
@@ -522,7 +527,7 @@ test('a failed live manifest read keeps the baked manifest the card painted with
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
     await view.library()
     assert.ok(view.manifests.some(url => url.includes('app-voice') && url.endsWith('mobius.json')), 'the live read was attempted')
-    assert.equal(view.voiceAction(), 'Open Voice')
+    assert.equal(view.voiceAction(), 'Voice — open app')
     assert.doesNotMatch(view.dom.window.document.body.textContent, /Manifest fetch failed/)
   } finally { await view.close() }
 })
@@ -545,7 +550,7 @@ test('a successful Store update with an interleaved completion read has no false
     assert.ok(releaseRead)
     await view.message()
     await act(async () => releaseRead())
-    assert.equal(view.voiceAction(), 'Open Voice')
+    assert.equal(view.voiceAction(), 'Voice — open app')
     assert.match(view.dom.window.document.querySelector('.st-update-review')?.textContent || '', /1 updated/)
     assert.doesNotMatch(view.dom.window.document.querySelector('.st-update-review')?.textContent || '', /could not be refreshed/)
   } finally { await act(async () => releaseRead?.()); await view.close() }
@@ -598,7 +603,7 @@ test('due foreground checks reuse the in-flight full round while events replace 
     assert.deepEqual(calls, [11, 12, 11])
     await act(async () => releases.forEach(release => release()))
     await view.library()
-    assert.equal(view.voiceAction(), 'Open Voice', 'reused rounds cannot overwrite the event answer')
+    assert.equal(view.voiceAction(), 'Voice — open app', 'reused rounds cannot overwrite the event answer')
     time += 50_001
     await view.foreground()
     assert.deepEqual(calls, [11, 12, 11, 11, 12], 'a fresh full round can start after completion')
@@ -693,7 +698,7 @@ test('a batch conflict waits for an explicit Resolve and settles when its resolv
     resolved = true
     await view.message()
     assert.match(modal().textContent, /1 updated · 0 need attention/)
-    assert.equal(view.voiceAction(), 'Open Voice')
+    assert.equal(view.voiceAction(), 'Voice — open app')
     assert.equal(resolvers, 1, 'completion never relaunches a resolver or an install')
   } finally { await view.close() }
 })
