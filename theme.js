@@ -60,6 +60,8 @@ export const CSS = `
   outline-offset: 2px;
 }
 /* /mobius-ui:Focus */
+/* A view's heading takes focus when the view opens (focus-return.js). */
+.st-scroll h1[tabindex="-1"]:focus-visible { outline: 2px solid var(--accent-text, var(--accent)); outline-offset: 3px; border-radius: 3px; }
 
 /* Honor reduced-motion: collapse every animation/transition to ~instant
    so the skeleton pulse, card lift, and active-state scales don't move

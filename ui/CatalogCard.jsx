@@ -46,7 +46,7 @@ export function progressStageFor(busyActionKind, updateStage) {
 
 // A Library row keeps one visible action; Details and Review sit behind a
 // small "More" menu, so a long list stays calm and every row reads the same.
-export function RowMenu({ name, items }) {
+export function RowMenu({ name, items, focusReturn }) {
   const [edge, setEdge] = useState(null)
   const open = edge !== null
   const wrapRef = useRef(null)
@@ -94,6 +94,7 @@ export function RowMenu({ name, items }) {
     // Escape, Tab and an outside pointerdown close it instead.
     <div className="st-rowmenu" ref={wrapRef}>
       <button type="button" className="st-rowmenu-btn" aria-label={`More for ${name}`} aria-haspopup="menu"
+        data-focus-return={focusReturn}
         ref={triggerRef} aria-expanded={open} onClick={() => open ? closeAndRestore() : setEdge('first')}
         onKeyDown={event => {
           if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
@@ -245,6 +246,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
       <button
         type="button"
         className="st-card-open"
+        data-focus-return={`card:${item.id}`}
         onClick={() => (opensApp ? onOpenInstalled(storeInstalled.id) : onPick(item))}
         aria-label={opensApp ? `${m.name} — open app` : `${m.name} — open details`}
       >
@@ -294,7 +296,7 @@ export function CatalogCard({ item, installed, updateChecks = {}, onPick, onRetr
             : <ActionIcon width={20} height={20} aria-hidden="true" />}
         </button>
         {pickOpensApp ? (
-          <RowMenu name={m.name} items={[
+          <RowMenu name={m.name} focusReturn={`more:${item.id}`} items={[
             { label: 'Details', ariaLabel: `${m.name} details`, run: () => onPick(item) },
             ...(layout === 'list' && storeInstalled && typeof onRateApp === 'function' && communityFeedbackOf(item)?.id
               ? [{ label: 'Review', ariaLabel: `Rate and review ${m.name}`, run: () => onRateApp(item) }]

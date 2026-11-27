@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {openDetailEntry, closeDetailEntry} from '../store-navigation.js'
+import {openDetailEntry, closeDetailEntry, backDetailEntry} from '../store-navigation.js'
 
 function harness() {
   const current={current:null}
@@ -79,4 +79,22 @@ test('a page between two apps is redrawn when Back leaves the second app', async
   assert.equal(h.shown, null, 'the first app stays beneath, hidden')
   assert.equal(category, 1, 'the category page between them is shown again')
   assert.equal(h.current.current.item.id, 'first')
+})
+
+test('screen Back and host Back restore their own opener, including after Forward', async () => {
+  const h = harness(), shown = []
+  h.context.show = (item, section, returnTo) => shown.push([item?.id ?? null, section, returnTo])
+  const outer = { key: 'card:first', scope: 'picks' }
+  const inner = { key: 'card:second', scope: 'similar' }
+  const one = openDetailEntry(h.current, app('first'), { ...h.context, opener: outer, focus: 'reviews' }); h.own(); await one
+  const two = openDetailEntry(h.current, app('second'), { ...h.context, opener: inner, push: true }); h.own(); await two
+  h.back()
+  h.forward()
+  backDetailEntry(h.current, h.context.show)
+  backDetailEntry(h.current, h.context.show)
+  assert.deepEqual(shown, [
+    ['first', 'reviews', undefined], ['second', '', undefined],
+    ['first', 'reviews', inner], ['second', '', undefined],
+    ['first', 'reviews', inner], [null, '', outer],
+  ])
 })
