@@ -2233,6 +2233,44 @@ test('filterCatalog matches categories, descriptions, and setup metadata', async
   assert.deepEqual(filterCatalog(items, { query: 'earth', category: 'reference' }).map(i => i.id), ['atlas'])
 })
 
+test('filterCatalog ranks exact names, then name starts, then word starts, keeping catalog order within a tier', async () => {
+  const { filterCatalog } = await bundle()
+  const items = [
+    { id: 'memory', manifest: { name: 'Memory', description: 'Connect your notes.' } },
+    { id: 'related', manifest: { name: 'Connect Link' } },
+    { id: 'connect', displayName: 'ignored', manifest: { name: 'Connect' }, categories: ['utilities'] },
+    { id: 'another-exact', manifest: { name: 'CONNECT' }, categories: ['utilities'] },
+    { id: 'multi', manifest: { name: 'Daily Brief' }, categories: ['utilities'] },
+  ]
+  const ids = options => filterCatalog(items, options).map(item => item.id)
+  assert.deepEqual(ids({ query: '  cOnNecT ' }), ['connect', 'another-exact', 'related', 'memory'])
+  assert.deepEqual(ids({ query: 'connect', category: 'utilities' }), ['connect', 'another-exact'])
+  assert.deepEqual(ids({ query: 'daily   BRIEF' }), ['multi'])
+  assert.deepEqual(ids({ query: '   ' }), items.map(item => item.id))
+})
+
+test('filterCatalog puts a name match above a description match without dropping substring matches', async () => {
+  const { filterCatalog } = await bundle()
+  const items = [
+    { id: 'memory', manifest: { name: 'Memory', description: 'Saves notes about you.' } },
+    { id: 'skills', manifest: { name: 'Skills', description: 'Reusable playbooks.' } },
+    { id: 'maps', manifest: { name: 'Maps', description: 'Keep maps linked to places.' } },
+    { id: 'notes', manifest: { name: 'Notes', description: 'Quick writing.' } },
+    { id: 'workflows', manifest: { name: 'Workflows', description: 'Automate steps.' } },
+    { id: 'oni', manifest: { name: 'Ink of the Oni', description: 'A lone ronin.' } },
+    { id: 'inkwell', manifest: { name: 'Inkwell', description: 'Drafts.' } },
+    { id: 'identity', manifest: { name: 'Möbius · You', description: 'Your account.' } },
+  ]
+  const ids = query => filterCatalog(items, { query }).map(item => item.id)
+  assert.deepEqual(ids('note'), ['notes', 'memory'], 'a name prefix outranks a description word')
+  assert.deepEqual(ids('flow'), ['workflows'], 'the tail of a compound name still matches')
+  assert.deepEqual(ids('book'), ['skills'], 'the tail of a compound description word still matches')
+  assert.deepEqual(ids('ink'), ['oni', 'inkwell', 'maps'], 'name starts first, then text that merely contains it')
+  assert.deepEqual(ids('oni ink'), ['oni'])
+  assert.deepEqual(ids('you'), ['identity', 'memory'], 'a word after punctuation counts as a word start')
+  assert.deepEqual(ids('Möbius · You'), ['identity'])
+})
+
 test('catalog cards prefer concise discovery copy and use stable browse collections', async () => {
   const {
     CARD_DESCRIPTION_LIMIT,
@@ -2688,7 +2726,7 @@ test('app details end with a folded access section, then source links and update
   // Every Store update opens the sheet first; an access change also needs its review.
   assert.match(selfUpdateSource, /if \(!panelOpen \|\| \(needsAccessReview && !showReview\)\)/)
   assert.match(selfUpdateSource, /'Update App Store'/)
-  assert.match(selfUpdateSource, /later updates stop only when access changes/)
+  assert.match(selfUpdateSource, /Review the current access before confirming/)
 })
 
 test('desktop measure applies to every direct scroll child without a class allowlist', async () => {

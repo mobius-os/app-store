@@ -161,6 +161,7 @@ test('screenshot viewers keep keyboard focus inside and return it to the opening
         installed: [], storeAppId: 1, onBack() {}, onInstall() {}, token: 't',
       })))
       const opener = doc.querySelector('.st-shot')
+      await act(async () => opener.querySelector('img').dispatchEvent(new dom.window.Event('load')))
       opener.focus()
       await act(async () => opener.click())
       const dialog = doc.querySelector('.st-viewer')
@@ -180,6 +181,13 @@ test('screenshot viewers keep keyboard focus inside and return it to the opening
         await press(next, 'ArrowLeft')
         assert.match(dialog.querySelector('.st-viewer-bar').textContent, /1 of 2/)
         assert.equal(doc.activeElement, next)
+        // A mouse click on the image or counter leaves focus on the page body;
+        // the arrow keys must still change screenshots.
+        next.blur()
+        assert.equal(doc.activeElement, doc.body)
+        assert.equal((await press(doc.body, 'ArrowRight')).defaultPrevented, true)
+        assert.match(dialog.querySelector('.st-viewer-bar').textContent, /2 of 2/)
+        next.focus()
       }
       await press(doc.activeElement, 'Escape')
       assert.equal(doc.querySelector('.st-viewer'), null)
@@ -187,6 +195,87 @@ test('screenshot viewers keep keyboard focus inside and return it to the opening
     }
   } finally {
     await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('failed screenshots retry in place in the thumbnail and viewer without losing focus', async () => {
+  const { dom, restore } = useDom()
+  const { DetailView } = await bundleDetailView()
+  const doc = dom.window.document
+  const root = createRoot(doc.getElementById('root'))
+  const imageEvent = (container, kind) => act(async () =>
+    container.querySelector('img').dispatchEvent(new dom.window.Event(kind)))
+  try {
+    await act(async () => root.render(React.createElement(DetailView, {
+      item: { ...item, manifest_url: undefined, listing: { screenshots: ['one.png'] } },
+      storeAppId: 1, installed: [], onBack() {}, onInstall() {}, token: 't',
+    })))
+    const thumb = doc.querySelector('.st-shot')
+    const viewer = () => doc.querySelector('.st-viewer')
+    assert.equal(thumb.getAttribute('aria-disabled'), 'true')
+    await act(async () => thumb.click())
+    assert.equal(viewer(), null, 'loading does not open a blank viewer')
+    await imageEvent(thumb, 'error')
+    assert.equal(thumb.dataset.state, 'failed')
+    assert.match(thumb.textContent, /Screenshot couldn’t load.*Try again/s)
+    thumb.focus()
+    await act(async () => thumb.click())
+    assert.equal(thumb.dataset.state, 'loading')
+    assert.match(thumb.querySelector('img').src, /one\.png\?image_retry=1$/)
+    assert.equal(doc.activeElement, thumb)
+    await imageEvent(thumb, 'load')
+    assert.equal(thumb.dataset.state, 'ready')
+    await act(async () => thumb.click())
+    await imageEvent(viewer(), 'error')
+    assert.match(viewer().querySelector('[role="status"]').textContent, /couldn’t load/)
+    const retry = viewer().querySelector('.st-viewer-retry')
+    retry.focus()
+    await act(async () => retry.click())
+    assert.equal(doc.activeElement, viewer().querySelector('.st-viewer-close'))
+    assert.match(viewer().querySelector('img').src, /one\.png\?image_retry=1$/)
+    await imageEvent(viewer(), 'load')
+    assert.equal(viewer().querySelector('[data-state]').dataset.state, 'ready')
+    await act(async () => viewer().querySelector('.st-viewer-close').click())
+    assert.equal(viewer(), null)
+    assert.equal(doc.activeElement, thumb)
+  } finally {
+    await act(async () => root.unmount()); restore()
+    await rm(buildDir, { recursive: true, force: true })
+  }
+})
+
+test('retrying a proxied screenshot rechecks the source instead of reusing its failed response', async () => {
+  const { dom, restore } = useDom()
+  const { DetailView } = await bundleDetailView()
+  const doc = dom.window.document
+  const root = createRoot(doc.getElementById('root'))
+  const calls = []
+  const before = globalThis.fetch
+  try {
+    globalThis.fetch = async (url, options) => {
+      calls.push({ source: new URL(url, 'https://store.test').searchParams.get('url'), cache: options.cache })
+      return calls.length === 1 ? new Response(null, { status: 503 })
+        : new Response('image fixture', { headers: { 'content-type': 'image/png' } })
+    }
+    await act(async () => root.render(React.createElement(DetailView, {
+      item: { ...item, manifest_url: undefined, raw_base: 'https://example.com/sample/',
+        manifest: { ...item.manifest, store: { screenshots: ['remote.png'] } } },
+      storeAppId: 1, installed: [], onBack() {}, onInstall() {}, token: 't',
+    })))
+    const thumb = doc.querySelector('.st-shot')
+    assert.equal(thumb.dataset.state, 'failed')
+    await act(async () => thumb.click())
+    assert.deepEqual(calls, [
+      { source: 'https://example.com/sample/remote.png', cache: undefined },
+      { source: 'https://example.com/sample/remote.png', cache: 'reload' },
+    ])
+    const loaded = thumb.querySelector('img')
+    assert.match(loaded.src, /^blob:/)
+    await act(async () => loaded.dispatchEvent(new dom.window.Event('load')))
+    assert.equal(thumb.dataset.state, 'ready')
+  } finally {
+    await act(async () => root.unmount()); globalThis.fetch = before; restore()
     await rm(buildDir, { recursive: true, force: true })
   }
 })

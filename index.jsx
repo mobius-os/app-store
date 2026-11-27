@@ -129,7 +129,7 @@ import {
 import { CatalogList } from './ui/CatalogList.jsx'
 import { CatalogCard } from './ui/CatalogCard.jsx'
 import { ResolveAllButton, UpdateAllButton } from './ui/LibraryActions.jsx'
-import { LibraryTabs, libraryTabFor } from './ui/LibraryTabs.jsx'
+import { LibraryPanel, LibraryTabs, libraryTabFor } from './ui/LibraryTabs.jsx'
 import { CatalogSkeleton } from './ui/CatalogSkeleton.jsx'
 import { DetailView } from './ui/DetailView.jsx'
 import { PublisherTab } from './ui/PublisherTab.jsx'
@@ -2973,28 +2973,30 @@ export default function App({ appId, token }) {
                 so Tab can move from the field into a suggestion. */}
             <div className="st-searchwrap" onFocus={() => setSearchFocused(true)}
               onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSearchFocused(false) }}>
-            <label className="st-searchbox" htmlFor="st-catalog-search">
-              <Search width="1em" height="1em" aria-hidden="true" />
-              <span className="st-sr-only">Search apps and games</span>
-              <input
-                ref={searchInputRef}
-                id="st-catalog-search"
-                className="st-search-input"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') rememberSearch(query); if (event.key === 'Escape') event.currentTarget.blur() }}
-                placeholder="Search apps and games"
-                autoComplete="off"
-                spellCheck={false}
-              />
+            <div className="st-searchbox">
+              <label className="st-search-label" htmlFor="st-catalog-search">
+                <Search width="1em" height="1em" aria-hidden="true" />
+                <span className="st-sr-only">Search apps and games</span>
+                <input
+                  ref={searchInputRef}
+                  id="st-catalog-search"
+                  className="st-search-input"
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Enter') rememberSearch(query); if (event.key === 'Escape') event.currentTarget.blur() }}
+                  placeholder="Search apps and games"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
               {query ? (
                 <button type="button" className="st-search-clear" aria-label="Clear search"
                   onClick={() => { setQuery(''); searchInputRef.current?.focus() }}>
                   <X width="1em" height="1em" aria-hidden="true" />
                 </button>
               ) : null}
-            </label>
+            </div>
             {searchFocused && !query.trim() && !phone ? (
               <div className="st-qdrop" role="group" aria-label="Search suggestions" onMouseDown={(event) => event.preventDefault()}>
                 {searchSuggestions(5)}
@@ -3011,7 +3013,11 @@ export default function App({ appId, token }) {
   // A category page in Apps or Games has its own heading and Back link, so
   // the tab's big title gives way to it.
   const inCategory = (tab === 'apps' || tab === 'games') && (shelfCategories[tab] || 'all') !== 'all'
+  const showLibraryTabs = tab === 'library' && !query.trim()
   const yourAppsOpen = tab === 'library' && libraryTab === 'yours'
+  // A creator page is opened from an app page and sits above it, so it looks
+  // like one: its own Back link, without the Store's tabs above or below.
+  const creatorOpen = discoveryTab && String(activeCollection || '').startsWith('dev:')
 
   return (
     <div className="st-root" {...ownerInteraction}>
@@ -3020,7 +3026,7 @@ export default function App({ appId, token }) {
       {/* Phones: the App Store's own bar, fixed above the page so it stays put
           while you scroll. The way back to Möbius on the left, the Store's
           name in the middle, your profile (and publishing) on the right. */}
-      {phone ? (
+      {phone && !creatorOpen ? (
         <div className={`st-phonebar${barTucked ? ' is-tucked' : ''}`}>
           <div className="st-storebar">
             <div className="st-storebar-start">
@@ -3038,7 +3044,7 @@ export default function App({ appId, token }) {
           </div>
         </div>
       ) : null}
-      {phone ? null : <div className="st-header">
+      {phone || creatorOpen ? null : <div className="st-header">
         <div className="st-title-row">
           <div className="st-store-brand">
             <img
@@ -3088,12 +3094,20 @@ export default function App({ appId, token }) {
         </div>
       </div>}
 
+      {/* The same fixed Back bar as an app page, above the creator's page. */}
+      {creatorOpen ? (
+        <div className="st-lnav">
+          <button type="button" className="st-backlink" onClick={closeCollection}>
+            <ChevronLeft width={18} height={18} aria-hidden="true" /> Back
+          </button>
+        </div>
+      ) : null}
       <div className={`st-scroll is-${tab}${returning ? ' is-returning' : ''}`} ref={gridScrollRef}
            onAnimationEnd={(event) => { if (event.target === event.currentTarget) setReturning(false) }}
-           id="st-tabpanel" role="tabpanel"
-           aria-labelledby={phone ? undefined : `st-tab-${tab}`}
-           aria-label={phone ? PHONE_TABS.find((entry) => entry.id === tab)?.label : undefined}>
-        {(((discoveryTab || tab === 'library') && !activeCollection && !query.trim()) || (phone && tab === 'search'))
+           id="st-tabpanel" role={creatorOpen ? undefined : 'tabpanel'}
+           aria-labelledby={phone || creatorOpen ? undefined : `st-tab-${tab}`}
+           aria-label={phone && !creatorOpen ? PHONE_TABS.find((entry) => entry.id === tab)?.label : undefined}>
+        {(((discoveryTab || tab === 'library') && !activeCollection && !query.trim()) || (phone && tab === 'search' && !creatorOpen))
           && (!inCategory || phone) ? (
           <div className="st-pagehead">
             {phone ? (
@@ -3114,7 +3128,7 @@ export default function App({ appId, token }) {
             {phone && tab === 'search' ? <div className="st-phone-search">{searchBox}</div> : null}
           </div>
         ) : null}
-        {tab === 'search' && !query.trim() ? (
+        {tab === 'search' && !query.trim() && !creatorOpen ? (
           <div className="st-search-landing">{searchSuggestions(8)}</div>
         ) : null}
         {/* Phones: publishing in plain sight, at the top of Library. */}
@@ -3123,7 +3137,7 @@ export default function App({ appId, token }) {
             <Plus width={18} height={18} aria-hidden="true" /> Publish an app
           </button>
         ) : null}
-        {tab === 'library' && !query.trim() ? (
+        {showLibraryTabs ? (
           <LibraryTabs active={libraryTab} counts={libraryCounts}
             onChange={(next) => {
               setCategory(next)
@@ -3131,6 +3145,7 @@ export default function App({ appId, token }) {
               if (gridScrollRef.current) gridScrollRef.current.scrollTop = 0
             }} />
         ) : null}
+        <LibraryPanel active={showLibraryTabs ? libraryTab : null}>
         {(discoveryTab || (tab === 'library' && !yourAppsOpen)) && !(tab === 'search' && !query.trim()) && (
           <>
             {loadingCatalog
@@ -3325,9 +3340,10 @@ export default function App({ appId, token }) {
             )}
           />
         )}
+        </LibraryPanel>
       </div>
 
-      <nav className="st-bottombar" aria-label="Store sections">
+      {creatorOpen ? null : <nav className="st-bottombar" aria-label="Store sections">
         {PHONE_TABS.map(({ id, label }) => {
           const selected = tab === id
           const TabIcon = TAB_ICONS[id]
@@ -3347,7 +3363,7 @@ export default function App({ appId, token }) {
             </button>
           )
         })}
-      </nav>
+      </nav>}
 
       <SelfUpdateSheet self={selfUpdate} appId={appId} />
       {pendingUninstall && (

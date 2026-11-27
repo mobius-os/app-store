@@ -119,3 +119,16 @@ test('every Store category has its own icon, so a newly used category never show
   for (const {id} of STORE_CATEGORIES) assert.match(icons, new RegExp(`\\n  ${id}: [A-Z]`), id)
   assert.equal(new Set(STORE_CATEGORIES.map(({id}) => id)).size, STORE_CATEGORIES.length)
 })
+test('a creator page keeps the app page chrome: Back only, no Store tabs above or below', () => {
+  const source=readFileSync(new URL('../index.jsx',import.meta.url),'utf8')
+  assert.match(source,/const creatorOpen = discoveryTab && String\(activeCollection \|\| ''\)\.startsWith\('dev:'\)/)
+  assert.match(source,/\{phone && !creatorOpen \? \(\s*<div className=\{`st-phonebar/)
+  assert.match(source,/\{phone \|\| creatorOpen \? null : <div className="st-header">/)
+  assert.match(source,/\{creatorOpen \? null : <nav className="st-bottombar"/)
+  assert.match(source,/role=\{creatorOpen \? undefined : 'tabpanel'\}/)
+  // Opened from the phone Search tab, the search field and suggestions stay behind too.
+  assert.match(source,/\(phone && tab === 'search' && !creatorOpen\)/)
+  assert.match(source,/\{tab === 'search' && !query\.trim\(\) && !creatorOpen \? \(/)
+  // Back sits in the app page's fixed bar, above the scrolling page.
+  assert.match(source,/\{creatorOpen \? \(\s*<div className="st-lnav">\s*<button type="button" className="st-backlink" onClick=\{closeCollection\}>/)
+})

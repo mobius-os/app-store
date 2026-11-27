@@ -87,6 +87,88 @@ async function mountApp(dom, routes) {
   return root
 }
 
+test('each Library tab controls the same rendered panel and supplies its current label', async () => {
+  const { dom, restore } = useDom()
+  const doc = dom.window.document
+  let root
+  try {
+    root = await mountApp(dom, () => null)
+    const strip = doc.querySelector('[role="tablist"][aria-label="Library"]')
+    const tabs = [...strip.querySelectorAll('[role="tab"]')]
+    assert.equal(tabs.length, 5)
+    const panel = doc.getElementById(tabs[0].getAttribute('aria-controls'))
+    assert.ok(panel, 'the controlled panel is rendered')
+    assert.equal(panel.getAttribute('role'), 'tabpanel')
+    assert.equal(panel.tabIndex, 0, 'the panel is reachable even when empty')
+    assert.equal(strip.contains(panel) || panel.contains(strip), false)
+
+    for (const tab of tabs) {
+      await act(async () => tab.click())
+      assert.equal(doc.getElementById(tab.getAttribute('aria-controls')), panel)
+      assert.equal(panel.getAttribute('aria-labelledby'), tab.id)
+      assert.equal(strip.querySelector('[aria-selected="true"]'), tab)
+    }
+
+    tabs.at(-1).focus()
+    await act(async () => tabs.at(-1).dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    assert.equal(doc.activeElement, tabs[0], 'arrow navigation wraps from Your apps to Needs you')
+    assert.equal(panel.getAttribute('aria-labelledby'), tabs[0].id)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+  }
+})
+
+test('searching from Library keeps the mounted Library list instead of remounting it', async () => {
+  const { dom, restore } = useDom()
+  const doc = dom.window.document
+  let root
+  try {
+    root = await mountApp(dom, async path => {
+      if (path === '/api/apps/') return json([voiceRow])
+      if (path === '/api/apps/update-batches') return json({ batches: [] })
+      return null
+    })
+    await act(async () => doc.querySelector('[data-library-tab="installed"]').click())
+    const voiceCard = () => [...doc.querySelectorAll('.st-card')].find(node => node.querySelector('.st-card-open')?.textContent === 'Voice')
+    const card = voiceCard()
+    assert.ok(card, 'Installed lists Voice')
+    const panel = doc.getElementById('st-library-panel')
+    assert.ok(panel.contains(card))
+
+    const input = doc.getElementById('st-catalog-search')
+    const setValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
+    // react-dom loads before this file installs a DOM, so React watches text
+    // fields through its keyup fallback rather than the input event.
+    const type = async value => act(async () => {
+      input.focus()
+      setValue.call(input, value)
+      input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      input.dispatchEvent(new dom.window.KeyboardEvent('keyup', { key: value.at(-1) || 'Backspace', bubbles: true }))
+    })
+
+    await type('v')
+    assert.ok(!doc.querySelector('[role="tablist"][aria-label="Library"]'), 'search hides the Library tabs')
+    assert.equal(panel.isConnected, true, 'the panel element stays mounted while searching')
+    assert.equal(panel.hasAttribute('role') || panel.hasAttribute('id'), false, 'without tabs it is no longer a tab panel')
+    assert.ok(voiceCard() === card, 'the first keystroke keeps the same Voice row')
+
+    await type('')
+    assert.ok(voiceCard() === card, 'clearing the search keeps the same Voice row')
+    assert.ok(doc.getElementById('st-library-panel') === panel, 'the tabs control the same panel again')
+    assert.equal(panel.getAttribute('aria-labelledby'), 'st-libtab-installed')
+
+    // Leaving Library for another Store tab and coming back keeps the body too.
+    await act(async () => doc.querySelector('#st-tab-apps').click())
+    assert.ok(panel.isConnected && !panel.hasAttribute('role'), 'Apps reuses the same, untabbed body')
+    await act(async () => doc.querySelector('#st-tab-library').click())
+    assert.ok(doc.getElementById('st-library-panel') === panel, 'Library returns to the same panel')
+  } finally {
+    if (root) await act(async () => root.unmount())
+    restore()
+  }
+})
+
 function entry(id, status = 'ready', extra = {}) {
   return {
     item: { id, manifest_url: `https://example.test/${id}/mobius.json`, manifest: { name: id, version: '2.0.0' } },
@@ -278,8 +360,8 @@ test('update review leads with verified changes and keeps technical details coll
     assert.ok(details)
     assert.equal(details.open, false)
     assert.match(dom.window.document.body.textContent, /What changed/)
-    assert.match(dom.window.document.body.textContent, /1 file in this preview: 1 changed/)
-    assert.match(dom.window.document.body.textContent, /Ready to update/)
+    assert.match(dom.window.document.body.textContent, /1 file changed/)
+    assert.match(dom.window.document.querySelector('.st-update-facts').textContent, /Access.*No new access/)
     assert.match(dom.window.document.querySelector('button.st-btn-primary').textContent, /Confirm update/)
     await render([entry('Local edits', 'conflict')])
     assert.match(dom.window.document.body.textContent, /Local edits need review/)
